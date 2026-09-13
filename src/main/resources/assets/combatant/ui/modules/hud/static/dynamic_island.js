@@ -10,6 +10,102 @@ const fmt = ui.fmt;
 const cls = ui.cls;
 const abs = ui.abs;
 const colorAlpha = ui.color.alpha;
+const PROGRESS_DOTS = 32;
+
+function displayCorners(expanded) {
+  const round = ui.corner.rounded(2.4);
+  const cut = ui.corner.chamfered(expanded ? 4.5 : 3.0);
+  return ui.corner.mixed(round, round, cut, cut);
+}
+
+function displayEdges() {
+  return {
+    top: ui.edge.straight(),
+    right: ui.edge.inset(0.35),
+    bottom: ui.edge.inset(0.35),
+    left: ui.edge.inset(0.35),
+  };
+}
+
+function displayShell(p) {
+  const x = num(p.mainX, 0);
+  const w = num(p.mainWidth, num(p.width, 126));
+  const h = num(p.height, 35);
+  const cut = num(p.bezelCut, 4.5);
+  const alpha = num(p.alpha, 1);
+  const inset = 2.25;
+  const nodes = [
+    ui.shape({
+      key: "shell:shadow",
+      shape: "rounded-shadow",
+      class: abs(x, 0, w, h),
+      radius: 3,
+      softness: 7,
+      spread: 10,
+      color: colorAlpha(p.shadow, alpha),
+      fill: colorAlpha(p.shadow, alpha),
+    }),
+    ui.shape({
+      key: "shell:bezel",
+      shape: "primitive",
+      preset: "chamfered",
+      class: abs(x, 0, w, h),
+      chamfer: cut,
+      fill: colorAlpha(p.bezelTint, alpha),
+      stroke: colorAlpha(p.bezelEdge, alpha),
+      strokeWidth: 1,
+      liquidGlass: true,
+      glassTint: colorAlpha(p.bezelTint, alpha),
+      glassAlpha: 0.62,
+      blurAlpha: (p.blur === true ? num(p.blurAlpha, 0.45) : 0.14) * alpha,
+      glassPreset: "hud-small",
+      glassInnerGlow: 0.014,
+      glassInnerGlowSize: 3.5,
+    }),
+    ui.shape({
+      key: "shell:display",
+      shape: "box",
+      class: abs(x + inset, inset, Math.max(1, w - inset * 2), Math.max(1, h - inset * 2)),
+      corners: displayCorners(num(p.expand, 0) > 0.5),
+      edges: displayEdges(),
+      cut: num(p.expand, 0) > 0.5 ? 4.5 : 3.0,
+      blur: true,
+      blurQuality: 8,
+      blurBrightness: 1.06,
+      blurAlpha: (p.blur === true ? Math.max(0.42, num(p.blurAlpha, 0.45)) : 0.22) * alpha,
+      fill: colorAlpha(p.displayBg, alpha),
+      stroke: colorAlpha(p.displayEdge, alpha),
+      strokeWidth: 0.8,
+    }),
+    ui.shape({
+      key: "shell:highlight",
+      shape: "rect",
+      class: abs(x + cut + 4, 1.1, Math.max(1, w - (cut + 4) * 2), 0.65),
+      fill: colorAlpha(p.bezelEdge, 0.64 * alpha),
+    }),
+    ui.shape({
+      key: "shell:interaction",
+      shape: "box",
+      class: abs(x + inset, inset, Math.max(1, w - inset * 2), Math.max(1, h - inset * 2)),
+      corners: displayCorners(num(p.expand, 0) > 0.5),
+      edges: displayEdges(),
+      fill: colorAlpha(p.phosphor, (0.025 * num(p.bodyHover, 0) + 0.045 * num(p.bodyPress, 0)) * alpha),
+      strokeWidth: 0,
+    }),
+  ];
+  return nodes;
+}
+
+function phosphorText(p, init, localAlpha = 1, strength = 0.20, width = 1.8) {
+  const alpha = num(p.alpha, 1) * localAlpha;
+  return ui.text({
+    ...init,
+    color: colorAlpha(p.phosphor, alpha),
+    textGlowColor: colorAlpha(p.phosphor, alpha),
+    textGlowWidth: width,
+    textGlowStrength: strength,
+  });
+}
 
 function artwork(p, key, x, y, size, alpha) {
   if (p.artworkTexture) {
@@ -17,373 +113,312 @@ function artwork(p, key, x, y, size, alpha) {
       key,
       assetType: "texture",
       asset: p.artworkTexture,
-      class: abs(x, y, size, size, `rounded-${fmt(size * 0.5)}`),
+      class: abs(x, y, size, size, "rounded-2.00"),
       tint: colorAlpha("#FFFFFFFF", alpha),
     });
   }
   return ui.shape({
     key: `${key}:fallback`,
-    shape: "circle",
+    shape: "box",
     class: abs(x, y, size, size),
-    fill: colorAlpha(p.accent, 0.92 * alpha),
-    stroke: colorAlpha("#33FFFFFF", alpha),
-    strokeWidth: 1.2,
+    corners: ui.corner.all(ui.corner.chamfered(2)),
+    fill: colorAlpha(p.phosphorDim, 0.72 * alpha),
+    stroke: colorAlpha(p.displayEdge, alpha),
+    strokeWidth: 0.8,
   });
 }
 
 function waveBars(ctx, p, x, centerY, alpha) {
-  const t = ctx.time;
   const out = [];
   for (let i = 0; i < 3; i++) {
-    const h = p.playing ? 3 + Math.abs(Math.sin(t * 5.2 + i * 0.85)) * 8 : 4 + i;
+    const h = p.playing ? 3 + Math.abs(Math.sin(ctx.time * 5.2 + i * 0.85)) * 7 : 3 + i;
     out.push(ui.shape({
       key: `wave:${i}`,
       shape: "rounded",
-      class: abs(x + i * 5, centerY - h * 0.5, 2.5, h),
-      radius: 1.25,
-      fill: colorAlpha(p.accent, (0.75 + i * 0.08) * alpha),
+      class: abs(x + i * 4, centerY - h * 0.5, 1.7, h),
+      radius: 0.85,
+      fill: colorAlpha(p.phosphor, (0.64 + i * 0.10) * alpha),
     }));
   }
   return out;
 }
 
-function shell(p) {
+function telemetryMode(p, isPvp) {
   const x = num(p.mainX, 0);
-  const w = num(p.mainWidth, num(p.width, 126));
-  const h = num(p.height, 35);
-  const r = num(p.radius, 17);
-  const rootAlpha = num(p.alpha, 1);
-  const nodes = [];
-  if (p.blur === true) nodes.push(ui.blurSurface({ key: "shell:blur", x, y: 0, w, h, radius: r, alpha: num(p.blurAlpha, 0) * rootAlpha }));
-  nodes.push(ui.roundedRect({ key: "shell:shadow", x, y: 0, w, h, radius: r, fill: p.shadow, strokeWidth: 0 }));
-  nodes.push(ui.roundedGradient({ key: "shell:fill", x, y: 0, w, h, radius: r, startColor: p.fillTop, endColor: p.fillBottom, angle: 90 }));
-  nodes.push(ui.roundedGradient({ key: "shell:tint", x, y: 0, w, h, radius: r, startColor: p.tintTop, endColor: p.tintBottom, angle: 90 }));
-  nodes.push(ui.roundedRect({ key: "shell:stroke", x, y: 0, w, h, radius: r, fill: "#00000000", stroke: p.stroke, strokeWidth: 1 }));
-  return nodes;
+  const w = num(p.mainWidth, num(p.width, 82));
+  const value = isPvp ? (p.pvpTelemetry || "PVP 00") : (p.time || "00:00");
+  return [
+    phosphorText(p, {
+      key: isPvp ? "pvp:timer" : "time",
+      text: value,
+      class: cls(abs(x + 7, 7.5, Math.max(1, w - 14), 20), "font-MatrixSansPrint-0.94 text-align-center"),
+    }, 1, isPvp ? 0.30 : 0.24, 2.0),
+  ];
 }
 
-function contextChips(p) {
-  if (p.mode !== "music" && p.mode !== "clickgui") return [];
-  const mainX = num(p.mainX, 0);
-  const mainW = num(p.mainWidth, num(p.width, 126));
-  const leftW = Math.max(0, num(p.leftContextWidth, 0));
-  const rightW = Math.max(0, num(p.rightContextWidth, 0));
-  const gap = num(p.contextGap, 7);
-  const alpha = num(p.contextAlpha, 0);
-  const rightX = mainX + mainW + gap;
-  const nodes = [];
-
-  if (p.blur === true) nodes.push(ui.blurSurface({ key: "context:time:blur", x: 0, y: 7.5, w: leftW, h: 20, radius: 10, alpha: num(p.blurAlpha, 0) * alpha }));
-  nodes.push(ui.roundedRect({ key: "context:time:box", x: 0, y: 7.5, w: leftW, h: 20, radius: 10, fill: colorAlpha(p.contextFill, alpha), stroke: colorAlpha(p.contextStroke, alpha), strokeWidth: 1 }));
-  nodes.push(ui.text({
-    key: "context:time",
-    text: p.time || "",
-    color: colorAlpha(p.textPrimary, alpha),
-    class: cls(abs(0, 10.1, leftW, 14), "font-inter-bold-0.72 text-align-center", `text-${colorAlpha(p.textPrimary, alpha)}`),
-  }));
-
-  const pvpAlpha = p.pvpContextVisible === true ? alpha : 0;
-  if (p.blur === true) nodes.push(ui.blurSurface({ key: "context:pvp:blur", x: rightX, y: 7.5, w: rightW, h: 20, radius: 10, alpha: num(p.blurAlpha, 0) * pvpAlpha }));
-  nodes.push(ui.roundedRect({ key: "context:pvp:box", x: rightX, y: 7.5, w: rightW, h: 20, radius: 10, fill: colorAlpha(p.pvpFill, pvpAlpha), stroke: colorAlpha(p.pvpStroke, pvpAlpha), strokeWidth: 1 }));
-  nodes.push(ui.text({
-    key: "context:pvp",
-    text: p.pvpTimer || "",
-    color: colorAlpha(p.textPrimary, pvpAlpha),
-    class: cls(abs(rightX, 10.1, rightW, 14), "font-inter-bold-0.74 text-align-center", `text-${colorAlpha(p.textPrimary, pvpAlpha)}`),
-  }));
-
-  return nodes;
-}
-
-function clickGuiMode(p) {
+function clickGuiTabs(p) {
   const mainX = num(p.mainX, 0);
   const height = num(p.height, 34);
-  const activeX = num(p.clickGuiActiveX, 0);
-  const activeW = Math.max(1, num(p.clickGuiActiveW, 1));
   const alpha = num(p.alpha, 1);
   const tabs = (() => {
     try { return Array.from(p.clickGuiTabs || []); } catch (_) { return []; }
   })();
-  const innerX = mainX + activeX + 4;
-  const innerY = 4;
-  const innerW = Math.max(1, activeW - 8);
-  const innerH = Math.max(1, height - 8);
-  const nodes = [
-    ui.shape({
-      key: "clickgui:selection",
-      shape: "island-blob",
-      class: abs(innerX, innerY, innerW, innerH),
-      sources: p.clickGuiSelectionSources || [],
-      smoothing: 7,
-      startColor: colorAlpha(p.accentSoft, alpha),
-      endColor: colorAlpha(p.accent, 0.82 * alpha),
-      angle: 0,
-      stroke: colorAlpha(p.accent, 0.92 * alpha),
-      strokeWidth: 1,
-      interactive: false,
-    }),
-  ];
-
+  const nodes = [];
   tabs.forEach((tab, index) => {
     const active = tab && tab.active === true;
     const hovered = tab && tab.hovered === true;
-    const textColor = active
-      ? colorAlpha(p.textPrimary, alpha)
-      : colorAlpha(p.textMuted, (hovered ? 0.92 : 0.72) * alpha);
-    if (index > 0) {
-      nodes.push(ui.roundedRect({
-        key: `clickgui:separator:${index}`,
-        x: mainX + num(tab && tab.x, 0) - 0.5,
-        y: 9,
-        w: 1,
-        h: Math.max(1, height - 18),
-        radius: 0.5,
-        fill: colorAlpha(p.stroke, 0.72 * alpha),
-        interactive: false,
-      }));
-    }
+    const tabX = mainX + num(tab && tab.x, 0);
+    const tabW = Math.max(1, num(tab && tab.width, 1));
+    const localAlpha = active ? 1 : (hovered ? 0.86 : 0.58);
+    const categoryColor = tab && tab.color ? String(tab.color) : p.phosphor;
+    nodes.push(ui.shape({
+      key: `clickgui:wash:${index}`,
+      shape: "box",
+      class: abs(tabX + 2.5, 3, Math.max(1, tabW - 5), Math.max(1, height - 6)),
+      corners: ui.corner.mixed(
+        ui.corner.rounded(2.2),
+        ui.corner.rounded(2.2),
+        ui.corner.chamfered(2.2),
+        ui.corner.chamfered(2.2),
+      ),
+      startColor: colorAlpha(categoryColor, (active ? 0.24 : (hovered ? 0.10 : 0)) * alpha),
+      endColor: colorAlpha(p.phosphorDim, (active ? 0.10 : (hovered ? 0.035 : 0)) * alpha),
+      angle: 0,
+      stroke: colorAlpha(categoryColor, (active ? 0.34 : (hovered ? 0.13 : 0)) * alpha),
+      strokeWidth: 0.7,
+    }));
     nodes.push(ui.text({
       key: `clickgui:tab:${index}`,
       text: tab && tab.label ? String(tab.label) : "",
-      color: textColor,
+      color: colorAlpha(active || hovered ? categoryColor : p.textSecondary, localAlpha * alpha),
+      textGlowColor: colorAlpha(categoryColor, alpha),
+      textGlowWidth: active || hovered ? 1.7 : 0,
+      textGlowStrength: active ? 0.24 : (hovered ? 0.14 : 0),
       interactive: false,
-      class: cls(
-        abs(mainX + num(tab && tab.x, 0), (height - 16) * 0.5, Math.max(1, num(tab && tab.width, 1)), 16),
-        "font-OnestBold-1.00 text-align-center"
-      ),
+      class: cls(abs(tabX, (height - 17) * 0.5 - 1, tabW, 17), "font-OnestMedium-0.80 text-align-center"),
+    }));
+    nodes.push(ui.shape({
+      key: `clickgui:underline:${index}`,
+      shape: "rounded",
+      class: abs(tabX + tabW * 0.28, height - 6, tabW * 0.44, active ? 1.6 : 1.0),
+      radius: 0.8,
+      fill: colorAlpha(active || hovered ? categoryColor : p.matrixOff, (active ? 1 : (hovered ? 0.62 : 0.34)) * alpha),
     }));
   });
   return nodes;
-}
-
-function timeMode(p) {
-  const x = num(p.mainX, 0);
-  const w = num(p.mainWidth, num(p.width, 74));
-  return [
-    ui.roundedRect({ key: "time:box", x, y: 7.5, w, h: 20, radius: 10, fill: p.timeFill, stroke: p.timeStroke, strokeWidth: 1 }),
-    ui.text({
-      key: "time",
-      text: p.time || "",
-      color: p.textPrimary,
-      class: cls(abs(x, 7.8, w, 20), "font-inter-bold-0.96 text-align-center", `text-${p.textPrimary}`),
-    }),
-  ];
-}
-
-function pvpMode(p) {
-  const x = num(p.mainX, 0);
-  const w = num(p.mainWidth, num(p.width, 72));
-  const chipW = Math.min(w - 16, Math.max(42, 54));
-  const chipX = x + (w - chipW) * 0.5;
-  return [
-    ui.roundedRect({ key: "pvp:chip", x: chipX, y: 7.5, w: chipW, h: 20, radius: 10, fill: p.pvpFill, stroke: p.pvpStroke, strokeWidth: 1 }),
-    ui.text({
-      key: "pvp:timer",
-      text: p.pvpTimer || "0s",
-      color: p.textPrimary,
-      class: cls(abs(chipX, 10.1, chipW, 14), "font-inter-bold-0.84 text-align-center shadow-text", `text-${p.textPrimary}`),
-    }),
-  ];
 }
 
 function musicCompact(ctx, p) {
   const x = num(p.mainX, 0);
   const w = num(p.mainWidth, 226);
   const alpha = num(p.compactAlpha, 0);
-  const centerY = 17.5;
-  const waveX = x + w - 26;
-  return [
-    ui.text({
-      key: "music:elapsed:compact",
-      text: p.elapsed || "0:00",
-      color: colorAlpha(p.textSecondary, alpha),
-      class: cls(abs(x + 11, 10.5, 38, 13), "font-inter-medium-0.72", `text-${colorAlpha(p.textSecondary, alpha)}`),
-    }),
-    ui.shape({ key: "music:divider", shape: "rect", class: abs(x + 49, 7, 1, 18), fill: colorAlpha(p.textMuted, 0.4 * alpha) }),
-    artwork(p, "artwork:compact", x + 58, 6.5, 22, alpha),
+  const pvp = p.pvpActive === true;
+  const statusW = pvp ? 50 : 24;
+  const titleX = x + 82;
+  const titleW = Math.max(0, w - 82 - statusW - 7);
+  const nodes = [
+    phosphorText(p, {
+      key: "music:clock:compact",
+      text: p.time || "00:00",
+      class: cls(abs(x + 9, 10.3, 40, 14), "font-MatrixSansPrint-0.72 text-align-center"),
+    }, alpha, 0.20, 1.7),
+    ui.shape({ key: "music:divider", shape: "rect", class: abs(x + 52, 8, 0.75, 19), fill: colorAlpha(p.displayEdge, alpha) }),
+    artwork(p, "artwork:compact", x + 58, 8.5, 18, alpha),
     ui.clippedText({
       key: "music:title:compact",
       text: p.title || "",
-      x: x + 89,
-      y: 8.5,
-      w: Math.max(0, w - 124),
+      x: titleX,
+      y: 8.7,
+      w: titleW,
       h: 18,
-      textClass: cls("font-inter-medium-0.82", `text-${colorAlpha(p.textPrimary, alpha)}`),
+      textClass: cls("font-OnestMedium-0.82", `text-${colorAlpha(p.textPrimary, alpha)}`),
       measuredWidth: p.titleWidthCompact,
       scrollTime: p.titleScrollTime,
       fade: true,
-      centerWhenFits: true,
+      centerWhenFits: false,
       color: colorAlpha(p.textPrimary, alpha),
     }),
-    ...waveBars(ctx, p, waveX, centerY, alpha),
   ];
+  if (pvp) {
+    nodes.push(phosphorText(p, {
+      key: "music:pvp:compact",
+      text: p.pvpTelemetry || "PVP 00",
+      class: cls(abs(x + w - 55, 10.5, 48, 14), "font-MatrixSansPrint-0.62 text-align-right"),
+    }, alpha, 0.28, 1.8));
+  } else {
+    nodes.push(...waveBars(ctx, p, x + w - 19, 17.5, alpha));
+  }
+  return nodes;
 }
 
-function control(p, key, icon, x, y, hover) {
+function control(p, key, icon, x, y, hover, tint, active) {
   const size = num(p.controlSize, 27);
   const alpha = num(p.expandedAlpha, 0);
+  const glow = Math.max(0, hover);
   return [
-    ui.shape({
+    ui.radialGlow({
       key: `${key}:hover`,
-      shape: "circle",
-      class: abs(x, y, size, size),
-      fill: colorAlpha(p.accentSoft, Math.max(0, hover) * 0.3 * alpha),
+      x: x - 1,
+      y: y - 1,
+      w: size + 2,
+      h: size + 2,
+      radius: 4,
+      glowRadius: size * 0.48,
+      color: colorAlpha(p.phosphor, glow * 0.13 * alpha),
     }),
     ui.text({
       key,
       text: icon || "",
-      color: colorAlpha(p.textPrimary, alpha),
-      class: cls(abs(x, y + 4, size, size - 4), "font-mediaplayer-1.28 text-align-center", `text-${colorAlpha(p.textPrimary, alpha)}`),
+      color: colorAlpha(tint || p.textPrimary, (0.76 + glow * 0.24) * alpha),
+      textGlowColor: colorAlpha(p.phosphor, alpha),
+      textGlowWidth: 1.5 + glow * 0.7,
+      textGlowStrength: (0.12 + glow * 0.24) * alpha,
+      class: cls(abs(x, y + 4, size, size - 4), "font-mediaplayer-1.22 text-align-center"),
+    }),
+    ui.shape({
+      key: `${key}:active`,
+      shape: "rounded",
+      class: abs(x + size * 0.43, y + size - 2.5, size * 0.14, 1.5),
+      radius: 0.75,
+      fill: colorAlpha(p.phosphor, (active ? 0.92 : 0) * alpha),
     }),
   ];
 }
 
-function svgControl(p, key, asset, tint, x, y, hover) {
+function svgControl(p, key, asset, tint, x, y, hover, active) {
   const size = num(p.controlSize, 27);
   const alpha = num(p.expandedAlpha, 0);
-  const iconSize = size * 0.74;
-  const iconX = x + (size - iconSize) * 0.5;
-  const iconY = y + (size - iconSize) * 0.5;
+  const iconSize = size * 0.70;
   return [
-    ui.shape({
-      key: `${key}:hover`,
-      shape: "circle",
-      class: abs(x, y, size, size),
-      fill: colorAlpha(p.accentSoft, Math.max(0, hover) * 0.3 * alpha),
+    ui.radialGlow({
+      key: `${key}:hover`, x: x - 1, y: y - 1, w: size + 2, h: size + 2,
+      radius: 4, glowRadius: size * 0.48, color: colorAlpha(p.phosphor, Math.max(0, hover) * 0.13 * alpha),
     }),
     ui.svg({
       key,
       asset: asset || "repeat-off",
-      tint: colorAlpha(tint || "#99000000", alpha),
-      class: abs(iconX, iconY, iconSize, iconSize),
+      tint: colorAlpha(tint || p.textSecondary, alpha),
+      class: abs(x + (size - iconSize) * 0.5, y + (size - iconSize) * 0.5, iconSize, iconSize),
+    }),
+    ui.shape({
+      key: `${key}:active`, shape: "rounded",
+      class: abs(x + size * 0.43, y + size - 2.5, size * 0.14, 1.5), radius: 0.75,
+      fill: colorAlpha(p.phosphor, (active ? 0.92 : 0) * alpha),
     }),
   ];
+}
+
+function progressDots(p, x, w, alpha) {
+  const progress = ui.clamp(num(p.progress, 0), 0, 1);
+  const focus = Math.max(num(p.progressHover, 0), num(p.progressPress, 0));
+  const dotStart = x + 13;
+  const dotWidth = Math.max(1, w - 26);
+  const currentIndex = Math.max(0, Math.min(PROGRESS_DOTS - 1, Math.round(progress * (PROGRESS_DOTS - 1))));
+  const nodes = [];
+  for (let i = 0; i < PROGRESS_DOTS; i++) {
+    const played = i <= currentIndex;
+    const current = i === currentIndex;
+    const size = current ? 3.2 + focus * 0.8 : (played ? 2.05 : 1.45);
+    const cx = dotStart + (dotWidth * i) / (PROGRESS_DOTS - 1);
+    nodes.push(ui.shape({
+      key: `music:progress:dot:${i}`,
+      shape: "circle",
+      class: abs(cx - size * 0.5, 57 - size * 0.5, size, size),
+      fill: colorAlpha(current ? p.textPrimary : (played ? p.phosphor : p.matrixOff), alpha),
+    }));
+  }
+  const focusSize = 7 + focus * 2;
+  const focusX = dotStart + dotWidth * progress;
+  nodes.push(ui.roundedGlow({
+    key: "music:progress:focus",
+    x: focusX - focusSize * 0.5,
+    y: 57 - focusSize * 0.5,
+    w: focusSize,
+    h: focusSize,
+    radius: focusSize * 0.5,
+    glow: 2.4 + focus,
+    color: colorAlpha(p.phosphor, (0.10 + focus * 0.12) * alpha),
+  }));
+  return nodes;
 }
 
 function musicExpanded(p) {
   const x = num(p.mainX, 0);
   const w = num(p.mainWidth, 338);
   const alpha = num(p.expandedAlpha, 0);
-  const progressW = Math.max(0, w - 26);
   const nodes = [
+    phosphorText(p, {
+      key: "music:label:expanded",
+      text: "NOW PLAYING",
+      class: cls(abs(x + 13, 7, 90, 12), "font-MatrixSansPrint-0.54"),
+    }, alpha, 0.14, 1.5),
+    phosphorText(p, {
+      key: "music:elapsed:header",
+      text: p.elapsed || "0:00",
+      class: cls(abs(x + w - 61, 7, 48, 12), "font-MatrixSansPrint-0.62 text-align-right"),
+    }, alpha, 0.20, 1.7),
+    ui.shape({
+      key: "artwork:expanded:frame", shape: "box", class: abs(x + 12, 23, 30, 30),
+      corners: ui.corner.all(ui.corner.chamfered(2.5)), fill: colorAlpha(p.phosphorDim, 0.16 * alpha),
+      stroke: colorAlpha(p.displayEdge, alpha), strokeWidth: 0.8,
+    }),
+    artwork(p, "artwork:expanded", x + 14, 25, 26, alpha),
     ui.clippedText({
-      key: "music:title:expanded",
-      text: p.title || "",
-      x: x + 59,
-      y: 11,
-      w: Math.max(0, w - 72),
-      h: 16,
-      textClass: cls("font-inter-medium-0.86", `text-${colorAlpha(p.textPrimary, alpha)}`),
-      measuredWidth: p.titleWidthExpanded,
-      scrollTime: p.titleScrollTime,
-      fade: true,
-      centerWhenFits: true,
+      key: "music:title:expanded", text: p.title || "", x: x + 50, y: 22.5,
+      w: Math.max(0, w - 63), h: 16,
+      textClass: cls("font-OnestMedium-0.86", `text-${colorAlpha(p.textPrimary, alpha)}`),
+      measuredWidth: p.titleWidthExpanded, scrollTime: p.titleScrollTime, fade: true,
       color: colorAlpha(p.textPrimary, alpha),
     }),
     ui.clippedText({
-      key: "music:artist:expanded",
-      text: p.artist || "",
-      x: x + 59,
-      y: 28,
-      w: Math.max(0, w - 72),
-      h: 14,
-      textClass: cls("font-inter-0.72", `text-${colorAlpha(p.textSecondary, alpha)}`),
-      measuredWidth: p.artistWidthExpanded,
-      scrollTime: p.titleScrollTime,
-      scrollDelay: 1.4,
-      scrollSpeed: 14,
-      fade: true,
+      key: "music:artist:expanded", text: p.artist || "", x: x + 50, y: 38,
+      w: Math.max(0, w - 63), h: 14,
+      textClass: cls("font-Onest-0.70", `text-${colorAlpha(p.textSecondary, alpha)}`),
+      measuredWidth: p.artistWidthExpanded, scrollTime: p.titleScrollTime,
+      scrollDelay: 1.4, scrollSpeed: 14, fade: true,
       color: colorAlpha(p.textSecondary, alpha),
     }),
-    ...(() => {
-      const progress = ui.clamp(num(p.progress, 0), 0, 1);
-      const activeW = progressW * progress;
-      const focus = Math.max(num(p.progressHover, 0), num(p.progressPress, 0));
-      const inactiveH = 3 + 0.75 * focus;
-      const spanT = ui.clamp(activeW / 24, 0, 1);
-      const spanEase = spanT * spanT * (3 - 2 * spanT);
-      const amplitude = p.playing === true ? (2.15 + 0.30 * focus) * spanEase : 0;
-      const thumbSize = 7.5 + 1.5 * focus;
-      const thumbCx = x + 13 + activeW;
-      const thumbCy = 54.5;
-      return [
-        // Only the unplayed remainder is a straight neutral rail. There is deliberately
-        // no accent rectangle underneath the active waveform.
-        ui.roundedRect({
-          key: "music:progress:bg",
-          x: x + 13 + activeW,
-          y: thumbCy - inactiveH * 0.5,
-          w: Math.max(0, progressW - activeW),
-          h: inactiveH,
-          radius: inactiveH * 0.5,
-          fill: colorAlpha(p.progressBg, alpha),
-          strokeWidth: 0,
-        }),
-        ui.connector({
-          key: "music:progress:wave",
-          connector: "wave",
-          class: abs(x + 13, 48, progressW, 13),
-          x1: 0,
-          x2: activeW,
-          centerY: 6.5,
-          amplitude,
-          wavelength: 29,
-          phase: num(p.wavePhase, 0),
-          harmonic: 0.18,
-          edgeFade: 5.0,
-          strokeWidth: 4.6 + 0.65 * focus,
-          startColor: colorAlpha(p.accent, alpha),
-          endColor: colorAlpha(p.accent, alpha),
-        }),
-        ui.shape({
-          key: "music:progress:thumb",
-          shape: "circle",
-          class: abs(thumbCx - thumbSize * 0.5, thumbCy - thumbSize * 0.5, thumbSize, thumbSize),
-          fill: colorAlpha(p.textPrimary, 0.96 * alpha),
-        }),
-      ];
-    })(),
-    ui.text({ key: "music:elapsed:expanded", text: p.elapsed || "0:00", color: colorAlpha(p.textSecondary, alpha), class: cls(abs(x + 13, 65, 44, 14), "font-inter-medium-0.80", `text-${colorAlpha(p.textSecondary, alpha)}`) }),
-    ui.text({ key: "music:total:expanded", text: p.total || "0:00", color: colorAlpha(p.textSecondary, alpha), class: cls(abs(x + w - 57, 65, 44, 14), "font-inter-medium-0.80 text-align-right", `text-${colorAlpha(p.textSecondary, alpha)}`) }),
-    ...control(p, "music:prev", p.iconPrev, p.prevX, p.prevY, num(p.prevHover, 0)),
-    ...control(p, "music:play", p.iconPlay, p.playX, p.playY, num(p.playHover, 0)),
-    ...control(p, "music:next", p.iconNext, p.nextX, p.nextY, num(p.nextHover, 0)),
+    ...progressDots(p, x, w, alpha),
+    phosphorText(p, {
+      key: "music:elapsed:expanded", text: p.elapsed || "0:00",
+      class: cls(abs(x + 13, 63, 44, 12), "font-MatrixSansPrint-0.58"),
+    }, alpha, 0.14, 1.5),
+    phosphorText(p, {
+      key: "music:total:expanded", text: p.total || "0:00",
+      class: cls(abs(x + w - 57, 63, 44, 12), "font-MatrixSansPrint-0.58 text-align-right"),
+    }, alpha, 0.14, 1.5),
+    ...control(p, "music:prev", p.iconPrev, p.prevX, p.prevY, num(p.prevHover, 0), p.textPrimary, false),
+    ...control(p, "music:play", p.iconPlay, p.playX, p.playY, num(p.playHover, 0), p.phosphor, true),
+    ...control(p, "music:next", p.iconNext, p.nextX, p.nextY, num(p.nextHover, 0), p.textPrimary, false),
   ];
   if (p.showShuffle) {
-    nodes.push(...control(p, "music:shuffle", p.iconShuffle, p.shuffleX, p.shuffleY, num(p.shuffleHover, 0)));
+    nodes.push(...control(p, "music:shuffle", p.iconShuffle, p.shuffleX, p.shuffleY,
+      num(p.shuffleHover, 0), p.shuffleColor, p.shuffleActive === true));
   }
   if (p.showRepeat) {
-    nodes.push(...svgControl(p, "music:repeat", p.repeatAsset, p.repeatColor, p.repeatX, p.repeatY, num(p.repeatHover, 0)));
+    nodes.push(...svgControl(p, "music:repeat", p.repeatAsset, p.repeatColor, p.repeatX, p.repeatY,
+      num(p.repeatHover, 0), p.repeatActive === true));
   }
-  nodes.unshift(artwork(p, "artwork:expanded", x + 13, 11, 36, alpha));
   return nodes;
 }
 
 export function render(ctx) {
   const p = ctx.props || {};
   const content = [];
-  let background = [];
-
   if (p.mode === "music") {
-    background = shell(p);
-    content.push(...contextChips(p));
     content.push(...musicCompact(ctx, p));
     content.push(...musicExpanded(p));
   } else if (p.mode === "clickgui") {
-    background = shell(p);
-    content.push(...contextChips(p));
-    content.push(...clickGuiMode(p));
-  } else if (p.mode === "pvp") {
-    content.push(...pvpMode(p));
+    content.push(...clickGuiTabs(p));
   } else {
-    content.push(...timeMode(p));
+    content.push(...telemetryMode(p, p.mode === "pvp"));
   }
 
   return ui.root({
     key: "dynamic-island",
-    class: cls(`w-${fmt(p.width)}`, `h-${fmt(p.height)}`, `rounded-${fmt(p.radius)}`),
+    class: cls(`w-${fmt(p.width)}`, `h-${fmt(p.height)}`),
     children: [
-      ...background,
+      ...displayShell(p),
       ui.stack({
         key: "content",
         class: cls("absolute x-0 y-0", `w-${fmt(p.width)}`, `h-${fmt(p.height)}`, "clip overflow-hidden"),

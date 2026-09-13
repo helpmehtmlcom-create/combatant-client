@@ -11,6 +11,10 @@ if (-not (Test-Path -LiteralPath $generator -PathType Leaf)) {
 }
 
 $fonts = @(
+    @{
+        File = "matrix_sans_print.ttf"
+        Chars = "[0x20,0x7E], [0xA0,0x17F], [0x400,0x52F], [0x2000,0x206F], [0x20A0,0x20CF]"
+    },
     @{ File = "icons.ttf"; Chars = "[0x20,0x7E]" },
     @{ File = "iconsnur.ttf"; Chars = "[0x20,0x7E]" },
     @{ File = "mediaplayer.ttf"; Chars = "[0xEA00,0xEA08]" },

@@ -76,6 +76,14 @@ The terrain vertex implementation contains a local source comment crediting Sodi
 - License text: `THIRD_PARTY_LICENSES/Iosevka-OFL-1.1.txt`
 - Scope: the bundled full Iosevka 34.8.1 Medium/Bold and italic source fonts and their generated MSDF atlases. The atlases retain the Unicode-mapped BMP glyphs actually supplied by Iosevka, including broad Latin, Greek, Cyrillic, Armenian, IPA, combining-mark and symbol coverage. Iosevka does not contain CJK; those scripts continue through the lazy Noto fallback.
 
+## Matrix Sans
+
+- Upstream: https://github.com/FriedOrange/MatrixSans
+- Copyright: 2022-2026 FriedOrange and Matrix Sans contributors
+- License: SIL Open Font License 1.1
+- License text: `THIRD_PARTY_LICENSES/MatrixSans-OFL-1.1.txt`
+- Scope: the bundled Matrix Sans Print source font and its generated MSDF atlas, used for Dynamic Island display and telemetry typography.
+
 ## Hold My Items
 
 - Upstream project: Hold My Items

@@ -231,6 +231,7 @@ public class Combatant implements ClientModInitializer {
     }
 
     private static void renderHudPhase(HudPhase phase, GuiGraphicsExtractor ctx, DeltaTracker tickCounter) {
+        if (ClickGuiRenderer.suppressesBackgroundRendering()) return;
         if (!RuntimeGate.canRunHud()) return;
         float tickProgress = TickDelta.tickProgress(tickCounter, false);
         ModuleManager.renderHud(phase, ctx, tickProgress);
@@ -391,6 +392,7 @@ public class Combatant implements ClientModInitializer {
     }
 
     private static void renderHudAfterHotbar(GuiGraphicsExtractor ctx, DeltaTracker tickCounter) {
+        if (ClickGuiRenderer.suppressesBackgroundRendering()) return;
         if (!RuntimeGate.canRunHud()) return;
         boolean swapTooltipWork = SwapTooltip.hasWork();
         boolean targetHudWork = DraggableHudElementRegistry.hasEngineWidgetWork("target_hud");

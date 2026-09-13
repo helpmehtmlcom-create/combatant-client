@@ -90,7 +90,27 @@ public final class UiRenderer {
                     float fadeWidth = node.props().number("marqueeFadeWidth", Math.min(16.0f, bounds.width() * 0.25f));
                     float fadeLeft = node.props().number("fadeLeft", runtimeMarqueeOffset > 0.5f ? fadeWidth : 0.0f);
                     float fadeRight = node.props().number("fadeRight", textFade ? fadeWidth : 0.0f);
-                    int color = UiReactiveVisual.color(node, "color", style.textColor() != null ? style.textColor() : 0xFFFFFFFF);
+                    int rawColor = UiReactiveVisual.color(
+                            node, "color", style.textColor() != null ? style.textColor() : 0xFFFFFFFF);
+                    int color = UiColor.multiplyAlpha(rawColor, context.alpha());
+                    String textBackend = node.props().string(
+                            "textBackend", node.props().string("backend", style.textBackend()));
+                    float glowWidth = node.props().number("textGlowWidth", 0.0f);
+                    float glowStrength = node.props().number("textGlowStrength", 0.0f);
+                    if (glowWidth > 0.0f && glowStrength > 0.0f) {
+                        int rawGlowColor = UiReactiveVisual.color(node, "textGlowColor", rawColor);
+                        textRenderer.renderGlow(
+                                context.textRenderer(),
+                                text,
+                                textX + textOffsetX,
+                                textY,
+                                style,
+                                UiColor.multiplyAlpha(rawGlowColor, context.alpha()),
+                                glowWidth,
+                                glowStrength,
+                                textBackend
+                        );
+                    }
                     if (textFade || fadeLeft > 0.0f || fadeRight > 0.0f || textOffsetX != 0.0f) {
                         textRenderer.renderHorizontalFadeClipped(
                                 context.textRenderer(),
@@ -105,11 +125,14 @@ public final class UiRenderer {
                                 color
                         );
                     } else {
-                        String textBackend = node.props().string("textBackend", node.props().string("backend", style.textBackend()));
                         boolean textGradient = node.props().bool("textGradient", false);
                         if (textGradient) {
-                            int gradientStart = UiColor.parse(node.props().string("gradientStartColor", ""), color);
-                            int gradientEnd = UiColor.parse(node.props().string("gradientEndColor", ""), color);
+                            int gradientStart = UiColor.multiplyAlpha(
+                                    UiColor.parse(node.props().string("gradientStartColor", ""), rawColor),
+                                    context.alpha());
+                            int gradientEnd = UiColor.multiplyAlpha(
+                                    UiColor.parse(node.props().string("gradientEndColor", ""), rawColor),
+                                    context.alpha());
                             float gradientAngle = node.props().number("gradientAngle", 90.0f);
                             textRenderer.renderLinearGradient(
                                     context.textRenderer(),
@@ -261,8 +284,11 @@ public final class UiRenderer {
     private void renderBox(UiNode node, UiStyle style, UiBounds bounds, UiRenderContext context) {
         if (bounds.width() <= 0.0f || bounds.height() <= 0.0f) return;
 
+        float lifecycleAlpha = context.alpha();
+        if (lifecycleAlpha <= 0.001f) return;
+
         float radius = node.props().number("renderRadius", style.radius());
-        float blurAlpha = node.props().number("renderBlurAlpha", style.blurAlpha());
+        float blurAlpha = node.props().number("renderBlurAlpha", style.blurAlpha()) * lifecycleAlpha;
 
         if (style.shadowColor() != null && style.shadowBlur() > 0.0f) {
             context.renderer().roundedRectSoftShadow(
@@ -272,8 +298,8 @@ public final class UiRenderer {
                     bounds.height(),
                     radius,
                     style.shadowBlur(),
-                    style.shadowInnerAlpha(),
-                    style.shadowColor()
+                    style.shadowInnerAlpha() * lifecycleAlpha,
+                    UiColor.multiplyAlpha(style.shadowColor(), lifecycleAlpha)
             );
         }
 
@@ -300,13 +326,14 @@ public final class UiRenderer {
                             bounds.height(),
                             radius,
                             0xFFFFFFFF,
-                            1.0f,
+                            lifecycleAlpha,
                             blurAlpha,
                             Renderer2D.LiquidGlassPreset.BALANCED
                     ));
         }
 
         if (style.backgroundColor() != null) {
+            int background = UiColor.multiplyAlpha(style.backgroundColor(), lifecycleAlpha);
             if (radius > 0.0f) {
                 context.renderer().roundedRect(
                         bounds.x(),
@@ -314,7 +341,7 @@ public final class UiRenderer {
                         bounds.width(),
                         bounds.height(),
                         radius,
-                        style.backgroundColor()
+                        background
                 );
             } else {
                 context.renderer().quad(
@@ -322,7 +349,7 @@ public final class UiRenderer {
                         bounds.y(),
                         bounds.width(),
                         bounds.height(),
-                        style.backgroundColor()
+                        background
                 );
             }
         }
@@ -335,7 +362,7 @@ public final class UiRenderer {
                     bounds.height(),
                     radius,
                     style.strokeWidth(),
-                    style.strokeColor()
+                    UiColor.multiplyAlpha(style.strokeColor(), lifecycleAlpha)
             );
         }
     }

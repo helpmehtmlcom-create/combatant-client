@@ -30,6 +30,8 @@ public enum BuiltinFontCatalog {
     ONEST_BOLD,
     @FontAsset(value = "onest_light.ttf", family = "OnestLight", prewarm = true, order = 60)
     ONEST_LIGHT,
+    @FontAsset(value = "matrix_sans_print.ttf", family = "MatrixSansPrint", prewarm = true, order = 65)
+    MATRIX_SANS_PRINT,
     @FontAsset(value = "iosevka-medium.ttf", family = "Iosevka", type = FontInfo.Type.Regular, order = 70)
     IOSEVKA_REGULAR,
     @FontAsset(value = "iosevka-mediumitalic.ttf", family = "Iosevka", type = FontInfo.Type.Italic, order = 71)

@@ -140,6 +140,63 @@ public final class UiTextRenderer {
         }
     }
 
+    /**
+     * Draws a compact two-ring phosphor bloom behind the sharp text pass.
+     * The spread intentionally stays small so display text remains legible at HUD scale.
+     */
+    public void renderGlow(TextRenderer fallback,
+                           String text,
+                           float x,
+                           float y,
+                           UiStyle style,
+                           int color,
+                           float width,
+                           float strength,
+                           String backend) {
+        text = RuntimeTextLayout.singleLine(text);
+        float spread = Math.max(0.0f, Math.min(4.0f, width));
+        float power = Math.max(0.0f, Math.min(1.0f, strength));
+        if (text.isEmpty() || spread <= 0.01f || power <= 0.001f || (color >>> 24) == 0) return;
+
+        TextRenderer renderer = resolve(fallback, style, backend);
+        float scale = Math.max(0.01f, style.textScale());
+        String renderText;
+        renderer.begin(scale, false, false);
+        try {
+            renderText = style.ellipsis() && style.maxTextWidth() > 0.0f
+                    ? ellipsize(renderer, text, style.maxTextWidth(), false)
+                    : text;
+            float inner = Math.max(0.45f, spread * 0.48f);
+            int outerColor = multiplyAlpha(color, power * 0.22f);
+            int innerColor = multiplyAlpha(color, power * 0.46f);
+            renderRing(renderer, renderText, x, y, spread, outerColor);
+            renderRing(renderer, renderText, x, y, inner, innerColor);
+            renderer.render(renderText, x, y, new RenderColor(multiplyAlpha(color, power * 0.20f)), false);
+        } finally {
+            renderer.end();
+        }
+    }
+
+    private static void renderRing(TextRenderer renderer, String text, float x, float y, float radius, int color) {
+        if ((color >>> 24) == 0) return;
+        RenderColor glow = new RenderColor(color);
+        float diagonal = radius * 0.70710677f;
+        renderer.render(text, x - radius, y, glow, false);
+        renderer.render(text, x + radius, y, glow, false);
+        renderer.render(text, x, y - radius, glow, false);
+        renderer.render(text, x, y + radius, glow, false);
+        renderer.render(text, x - diagonal, y - diagonal, glow, false);
+        renderer.render(text, x + diagonal, y - diagonal, glow, false);
+        renderer.render(text, x - diagonal, y + diagonal, glow, false);
+        renderer.render(text, x + diagonal, y + diagonal, glow, false);
+    }
+
+    private static int multiplyAlpha(int color, float amount) {
+        int alpha = (color >>> 24) & 0xFF;
+        int scaled = Math.max(0, Math.min(255, Math.round(alpha * Math.max(0.0f, Math.min(1.0f, amount)))));
+        return (color & 0x00FFFFFF) | (scaled << 24);
+    }
+
     public void renderLinearGradient(TextRenderer fallback,
                                      String text,
                                      float x,

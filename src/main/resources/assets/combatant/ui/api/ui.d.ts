@@ -135,6 +135,12 @@ export type UiTextNode = UiNode & {
   ellipsis?: boolean;
   /** Enables clipping mode for scrolling/fading text behavior. */
   marquee?: boolean;
+  /** Color of the compact phosphor bloom rendered behind the sharp glyphs. */
+  textGlowColor?: string | number;
+  /** Bloom spread in logical pixels; intended range is 1.5 to 2.5. */
+  textGlowWidth?: number;
+  /** Bloom strength in the 0..1 range. */
+  textGlowStrength?: number;
 };
 
 /** Image-like node shape. */

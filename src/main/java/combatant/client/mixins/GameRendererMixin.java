@@ -46,6 +46,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.gui.hud.nondraggable.impl.BetterButtons;
 import combatant.client.features.gui.hud.nondraggable.impl.BetterTooltips;
 import combatant.client.addon.AddonRenderPipelineManager;
@@ -442,7 +443,7 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
     @Inject(method = "renderLevel", at = @At("HEAD"))
     private void combatant$beginWorldMsaa(DeltaTracker tickCounter, CallbackInfo ci) {
         CombatantWorldMatrices.reset();
-        if (VisualPreviewRuntime.isActive()) return;
+        if (ClickGuiRenderer.suppressesBackgroundRendering() || VisualPreviewRuntime.isActive()) return;
         IrisCombatantFrameHooks.beginRenderLevel(tickCounter);
         int samples = MainConfig.get().getMsaa3dSamples();
         MsaaWorldTarget.begin(minecraft, samples, combatant$needsResolvedMainDepth());
@@ -450,7 +451,7 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
 
     @Inject(method = "renderLevel", at = @At("RETURN"))
     private void combatant$endIrisFrameHooks(DeltaTracker tickCounter, CallbackInfo ci) {
-        if (VisualPreviewRuntime.isActive()) return;
+        if (ClickGuiRenderer.suppressesBackgroundRendering() || VisualPreviewRuntime.isActive()) return;
         IrisCombatantFrameHooks.endRenderLevel(tickCounter);
     }
 
@@ -470,7 +471,7 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
                                                       GpuBufferSlice fog,
                                                       Vector4f clearColor,
                                                       boolean renderSky) {
-        if (VisualPreviewRuntime.isActive()) return;
+        if (ClickGuiRenderer.suppressesBackgroundRendering() || VisualPreviewRuntime.isActive()) return;
         renderer.render(resources, tickCounter, renderBlockOutline, camera, positionMatrix, fog, clearColor, renderSky);
     }
 
@@ -511,7 +512,7 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
             )
     )
     private void combatant$postProcess(DeltaTracker tickCounter, CallbackInfo ci) {
-        if (VisualPreviewRuntime.isActive()) return;
+        if (ClickGuiRenderer.suppressesBackgroundRendering() || VisualPreviewRuntime.isActive()) return;
         if (IrisRuntime.isShaderpackRendererActive()
                 && IrisCompatibilityGuards.deferIrisFinalizationForSecondHandScene()) {
             return;
@@ -571,7 +572,7 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
 
     @Override
     public void combatant$renderAfterIrisFinalization(DeltaTracker tickCounter) {
-        if (VisualPreviewRuntime.isActive()) return;
+        if (ClickGuiRenderer.suppressesBackgroundRendering() || VisualPreviewRuntime.isActive()) return;
         combatant$renderPreHandPostProcess(tickCounter);
     }
 
@@ -584,7 +585,7 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
             )
     )
     private void combatant$postProcessAfterHand(DeltaTracker tickCounter, CallbackInfo ci) {
-        if (VisualPreviewRuntime.isActive()) return;
+        if (ClickGuiRenderer.suppressesBackgroundRendering() || VisualPreviewRuntime.isActive()) return;
         try (ProfilerPhase.Scope profilerScope = ProfilerPhase.scope("3d:post_after_hand");
              TracyGpuProfiler.Scope gpuScope = TracyGpuProfiler.beginZone("3d:post_after_hand")) {
             if (minecraft != null) {
@@ -743,7 +744,7 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
 
     @Inject(method = "renderItemInHand(Lnet/minecraft/client/renderer/state/level/CameraRenderState;FLorg/joml/Matrix4fc;)V", at = @At("HEAD"), cancellable = true)
     private void freecam$hand(CameraRenderState cameraRenderState, float tickDelta, Matrix4fc positionMatrix, CallbackInfo ci) {
-        if (VisualPreviewRuntime.isActive()) {
+        if (ClickGuiRenderer.suppressesBackgroundRendering() || VisualPreviewRuntime.isActive()) {
             ci.cancel();
             return;
         }

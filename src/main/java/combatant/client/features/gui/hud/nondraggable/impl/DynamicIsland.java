@@ -25,6 +25,7 @@ import combatant.client.config.values.RGBAColorValue;
 import combatant.client.config.values.RGBColorValue;
 import combatant.client.features.gui.clickgui.ClickGuiScreen;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
+import combatant.client.features.gui.clickgui.layout.screen.settings.SettingsGuiPalette;
 import combatant.client.features.gui.hud.AbstractHudElement;
 import combatant.client.features.gui.hud.HudElementRegister;
 import combatant.client.features.gui.hud.HudRenderSpace;
@@ -74,31 +75,19 @@ import static combatant.client.features.theme.Theme.theme;
 @UiScriptAsset("combatant:modules/hud/static/dynamic_island")
 public final class DynamicIsland extends AbstractHudElement {
     public static final DynamicIsland INSTANCE = new DynamicIsland();
-private static final float TOP_Y = 18f;
+    private static final float TOP_Y = 18f;
     private static final float CLOSED_HEIGHT = 35f;
     private static final float EXPANDED_HEIGHT = 98f;
-    private static final float CLOSED_RADIUS = 17f;
-    private static final float EXPANDED_RADIUS = 20f;
+    private static final float CLOSED_CHAMFER = 4.5f;
+    private static final float EXPANDED_CHAMFER = 6.5f;
 
-    private static final float TIME_WIDTH = 74f;
-    private static final float PVP_MIN_WIDTH = 68f;
-    private static final float PVP_MAX_WIDTH = 96f;
+    private static final float TIME_WIDTH = 82f;
+    private static final float PVP_MIN_WIDTH = 84f;
+    private static final float PVP_MAX_WIDTH = 108f;
     private static final float MUSIC_EXPANDED_WIDTH = 338f;
 
-    private static final float CONTEXT_GAP = 7f;
-    private static final float CONTEXT_CHIP_H = 20f;
-    private static final float CONTEXT_CHIP_Y = 7.5f;
-    private static final float TIME_CONTEXT_WIDTH = 57f;
-    private static final float PVP_CONTEXT_WIDTH = 46f;
-
-    private static final float COMPACT_PAD_X = 11f;
-    private static final float COMPACT_GAP = 9f;
-    private static final float COMPACT_ART = 22f;
-    private static final float COMPACT_WAVE_W = 15f;
-    private static final float COMPACT_FADE = 15f;
+    private static final float COMPACT_STATUS_W = 50f;
     private static final float EXPANDED_PAD_X = 13f;
-    private static final float EXPANDED_PAD_Y = 11f;
-    private static final float EXPANDED_ART = 36f;
     private static final float PROGRESS_H = 5f;
     private static final float CONTROL_SIZE = 27f;
     private static final float CONTROL_GAP = 7f;
@@ -114,13 +103,12 @@ private static final float TOP_Y = 18f;
     private static final int BASE_SHADOW = 0xFF000000;
     private static final int BASE_STROKE = 0xFFFFFFFF;
     private static final int STATUS_PVP = 0xFFFF6368;
-    private static final int PROGRESS_BG = 0x2AFFFFFF;
 
     private final Minecraft mc = Minecraft.getInstance();
     private final MediaSessionService mediaService = MediaSessionService.get();
     private final BooleanValue syncTheme = new BooleanValue("dynamic_island_sync_theme", true);
     private final NumberValue<Integer> themeAlpha = new NumberValue<>("dynamic_island_theme_alpha", 200, 0, 255);
-    private final BooleanValue blur = new BooleanValue("dynamic_island_blur", false);
+    private final BooleanValue blur = new BooleanValue("dynamic_island_blur", true);
     private final NumberValue<Integer> blurAlpha = new NumberValue<>("dynamic_island_blur_alpha", 120, 0, 255);
     private final RGBAColorValue bgColor = new RGBAColorValue("dynamic_island_bg", "#E614171D");
     private final RGBColorValue accentColor = new RGBColorValue("dynamic_island_accent", "#6E8DFF");
@@ -134,8 +122,6 @@ private static final float TOP_Y = 18f;
     private float expandAnim;
     private float widthAnim = -1f;
     private float mainWidthAnim = -1f;
-    private float leftContextWidthAnim;
-    private float rightContextWidthAnim;
     private float heightAnim = -1f;
     private boolean expanded;
     private boolean clickGuiShellVisible;
@@ -178,13 +164,15 @@ private static final float TOP_Y = 18f;
     private float progressY;
     private float progressW;
 
-    private int uiFillTop;
-    private int uiFillBottom;
+    private int uiBezelTint;
+    private int uiBezelEdge;
+    private int uiDisplayBg;
+    private int uiDisplayEdge;
+    private int uiPhosphor;
+    private int uiPhosphorDim;
+    private int uiMatrixOff;
     private int uiTextPrimary;
     private int uiTextSecondary;
-    private int uiTextMuted;
-    private int uiAccent;
-    private int uiAccentSoft;
 
     private DynamicIsland() {
         super("dynamic_island", "Dynamic Island", true);
@@ -227,8 +215,9 @@ private static final float TOP_Y = 18f;
         float iconScale = 1.0f - 0.08f * down;
         float iconW = size * iconScale;
         float iconH = Math.max(0.0f, (size - 4.0f) * iconScale);
-        putBounds(patches, key + ":hover", x + haloOffset, y + haloOffset, haloSize, haloSize);
+        putBounds(patches, key + ":hover", x - 1.0f + haloOffset, y - 1.0f + haloOffset, haloSize + 2.0f, haloSize + 2.0f);
         putBounds(patches, key, x + (size - iconW) * 0.5f, y + 4.0f + ((size - 4.0f) - iconH) * 0.5f, iconW, iconH);
+        putBounds(patches, key + ":active", x + size * 0.43f, y + size - 2.5f, size * 0.14f, 1.5f);
     }
 
     private static void putSvgControlBounds(UiBoundsPatchSet patches,
@@ -241,8 +230,9 @@ private static final float TOP_Y = 18f;
         float haloSize = size * (1.0f - 0.055f * down);
         float haloOffset = (size - haloSize) * 0.5f;
         float iconSize = Math.max(0.0f, size * 0.74f * (1.0f - 0.08f * down));
-        putBounds(patches, key + ":hover", x + haloOffset, y + haloOffset, haloSize, haloSize);
+        putBounds(patches, key + ":hover", x - 1.0f + haloOffset, y - 1.0f + haloOffset, haloSize + 2.0f, haloSize + 2.0f);
         putBounds(patches, key, x + (size - iconSize) * 0.5f, y + (size - iconSize) * 0.5f, iconSize, iconSize);
+        putBounds(patches, key + ":active", x + size * 0.43f, y + size - 2.5f, size * 0.14f, 1.5f);
     }
 
     private static void putBounds(UiBoundsPatchSet patches,
@@ -258,29 +248,34 @@ private static final float TOP_Y = 18f;
                                      String key,
                                      String icon,
                                      String iconColor,
-                                     String accentSoft,
+                                     String phosphor,
                                      float expandedAlpha,
                                      float hover,
                                      float press,
-                                     boolean primary) {
+                                     boolean active) {
         patchText(patches, key, icon, scaleHexAlpha(iconColor, expandedAlpha));
-        float interaction = (primary ? 0.13f : 0.0f)
-                + Math.max(0.0f, hover) * 0.23f
-                + Math.max(0.0f, press) * 0.34f;
-        patchShape(patches, key + ":hover", "fill", scaleHexAlpha(accentSoft, interaction * expandedAlpha));
+        float focus = Math.max(0.0f, hover) + Math.max(0.0f, press) * 0.65f;
+        patchShape(patches, key,
+                "textGlowWidth", 1.5f + Math.min(1.0f, focus) * 0.7f,
+                "textGlowStrength", (0.12f + Math.min(1.0f, focus) * 0.24f) * expandedAlpha,
+                "textGlowColor", scaleHexAlpha(phosphor, expandedAlpha));
+        patchShape(patches, key + ":hover", "fill", scaleHexAlpha(phosphor, focus * 0.13f * expandedAlpha));
+        patchShape(patches, key + ":active", "fill", scaleHexAlpha(phosphor, active ? 0.92f * expandedAlpha : 0.0f));
     }
 
     private static void patchSvgControl(UiScriptPatchSet patches,
                                         String key,
                                         String asset,
                                         String iconColor,
-                                        String accentSoft,
+                                        String phosphor,
                                         float expandedAlpha,
                                         float hover,
-                                        float press) {
+                                        float press,
+                                        boolean active) {
         patchImage(patches, key, asset, scaleHexAlpha(iconColor, expandedAlpha));
-        float interaction = Math.max(0.0f, hover) * 0.23f + Math.max(0.0f, press) * 0.34f;
-        patchShape(patches, key + ":hover", "fill", scaleHexAlpha(accentSoft, interaction * expandedAlpha));
+        float focus = Math.max(0.0f, hover) + Math.max(0.0f, press) * 0.65f;
+        patchShape(patches, key + ":hover", "fill", scaleHexAlpha(phosphor, focus * 0.13f * expandedAlpha));
+        patchShape(patches, key + ":active", "fill", scaleHexAlpha(phosphor, active ? 0.92f * expandedAlpha : 0.0f));
     }
 
     private static void patchText(UiScriptPatchSet patches,
@@ -288,6 +283,20 @@ private static final float TOP_Y = 18f;
                                   String text,
                                   String color) {
         patches.text(key, text, color);
+    }
+
+    private static void patchPhosphorText(UiScriptPatchSet patches,
+                                          String key,
+                                          String text,
+                                          String color,
+                                          String glowColor,
+                                          float glowWidth,
+                                          float glowStrength) {
+        patches.text(key, text, color);
+        patches.props(key,
+                "textGlowColor", glowColor,
+                "textGlowWidth", glowWidth,
+                "textGlowStrength", glowStrength);
     }
 
     private static void patchClippedText(UiScriptPatchSet patches,
@@ -348,47 +357,12 @@ private static final float TOP_Y = 18f;
         return value instanceof Number number ? number.floatValue() : fallback;
     }
 
-    private static List<LinkedHashMap<String, Object>> islandPillSources(float width,
-                                                                        float height,
-                                                                        float inset) {
-        float innerWidth = Math.max(1.0f, width - inset * 2.0f);
-        float innerHeight = Math.max(1.0f, height - inset * 2.0f);
-        float radius = innerHeight * 0.5f;
-        float firstX = Math.min(radius, innerWidth * 0.5f);
-        float lastX = Math.max(firstX, innerWidth - radius);
-        ArrayList<LinkedHashMap<String, Object>> sources = new ArrayList<>(4);
-        for (int i = 0; i < 4; i++) {
-            float progress = i / 3.0f;
-            LinkedHashMap<String, Object> source = new LinkedHashMap<>();
-            source.put("x", inset + firstX + (lastX - firstX) * progress);
-            source.put("y", inset + innerHeight * 0.5f);
-            source.put("radius", radius);
-            sources.add(source);
-        }
-        return sources;
-    }
-
     private static float clamp01(float value) {
         return Math.max(0.0f, Math.min(1.0f, value));
     }
 
     private static String scaleHexAlpha(String hex, float amount) {
         return UiScriptColor.alpha(hex, amount);
-    }
-
-    private static int shuffleColor(MediaSessionService.Snapshot snapshot) {
-        if (snapshot == null || !snapshot.supportsShuffle()) {
-            return 0x99000000;
-        }
-        return snapshot.isShuffleActive() ? 0xFFFFFFFF : 0x7AB7BEC8;
-    }
-
-    private static int repeatColor(MediaSessionService.Snapshot snapshot) {
-        if (snapshot == null || !snapshot.supportsRepeat()) {
-            return 0x99000000;
-        }
-        RepeatMode mode = snapshot.repeatMode();
-        return mode == RepeatMode.ALL || mode == RepeatMode.ONE ? 0xFFFFFFFF : 0x7AB7BEC8;
     }
 
     private static String repeatSvg(MediaSessionService.Snapshot snapshot) {
@@ -428,8 +402,9 @@ private static final float TOP_Y = 18f;
         return String.format("%02d:%02d", time.getHour(), time.getMinute());
     }
 
-    private static String formatSecondsOnly(float seconds) {
-        return Math.max(0L, (long) Math.ceil(Math.max(0f, seconds))) + "s";
+    private static String formatPvpTelemetry(float seconds) {
+        long remaining = Math.max(0L, (long) Math.ceil(Math.max(0f, seconds)));
+        return remaining < 100L ? String.format("PVP %02d", remaining) : "PVP " + remaining;
     }
 
     private static String formatShortTime(float seconds) {
@@ -457,6 +432,19 @@ private static final float TOP_Y = 18f;
 
     private static boolean hit(float mx, float my, float x, float y, float w, float h) {
         return mx >= x && mx <= x + w && my >= y && my <= y + h;
+    }
+
+    private int clickGuiCategoryColor(int index) {
+        int[] categoryTints = {
+                0xFF55D6FF,
+                0xFFA98CFF,
+                0xFFFFB85C,
+                0xFF66E3A4,
+                0xFFFF779D,
+                0xFF65A8FF
+        };
+        int tint = categoryTints[Math.floorMod(index, categoryTints.length)];
+        return HudRenderUtil.mixColor(uiPhosphor, tint, 0.38f);
     }
 
     @Override
@@ -647,11 +635,11 @@ private static final float TOP_Y = 18f;
 
         updatePalette();
         TextRenderer fallback = textRenderer != null ? textRenderer : TextRenderer.get();
-        TextRenderer titleRenderer = Fonts.renderer("InterMedium", FontInfo.Type.Regular, fallback);
-        TextRenderer valueRenderer = Fonts.renderer("Inter", FontInfo.Type.Bold, fallback);
-        TextRenderer metaRenderer = Fonts.renderer("Inter", FontInfo.Type.Regular, fallback);
+        TextRenderer titleRenderer = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, fallback);
+        TextRenderer valueRenderer = Fonts.renderer("MatrixSansPrint", FontInfo.Type.Regular, fallback);
+        TextRenderer metaRenderer = Fonts.renderer("Onest", FontInfo.Type.Regular, fallback);
 
-        IslandMetrics metrics = measureMetrics(titleRenderer, valueRenderer, metaRenderer);
+        IslandMetrics metrics = measureMetrics(titleRenderer, valueRenderer);
         float targetMainWidth = switch (currentMode) {
             case TIME -> TIME_WIDTH;
             case PVP -> clamp(metrics.pvpWidth, PVP_MIN_WIDTH, PVP_MAX_WIDTH);
@@ -662,15 +650,8 @@ private static final float TOP_Y = 18f;
                 ? clickGuiState.tabBarH()
                 : AnimationUtility.lerp(CLOSED_HEIGHT, currentMode == IslandMode.MUSIC ? EXPANDED_HEIGHT : CLOSED_HEIGHT, expandAnim);
 
-        boolean musicContext = currentMode == IslandMode.MUSIC;
-        boolean clickGuiContext = currentMode == IslandMode.CLICKGUI;
-        float contextPresence = musicContext ? 1.0f - AnimationUtility.easeOutCubic(expandAnim) : (clickGuiContext ? 1.0f : 0.0f);
-        float targetLeftContextWidth = TIME_CONTEXT_WIDTH * contextPresence;
-        float targetRightContextWidth = PvpState.isActive() ? PVP_CONTEXT_WIDTH * contextPresence : 0.0f;
-
         if (currentMode == IslandMode.CLICKGUI) {
-            // Tab geometry is authoritative and must remain 1:1. The blob owns the
-            // shell transition, but never rescales or reflows the ClickGUI model.
+            // Tab geometry is authoritative and must remain 1:1.
             mainWidthAnim = targetMainWidth;
             heightAnim = targetHeight;
         } else {
@@ -679,28 +660,24 @@ private static final float TOP_Y = 18f;
             heightAnim = heightAnim < 0f ? targetHeight
                     : AnimationUtility.approach(heightAnim, targetHeight, dt, 12f);
         }
-        leftContextWidthAnim = AnimationUtility.approach(leftContextWidthAnim, targetLeftContextWidth, dt, 13f);
-        rightContextWidthAnim = AnimationUtility.approach(rightContextWidthAnim, targetRightContextWidth, dt, 13f);
         mainWidthAnim = AnimationUtility.snap(mainWidthAnim, targetMainWidth, 0.05f);
         heightAnim = AnimationUtility.snap(heightAnim, targetHeight, 0.05f);
-        leftContextWidthAnim = AnimationUtility.snap(leftContextWidthAnim, targetLeftContextWidth, 0.05f);
-        rightContextWidthAnim = AnimationUtility.snap(rightContextWidthAnim, targetRightContextWidth, 0.05f);
 
         float drawMainWidth = mainWidthAnim;
         float drawHeight = heightAnim;
-        float leftOccupied = leftContextWidthAnim > 0.5f ? leftContextWidthAnim + CONTEXT_GAP : 0.0f;
-        float rightOccupied = rightContextWidthAnim > 0.5f ? CONTEXT_GAP + rightContextWidthAnim : 0.0f;
-        float drawWidth = leftOccupied + drawMainWidth + rightOccupied;
+        float drawWidth = drawMainWidth;
         widthAnim = drawWidth;
         float drawX = currentMode == IslandMode.CLICKGUI
-                ? clickGuiState.tabBarX() - leftOccupied
-                : (screenW - drawMainWidth) * 0.5f - leftOccupied;
+                ? clickGuiState.tabBarX()
+                : (screenW - drawMainWidth) * 0.5f;
         float drawY = currentMode == IslandMode.CLICKGUI
                 ? clickGuiState.tabBarY() - (1.0f - AnimationUtility.easeOutCubic(clickGuiState.lifecycle())) * 18.0f
                 : TOP_Y + bossBarOffset(screenH);
-        float mainX = leftOccupied;
+        float mainX = 0.0f;
         float alpha = AnimationUtility.easeOutCubic(visibilityAnim);
-        float radius = currentMode == IslandMode.CLICKGUI ? drawHeight * 0.5f : AnimationUtility.lerp(CLOSED_RADIUS, EXPANDED_RADIUS, expandAnim);
+        float bezelCut = currentMode == IslandMode.CLICKGUI
+                ? CLOSED_CHAMFER
+                : AnimationUtility.lerp(CLOSED_CHAMFER, EXPANDED_CHAMFER, expandAnim);
         int accent = accentFor(currentMode);
 
         setBounds(drawX, drawY, drawWidth, drawHeight);
@@ -709,8 +686,8 @@ private static final float TOP_Y = 18f;
         mainBodyW = drawMainWidth;
         mainBodyH = drawHeight;
 
-        float expandedContentAlpha = currentMode == IslandMode.MUSIC ? AnimationUtility.easeOutCubic(expandAnim) * alpha : 0f;
-        float compactContentAlpha = currentMode == IslandMode.MUSIC ? (1f - AnimationUtility.easeOutCubic(expandAnim)) * alpha : 0f;
+        float expandedContentAlpha = currentMode == IslandMode.MUSIC ? AnimationUtility.easeOutCubic(expandAnim) : 0f;
+        float compactContentAlpha = currentMode == IslandMode.MUSIC ? 1f - AnimationUtility.easeOutCubic(expandAnim) : 0f;
         if (expandedContentAlpha > 0.01f) {
             updateMusicControls(drawX + mainX, drawY, drawMainWidth, valueRenderer);
         } else {
@@ -719,9 +696,8 @@ private static final float TOP_Y = 18f;
         updateInteractionAnimation(isInteractiveScreen(currentScreen), dt);
 
         if (!renderScripted(renderer, fallback, titleRenderer, metaRenderer, ctx, tickDelta, screenW, screenH, drawWidth, drawHeight,
-                drawMainWidth, mainX, leftContextWidthAnim, rightContextWidthAnim,
-                alpha, compactContentAlpha, expandedContentAlpha, radius, accent)) {
-            drawFallback(renderer, drawX + mainX, drawY, drawMainWidth, drawHeight, radius, alpha, accent);
+                drawMainWidth, mainX, alpha, compactContentAlpha, expandedContentAlpha, bezelCut, accent)) {
+            drawFallback(renderer, drawX + mainX, drawY, drawMainWidth, drawHeight, 3.0f, alpha, accent);
         }
     }
 
@@ -737,12 +713,10 @@ private static final float TOP_Y = 18f;
                                    float height,
                                    float mainWidth,
                                    float mainX,
-                                   float leftContextWidth,
-                                   float rightContextWidth,
                                    float alpha,
                                    float compactAlpha,
                                    float expandedAlpha,
-                                   float radius,
+                                   float bezelCut,
                                    int accent) {
         if (moduleHandle.isRuntimeBlocked()) return false;
 
@@ -750,8 +724,8 @@ private static final float TOP_Y = 18f;
         if (loaded == null) return false;
 
         UiScriptProps props = buildProps(
-                screenW, screenH, width, height, mainWidth, mainX, leftContextWidth, rightContextWidth,
-                alpha, compactAlpha, expandedAlpha, radius, accent,
+                screenW, screenH, width, height, mainWidth, mainX,
+                alpha, compactAlpha, expandedAlpha, bezelCut, accent,
                 titleRenderer, metaRenderer
         );
         long treeSignature = islandStructuralSignature(props);
@@ -784,9 +758,10 @@ private static final float TOP_Y = 18f;
         long h = 0xcbf29ce484222325L;
         h = CachedUiScriptRuntime.mix(h, stringProp(props, "mode", ""));
         h = CachedUiScriptRuntime.mix(h, boolProp(props, "blur", false));
-        h = CachedUiScriptRuntime.mix(h, numberProp(props, "blurAlpha", 0.0f));
         h = CachedUiScriptRuntime.mix(h, !stringProp(props, "artworkTexture", "").isEmpty());
         h = CachedUiScriptRuntime.mix(h, "music".equals(stringProp(props, "mode", "")));
+        h = CachedUiScriptRuntime.mix(h, boolProp(props, "pvpActive", false));
+        h = CachedUiScriptRuntime.mix(h, numberProp(props, "expand", 0.0f) > 0.5f);
         h = CachedUiScriptRuntime.mix(h, boolProp(props, "showShuffle", false));
         h = CachedUiScriptRuntime.mix(h, boolProp(props, "showRepeat", false));
         Object clickGuiTabs = props.get("clickGuiTabs");
@@ -801,67 +776,59 @@ private static final float TOP_Y = 18f;
     }
 
     private Map<String, ? extends Map<String, ?>> islandRuntimePatches(UiScriptProps props) {
-        UiScriptPatchSet patches = UiScriptPatchSet.create(48);
+        UiScriptPatchSet patches = UiScriptPatchSet.create(160);
         float compactAlpha = numberProp(props, "compactAlpha", 0.0f);
         float expandedAlpha = numberProp(props, "expandedAlpha", 0.0f);
-        float contextAlpha = numberProp(props, "contextAlpha", compactAlpha);
+        float rootAlpha = numberProp(props, "alpha", 0.0f);
         float width = numberProp(props, "width", 0.0f);
         float mainWidth = numberProp(props, "mainWidth", width);
         float progress = clamp01(numberProp(props, "progress", 0.0f));
         String mode = stringProp(props, "mode", "");
         boolean musicMode = "music".equals(mode);
         boolean clickGuiMode = "clickgui".equals(mode);
-        boolean shellMode = musicMode || clickGuiMode;
         boolean pvpMode = "pvp".equals(mode);
         boolean timeMode = "time".equals(mode);
         String primary = stringProp(props, "textPrimary", "#FFFFFFFF");
         String secondary = stringProp(props, "textSecondary", "#99FFFFFF");
-        String muted = stringProp(props, "textMuted", "#66FFFFFF");
-        String accent = stringProp(props, "accent", "#FFFFFFFF");
-        String accentSoft = stringProp(props, "accentSoft", "#33FFFFFF");
+        String phosphor = stringProp(props, "phosphor", "#FFFFFFFF");
+        String phosphorDim = stringProp(props, "phosphorDim", "#66FFFFFF");
+        String matrixOff = stringProp(props, "matrixOff", "#22FFFFFF");
 
-        if (shellMode) {
-            float shellBlurAlpha = numberProp(props, "blurAlpha", 0.0f) * numberProp(props, "alpha", 0.0f);
-            patchShape(patches, "dynamic-island", "renderRadius", props.get("radius"), "renderBlurAlpha", shellBlurAlpha);
-            patchShape(patches, "shell:blur", "blurAlpha", shellBlurAlpha, "radius", props.get("radius"));
-            patchShape(patches, "shell:shadow", "fill", props.get("shadow"), "radius", props.get("radius"));
-            patchShape(patches, "shell:fill", "startColor", props.get("fillTop"), "endColor", props.get("fillBottom"), "radius", props.get("radius"));
-            patchShape(patches, "shell:tint", "startColor", props.get("tintTop"), "endColor", props.get("tintBottom"), "radius", props.get("radius"));
-            patchShape(patches, "shell:stroke", "stroke", props.get("stroke"), "radius", props.get("radius"));
-            float shellInteraction = numberProp(props, "bodyHover", 0.0f) * 0.07f
-                    + numberProp(props, "bodyPress", 0.0f) * 0.13f;
-            patchShape(patches, "shell:interaction",
-                    "fill", scaleHexAlpha(accentSoft, shellInteraction),
-                    "radius", props.get("radius"));
-        }
+        float shellBlurAlpha = (boolProp(props, "blur", false)
+                ? numberProp(props, "blurAlpha", 0.45f)
+                : 0.14f) * rootAlpha;
+        float displayBlurAlpha = (boolProp(props, "blur", false)
+                ? Math.max(0.42f, numberProp(props, "blurAlpha", 0.45f))
+                : 0.22f) * rootAlpha;
+        patchShape(patches, "shell:shadow", "fill", scaleHexAlpha(stringProp(props, "shadow", "#00000000"), rootAlpha));
+        patchShape(patches, "shell:bezel",
+                "chamfer", props.get("bezelCut"),
+                "fill", scaleHexAlpha(stringProp(props, "bezelTint", "#00000000"), rootAlpha),
+                "stroke", scaleHexAlpha(stringProp(props, "bezelEdge", "#00FFFFFF"), rootAlpha),
+                "glassTint", scaleHexAlpha(stringProp(props, "bezelTint", "#00000000"), rootAlpha),
+                "blurAlpha", shellBlurAlpha);
+        patchShape(patches, "shell:display",
+                "fill", scaleHexAlpha(stringProp(props, "displayBg", "#FF050608"), rootAlpha),
+                "stroke", scaleHexAlpha(stringProp(props, "displayEdge", "#22FFFFFF"), rootAlpha),
+                "blurAlpha", displayBlurAlpha,
+                "blurBrightness", 1.06f);
+        patchShape(patches, "shell:highlight", "fill",
+                scaleHexAlpha(stringProp(props, "bezelEdge", "#00FFFFFF"), 0.64f * rootAlpha));
+        float shellInteraction = numberProp(props, "bodyHover", 0.0f) * 0.025f
+                + numberProp(props, "bodyPress", 0.0f) * 0.045f;
+        patchShape(patches, "shell:interaction", "fill", scaleHexAlpha(phosphor, shellInteraction * rootAlpha));
 
         if (timeMode) {
-            patchShape(patches, "time:box", "fill", props.get("timeFill"), "stroke", props.get("timeStroke"));
-            patchText(patches, "time", stringProp(props, "time", ""), primary);
+            patchPhosphorText(patches, "time", stringProp(props, "time", ""),
+                    scaleHexAlpha(phosphor, rootAlpha), scaleHexAlpha(phosphor, rootAlpha), 2.0f, 0.24f);
         }
 
         if (pvpMode) {
-            patchShape(patches, "pvp:chip", "fill", props.get("pvpFill"), "stroke", props.get("pvpStroke"));
-            patchText(patches, "pvp:timer", stringProp(props, "pvpTimer", "0s"), primary);
-        }
-
-        if (musicMode || clickGuiMode) {
-            float contextBlurAlpha = numberProp(props, "blurAlpha", 0.0f) * contextAlpha;
-            patchShape(patches, "context:time:blur", "blurAlpha", contextBlurAlpha, "radius", 10.0f);
-            patchShape(patches, "context:time:box", "fill", scaleHexAlpha(stringProp(props, "contextFill", "#00000000"), contextAlpha), "stroke", scaleHexAlpha(stringProp(props, "contextStroke", "#00000000"), contextAlpha));
-            patchText(patches, "context:time", stringProp(props, "time", ""), scaleHexAlpha(primary, contextAlpha));
-            float pvpContextAlpha = boolProp(props, "pvpContextVisible", false) ? contextAlpha : 0.0f;
-            patchShape(patches, "context:pvp:blur", "blurAlpha", numberProp(props, "blurAlpha", 0.0f) * pvpContextAlpha, "radius", 10.0f);
-            patchShape(patches, "context:pvp:box", "fill", scaleHexAlpha(stringProp(props, "pvpFill", "#00000000"), pvpContextAlpha), "stroke", scaleHexAlpha(stringProp(props, "pvpStroke", "#00000000"), pvpContextAlpha));
-            patchText(patches, "context:pvp", stringProp(props, "pvpTimer", ""), scaleHexAlpha(primary, pvpContextAlpha));
+            patchPhosphorText(patches, "pvp:timer", stringProp(props, "pvpTelemetry", "PVP 00"),
+                    scaleHexAlpha(phosphor, rootAlpha), scaleHexAlpha(phosphor, rootAlpha), 2.0f, 0.30f);
         }
 
         if (clickGuiMode) {
-            patchShape(patches, "clickgui:selection",
-                    "sources", props.get("clickGuiSelectionSources"),
-                    "startColor", scaleHexAlpha(accentSoft, numberProp(props, "alpha", 0.0f)),
-                    "endColor", scaleHexAlpha(accent, numberProp(props, "alpha", 0.0f) * 0.82f),
-                    "stroke", scaleHexAlpha(accent, numberProp(props, "alpha", 0.0f) * 0.92f));
             Object tabsValue = props.get("clickGuiTabs");
             if (tabsValue instanceof Iterable<?> tabs) {
                 int index = 0;
@@ -870,67 +837,91 @@ private static final float TOP_Y = 18f;
                     String label = String.valueOf(tab.get("label"));
                     boolean active = Boolean.TRUE.equals(tab.get("active"));
                     boolean hovered = Boolean.TRUE.equals(tab.get("hovered"));
-                    float textAlpha = active ? 1.0f : (hovered ? 0.92f : 0.72f);
+                    String categoryColor = tab.get("color") instanceof String color ? color : phosphor;
+                    float textAlpha = active ? 1.0f : (hovered ? 0.86f : 0.58f);
+                    patchShape(patches, "clickgui:wash:" + index,
+                            "startColor", scaleHexAlpha(categoryColor,
+                                    rootAlpha * (active ? 0.24f : (hovered ? 0.10f : 0.0f))),
+                            "endColor", scaleHexAlpha(phosphorDim,
+                                    rootAlpha * (active ? 0.10f : (hovered ? 0.035f : 0.0f))),
+                            "stroke", scaleHexAlpha(categoryColor,
+                                    rootAlpha * (active ? 0.34f : (hovered ? 0.13f : 0.0f))));
                     patchText(patches, "clickgui:tab:" + index, label,
-                            scaleHexAlpha(active ? primary : muted, numberProp(props, "alpha", 0.0f) * textAlpha));
-                    if (index > 0) {
-                        patchShape(patches, "clickgui:separator:" + index,
-                                "fill", scaleHexAlpha(stringProp(props, "stroke", "#00FFFFFF"),
-                                        numberProp(props, "alpha", 0.0f) * 0.72f));
-                    }
+                            scaleHexAlpha(active || hovered ? categoryColor : secondary, rootAlpha * textAlpha));
+                    patchShape(patches, "clickgui:tab:" + index,
+                            "textGlowColor", scaleHexAlpha(categoryColor, rootAlpha),
+                            "textGlowWidth", active || hovered ? 1.7f : 0.0f,
+                            "textGlowStrength", active ? 0.24f : (hovered ? 0.14f : 0.0f));
+                    patchShape(patches, "clickgui:underline:" + index, "fill",
+                            scaleHexAlpha(active || hovered ? categoryColor : matrixOff,
+                                    rootAlpha * (active ? 1.0f : (hovered ? 0.62f : 0.34f))));
                     index++;
                 }
             }
         }
 
         if (musicMode) {
-            patchText(patches, "music:elapsed:compact", stringProp(props, "elapsed", "0:00"), scaleHexAlpha(secondary, compactAlpha));
-            patchText(patches, "music:title:compact", stringProp(props, "title", ""), scaleHexAlpha(primary, compactAlpha));
-            patchClippedText(patches, "music:title:compact", numberProp(props, "titleWidthCompact", 0.0f), Math.max(0.0f, mainWidth - 124.0f), numberProp(props, "titleScrollTime", 0.0f), 1.0f, 18.0f, 15.0f);
-            patchShape(patches, "music:divider", "fill", scaleHexAlpha(muted, 0.4f * compactAlpha));
-            patchShape(patches, "wave:0", "fill", scaleHexAlpha(accent, 0.75f * compactAlpha));
-            patchShape(patches, "wave:1", "fill", scaleHexAlpha(accent, 0.83f * compactAlpha));
-            patchShape(patches, "wave:2", "fill", scaleHexAlpha(accent, 0.91f * compactAlpha));
-            patchImage(patches, "artwork:compact", stringProp(props, "artworkTexture", ""), scaleHexAlpha("#FFFFFFFF", compactAlpha));
-            patchShape(patches, "artwork:compact:fallback", "fill", scaleHexAlpha(accent, 0.92f * compactAlpha), "stroke", scaleHexAlpha("#33FFFFFF", compactAlpha));
+            float compactVisible = rootAlpha * compactAlpha;
+            patchPhosphorText(patches, "music:clock:compact", stringProp(props, "time", "00:00"),
+                    scaleHexAlpha(phosphor, compactVisible), scaleHexAlpha(phosphor, compactVisible), 1.7f, 0.20f);
+            patchText(patches, "music:title:compact", stringProp(props, "title", ""), scaleHexAlpha(primary, compactVisible));
+            float compactTitleW = Math.max(0.0f, mainWidth - 82.0f - (boolProp(props, "pvpActive", false) ? 50.0f : 24.0f) - 7.0f);
+            patchClippedText(patches, "music:title:compact", numberProp(props, "titleWidthCompact", 0.0f), compactTitleW,
+                    numberProp(props, "titleScrollTime", 0.0f), 1.0f, 18.0f, 15.0f);
+            patchShape(patches, "music:divider", "fill", scaleHexAlpha(stringProp(props, "displayEdge", "#00FFFFFF"), compactVisible));
+            if (boolProp(props, "pvpActive", false)) {
+                patchPhosphorText(patches, "music:pvp:compact", stringProp(props, "pvpTelemetry", "PVP 00"),
+                        scaleHexAlpha(phosphor, compactVisible), scaleHexAlpha(phosphor, compactVisible), 1.8f, 0.28f);
+            } else {
+                patchShape(patches, "wave:0", "fill", scaleHexAlpha(phosphor, 0.64f * compactVisible));
+                patchShape(patches, "wave:1", "fill", scaleHexAlpha(phosphor, 0.74f * compactVisible));
+                patchShape(patches, "wave:2", "fill", scaleHexAlpha(phosphor, 0.84f * compactVisible));
+            }
+            patchImage(patches, "artwork:compact", stringProp(props, "artworkTexture", ""), scaleHexAlpha("#FFFFFFFF", compactVisible));
+            patchShape(patches, "artwork:compact:fallback",
+                    "fill", scaleHexAlpha(phosphorDim, 0.72f * compactVisible),
+                    "stroke", scaleHexAlpha(stringProp(props, "displayEdge", "#00FFFFFF"), compactVisible));
         }
 
         if (musicMode) {
-            patchText(patches, "music:title:expanded", stringProp(props, "title", ""), scaleHexAlpha(primary, expandedAlpha));
-            patchClippedText(patches, "music:title:expanded", numberProp(props, "titleWidthExpanded", 0.0f), Math.max(0.0f, mainWidth - 72.0f), numberProp(props, "titleScrollTime", 0.0f), 1.0f, 18.0f, 16.0f);
-            patchText(patches, "music:artist:expanded", stringProp(props, "artist", ""), scaleHexAlpha(secondary, expandedAlpha));
-            patchClippedText(patches, "music:artist:expanded", numberProp(props, "artistWidthExpanded", 0.0f), Math.max(0.0f, mainWidth - 72.0f), numberProp(props, "titleScrollTime", 0.0f), 1.4f, 14.0f, 16.0f);
+            float expandedVisible = rootAlpha * expandedAlpha;
+            patchPhosphorText(patches, "music:label:expanded", "NOW PLAYING",
+                    scaleHexAlpha(phosphorDim, expandedVisible), scaleHexAlpha(phosphor, expandedVisible), 1.5f, 0.14f);
+            patchPhosphorText(patches, "music:elapsed:header", stringProp(props, "elapsed", "0:00"),
+                    scaleHexAlpha(phosphor, expandedVisible), scaleHexAlpha(phosphor, expandedVisible), 1.7f, 0.20f);
+            patchText(patches, "music:title:expanded", stringProp(props, "title", ""), scaleHexAlpha(primary, expandedVisible));
+            patchClippedText(patches, "music:title:expanded", numberProp(props, "titleWidthExpanded", 0.0f), Math.max(0.0f, mainWidth - 63.0f), numberProp(props, "titleScrollTime", 0.0f), 1.0f, 18.0f, 16.0f);
+            patchText(patches, "music:artist:expanded", stringProp(props, "artist", ""), scaleHexAlpha(secondary, expandedVisible));
+            patchClippedText(patches, "music:artist:expanded", numberProp(props, "artistWidthExpanded", 0.0f), Math.max(0.0f, mainWidth - 63.0f), numberProp(props, "titleScrollTime", 0.0f), 1.4f, 14.0f, 16.0f);
             float progressFocus = Math.max(numberProp(props, "progressHover", 0.0f), numberProp(props, "progressPress", 0.0f));
-            patchShape(patches, "music:progress:bg",
-                    "fill", scaleHexAlpha(stringProp(props, "progressBg", "#00FFFFFF"), expandedAlpha * (0.86f + 0.14f * progressFocus)));
-            float progressWidth = Math.max(0.0f, mainWidth - 26.0f);
-            float waveSpan = progressWidth * progress;
-            float waveSpanFactor = clamp01(waveSpan / 24.0f);
-            waveSpanFactor = waveSpanFactor * waveSpanFactor * (3.0f - 2.0f * waveSpanFactor);
-            float waveAmplitude = boolProp(props, "playing", false)
-                    ? (2.15f + 0.30f * progressFocus) * waveSpanFactor
-                    : 0.0f;
-            patchShape(patches, "music:progress:wave",
-                    "x2", waveSpan,
-                    "phase", props.get("wavePhase"),
-                    "amplitude", waveAmplitude,
-                    "strokeWidth", 4.6f + 0.65f * progressFocus,
-                    "startColor", scaleHexAlpha(accent, expandedAlpha),
-                    "endColor", scaleHexAlpha(accent, expandedAlpha));
-            patchShape(patches, "music:progress:thumb",
-                    "fill", scaleHexAlpha(primary, expandedAlpha * (0.94f + 0.06f * progressFocus)));
-            patchText(patches, "music:elapsed:expanded", stringProp(props, "elapsed", "0:00"), scaleHexAlpha(secondary, expandedAlpha));
-            patchText(patches, "music:total:expanded", stringProp(props, "total", "0:00"), scaleHexAlpha(secondary, expandedAlpha));
-            patchImage(patches, "artwork:expanded", stringProp(props, "artworkTexture", ""), scaleHexAlpha("#FFFFFFFF", expandedAlpha));
-            patchShape(patches, "artwork:expanded:fallback", "fill", scaleHexAlpha(accent, 0.92f * expandedAlpha), "stroke", scaleHexAlpha("#33FFFFFF", expandedAlpha));
-            if (boolProp(props, "showShuffle", false)) {
-                patchControl(patches, "music:shuffle", stringProp(props, "iconShuffle", ""), stringProp(props, "shuffleColor", primary), accentSoft, expandedAlpha, numberProp(props, "shuffleHover", 0.0f), numberProp(props, "shufflePress", 0.0f), false);
+            int currentDot = Math.max(0, Math.min(31, Math.round(progress * 31.0f)));
+            for (int i = 0; i < 32; i++) {
+                String dotColor = i == currentDot ? primary : (i <= currentDot ? phosphor : matrixOff);
+                patchShape(patches, "music:progress:dot:" + i, "fill", scaleHexAlpha(dotColor, expandedVisible));
             }
-            patchControl(patches, "music:prev", stringProp(props, "iconPrev", ""), primary, accentSoft, expandedAlpha, numberProp(props, "prevHover", 0.0f), numberProp(props, "prevPress", 0.0f), false);
-            patchControl(patches, "music:play", stringProp(props, "iconPlay", ""), primary, accentSoft, expandedAlpha, numberProp(props, "playHover", 0.0f), numberProp(props, "playPress", 0.0f), true);
-            patchControl(patches, "music:next", stringProp(props, "iconNext", ""), primary, accentSoft, expandedAlpha, numberProp(props, "nextHover", 0.0f), numberProp(props, "nextPress", 0.0f), false);
+            patchShape(patches, "music:progress:focus", "fill",
+                    scaleHexAlpha(phosphor, (0.10f + progressFocus * 0.12f) * expandedVisible));
+            patchPhosphorText(patches, "music:elapsed:expanded", stringProp(props, "elapsed", "0:00"),
+                    scaleHexAlpha(phosphor, expandedVisible), scaleHexAlpha(phosphor, expandedVisible), 1.5f, 0.14f);
+            patchPhosphorText(patches, "music:total:expanded", stringProp(props, "total", "0:00"),
+                    scaleHexAlpha(phosphor, expandedVisible), scaleHexAlpha(phosphor, expandedVisible), 1.5f, 0.14f);
+            patchShape(patches, "artwork:expanded:frame",
+                    "fill", scaleHexAlpha(phosphorDim, 0.16f * expandedVisible),
+                    "stroke", scaleHexAlpha(stringProp(props, "displayEdge", "#00FFFFFF"), expandedVisible));
+            patchImage(patches, "artwork:expanded", stringProp(props, "artworkTexture", ""), scaleHexAlpha("#FFFFFFFF", expandedVisible));
+            patchShape(patches, "artwork:expanded:fallback",
+                    "fill", scaleHexAlpha(phosphorDim, 0.72f * expandedVisible),
+                    "stroke", scaleHexAlpha(stringProp(props, "displayEdge", "#00FFFFFF"), expandedVisible));
+            boolean shuffleActive = boolProp(props, "shuffleActive", false);
+            boolean repeatActive = boolProp(props, "repeatActive", false);
+            if (boolProp(props, "showShuffle", false)) {
+                patchControl(patches, "music:shuffle", stringProp(props, "iconShuffle", ""), stringProp(props, "shuffleColor", secondary), phosphor, expandedVisible, numberProp(props, "shuffleHover", 0.0f), numberProp(props, "shufflePress", 0.0f), shuffleActive);
+            }
+            patchControl(patches, "music:prev", stringProp(props, "iconPrev", ""), primary, phosphor, expandedVisible, numberProp(props, "prevHover", 0.0f), numberProp(props, "prevPress", 0.0f), false);
+            patchControl(patches, "music:play", stringProp(props, "iconPlay", ""), phosphor, phosphor, expandedVisible, numberProp(props, "playHover", 0.0f), numberProp(props, "playPress", 0.0f), true);
+            patchControl(patches, "music:next", stringProp(props, "iconNext", ""), primary, phosphor, expandedVisible, numberProp(props, "nextHover", 0.0f), numberProp(props, "nextPress", 0.0f), false);
             if (boolProp(props, "showRepeat", false)) {
-                patchSvgControl(patches, "music:repeat", stringProp(props, "repeatAsset", "repeat-off"), stringProp(props, "repeatColor", "#99000000"), accentSoft, expandedAlpha, numberProp(props, "repeatHover", 0.0f), numberProp(props, "repeatPress", 0.0f));
+                patchSvgControl(patches, "music:repeat", stringProp(props, "repeatAsset", "repeat-off"), stringProp(props, "repeatColor", secondary), phosphor, expandedVisible, numberProp(props, "repeatHover", 0.0f), numberProp(props, "repeatPress", 0.0f), repeatActive);
             }
         }
 
@@ -938,37 +929,30 @@ private static final float TOP_Y = 18f;
     }
 
     private Map<String, UiBounds> islandBoundsPatches(UiScriptProps props) {
-        UiBoundsPatchSet patches = UiBoundsPatchSet.create(48);
+        UiBoundsPatchSet patches = UiBoundsPatchSet.create(160);
         float rootX = x;
         float rootY = y;
         float width = numberProp(props, "width", 0.0f);
         float height = numberProp(props, "height", 0.0f);
         float mainX = numberProp(props, "mainX", 0.0f);
         float mainWidth = numberProp(props, "mainWidth", width);
-        float leftContextWidth = numberProp(props, "leftContextWidth", 0.0f);
-        float rightContextWidth = numberProp(props, "rightContextWidth", 0.0f);
         String mode = stringProp(props, "mode", "");
         boolean musicMode = "music".equals(mode);
         boolean clickGuiMode = "clickgui".equals(mode);
 
         putBounds(patches, "dynamic-island", rootX, rootY, width, height);
         putBounds(patches, "content", rootX, rootY, width, height);
-
-        if (musicMode || clickGuiMode) {
-            putBounds(patches, "shell:blur", rootX + mainX, rootY, mainWidth, height);
-            putBounds(patches, "shell:shadow", rootX + mainX, rootY, mainWidth, height);
-            putBounds(patches, "shell:fill", rootX + mainX, rootY, mainWidth, height);
-            putBounds(patches, "shell:tint", rootX + mainX, rootY, mainWidth, height);
-            putBounds(patches, "shell:stroke", rootX + mainX, rootY, mainWidth, height);
-            putBounds(patches, "shell:interaction", rootX + mainX, rootY, mainWidth, height);
-        }
+        putBounds(patches, "shell:shadow", rootX + mainX, rootY, mainWidth, height);
+        putBounds(patches, "shell:bezel", rootX + mainX, rootY, mainWidth, height);
+        putBounds(patches, "shell:display", rootX + mainX + 2.25f, rootY + 2.25f,
+                Math.max(1.0f, mainWidth - 4.5f), Math.max(1.0f, height - 4.5f));
+        float bezelCut = numberProp(props, "bezelCut", CLOSED_CHAMFER);
+        putBounds(patches, "shell:highlight", rootX + mainX + bezelCut + 4.0f, rootY + 1.1f,
+                Math.max(1.0f, mainWidth - (bezelCut + 4.0f) * 2.0f), 0.65f);
+        putBounds(patches, "shell:interaction", rootX + mainX + 2.25f, rootY + 2.25f,
+                Math.max(1.0f, mainWidth - 4.5f), Math.max(1.0f, height - 4.5f));
 
         if (clickGuiMode) {
-            float activeX = numberProp(props, "clickGuiActiveX", 0.0f);
-            float activeW = numberProp(props, "clickGuiActiveW", 1.0f);
-            putBounds(patches, "clickgui:selection",
-                    rootX + mainX + activeX + 4.0f, rootY + 4.0f,
-                    Math.max(1.0f, activeW - 8.0f), Math.max(1.0f, height - 8.0f));
             Object tabsValue = props.get("clickGuiTabs");
             if (tabsValue instanceof Iterable<?> tabs) {
                 int index = 0;
@@ -976,40 +960,30 @@ private static final float TOP_Y = 18f;
                     if (!(item instanceof Map<?, ?> tab)) continue;
                     float relativeX = mapNumber(tab, "x", 0.0f);
                     float tabWidth = mapNumber(tab, "width", 1.0f);
-                    if (index > 0) {
-                        putBounds(patches, "clickgui:separator:" + index,
-                                rootX + mainX + relativeX - 0.5f, rootY + 9.0f,
-                                1.0f, Math.max(1.0f, height - 18.0f));
-                    }
+                    putBounds(patches, "clickgui:wash:" + index,
+                            rootX + mainX + relativeX + 2.5f, rootY + 3.0f,
+                            Math.max(1.0f, tabWidth - 5.0f), Math.max(1.0f, height - 6.0f));
                     putBounds(patches, "clickgui:tab:" + index,
-                            rootX + mainX + relativeX, rootY + (height - 16.0f) * 0.5f,
-                            Math.max(1.0f, tabWidth), 16.0f);
+                            rootX + mainX + relativeX, rootY + (height - 17.0f) * 0.5f - 1.0f,
+                            Math.max(1.0f, tabWidth), 17.0f);
+                    boolean active = Boolean.TRUE.equals(tab.get("active"));
+                    putBounds(patches, "clickgui:underline:" + index,
+                            rootX + mainX + relativeX + tabWidth * 0.28f, rootY + height - 6.0f,
+                            Math.max(1.0f, tabWidth * 0.44f), active ? 1.6f : 1.0f);
                     index++;
                 }
             }
-        }
-
-        if (musicMode || clickGuiMode) {
-            putBounds(patches, "context:time:blur", rootX, rootY + CONTEXT_CHIP_Y, leftContextWidth, CONTEXT_CHIP_H);
-            putBounds(patches, "context:time:box", rootX, rootY + CONTEXT_CHIP_Y, leftContextWidth, CONTEXT_CHIP_H);
-            putBounds(patches, "context:time", rootX, rootY + 10.1f, leftContextWidth, 14.0f);
-            float rightX = mainX + mainWidth + CONTEXT_GAP;
-            putBounds(patches, "context:pvp:blur", rootX + rightX, rootY + CONTEXT_CHIP_Y, rightContextWidth, CONTEXT_CHIP_H);
-            putBounds(patches, "context:pvp:box", rootX + rightX, rootY + CONTEXT_CHIP_Y, rightContextWidth, CONTEXT_CHIP_H);
-            putBounds(patches, "context:pvp", rootX + rightX, rootY + 10.1f, rightContextWidth, 14.0f);
         }
 
         if (musicMode) {
             putMusicCompactBounds(patches, rootX, rootY, props, mainX, mainWidth);
             putMusicExpandedBounds(patches, rootX, rootY, props, mainWidth);
         } else if ("pvp".equals(mode)) {
-            float chipW = Math.min(mainWidth - 16.0f, Math.max(42.0f, PVP_CONTEXT_WIDTH + 8.0f));
-            float chipX = mainX + (mainWidth - chipW) * 0.5f;
-            putBounds(patches, "pvp:chip", rootX + chipX, rootY + CONTEXT_CHIP_Y, chipW, CONTEXT_CHIP_H);
-            putBounds(patches, "pvp:timer", rootX + chipX, rootY + 10.1f, chipW, 14.0f);
-        } else {
-            putBounds(patches, "time:box", rootX + mainX, rootY + CONTEXT_CHIP_Y, mainWidth, CONTEXT_CHIP_H);
-            putBounds(patches, "time", rootX + mainX, rootY + 7.8f, mainWidth, 20.0f);
+            putBounds(patches, "pvp:timer", rootX + mainX + 7.0f, rootY + 7.5f,
+                    Math.max(1.0f, mainWidth - 14.0f), 20.0f);
+        } else if (!clickGuiMode) {
+            putBounds(patches, "time", rootX + mainX + 7.0f, rootY + 7.5f,
+                    Math.max(1.0f, mainWidth - 14.0f), 20.0f);
         }
 
         return patches.asMap();
@@ -1021,23 +995,28 @@ private static final float TOP_Y = 18f;
                                        UiScriptProps props,
                                        float mainX,
                                        float width) {
-        putBounds(patches, "music:elapsed:compact", rootX + mainX + 11.0f, rootY + 10.5f, 38.0f, 13.0f);
-        putBounds(patches, "music:divider", rootX + mainX + 49.0f, rootY + 7.0f, 1.0f, 18.0f);
-        putBounds(patches, "artwork:compact", rootX + mainX + 58.0f, rootY + 6.5f, 22.0f, 22.0f);
-        putBounds(patches, "artwork:compact:fallback", rootX + mainX + 58.0f, rootY + 6.5f, 22.0f, 22.0f);
-        float titleW = Math.max(0.0f, width - 124.0f);
-        putBounds(patches, "music:title:compact:clip", rootX + mainX + 89.0f, rootY + 8.5f, titleW, 18.0f);
-        putBounds(patches, "music:title:compact", rootX + mainX + 89.0f, rootY + 8.5f, titleW, 18.0f);
+        putBounds(patches, "music:clock:compact", rootX + mainX + 9.0f, rootY + 10.3f, 40.0f, 14.0f);
+        putBounds(patches, "music:divider", rootX + mainX + 52.0f, rootY + 8.0f, 0.75f, 19.0f);
+        putBounds(patches, "artwork:compact", rootX + mainX + 58.0f, rootY + 8.5f, 18.0f, 18.0f);
+        putBounds(patches, "artwork:compact:fallback", rootX + mainX + 58.0f, rootY + 8.5f, 18.0f, 18.0f);
+        float statusW = boolProp(props, "pvpActive", false) ? 50.0f : 24.0f;
+        float titleW = Math.max(0.0f, width - 82.0f - statusW - 7.0f);
+        putBounds(patches, "music:title:compact:clip", rootX + mainX + 82.0f, rootY + 8.7f, titleW, 18.0f);
+        putBounds(patches, "music:title:compact", rootX + mainX + 82.0f, rootY + 8.7f, titleW, 18.0f);
 
-        float waveX = mainX + width - 26.0f;
+        if (boolProp(props, "pvpActive", false)) {
+            putBounds(patches, "music:pvp:compact", rootX + mainX + width - 55.0f, rootY + 10.5f, 48.0f, 14.0f);
+            return;
+        }
+        float waveX = mainX + width - 19.0f;
         float centerY = 17.5f;
         float t = Util.getMillis() / 1000.0f;
         boolean playing = boolProp(props, "playing", false);
         for (int i = 0; i < 3; i++) {
             float barH = playing
-                    ? (float) (3.0f + Math.abs(Math.sin(t * 5.2f + i * 0.85f)) * 8.0f)
-                    : 4.0f + i;
-            putBounds(patches, "wave:" + i, rootX + waveX + i * 5.0f, rootY + centerY - barH * 0.5f, 2.5f, barH);
+                    ? (float) (3.0f + Math.abs(Math.sin(t * 5.2f + i * 0.85f)) * 7.0f)
+                    : 3.0f + i;
+            putBounds(patches, "wave:" + i, rootX + waveX + i * 4.0f, rootY + centerY - barH * 0.5f, 1.7f, barH);
         }
     }
 
@@ -1047,31 +1026,34 @@ private static final float TOP_Y = 18f;
                                         UiScriptProps props,
                                         float width) {
         float mainX = numberProp(props, "mainX", 0.0f);
-        float progressW = Math.max(0.0f, width - 26.0f);
-        putBounds(patches, "artwork:expanded", rootX + mainX + 13.0f, rootY + 11.0f, 36.0f, 36.0f);
-        putBounds(patches, "artwork:expanded:fallback", rootX + mainX + 13.0f, rootY + 11.0f, 36.0f, 36.0f);
-        float titleW = Math.max(0.0f, width - 72.0f);
-        putBounds(patches, "music:title:expanded:clip", rootX + mainX + 59.0f, rootY + 11.0f, titleW, 16.0f);
-        putBounds(patches, "music:title:expanded", rootX + mainX + 59.0f, rootY + 11.0f, titleW, 16.0f);
-        putBounds(patches, "music:artist:expanded:clip", rootX + mainX + 59.0f, rootY + 28.0f, titleW, 14.0f);
-        putBounds(patches, "music:artist:expanded", rootX + mainX + 59.0f, rootY + 28.0f, titleW, 14.0f);
+        float progressW = Math.max(1.0f, width - 26.0f);
+        putBounds(patches, "music:label:expanded", rootX + mainX + 13.0f, rootY + 7.0f, 90.0f, 12.0f);
+        putBounds(patches, "music:elapsed:header", rootX + mainX + width - 61.0f, rootY + 7.0f, 48.0f, 12.0f);
+        putBounds(patches, "artwork:expanded:frame", rootX + mainX + 12.0f, rootY + 23.0f, 30.0f, 30.0f);
+        putBounds(patches, "artwork:expanded", rootX + mainX + 14.0f, rootY + 25.0f, 26.0f, 26.0f);
+        putBounds(patches, "artwork:expanded:fallback", rootX + mainX + 14.0f, rootY + 25.0f, 26.0f, 26.0f);
+        float titleW = Math.max(0.0f, width - 63.0f);
+        putBounds(patches, "music:title:expanded:clip", rootX + mainX + 50.0f, rootY + 22.5f, titleW, 16.0f);
+        putBounds(patches, "music:title:expanded", rootX + mainX + 50.0f, rootY + 22.5f, titleW, 16.0f);
+        putBounds(patches, "music:artist:expanded:clip", rootX + mainX + 50.0f, rootY + 38.0f, titleW, 14.0f);
+        putBounds(patches, "music:artist:expanded", rootX + mainX + 50.0f, rootY + 38.0f, titleW, 14.0f);
         float progressFocus = Math.max(numberProp(props, "progressHover", 0.0f), numberProp(props, "progressPress", 0.0f));
         float progress = clamp01(numberProp(props, "progress", 0.0f));
-        float activeW = progressW * progress;
-        float inactiveH = 3.0f + 0.75f * progressFocus;
-        float inactiveY = 54.5f - inactiveH * 0.5f;
-        putBounds(patches, "music:progress:bg",
-                rootX + mainX + 13.0f + activeW,
-                rootY + inactiveY,
-                Math.max(0.0f, progressW - activeW),
-                inactiveH);
-        putBounds(patches, "music:progress:wave", rootX + mainX + 13.0f, rootY + 48.0f, progressW, 13.0f);
-        float thumbSize = 7.5f + 1.5f * progressFocus;
-        float thumbCenterX = rootX + mainX + 13.0f + activeW;
-        float thumbCenterY = rootY + 54.5f;
-        putBounds(patches, "music:progress:thumb", thumbCenterX - thumbSize * 0.5f, thumbCenterY - thumbSize * 0.5f, thumbSize, thumbSize);
-        putBounds(patches, "music:elapsed:expanded", rootX + mainX + 13.0f, rootY + 65.0f, 44.0f, 14.0f);
-        putBounds(patches, "music:total:expanded", rootX + mainX + width - 57.0f, rootY + 65.0f, 44.0f, 14.0f);
+        int currentDot = Math.max(0, Math.min(31, Math.round(progress * 31.0f)));
+        for (int i = 0; i < 32; i++) {
+            boolean current = i == currentDot;
+            boolean played = i <= currentDot;
+            float dotSize = current ? 3.2f + progressFocus * 0.8f : (played ? 2.05f : 1.45f);
+            float cx = rootX + mainX + 13.0f + progressW * i / 31.0f;
+            putBounds(patches, "music:progress:dot:" + i,
+                    cx - dotSize * 0.5f, rootY + 57.0f - dotSize * 0.5f, dotSize, dotSize);
+        }
+        float focusSize = 7.0f + progressFocus * 2.0f;
+        float focusX = rootX + mainX + 13.0f + progressW * progress;
+        putBounds(patches, "music:progress:focus", focusX - focusSize * 0.5f,
+                rootY + 57.0f - focusSize * 0.5f, focusSize, focusSize);
+        putBounds(patches, "music:elapsed:expanded", rootX + mainX + 13.0f, rootY + 63.0f, 44.0f, 12.0f);
+        putBounds(patches, "music:total:expanded", rootX + mainX + width - 57.0f, rootY + 63.0f, 44.0f, 12.0f);
 
         if (boolProp(props, "showShuffle", false)) {
             putControlBounds(patches, "music:shuffle", shuffleX, shuffleY, controlSize, numberProp(props, "shufflePress", 0.0f));
@@ -1085,21 +1067,19 @@ private static final float TOP_Y = 18f;
     }
 
     private UiScriptProps buildProps(int screenW,
-                                                                int screenH,
-                                                                float width,
-                                                                float height,
-                                                                float mainWidth,
-                                                                float mainX,
-                                                                float leftContextWidth,
-                                                                float rightContextWidth,
-                                                                float alpha,
-                                                                float compactAlpha,
-                                                                float expandedAlpha,
-                                                                float radius,
-                                                                int accent,
-                                                                TextRenderer titleRenderer,
-                                                                TextRenderer metaRenderer) {
-        UiScriptProps props = UiScriptProps.create(80);
+                                     int screenH,
+                                     float width,
+                                     float height,
+                                     float mainWidth,
+                                     float mainX,
+                                     float alpha,
+                                     float compactAlpha,
+                                     float expandedAlpha,
+                                     float bezelCut,
+                                     int accent,
+                                     TextRenderer titleRenderer,
+                                     TextRenderer metaRenderer) {
+        UiScriptProps props = UiScriptProps.create(72);
         String title = currentSnapshot != null ? currentSnapshot.title() : "";
         String artist = currentSnapshot != null ? currentSnapshot.artist() : "";
         long duration = currentSnapshot != null ? currentSnapshot.durationSeconds() : 0L;
@@ -1109,12 +1089,8 @@ private static final float TOP_Y = 18f;
         props.put("height", height);
         props.put("mainWidth", mainWidth);
         props.put("mainX", mainX);
-        props.put("leftContextWidth", leftContextWidth);
-        props.put("rightContextWidth", rightContextWidth);
-        props.put("contextGap", CONTEXT_GAP);
-        boolean pvpContextVisible = (currentMode == IslandMode.MUSIC || currentMode == IslandMode.CLICKGUI) && PvpState.isActive() && rightContextWidth > 0.5f;
-        props.put("pvpContextVisible", pvpContextVisible);
-        props.put("contextAlpha", currentMode == IslandMode.MUSIC ? compactAlpha : (currentMode == IslandMode.CLICKGUI ? alpha : 0.0f));
+        boolean pvpActive = PvpState.isActive();
+        props.put("pvpActive", pvpActive);
         props.put("mode", currentMode.name().toLowerCase());
         props.put("alpha", alpha);
         props.put("compactAlpha", compactAlpha);
@@ -1123,18 +1099,12 @@ private static final float TOP_Y = 18f;
         props.put("expanded", expanded);
         props.put("blur", blur.get());
         props.put("blurAlpha", blurAlpha.get() / 255.0f);
-        props.put("radius", radius);
+        props.put("bezelCut", bezelCut);
         props.put("time", formatClock(LocalTime.now()));
-        props.put("pvpTimer", pvpContextVisible || currentMode == IslandMode.PVP ? formatSecondsOnly(predictedPvpSeconds()) : "");
+        props.put("pvpTelemetry", pvpActive ? formatPvpTelemetry(predictedPvpSeconds()) : "");
         ClickGuiRenderer.ClickGuiIslandState clickGuiState = ClickGuiRenderer.islandState();
-        props.put("clickGuiLabel", clickGuiState.activeLabel());
-        props.put("clickGuiTabCount", clickGuiState.tabCount());
-        props.put("clickGuiPicker", clickGuiState.pickerActive());
-        props.put("clickGuiActiveX", clickGuiState.activeX() - clickGuiState.tabBarX());
-        props.put("clickGuiActiveW", clickGuiState.activeW());
-        props.put("clickGuiSelectionSources", islandPillSources(clickGuiState.activeW() - 8.0f,
-                clickGuiState.tabBarH() - 8.0f, 0.0f));
         ArrayList<LinkedHashMap<String, Object>> clickGuiTabs = new ArrayList<>(clickGuiState.tabs().size());
+        int clickGuiTabIndex = 0;
         for (ClickGuiRenderer.ClickGuiIslandTab tab : clickGuiState.tabs()) {
             LinkedHashMap<String, Object> item = new LinkedHashMap<>();
             item.put("label", tab.label());
@@ -1142,6 +1112,7 @@ private static final float TOP_Y = 18f;
             item.put("width", tab.width());
             item.put("active", tab.active());
             item.put("hovered", tab.hovered());
+            item.put("color", hex(clickGuiCategoryColor(clickGuiTabIndex++)));
             clickGuiTabs.add(item);
         }
         props.put("clickGuiTabs", clickGuiTabs);
@@ -1167,29 +1138,29 @@ private static final float TOP_Y = 18f;
         props.put("supportsSeek", currentSnapshot != null && currentSnapshot.supportsSeek());
         Identifier artwork = currentSnapshot != null ? currentSnapshot.artworkTexture() : null;
         props.put("artworkTexture", artwork != null ? artwork.toString() : "");
-        props.put("fillTop", hex(HudRenderUtil.scaleAlpha(uiFillTop, 0.88f * alpha)));
-        props.put("fillBottom", hex(HudRenderUtil.scaleAlpha(uiFillBottom, 0.88f * alpha)));
-        props.put("tintTop", hex(HudRenderUtil.scaleAlpha(HudRenderUtil.mixColor(accent, 0xFFFFFFFF, 0.10f), 0.16f * alpha)));
-        props.put("tintBottom", hex(HudRenderUtil.scaleAlpha(HudRenderUtil.mixColor(accent, 0xFF000000, 0.25f), 0.112f * alpha)));
         Screen propsScreen = ClientScreen.current();
         boolean suppressPauseShadow = propsScreen != null && propsScreen.isPauseScreen();
         props.put("shadow", suppressPauseShadow
                 ? "#00000000"
-                : hex(HudRenderUtil.scaleAlpha(BASE_SHADOW, 0.28f * alpha)));
-        props.put("stroke", hex(HudRenderUtil.scaleAlpha(HudRenderUtil.mixColor(syncTheme.get() ? theme().windowStroke() : BASE_STROKE, accent, 0.18f), 0.18f * alpha)));
-        props.put("highlight", hex(HudRenderUtil.scaleAlpha(0xFFFFFFFF, 0.08f * alpha)));
-        props.put("contextFill", hex(HudRenderUtil.scaleAlpha(0xFF000000, 0.36f * alpha)));
-        props.put("contextStroke", hex(HudRenderUtil.scaleAlpha(0xFFFFFFFF, 0.10f * alpha)));
-        props.put("timeFill", hex(HudRenderUtil.scaleAlpha(0xFF000000, 0.48f * alpha)));
-        props.put("timeStroke", hex(HudRenderUtil.scaleAlpha(0xFFFFFFFF, 0.10f * alpha)));
-        props.put("pvpFill", hex(HudRenderUtil.scaleAlpha(STATUS_PVP, 0.86f * alpha)));
-        props.put("pvpStroke", hex(HudRenderUtil.scaleAlpha(HudRenderUtil.mixColor(STATUS_PVP, 0xFFFFFFFF, 0.32f), 0.34f * alpha)));
-        props.put("accent", hex(HudRenderUtil.scaleAlpha(accent, alpha)));
-        props.put("accentSoft", hex(HudRenderUtil.scaleAlpha(uiAccentSoft, alpha)));
-        props.put("textPrimary", hex(HudRenderUtil.scaleAlpha(uiTextPrimary, alpha)));
-        props.put("textSecondary", hex(HudRenderUtil.scaleAlpha(uiTextSecondary, alpha)));
-        props.put("textMuted", hex(HudRenderUtil.scaleAlpha(uiTextMuted, alpha)));
-        props.put("progressBg", hex(HudRenderUtil.scaleAlpha(PROGRESS_BG, expandedAlpha)));
+                : hex(HudRenderUtil.scaleAlpha(BASE_SHADOW, 0.28f)));
+        int modePhosphor = currentMode == IslandMode.PVP
+                ? HudRenderUtil.mixColor(accent, 0xFFFFFFFF, 0.12f)
+                : uiPhosphor;
+        int modePhosphorDim = currentMode == IslandMode.PVP
+                ? HudRenderUtil.mixColor(modePhosphor, uiDisplayBg, 0.48f)
+                : uiPhosphorDim;
+        int modeMatrixOff = currentMode == IslandMode.PVP
+                ? HudRenderUtil.mixColor(modePhosphor, uiDisplayBg, 0.86f)
+                : uiMatrixOff;
+        props.put("bezelTint", hex(uiBezelTint));
+        props.put("bezelEdge", hex(uiBezelEdge));
+        props.put("displayBg", hex(uiDisplayBg));
+        props.put("displayEdge", hex(uiDisplayEdge));
+        props.put("phosphor", hex(modePhosphor));
+        props.put("phosphorDim", hex(modePhosphorDim));
+        props.put("matrixOff", hex(modeMatrixOff));
+        props.put("textPrimary", hex(uiTextPrimary));
+        props.put("textSecondary", hex(uiTextSecondary));
         props.put("shuffleX", shuffleX - x);
         props.put("shuffleY", shuffleY - y);
         props.put("prevX", prevX - x);
@@ -1217,8 +1188,14 @@ private static final float TOP_Y = 18f;
         props.put("iconPrev", iconString(ICON_PREV));
         props.put("iconPlay", iconString(currentSnapshot != null && currentSnapshot.isPlaying() ? ICON_PAUSE : ICON_PLAY));
         props.put("iconNext", iconString(ICON_NEXT));
-        props.put("shuffleColor", hex(shuffleColor(currentSnapshot)));
-        props.put("repeatColor", hex(repeatColor(currentSnapshot)));
+        boolean shuffleActive = currentSnapshot != null && currentSnapshot.supportsShuffle() && currentSnapshot.isShuffleActive();
+        RepeatMode repeatMode = currentSnapshot != null ? currentSnapshot.repeatMode() : RepeatMode.OFF;
+        boolean repeatActive = currentSnapshot != null && currentSnapshot.supportsRepeat()
+                && (repeatMode == RepeatMode.ALL || repeatMode == RepeatMode.ONE);
+        props.put("shuffleActive", shuffleActive);
+        props.put("repeatActive", repeatActive);
+        props.put("shuffleColor", hex(shuffleActive ? modePhosphor : uiTextSecondary));
+        props.put("repeatColor", hex(repeatActive ? modePhosphor : uiTextSecondary));
         props.put("repeatAsset", repeatSvg(currentSnapshot));
         return props;
     }
@@ -1255,16 +1232,14 @@ private static final float TOP_Y = 18f;
     }
 
     private IslandMetrics measureMetrics(TextRenderer titleRenderer,
-                                         TextRenderer valueRenderer,
-                                         TextRenderer metaRenderer) {
-        float pvpTimerW = reservedTimeWidth(valueRenderer, formatSecondsOnly(predictedPvpSeconds()), 0.84f);
-        float pvpWidth = 24f + pvpTimerW;
+                                         TextRenderer valueRenderer) {
+        float pvpTimerW = reservedTimeWidth(valueRenderer, formatPvpTelemetry(predictedPvpSeconds()), 0.94f);
+        float pvpWidth = 20f + pvpTimerW;
 
         String title = currentSnapshot != null ? currentSnapshot.title() : "";
         float titleW = measureWidth(titleRenderer, title, 0.82f);
-        String compactElapsed = formatShortTime(currentSnapshot != null ? currentSnapshot.predictedPositionSeconds() : 0L);
-        float elapsedW = reservedTimeWidth(valueRenderer, compactElapsed, 0.72f);
-        float musicWidth = 10f + elapsedW + 18f + COMPACT_ART + COMPACT_GAP + titleW + COMPACT_GAP + COMPACT_WAVE_W + 10f;
+        float statusWidth = PvpState.isActive() ? COMPACT_STATUS_W : 24.0f;
+        float musicWidth = 82.0f + titleW + statusWidth + 14.0f;
         return new IslandMetrics(pvpWidth, clamp(musicWidth, 226f, 308f));
     }
 
@@ -1361,28 +1336,35 @@ private static final float TOP_Y = 18f;
                     HudRenderUtil.scaleAlpha(BASE_SHADOW, 0.28f * alpha));
         }
         renderer.roundedRect(drawX, drawY, drawWidth, drawHeight, radius, 1.1f,
-                HudRenderUtil.scaleAlpha(uiFillTop, 0.88f * alpha));
+                HudRenderUtil.scaleAlpha(uiBezelTint, alpha));
         renderer.roundedRectStroke(drawX, drawY, drawWidth, drawHeight, radius, 1.1f, 1f,
-                HudRenderUtil.scaleAlpha(HudRenderUtil.mixColor(BASE_STROKE, accent, 0.18f), 0.18f * alpha));
+                HudRenderUtil.scaleAlpha(uiBezelEdge, alpha));
+        renderer.roundedRect(drawX + 2.25f, drawY + 2.25f,
+                Math.max(1.0f, drawWidth - 4.5f), Math.max(1.0f, drawHeight - 4.5f), 2.0f,
+                HudRenderUtil.scaleAlpha(uiDisplayBg, alpha));
         if (currentMode == IslandMode.CLICKGUI) {
             ClickGuiRenderer.ClickGuiIslandState state = ClickGuiRenderer.islandState();
-            float activeX = drawX + state.activeX() - state.tabBarX();
-            float activeW = state.activeW();
-            renderer.roundedRect(activeX + 4.0f, drawY + 4.0f,
-                    Math.max(1.0f, activeW - 8.0f), Math.max(1.0f, drawHeight - 8.0f),
-                    Math.max(1.0f, (drawHeight - 8.0f) * 0.5f),
-                    HudRenderUtil.scaleAlpha(uiAccentSoft, alpha));
             TextRenderer tabFont = ClickGuiRenderer.getOnestBold();
+            int index = 0;
             for (ClickGuiRenderer.ClickGuiIslandTab tab : state.tabs()) {
                 float tabX = drawX + tab.relativeX();
                 float tabW = tab.width();
                 float textSize = 12.0f;
                 float textWidth = ClickGuiRenderer.textWidth(tabFont, tab.label(), textSize);
-                int color = tab.active() ? uiTextPrimary : uiTextMuted;
+                int categoryColor = clickGuiCategoryColor(index++);
+                if (tab.active() || tab.hovered()) {
+                    renderer.roundedRect(tabX + 2.5f, drawY + 3.0f,
+                            Math.max(1.0f, tabW - 5.0f), Math.max(1.0f, drawHeight - 6.0f), 2.2f,
+                            HudRenderUtil.scaleAlpha(categoryColor, alpha * (tab.active() ? 0.18f : 0.08f)));
+                }
+                int color = tab.active() || tab.hovered() ? categoryColor : uiTextSecondary;
                 ClickGuiRenderer.drawText(tabFont, tab.label(),
                         tabX + (tabW - textWidth) * 0.5f,
                         drawY + (drawHeight - textSize) * 0.5f,
                         textSize, HudRenderUtil.scaleAlpha(color, alpha), false);
+                renderer.roundedRect(tabX + tabW * 0.28f, drawY + drawHeight - 6.0f,
+                        Math.max(1.0f, tabW * 0.44f), tab.active() ? 1.6f : 1.0f, 0.8f,
+                        HudRenderUtil.scaleAlpha(tab.active() || tab.hovered() ? categoryColor : uiMatrixOff, alpha));
             }
         }
     }
@@ -1470,25 +1452,37 @@ private static final float TOP_Y = 18f;
 
     private void updatePalette() {
         if (syncTheme.get()) {
-            int windowBg = HudRenderUtil.setAlpha(theme().windowBg(), themeAlpha.get());
-            uiFillTop = HudRenderUtil.mixRgb(windowBg, 0xFFFFFFFF, 0.04f);
-            uiFillBottom = HudRenderUtil.mixRgb(windowBg, 0xFF000000, 0.08f);
+            SettingsGuiPalette palette = SettingsGuiPalette.current();
+            int accent = theme().accent();
+            uiBezelTint = HudRenderUtil.setAlpha(
+                    HudRenderUtil.mixColor(palette.workspaceGlassTint(), accent, 0.08f),
+                    Math.min(themeAlpha.get(), 142));
+            uiBezelEdge = HudRenderUtil.scaleAlpha(
+                    HudRenderUtil.mixColor(palette.glassEdgeStrong(), accent, 0.16f), 0.72f);
+            uiDisplayBg = HudRenderUtil.setAlpha(
+                    HudRenderUtil.mixRgb(palette.navigationPlaneBottom(), 0xFF000000, 0.56f), 124);
+            uiDisplayEdge = HudRenderUtil.scaleAlpha(
+                    HudRenderUtil.mixColor(palette.glassEdgeSoft(), accent, 0.08f), 0.52f);
+            uiPhosphor = HudRenderUtil.mixColor(accent, 0xFFFFFFFF, 0.22f);
+            uiPhosphorDim = HudRenderUtil.setAlpha(HudRenderUtil.mixColor(uiPhosphor, uiDisplayBg, 0.48f), 255);
+            uiMatrixOff = HudRenderUtil.setAlpha(HudRenderUtil.mixColor(uiPhosphor, uiDisplayBg, 0.86f), 255);
             uiTextPrimary = theme().textPrimary();
             uiTextSecondary = theme().textMuted();
-            uiTextMuted = HudRenderUtil.mixColor(theme().textMuted(), windowBg, 0.18f);
-            uiAccent = theme().accent();
-            uiAccentSoft = theme().accentSoft();
             return;
         }
 
         int baseBg = bgColor.getArgb();
-        uiFillTop = HudRenderUtil.mixRgb(baseBg, 0xFFFFFFFF, 0.04f);
-        uiFillBottom = HudRenderUtil.mixRgb(baseBg, 0xFF000000, 0.08f);
+        int accent = accentColor.getArgb() | 0xFF000000;
+        uiBezelTint = HudRenderUtil.setAlpha(HudRenderUtil.mixColor(baseBg, accent, 0.08f),
+                Math.min((baseBg >>> 24) & 0xFF, 150));
+        uiBezelEdge = HudRenderUtil.scaleAlpha(HudRenderUtil.mixColor(BASE_STROKE, accent, 0.20f), 0.72f);
+        uiDisplayBg = HudRenderUtil.setAlpha(HudRenderUtil.mixRgb(baseBg, 0xFF000000, 0.60f), 132);
+        uiDisplayEdge = HudRenderUtil.scaleAlpha(HudRenderUtil.mixColor(BASE_STROKE, accent, 0.10f), 0.44f);
+        uiPhosphor = HudRenderUtil.mixColor(accent, 0xFFFFFFFF, 0.22f);
+        uiPhosphorDim = HudRenderUtil.setAlpha(HudRenderUtil.mixColor(uiPhosphor, uiDisplayBg, 0.48f), 255);
+        uiMatrixOff = HudRenderUtil.setAlpha(HudRenderUtil.mixColor(uiPhosphor, uiDisplayBg, 0.86f), 255);
         uiTextPrimary = textColor.getArgb() | 0xFF000000;
         uiTextSecondary = mutedColor.getArgb() | 0xFF000000;
-        uiTextMuted = HudRenderUtil.mixColor(uiTextSecondary, baseBg, 0.16f);
-        uiAccent = accentColor.getArgb() | 0xFF000000;
-        uiAccentSoft = HudRenderUtil.mixColor(uiAccent, baseBg, 0.40f);
     }
 
     private float predictedPvpSeconds() {

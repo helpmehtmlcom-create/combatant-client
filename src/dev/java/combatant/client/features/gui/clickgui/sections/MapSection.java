@@ -9,6 +9,8 @@ package combatant.client.features.gui.clickgui.sections;
 
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.render.engine.renderer.Renderer2D;
+import combatant.client.render.engine.renderer.ui.UiBlurResources;
+import combatant.client.render.engine.renderer.ui.UiDeferredScheduler;
 import combatant.client.render.engine.text.FontInfo;
 import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
@@ -38,6 +40,11 @@ public final class MapSection implements ClickGuiSection {
     public void render(float mouseX, float mouseY) {
         Renderer2D renderer = ClickGuiRenderer.currentRenderer();
         if (renderer == null) return;
+
+        // The map background is an auto-flushed batch. Request the underlay before emitting it,
+        // otherwise large UI-underlay glass surfaces only see later map tiles and sample transparent
+        // black wherever no tile draw covered the dedicated target.
+        UiBlurResources.requestUiUnderlay(UiDeferredScheduler.layerForCurrentPhase(false));
         renderer.quad(x, y, width, height, 0xFF090B0E);
 
         if (fatalFailure) {
