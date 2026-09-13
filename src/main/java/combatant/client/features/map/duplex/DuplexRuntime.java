@@ -44,7 +44,19 @@ public final class DuplexRuntime implements AutoCloseable {
     }
 
     public DuplexState state() { return state; }
-    public Map<UUID, DuplexEstimate> estimates() { return estimates.get(); }
+    public Map<UUID, DuplexEstimate> estimates() {
+        Map<UUID, DuplexEstimate> current = estimates.get();
+        if (current.isEmpty()) return current;
+        long now = System.currentTimeMillis();
+        Map<UUID, DuplexEstimate> filtered = new LinkedHashMap<>();
+        for (Map.Entry<UUID, DuplexEstimate> entry : current.entrySet()) {
+            DuplexEstimate estimate = entry.getValue();
+            if (estimate != null && now - estimate.observedAtMs() <= config.estimateStaleMs()) {
+                filtered.put(entry.getKey(), estimate);
+            }
+        }
+        return filtered.size() == current.size() ? current : Map.copyOf(filtered);
+    }
     public UUID senderId() { return senderId; }
 
     public synchronized void start(String serverFingerprint, String worldFingerprint) {
@@ -77,14 +89,17 @@ public final class DuplexRuntime implements AutoCloseable {
         if (peerId != null && now - lastPeerAt > Math.max(5000L, config.heartbeatMs() * 3L)) {
             state = DuplexState.DEGRADED;
         }
+        pruneEstimates(now);
     }
 
     public boolean publishBearing(DuplexBearingSample sample) {
-        if (sample == null || transport == null) return false;
+        if (sample == null || sample.targetUuid() == null || transport == null) return false;
         localBearings.put(sample.targetUuid(), sample);
-        boolean sent = send(DuplexMessageType.BEARING_SAMPLE, DuplexPayloads.bearing(sample));
         tryPair(sample.targetUuid());
-        return sent;
+        // During handshake the peer intentionally ignores bearing frames. Returning false keeps
+        // the coordinator's revision dirty so the same immutable sample is retried once READY.
+        if (state != DuplexState.READY) return false;
+        return send(DuplexMessageType.BEARING_SAMPLE, DuplexPayloads.bearing(sample));
     }
 
     private void sendHello() {
@@ -178,6 +193,18 @@ public final class DuplexRuntime implements AutoCloseable {
             Map<UUID, DuplexEstimate> current = estimates.get();
             Map<UUID, DuplexEstimate> next = new LinkedHashMap<>(current);
             next.put(target, estimate);
+            if (estimates.compareAndSet(current, Map.copyOf(next))) return;
+        }
+    }
+
+    private void pruneEstimates(long now) {
+        while (true) {
+            Map<UUID, DuplexEstimate> current = estimates.get();
+            if (current.isEmpty()) return;
+            Map<UUID, DuplexEstimate> next = new LinkedHashMap<>(current);
+            next.entrySet().removeIf(entry -> entry.getValue() == null
+                    || now - entry.getValue().observedAtMs() > config.estimateStaleMs());
+            if (next.size() == current.size()) return;
             if (estimates.compareAndSet(current, Map.copyOf(next))) return;
         }
     }

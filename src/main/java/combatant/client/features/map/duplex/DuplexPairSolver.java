@@ -30,7 +30,15 @@ public final class DuplexPairSolver {
         double baseline=Math.hypot(rx,rz);
         double uncertainty=Math.max(0.25, baseline*Math.tan(Math.max(1.0e-6,bearingNoiseRadians))
                 / Math.max(Math.sin(crossing),1.0e-6));
-        return new DuplexEstimate(a.targetUuid(),x,z,uncertainty,crossing,
-                Math.max(a.observedAtMs(),b.observedAtMs()));
+        double angularQuality = clamp01((crossing - minCrossingAngleRadians)
+                / Math.max(1.0e-6, Math.PI * 0.5 - minCrossingAngleRadians));
+        double precisionQuality = 1.0 / (1.0 + uncertainty / 64.0);
+        double confidence = clamp01(Math.sqrt(Math.max(0.0, angularQuality * precisionQuality)));
+        return new DuplexEstimate(a.targetUuid(),x,z,uncertainty,crossing,confidence,
+                Math.max(a.observedAtMs(),b.observedAtMs()),
+                Math.max(a.sourceRevision(), b.sourceRevision()));
+    }
+    private static double clamp01(double value) {
+        return Math.max(0.0, Math.min(1.0, value));
     }
 }

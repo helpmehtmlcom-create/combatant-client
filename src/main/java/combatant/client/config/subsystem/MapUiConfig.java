@@ -46,6 +46,10 @@ public final class MapUiConfig extends SubsystemConfig {
 
     @Override
     public List<SettingDef> getSettingDefs() {
-        return List.of();
+        return List.of(
+                SettingDef.mode("arrowColorMode", arrowColorMode),
+                SettingDef.colorNoAlpha("arrowCustomColor", arrowCustomColor)
+                        .visibleWhen(this::isCustomArrowColor)
+        );
     }
 }

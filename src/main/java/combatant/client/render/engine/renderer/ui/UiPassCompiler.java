@@ -408,11 +408,15 @@ public final class UiPassCompiler {
         LinkedHashMap<String, TransientTargetDescriptor> descriptors = new LinkedHashMap<>();
         boolean needsEffectsTarget = false;
         boolean needsCapturedScene = false;
+        boolean needsCurrentTargetSnapshot = false;
         boolean needsUiUnderlay = false;
         for (Object entry : batcher.order) {
             if (!(entry instanceof DrawBatch batch)) continue;
             needsEffectsTarget |= batch.type == UiBatchType.BLUR || batch.type == UiBatchType.BLUR_CORNERS;
             needsCapturedScene |= batch.backdropRequest.requiresCapturedScene();
+            needsCurrentTargetSnapshot |=
+                    batch.backdropRequest.sceneSource() == combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest.SceneSource.CURRENT_TARGET
+                            && batch.type.usesPreparedGlass();
             needsUiUnderlay |= batch.backdropRequest.requiresUiUnderlayCapture();
             if (batch.type == UiBatchType.BLUR || batch.type == UiBatchType.BLUR_CORNERS
                     || batch.type.usesPreparedGlass() && batch.backdropRequest.sceneBlur().enabled()) {
@@ -420,6 +424,8 @@ public final class UiPassCompiler {
                         ? "ui-underlay"
                         : batch.backdropRequest.requiresCapturedScene()
                         ? "captured-world"
+                        : batch.backdropRequest.sceneSource() == combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest.SceneSource.CURRENT_TARGET
+                        ? "current-target"
                         : "surface";
                 declareBlurChain(descriptors, sceneDomain, batch.blurQuality.iterations, screenWidth, screenHeight);
             }
@@ -438,6 +444,13 @@ public final class UiPassCompiler {
         if (needsCapturedScene) {
             TransientTargetDescriptor descriptor = TransientTargetDescriptor.frame(
                     "combatant-ui-glass-source", screenWidth, screenHeight, false, "Renderer2D.glassSource"
+            );
+            descriptors.putIfAbsent(descriptor.logicalKey(), descriptor);
+        }
+        if (needsCurrentTargetSnapshot) {
+            TransientTargetDescriptor descriptor = TransientTargetDescriptor.frame(
+                    "combatant-ui-current-target-snapshot", screenWidth, screenHeight, false,
+                    "Renderer2D.currentTargetSnapshot"
             );
             descriptors.putIfAbsent(descriptor.logicalKey(), descriptor);
         }

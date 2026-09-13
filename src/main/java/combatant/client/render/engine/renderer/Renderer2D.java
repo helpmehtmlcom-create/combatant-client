@@ -3323,9 +3323,16 @@ public final class Renderer2D {
                                                    UiBlurQuality sceneQuality,
                                                    float sceneOffsetPx) {
         UiBackdropRequest.SceneSource sceneSource = liquidGlassSceneSourceOverride;
-        UiBackdropRequest request = sceneSource == UiBackdropRequest.SceneSource.UI_UNDERLAY
-                ? UiBackdropRequest.uiUnderlayGlass(bounds, sceneQuality, sceneOffsetPx)
-                : UiBackdropRequest.capturedSceneGlass(bounds, sceneQuality, sceneOffsetPx);
+        UiBackdropRequest request = switch (sceneSource != null
+                ? sceneSource
+                : UiBackdropRequest.SceneSource.CAPTURED_SCENE) {
+            case UI_UNDERLAY -> UiBackdropRequest.uiUnderlayGlass(
+                    bounds, sceneQuality, sceneOffsetPx);
+            case CURRENT_TARGET -> UiBackdropRequest.currentTargetGlass(
+                    bounds, sceneQuality, sceneOffsetPx);
+            case CAPTURED_SCENE, NONE -> UiBackdropRequest.capturedSceneGlass(
+                    bounds, sceneQuality, sceneOffsetPx);
+        };
         UiBackdropRequest.UiUnderlayMode mode = liquidGlassUiUnderlayOverride;
         if (mode == null) {
             mode = UiBackdropRequest.UiUnderlayMode.NONE;

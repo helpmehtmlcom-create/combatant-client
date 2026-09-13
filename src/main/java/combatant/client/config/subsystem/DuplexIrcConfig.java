@@ -32,6 +32,7 @@ public final class DuplexIrcConfig extends SubsystemConfig {
     private final NumberValue<Integer> samplePairToleranceMs = number("samplePairToleranceMs", 750, 25, 10000);
     private final NumberValue<Double> minCrossingAngleDegrees = number("minCrossingAngleDegrees", 5.0, 0.5, 45.0);
     private final NumberValue<Double> bearingNoiseDegrees = number("bearingNoiseDegrees", 0.25, 0.01, 5.0);
+    private final NumberValue<Integer> estimateStaleMs = number("estimateStaleMs", 15000, 1000, 120000);
 
     private DuplexIrcConfig(){loadConfig();}
     public static DuplexIrcConfig get(){return INSTANCE;}
@@ -47,5 +48,23 @@ public final class DuplexIrcConfig extends SubsystemConfig {
     public int samplePairToleranceMs(){return samplePairToleranceMs.get().intValue();}
     public double minCrossingAngleRadians(){return Math.toRadians(minCrossingAngleDegrees.get().doubleValue());}
     public double bearingNoiseRadians(){return Math.toRadians(bearingNoiseDegrees.get().doubleValue());}
-    @Override public List<SettingDef> getSettingDefs(){return List.of();}
+    public int estimateStaleMs(){return estimateStaleMs.get().intValue();}
+    @Override
+    public List<SettingDef> getSettingDefs() {
+        return List.of(
+                SettingDef.bool("enabled", enabled),
+                SettingDef.mode("role", role),
+                SettingDef.text("host", host),
+                SettingDef.number("port", port),
+                SettingDef.bool("tls", tls),
+                SettingDef.text("channel", channel),
+                SettingDef.text("nickname", nickname),
+                SettingDef.text("sessionToken", sessionToken),
+                SettingDef.number("heartbeatMs", heartbeatMs),
+                SettingDef.number("samplePairToleranceMs", samplePairToleranceMs),
+                SettingDef.number("minCrossingAngleDegrees", minCrossingAngleDegrees),
+                SettingDef.number("bearingNoiseDegrees", bearingNoiseDegrees),
+                SettingDef.number("estimateStaleMs", estimateStaleMs)
+        );
+    }
 }

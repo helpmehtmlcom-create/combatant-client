@@ -27,6 +27,7 @@ import combatant.client.features.gui.hud.script.HudScriptLayouts;
 import combatant.client.features.theme.Theme;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.renderer.Renderer2D;
+import combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest;
 import combatant.client.render.engine.renderer.ui.runtime.core.UiRuntime;
 import combatant.client.render.engine.renderer.ui.runtime.render.UiProjectionMode;
 import combatant.client.render.engine.renderer.ui.runtime.render.UiRenderContext;
@@ -305,8 +306,23 @@ final class XaeroMapSettingsPanel {
                 null
         );
         if (runtime != null) {
-            runtime.render(new UiRenderContext(Renderer2D.COLOR, ClickGuiRenderer.getOnestMedium(), null, 0.0f,
-                    UiProjectionMode.CURRENT, lifecycleAlpha));
+            // Use the same dedicated Map UI-underlay source as the chrome controls. The map
+            // background and both ordinary/direct-textured Xaero tile paths are explicitly mirrored
+            // into this target before any Map glass is emitted, so it is the authoritative optical
+            // source for UI-native glass. CURRENT_TARGET is intentionally not used here: during the
+            // deferred/clip pipeline the visible Map can still live in an intermediate attachment at
+            // the point the Browser batch is replayed, which made the snapshot resolve as black.
+            Renderer2D.COLOR.withLiquidGlassSceneSource(
+                    UiBackdropRequest.SceneSource.UI_UNDERLAY,
+                    () -> runtime.render(new UiRenderContext(
+                            Renderer2D.COLOR,
+                            ClickGuiRenderer.getOnestMedium(),
+                            null,
+                            0.0f,
+                            UiProjectionMode.CURRENT,
+                            lifecycleAlpha
+                    ))
+            );
         }
     }
 

@@ -74,6 +74,12 @@ public final class MapLinkConfig extends SubsystemConfig {
 
     @Override
     public List<SettingDef> getSettingDefs() {
-        return List.of();
+        return List.of(
+                SettingDef.bool("enabled", enabled),
+                SettingDef.number("connectTimeoutMs", connectTimeoutMs),
+                SettingDef.number("requestTimeoutMs", requestTimeoutMs),
+                SettingDef.number("staleAfterMs", staleAfterMs),
+                SettingDef.number("maxBackoffMs", maxBackoffMs)
+        );
     }
 }

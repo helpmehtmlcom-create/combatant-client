@@ -7,6 +7,7 @@
 
 package combatant.client;
 
+import combatant.client.features.map.heuristic.HeuristicRuntime;
 import combatant.client.events.UsedImplicitly;
 import combatant.client.compat.xaero.XaeroWaypointHudOverlay;
 import combatant.client.events.impl.GameTickEvent;
@@ -77,6 +78,7 @@ import combatant.client.util.entity.simulation.BoatSimulationCache;
 import combatant.client.render.engine.renderer.ui.runtime.script.JavetRuntimeBootstrap;
 import combatant.client.util.media.MediaSessionService;
 import combatant.client.features.maplink.runtime.MapLinkRuntime;
+import combatant.client.features.map.runtime.MapLocationRuntime;
 import combatant.client.util.network.BacktrackController;
 import combatant.client.util.network.BlinkManager;
 import combatant.client.util.proxy.ProxyBackend;
@@ -508,6 +510,8 @@ public class Combatant implements ClientModInitializer {
             NativeMemoryGuard.shutdown();
             MediaSessionService.get().shutdown();
             JavetRuntimeBootstrap.shutdown();
+            MapLocationRuntime.get().shutdown();
+            HeuristicRuntime.get().shutdown();
             MapLinkRuntime.get().shutdown();
         });
 
@@ -533,6 +537,7 @@ public class Combatant implements ClientModInitializer {
         Events.BUS.register(PvpTargetTracker.INSTANCE);
         Events.BUS.register(SessionStatisticsTracker.INSTANCE);
         Events.BUS.register(MapLinkRuntime.get());
+        Events.BUS.register(MapLocationRuntime.get());
         Events.BUS.register(SelfBedTracker.INSTANCE);
         Events.BUS.register(BoatSimulationCache.INSTANCE);
         Events.BUS.register(PlayerSimulationCache.INSTANCE);

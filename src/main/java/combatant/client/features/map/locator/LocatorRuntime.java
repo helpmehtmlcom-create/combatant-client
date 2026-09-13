@@ -11,6 +11,7 @@ import combatant.client.features.map.heuristic.HeuristicObservation;
 import combatant.client.features.map.heuristic.HeuristicRuntime;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.waypoints.ClientWaypointManager;
+import net.minecraft.client.multiplayer.PlayerInfo;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -38,10 +39,16 @@ public final class LocatorRuntime {
         long now=System.currentTimeMillis();
         List<LocatorObservation> out=new ArrayList<>();
         Map<String,Boolean> seen=new HashMap<>();
+        Map<String,UUID> onlineByName=new HashMap<>();
+        for (PlayerInfo info : mc.getConnection().getOnlinePlayers()) {
+            if (info == null || info.getProfile() == null || info.getProfile().name() == null) continue;
+            onlineByName.put(info.getProfile().name().toLowerCase(Locale.ROOT), info.getProfile().id());
+        }
 
         manager.forEachWaypoint(mc.player,wp->{
             UUID uuid=wp.id().left().orElse(null);
             String name=wp.id().right().orElse("");
+            if (uuid == null && !name.isBlank()) uuid = onlineByName.get(name.toLowerCase(Locale.ROOT));
             if(uuid!=null && uuid.equals(mc.player.getUUID())) return;
             LocatorWaypointExtractor.Extracted e=LocatorWaypointExtractor.extract(wp);
             if(e.type()==LocatorObservationType.UNUSABLE)return;

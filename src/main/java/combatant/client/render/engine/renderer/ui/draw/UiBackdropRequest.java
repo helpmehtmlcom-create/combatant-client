@@ -89,6 +89,25 @@ public record UiBackdropRequest(SceneSource sceneSource,
     }
 
     /**
+     * Liquid-glass semantics for a surface that must refract the color already accumulated in the
+     * active UI target at its exact ordered draw boundary. The executor snapshots the target before
+     * drawing the glass, so the material never samples from the attachment it is writing to.
+     */
+    public static UiBackdropRequest currentTargetGlass(@Nullable UiRect bounds,
+                                                       UiBlurQuality quality,
+                                                       float offsetPx) {
+        return new UiBackdropRequest(
+                SceneSource.CURRENT_TARGET,
+                UiUnderlayMode.NONE,
+                BlurParameters.of(quality, offsetPx),
+                BlurParameters.NONE,
+                1.0f,
+                0.0f,
+                bounds
+        );
+    }
+
+    /**
      * Liquid-glass semantics for UI-native surfaces: the already accumulated UI underlay is the
      * optical scene itself. Both the sharp refraction/rim source and the prepared blur therefore
      * come from UI content instead of the pre-HUD world capture.

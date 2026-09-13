@@ -40,6 +40,7 @@ public final class UiBlurResources {
     private static TextureTarget effects;
     private static TextureTarget glassSource;
     private static TextureTarget uiUnderlay;
+    private static TextureTarget currentTargetSnapshot;
     private static Renderer2D.Deferred2DLayer activeUiUnderlayLayer;
     private static long activeUiUnderlayFrame = Long.MIN_VALUE;
     private static MeshBuilder compositeMesh;
@@ -67,6 +68,7 @@ public final class UiBlurResources {
         effects = null;
         glassSource = null;
         uiUnderlay = null;
+        currentTargetSnapshot = null;
         worldSourceReady = false;
         SURFACE_FRAME_CACHE.clear();
         CAPTURED_WORLD_FRAME_CACHE.clear();
@@ -165,6 +167,60 @@ public final class UiBlurResources {
         return glassSource;
     }
 
+    /**
+     * Frame-local scratch snapshot of the color accumulated in the active UI target.
+     *
+     * <p>Unlike {@link #glassSource}, this is captured at the ordered glass boundary. It is used
+     * by large UI-native glass surfaces (for example the Map browser) that must refract everything
+     * already drawn in the current screen, without depending on replay into the UI-underlay target.</p>
+     */
+    public static TextureTarget ensureCurrentTargetSnapshot(Minecraft minecraft) {
+        if (minecraft == null) return null;
+        int width = minecraft.getWindow().getWidth();
+        int height = minecraft.getWindow().getHeight();
+        if (width <= 0 || height <= 0) return null;
+        currentTargetSnapshot = CombatantRenderSystem.resources().frameTransient(
+                TransientTargetDescriptor.frame(
+                        "combatant-ui-current-target-snapshot", width, height, false,
+                        "Renderer2D.currentTargetSnapshot"
+                )
+        );
+        return currentTargetSnapshot;
+    }
+
+    public static @Nullable GpuTextureView captureCurrentTarget(
+            Minecraft minecraft,
+            RenderTarget source) {
+        return captureCurrentTarget(
+                minecraft, source != null ? source.getColorTextureView() : null);
+    }
+
+    /**
+     * Snapshots the actual color attachment currently receiving UI draws. This matters when the
+     * renderer is inside a redirected/MSAA clip target: copying mainRenderTarget there would capture
+     * an older image and make CURRENT_TARGET glass appear empty or black.
+     */
+    public static @Nullable GpuTextureView captureCurrentTarget(
+            Minecraft minecraft,
+            @Nullable GpuTextureView sourceView) {
+        if (minecraft == null || sourceView == null) return null;
+        TextureTarget target = ensureCurrentTargetSnapshot(minecraft);
+        if (target == null || target.getColorTextureView() == null) return null;
+        try {
+            if (!CombatantRenderSystem.rhi().textureBlitter().copyFast(
+                    sourceView, target.getColorTextureView())) {
+                return null;
+            }
+        } catch (Throwable ignored) {
+            return null;
+        }
+
+        // The snapshot handle is reused inside one frame while its contents are intentionally
+        // replaced at each ordered capture point. Never let a previous blur of this handle survive.
+        SURFACE_FRAME_CACHE.clear();
+        return target.getColorTextureView();
+    }
+
     public static boolean copyMainColor(RenderTarget source, TextureTarget target) {
         if (source == null || target == null) return false;
         if (source.getColorTexture() == null || target.getColorTexture() == null) return false;
@@ -233,6 +289,9 @@ public final class UiBlurResources {
         if (isUiUnderlaySource(sourceView)) {
             return ensureKawaseTarget(minecraft, "ui-underlay", level);
         }
+        if (isCurrentTargetSnapshotSource(sourceView)) {
+            return ensureKawaseTarget(minecraft, "current-target", level);
+        }
         if (!isCapturedWorldSource(sourceView)) return ensureKawaseDown(minecraft, level);
         return ensureKawaseTarget(minecraft, "captured-world", level);
     }
@@ -242,6 +301,9 @@ public final class UiBlurResources {
                                         @Nullable GpuTextureView sourceView) {
         if (isUiUnderlaySource(sourceView)) {
             return ensureKawaseTarget(minecraft, "ui-underlay", level);
+        }
+        if (isCurrentTargetSnapshotSource(sourceView)) {
+            return ensureKawaseTarget(minecraft, "current-target", level);
         }
         if (!isCapturedWorldSource(sourceView)) return ensureKawaseUp(minecraft, level);
         return ensureKawaseTarget(minecraft, "captured-world", level);
@@ -300,7 +362,7 @@ public final class UiBlurResources {
         // The underlay can receive more ordinary UI draws between two glass effects in the
         // same frame. Until capture generations are explicit in the pass graph, reusing its
         // earlier blur would be stale. PASS_THROUGH never enters this cache.
-        if (isUiUnderlaySource(sourceView)) return null;
+        if (isUiUnderlaySource(sourceView) || isCurrentTargetSnapshotSource(sourceView)) return null;
         RenderPhase cachePhase = cachePhaseForSource(phase, sourceView);
         float cacheUiScale = cacheScaleForSource(sourceView, uiScale);
         FrameBlurCacheEntry cache = cacheForSource(sourceView);
@@ -329,7 +391,7 @@ public final class UiBlurResources {
             float uiScale,
             Renderer2D.BlurQuality blurQuality,
             float offsetPx) {
-        if (isUiUnderlaySource(sourceView)) return;
+        if (isUiUnderlaySource(sourceView) || isCurrentTargetSnapshotSource(sourceView)) return;
         cacheForSource(sourceView).set(
                 frameId,
                 cachePhaseForSource(phase, sourceView),
@@ -409,6 +471,12 @@ public final class UiBlurResources {
         return sourceView != null
                 && uiUnderlay != null
                 && sourceView == uiUnderlay.getColorTextureView();
+    }
+
+    static boolean isCurrentTargetSnapshotSource(@Nullable GpuTextureView sourceView) {
+        return sourceView != null
+                && currentTargetSnapshot != null
+                && sourceView == currentTargetSnapshot.getColorTextureView();
     }
 
     private static FrameBlurCacheEntry cacheForSource(@Nullable GpuTextureView sourceView) {

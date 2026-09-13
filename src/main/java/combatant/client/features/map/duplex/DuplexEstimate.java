@@ -4,7 +4,6 @@
  *
  * Licensed under the GNU General Public License v3.0.
  */
-
 package combatant.client.features.map.duplex;
 
 import java.util.UUID;
@@ -15,5 +14,7 @@ public record DuplexEstimate(
         double z,
         double uncertaintyRadius,
         double crossingAngleRadians,
-        long observedAtMs
+        double confidence,
+        long observedAtMs,
+        long sourceRevision
 ) {}

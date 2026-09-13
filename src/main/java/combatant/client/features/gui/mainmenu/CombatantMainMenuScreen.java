@@ -22,6 +22,8 @@ import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.ui.draw.UiPaint;
 import combatant.client.render.engine.renderer.ui.draw.UiPrimitive;
 import combatant.client.render.engine.renderer.ui.draw.UiStroke;
+import combatant.client.render.engine.renderer.ui.runtime.render.UiTextRenderer;
+import combatant.client.render.engine.renderer.ui.runtime.style.UiStyle;
 import combatant.client.render.engine.svg.SvgRenderOptions;
 import combatant.client.render.engine.text.FontInfo;
 import combatant.client.render.engine.text.Fonts;
@@ -54,6 +56,7 @@ import java.util.Locale;
 public final class CombatantMainMenuScreen extends Screen {
     private static final float MENU_SCALE = MainMenuBackdrop.MENU_SCALE;
     private static final float SQRT_3 = MainMenuBackdrop.SQRT_3;
+    private static final UiTextRenderer LED_TEXT_RENDERER = new UiTextRenderer();
 
     private static final long MENU_APPEAR_DURATION_MS = 520L;
     private static final float CELL_GAP = MainMenuBackdrop.CELL_GAP;
@@ -374,12 +377,24 @@ public final class CombatantMainMenuScreen extends Screen {
         String time = LocalTime.now().format(seconds ? CLOCK_SECONDS_FORMAT : CLOCK_FORMAT);
         String date = localizedDate(LocalDate.now());
 
-        TextRenderer clock = Fonts.renderer("Inter", FontInfo.Type.Bold, TextRenderer.get());
+        TextRenderer clock = Fonts.renderer("MatrixSansPrint", FontInfo.Type.Regular, TextRenderer.get());
         TextRenderer dateFont = Fonts.renderer("OnestBold", FontInfo.Type.Regular, clock);
         float timeHeight = measureHeight(clock, TIME_FONT);
         float centerY = gridLayout.originY() - gridLayout.radius() * 3.45f;
-        drawCenteredText(clock, time, fixedWidth * 0.5f, centerY - timeHeight * 0.5f,
-                TIME_FONT, withAlpha(0xFFFFFFFF, Math.round(opacity * 244f)));
+        float timeX = fixedWidth * 0.5f - measureWidth(clock, time, TIME_FONT) * 0.5f;
+        float timeY = centerY - timeHeight * 0.5f;
+        int phosphor = HudRenderUtil.mixColor(Theme.theme().accent(), 0xFFFFFFFF, 0.22f);
+        int glowColor = withAlpha(phosphor, Math.round(opacity * 248f));
+        int coreColor = withAlpha(HudRenderUtil.mixColor(phosphor, 0xFFFFFFFF, 0.30f),
+                Math.round(opacity * 252f));
+        UiStyle clockStyle = UiStyle.builder()
+                .font("MatrixSansPrint", FontInfo.Type.Regular)
+                .textScale(TIME_FONT)
+                .textColor(coreColor)
+                .build();
+        LED_TEXT_RENDERER.renderGlow(clock, time, timeX, timeY, clockStyle,
+                glowColor, 2.4f * MENU_SCALE, 0.34f, "auto");
+        LED_TEXT_RENDERER.render(clock, time, timeX, timeY, clockStyle, coreColor);
         drawCenteredText(dateFont, date.toUpperCase(Locale.ROOT), fixedWidth * 0.5f,
                 centerY + timeHeight * 0.5f + 4.5f * MENU_SCALE,
                 DATE_FONT, withAlpha(0xFFE4EBF3, Math.round(opacity * 192f)));

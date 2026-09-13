@@ -23,6 +23,7 @@ public final class MapHeuristicConfig extends SubsystemConfig {
     private final NumberValue<Double> minBaseline = number("minBaseline", 8.0, 0.0, 512.0);
     private final NumberValue<Double> minBearingDeltaDegrees = number("minBearingDeltaDegrees", 1.5, 0.05, 45.0);
     private final NumberValue<Double> forwardRejectTolerance = number("forwardRejectTolerance", 4.0, 0.0, 64.0);
+    private final NumberValue<Double> bearingNoiseDegrees = number("bearingNoiseDegrees", 0.75, 0.05, 10.0);
     private final NumberValue<Double> segmentResetDistance = number("segmentResetDistance", 48.0, 1.0, 1024.0);
     private final NumberValue<Double> segmentResetSigma = number("segmentResetSigma", 2.5, 0.5, 10.0);
     private final NumberValue<Double> segmentResetMinConfidence = number("segmentResetMinConfidence", 0.45, 0.0, 1.0);
@@ -35,9 +36,24 @@ public final class MapHeuristicConfig extends SubsystemConfig {
     public double minBaseline() { return minBaseline.get().doubleValue(); }
     public double minBearingDeltaDegrees() { return minBearingDeltaDegrees.get().doubleValue(); }
     public double forwardRejectTolerance() { return forwardRejectTolerance.get().doubleValue(); }
+    public double bearingNoiseDegrees() { return bearingNoiseDegrees.get().doubleValue(); }
     public double segmentResetDistance() { return segmentResetDistance.get().doubleValue(); }
     public double segmentResetSigma() { return segmentResetSigma.get().doubleValue(); }
     public double segmentResetMinConfidence() { return segmentResetMinConfidence.get().doubleValue(); }
 
-    @Override public List<SettingDef> getSettingDefs() { return List.of(); }
+    @Override
+    public List<SettingDef> getSettingDefs() {
+        return List.of(
+                SettingDef.bool("enabled", enabled),
+                SettingDef.number("maxSamplesPerTarget", maxSamplesPerTarget),
+                SettingDef.number("maxSampleAgeMs", maxSampleAgeMs),
+                SettingDef.number("minBaseline", minBaseline),
+                SettingDef.number("minBearingDeltaDegrees", minBearingDeltaDegrees),
+                SettingDef.number("forwardRejectTolerance", forwardRejectTolerance),
+                SettingDef.number("bearingNoiseDegrees", bearingNoiseDegrees),
+                SettingDef.number("segmentResetDistance", segmentResetDistance),
+                SettingDef.number("segmentResetSigma", segmentResetSigma),
+                SettingDef.number("segmentResetMinConfidence", segmentResetMinConfidence)
+        );
+    }
 }

@@ -509,11 +509,24 @@ public final class OrderedUiBatcher {
                     flushPendingDraws(pendingDraws);
                     boolean capturedScene = batch.backdropRequest.requiresCapturedScene();
                     boolean uiUnderlayScene = batch.backdropRequest.usesUiUnderlayAsScene();
+                    boolean currentTargetScene =
+                            batch.backdropRequest.sceneSource() == UiBackdropRequest.SceneSource.CURRENT_TARGET;
                     GpuSampler backdropSampler = PostProcessManager.getSampler();
+
+                    // CURRENT_TARGET cannot be sampled while the glass draw writes back into that
+                    // same attachment. Snapshot exactly at this ordered boundary, after all earlier
+                    // map/UI draws have been submitted, and refract the immutable copy instead.
+                    GpuTextureView currentTargetView = currentTargetScene
+                            ? UiBlurResources.captureCurrentTarget(mc, mainColorView)
+                            : null;
+                    if (currentTargetScene) resetSharedBlur();
+
                     GpuTextureView sourceView = uiUnderlayScene
                             ? uiUnderlayView
+                            : currentTargetScene
+                            ? currentTargetView
                             : capturedScene && liquidSourceView != null ? liquidSourceView : batch.view;
-                    GpuSampler sourceSampler = uiUnderlayScene
+                    GpuSampler sourceSampler = (uiUnderlayScene || currentTargetScene)
                             ? backdropSampler
                             : capturedScene && liquidSourceSampler != null ? liquidSourceSampler : batch.sampler;
                     boolean clippedComposite = batch.clipSnapshot.active();
@@ -523,10 +536,10 @@ public final class OrderedUiBatcher {
                         adoptFrameBlurCache(sourceView, sourceSampler, screenW, screenH, uiScale,
                                 batch.blurQuality, batch.blurOffsetPx);
                     } else {
-                        // UI underlay content can change between two glass surfaces in the same
-                        // ordered stream. Never reuse a blur only because the texture handle stayed
-                        // the same; rebuild after the preceding underlay contributions were replayed.
-                        if (uiUnderlayScene) resetSharedBlur();
+                        // UI underlay/current-target snapshot content can change between two glass
+                        // surfaces in the same ordered stream. Never reuse a blur only because the
+                        // texture handle stayed the same.
+                        if (uiUnderlayScene || currentTargetScene) resetSharedBlur();
                         drawCalls += prepareSharedBlur(mc, sourceView, sourceSampler, screenW, screenH, uiScale,
                                 batch.blurQuality, batch.blurOffsetPx);
                     }
@@ -1303,6 +1316,17 @@ public final class OrderedUiBatcher {
         if (compositeMesh == null) return false;
 
         Matrix4f previousProjection = MeshRenderer.projection();
+        // The UI caller can be inside a ScissorFunction clip (the Browser root is). Kawase
+        // targets are progressively smaller than the main framebuffer, so carrying the caller's
+        // framebuffer-space scissor into these offscreen passes eventually places the scissor
+        // completely outside the target. Every pass then clears to transparent black and the
+        // liquid-glass surface samples a black blur. Preserve the logical clip stack, but suspend
+        // its applied GPU scissor for the fullscreen blur chain pass itself.
+        // Deferred replay owns a GPU scissor outside ScissorFunction. Prefer suspending that
+        // owner; immediate mode falls back to ScissorFunction's tracked scissor.
+        boolean suspendedReplayScissor = UiDeferredScheduler.suspendReplayScissorForOffscreenPass();
+        boolean suspendedLogicalScissor = !suspendedReplayScissor
+                && ScissorFunction.suspendAppliedGpuScissor();
         try {
             MeshRenderer.setProjection(orthoProjection(target.width, target.height));
             UIBlurUniforms.update(sourceW, sourceH, target.width, target.height,
@@ -1317,6 +1341,11 @@ public final class OrderedUiBatcher {
                     .end();
             return target.getColorTextureView() != null;
         } finally {
+            if (suspendedReplayScissor) {
+                UiDeferredScheduler.restoreReplayScissorAfterOffscreenPass(true);
+            } else {
+                ScissorFunction.restoreAppliedGpuScissor(suspendedLogicalScissor);
+            }
             MeshRenderer.setProjection(previousProjection);
         }
     }

@@ -150,6 +150,30 @@ public enum ScissorFunction {
         return state != null ? state.snapshot : UiScissorSnapshot.NONE;
     }
 
+    /**
+     * Temporarily removes only the GPU scissor while preserving the logical clip stack.
+     *
+     * <p>Fullscreen/offscreen post-process passes (for example the Kawase chain used by
+     * liquid glass) render into targets whose dimensions differ from the main framebuffer.
+     * Reusing the caller's framebuffer-space scissor on those targets clips the passes with
+     * unscaled coordinates and can clear the entire blur chain to transparent black. The
+     * logical stack is intentionally left untouched so normal UI clipping resumes afterwards.</p>
+     *
+     * @return {@code true} when an applied GPU scissor was suspended and must be restored.
+     */
+    public static boolean suspendAppliedGpuScissor() {
+        if (appliedScissor == null) return false;
+        ((IGpuDevice) RenderSystem.getDevice()).combatant$popScissor();
+        appliedScissor = null;
+        return true;
+    }
+
+    /** Restores the top logical scissor after {@link #suspendAppliedGpuScissor()}. */
+    public static void restoreAppliedGpuScissor(boolean suspended) {
+        if (!suspended) return;
+        applyTop();
+    }
+
     public static void pop() {
         if (STACK.isEmpty()) return;
         // Preserve the closing scissor in deferred submit metadata.

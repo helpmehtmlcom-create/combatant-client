@@ -48,6 +48,12 @@ public final class UiDeferredScheduler {
     private static boolean deferredItemsPrepared;
     private static Renderer2D.Deferred2DLayer forcedLayer;
 
+    // Deferred ordered replay installs the submit scissor directly on the GPU device. It no
+    // longer belongs to ScissorFunction at replay time, so offscreen passes must suspend it
+    // explicitly when rendering into targets with different dimensions.
+    private static int[] activeReplayScissor;
+    private static boolean replayScissorSuspended;
+
     static {
         for (Renderer2D.Deferred2DLayer layer : Renderer2D.Deferred2DLayer.values()) {
             int capacity = (layer == Renderer2D.Deferred2DLayer.AFTER_VANILLA_GUI
@@ -208,6 +214,8 @@ public final class UiDeferredScheduler {
                 ((IGpuDevice) RenderSystem.getDevice())
                         .combatant$pushScissor(scissor[0], scissor[1], scissor[2], scissor[3]);
                 scissored = true;
+                activeReplayScissor = scissor.clone();
+                replayScissorSuspended = false;
             }
 
             // Enqueue every compatible facade submission before compiling. UiPassCompiler can
@@ -222,7 +230,13 @@ public final class UiDeferredScheduler {
             Renderer2D.flushUiLayer();
         } finally {
             if (scissored) {
-                ((IGpuDevice) RenderSystem.getDevice()).combatant$popScissor();
+                // An exceptional offscreen pass can exit while the replay scissor is suspended.
+                // In that case there is nothing left on the device stack to pop here.
+                if (!replayScissorSuspended) {
+                    ((IGpuDevice) RenderSystem.getDevice()).combatant$popScissor();
+                }
+                activeReplayScissor = null;
+                replayScissorSuspended = false;
             }
             for (int i = start; i < end; i++) {
                 Deferred2DSubmit ordered = DRAINING.get(i);
@@ -230,6 +244,23 @@ public final class UiDeferredScheduler {
                 DRAINING.set(i, null);
             }
         }
+    }
+
+    /** Temporarily removes the scheduler-owned framebuffer scissor for an offscreen pass. */
+    static boolean suspendReplayScissorForOffscreenPass() {
+        if (!draining || activeReplayScissor == null || replayScissorSuspended) return false;
+        ((IGpuDevice) RenderSystem.getDevice()).combatant$popScissor();
+        replayScissorSuspended = true;
+        return true;
+    }
+
+    /** Restores a scheduler-owned framebuffer scissor after an offscreen pass. */
+    static void restoreReplayScissorAfterOffscreenPass(boolean suspended) {
+        if (!suspended || activeReplayScissor == null || !replayScissorSuspended) return;
+        int[] scissor = activeReplayScissor;
+        ((IGpuDevice) RenderSystem.getDevice())
+                .combatant$pushScissor(scissor[0], scissor[1], scissor[2], scissor[3]);
+        replayScissorSuspended = false;
     }
 
     private static boolean sameReplayState(DeferredOrderedSubmit first,
