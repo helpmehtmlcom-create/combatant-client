@@ -8,10 +8,8 @@
 package combatant.client.util.resources.asset;
 
 import combatant.client.render.engine.text.FontInfo;
+import combatant.client.runtime.discovery.CombatantIndex;
 import combatant.client.util.logging.DebugLog;
-import io.github.classgraph.ClassGraph;
-import io.github.classgraph.ClassInfo;
-import io.github.classgraph.ScanResult;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.ResourceManager;
 
@@ -30,7 +28,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Central ClassGraph-backed discovery for render/resource assets.
+ * Central generated-index discovery for render/resource assets.
  *
  * <p>Discovery reads only classes carrying Combatant asset annotations. Resource-backed
  * subsystems, including player animation scripts, declare their assets through metadata here.</p>
@@ -51,23 +49,13 @@ public enum AssetAutoLoader {
     public static synchronized void discover() {
         if (discovered) return;
 
-        ClassGraph graph = new ClassGraph()
-                .enableClassInfo()
-                .enableAnnotationInfo()
-                .enableMethodInfo()
-                .enableFieldInfo()
-                .ignoreClassVisibility()
-                .ignoreMethodVisibility()
-                .ignoreFieldVisibility()
-                .acceptPackages(DEFAULT_SCOPE);
-
-        try (ScanResult scan = graph.scan()) {
-            discoverHooks(scan);
-            discoverTextureCatalogs(scan);
-            discoverFontCatalogs(scan);
-            discoverScriptCatalogs(scan);
-            discoverResourceCatalogs(scan);
-            discoverUiScripts(scan);
+        try {
+            discoverHooks(CombatantIndex.classNames(CombatantIndex.Kind.ASSET_HOOK, DEFAULT_SCOPE));
+            discoverTextureCatalogs(CombatantIndex.classNames(CombatantIndex.Kind.TEXTURE_CATALOG, DEFAULT_SCOPE));
+            discoverFontCatalogs(CombatantIndex.classNames(CombatantIndex.Kind.FONT_CATALOG, DEFAULT_SCOPE));
+            discoverScriptCatalogs(CombatantIndex.classNames(CombatantIndex.Kind.SCRIPT_CATALOG, DEFAULT_SCOPE));
+            discoverResourceCatalogs(CombatantIndex.classNames(CombatantIndex.Kind.RESOURCE_CATALOG, DEFAULT_SCOPE));
+            discoverUiScripts(CombatantIndex.classNames(CombatantIndex.Kind.UI_SCRIPT, DEFAULT_SCOPE));
             sortDiscoveredAssets();
             discovered = true;
             DebugLog.info("[Combatant][Assets] discovered hooks=%d textureCatalogs=%d fonts=%d scripts=%d resources=%d uiScripts=%d",
@@ -191,9 +179,9 @@ public enum AssetAutoLoader {
         }
     }
 
-    private static void discoverHooks(ScanResult scan) throws ReflectiveOperationException {
-        for (ClassInfo info : scan.getClassesWithMethodAnnotation(AssetLoad.class.getName())) {
-            Class<?> type = Class.forName(info.getName(), false, AssetAutoLoader.class.getClassLoader());
+    private static void discoverHooks(List<String> classNames) throws ReflectiveOperationException {
+        for (String className : classNames) {
+            Class<?> type = Class.forName(className, false, AssetAutoLoader.class.getClassLoader());
             for (Method method : type.getDeclaredMethods()) {
                 AssetLoad annotation = method.getAnnotation(AssetLoad.class);
                 if (annotation == null) continue;
@@ -207,15 +195,15 @@ public enum AssetAutoLoader {
         }
     }
 
-    private static void discoverTextureCatalogs(ScanResult scan) throws ClassNotFoundException {
-        for (ClassInfo info : scan.getClassesWithAnnotation(TextureCatalog.class.getName())) {
-            TEXTURE_CATALOGS.add(Class.forName(info.getName(), false, AssetAutoLoader.class.getClassLoader()));
+    private static void discoverTextureCatalogs(List<String> classNames) throws ClassNotFoundException {
+        for (String className : classNames) {
+            TEXTURE_CATALOGS.add(Class.forName(className, false, AssetAutoLoader.class.getClassLoader()));
         }
     }
 
-    private static void discoverFontCatalogs(ScanResult scan) throws ReflectiveOperationException {
-        for (ClassInfo info : scan.getClassesWithAnnotation(FontCatalog.class.getName())) {
-            Class<?> type = Class.forName(info.getName(), false, AssetAutoLoader.class.getClassLoader());
+    private static void discoverFontCatalogs(List<String> classNames) throws ReflectiveOperationException {
+        for (String className : classNames) {
+            Class<?> type = Class.forName(className, false, AssetAutoLoader.class.getClassLoader());
             if (!type.isEnum()) {
                 throw new IllegalArgumentException("@FontCatalog type must be an enum: " + type.getName());
             }
@@ -245,9 +233,9 @@ public enum AssetAutoLoader {
         }
     }
 
-    private static void discoverScriptCatalogs(ScanResult scan) throws ReflectiveOperationException {
-        for (ClassInfo info : scan.getClassesWithAnnotation(ScriptCatalog.class.getName())) {
-            Class<?> type = Class.forName(info.getName(), false, AssetAutoLoader.class.getClassLoader());
+    private static void discoverScriptCatalogs(List<String> classNames) throws ReflectiveOperationException {
+        for (String className : classNames) {
+            Class<?> type = Class.forName(className, false, AssetAutoLoader.class.getClassLoader());
             if (!type.isEnum()) {
                 throw new IllegalArgumentException("@ScriptCatalog type must be an enum: " + type.getName());
             }
@@ -278,9 +266,9 @@ public enum AssetAutoLoader {
         }
     }
 
-    private static void discoverResourceCatalogs(ScanResult scan) throws ReflectiveOperationException {
-        for (ClassInfo info : scan.getClassesWithAnnotation(ResourceCatalog.class.getName())) {
-            Class<?> type = Class.forName(info.getName(), false, AssetAutoLoader.class.getClassLoader());
+    private static void discoverResourceCatalogs(List<String> classNames) throws ReflectiveOperationException {
+        for (String className : classNames) {
+            Class<?> type = Class.forName(className, false, AssetAutoLoader.class.getClassLoader());
             if (!type.isEnum()) {
                 throw new IllegalArgumentException("@ResourceCatalog type must be an enum: " + type.getName());
             }
@@ -307,9 +295,9 @@ public enum AssetAutoLoader {
         }
     }
 
-    private static void discoverUiScripts(ScanResult scan) throws ClassNotFoundException {
-        for (ClassInfo info : scan.getClassesWithAnnotation(UiScriptAsset.class.getName())) {
-            Class<?> type = Class.forName(info.getName(), false, AssetAutoLoader.class.getClassLoader());
+    private static void discoverUiScripts(List<String> classNames) throws ClassNotFoundException {
+        for (String className : classNames) {
+            Class<?> type = Class.forName(className, false, AssetAutoLoader.class.getClassLoader());
             UiScriptAsset asset = type.getAnnotation(UiScriptAsset.class);
             if (asset == null || asset.value().isBlank()) continue;
             if (!UI_SCRIPT_IDS.add(asset.value())) {

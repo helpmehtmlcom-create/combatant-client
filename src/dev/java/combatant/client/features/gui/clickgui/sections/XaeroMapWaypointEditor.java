@@ -31,13 +31,13 @@ final class XaeroMapWaypointEditor {
     private static final float PANEL_ROUNDING = 6.0f;
     private static final float PANEL_PAD = 17.0f;
     private static final float FIELD_HEIGHT = 31.0f;
-    private static final float COLOR_STEP = 18.0f;
-    private static final float COLOR_RADIUS = 4.8f;
+    private static final float COLOR_STEP = 20.0f;
+    private static final float COLOR_RADIUS = 6.4f;
 
     private final Waypoint edited;
     private final SaveHandler saveHandler;
-    private final float anchorX;
-    private final float anchorY;
+    private float anchorX;
+    private float anchorY;
     private final Spring open = new Spring();
     private final Spring cancelHover = new Spring();
     private final Spring saveHover = new Spring();
@@ -145,11 +145,12 @@ final class XaeroMapWaypointEditor {
 
         // One optical surface; no extra drop shadow and no nested glass inputs/previews.
         renderer.withLiquidGlassMaterial(material, () ->
-                renderer.liquidGlassPrimitive(
+                drawLiquidGlassPrimitive(
+                        renderer,
                         panel,
                         panelTint,
-                        0.51f * eased,
-                        0.90f * eased,
+                        1.0f * eased,
+                        1.0f * eased,
                         Renderer2D.LiquidGlassPreset.BALANCED));
 
         drawAnchorMarker(renderer, areaX, areaY, areaWidth, areaHeight, eased);
@@ -157,6 +158,23 @@ final class XaeroMapWaypointEditor {
         drawFields(renderer, mouseX, mouseY, palette, eased);
         drawColors(renderer, palette, eased);
         drawActions(renderer, mouseX, mouseY, palette, eased);
+    }
+
+    private static void drawLiquidGlassPrimitive(Renderer2D renderer,
+                                                 UiPrimitive primitive,
+                                                 int tint,
+                                                 float glassAlpha,
+                                                 float blurAlpha,
+                                                 Renderer2D.LiquidGlassPreset preset) {
+        if (renderer == null || primitive == null) return;
+        if (primitive.shaderEligible()) {
+            renderer.liquidGlassPrimitive(primitive, tint, glassAlpha, blurAlpha, preset);
+            return;
+        }
+        var bounds = primitive.bounds();
+        renderer.liquidGlassRect(
+                bounds.x(), bounds.y(), bounds.width(), bounds.height(),
+                primitive.rounding(), tint, glassAlpha, blurAlpha, preset);
     }
 
     private UiPrimitive panelShape() {
@@ -316,8 +334,8 @@ final class XaeroMapWaypointEditor {
                 + COLOR_RADIUS;
         float selectedCenterY = colorY + COLOR_RADIUS;
         int selected = SettingsGuiPalette.withAlpha(waypointColor(), Math.round(220.0f * reveal));
-        renderer.circleStroke(selectedCenterX, selectedCenterY, COLOR_RADIUS + 3.4f,
-                1.25f, selected);
+        renderer.circleStroke(selectedCenterX, selectedCenterY, COLOR_RADIUS + 3.8f,
+                1.4f, selected);
     }
 
     private void drawActions(Renderer2D renderer,
@@ -368,6 +386,12 @@ final class XaeroMapWaypointEditor {
                 13.5f, primaryText, false);
     }
 
+
+    void setAnchor(float anchorX, float anchorY) {
+        this.anchorX = anchorX;
+        this.anchorY = anchorY;
+    }
+
     boolean mousePressed(float mouseX, float mouseY, int button) {
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return true;
         if (closeRequested) return true;
@@ -385,10 +409,10 @@ final class XaeroMapWaypointEditor {
         }
 
         for (int i = 0; i < 16; i++) {
-            float cx = colorStartX + i * COLOR_STEP;
-            if (inside(mouseX, mouseY,
-                    cx - 3.0f, colorY - 3.0f,
-                    COLOR_RADIUS * 2.0f + 6.0f, COLOR_RADIUS * 2.0f + 6.0f)) {
+            float cx = colorStartX + i * COLOR_STEP + COLOR_RADIUS;
+            float cy = colorY + COLOR_RADIUS;
+            float hit = COLOR_RADIUS + 4.5f;
+            if (inside(mouseX, mouseY, cx - hit, cy - hit, hit * 2.0f, hit * 2.0f)) {
                 colorIndex = i;
                 return true;
             }

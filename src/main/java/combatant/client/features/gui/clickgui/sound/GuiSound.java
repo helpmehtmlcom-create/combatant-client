@@ -14,9 +14,13 @@ import combatant.client.util.sound.SoundCatalog;
 import combatant.client.util.sound.SoundKey;
 import combatant.client.util.sound.SoundOptions;
 
-/** ClickGUI's declarative catalog. Registration is performed by SoundRegistry/ClassGraph. */
+/** ClickGUI's declarative catalog. Registration is performed by SoundRegistry. */
 @SoundCatalog(namespace = "combatant", root = "sounds/gui", idPrefix = "gui")
 public enum GuiSound implements SoundKey {
+    @SoundAsset(value = "button.wav", id = "button")
+    BUTTON,
+    @SoundAsset(value = "buttonyes.wav", id = "buttonyes")
+    BUTTON_YES,
     @SoundAsset(value = "guibinding.wav", id = "guibinding")
     BINDING,
     @SoundAsset(value = "guibindingnull.wav", id = "guibindingnull")
@@ -27,22 +31,30 @@ public enum GuiSound implements SoundKey {
     BIND_RESET,
     @SoundAsset(value = "guichangemode.wav", id = "guichangemode")
     CHANGE_MODE,
-    @SoundAsset(value = "guiyes.wav", id = "guiyes")
+    @SoundAsset(value = "gui_open.wav", id = "gui_open")
     OPEN,
-    @SoundAsset(value = "guino.wav", id = "guino")
+    @SoundAsset(value = "gui_close.wav", id = "gui_close")
     CLOSE,
+    @SoundAsset(value = "guicoloropen.wav", id = "guicoloropen")
+    COLOR_OPEN,
+    @SoundAsset(value = "guicolorselect.wav", id = "guicolorselect")
+    COLOR_SELECT(45),
+    @SoundAsset(value = "guimodulehover.wav", id = "guimodulehover")
+    MODULE_HOVER(120),
     @SoundAsset(value = "moduleopen.wav", id = "moduleopen")
     MODULE_OPEN,
     @SoundAsset(value = "moduleclose.wav", id = "moduleclose")
     MODULE_CLOSE,
     @SoundAsset(value = "moduleonopen.wav", id = "moduleonopen", gain = 1.4f)
-    MODULE_ON,
+    MODULE_ON_OPEN,
     @SoundAsset(value = "moduleonclose.wav", id = "moduleonclose", gain = 1.4f)
-    MODULE_OFF,
+    MODULE_ON_CLOSE,
     @SoundAsset(value = "guiscroll.wav", id = "guiscroll")
     SCROLL(40),
     @SoundAsset(value = "guislidermove.wav", id = "guislidermove")
-    SLIDER_MOVE(35);
+    SLIDER_MOVE(35),
+    @SoundAsset(value = "toggle.wav", id = "toggle")
+    TOGGLE(35);
 
     private final long cooldownNs;
     private long lastPlayNs;

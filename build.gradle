@@ -127,6 +127,7 @@ loom {
 dependencies {
     compileOnly 'org.projectlombok:lombok:1.18.46'
     annotationProcessor 'org.projectlombok:lombok:1.18.46'
+    annotationProcessor project(':registry-processor')
     testCompileOnly 'org.projectlombok:lombok:1.18.46'
     testAnnotationProcessor 'org.projectlombok:lombok:1.18.46'
     testImplementation platform('org.junit:junit-bom:5.12.2')
@@ -179,8 +180,6 @@ dependencies {
 
     // Provided by Minecraft/Fabric runtime; do not shade it into the mod jar.
     compileOnly 'org.slf4j:slf4j-api:2.0.17'
-
-    bundledLibrary 'io.github.classgraph:classgraph:4.8.165'
 
     // Javet core only. Native V8 binaries are copied into resources/javet/natives.
     bundledLibrary "com.caoccao.javet:javet:${javetVersion}"
@@ -265,10 +264,10 @@ tasks.register("generateFontMsdf", Exec) {
 
     def script = file("tools/msdf/GenerateFontMsdf.ps1")
     inputs.files(fileTree("src/main/resources/assets/combatant/font") {
-        include "icons.ttf", "iconsnur.ttf", "mediaplayer.ttf", "vanilla_symbols.ttf", "weather_icons.ttf"
+        include "matrix_sans_print.ttf", "icons.ttf", "iconsnur.ttf", "mediaplayer.ttf", "vanilla_symbols.ttf", "weather_icons.ttf"
     })
     inputs.file(script)
-    def atlasBases = ["icons", "iconsnur", "mediaplayer", "vanilla_symbols", "weather_icons"]
+    def atlasBases = ["matrix_sans_print", "icons", "iconsnur", "mediaplayer", "vanilla_symbols", "weather_icons"]
     outputs.files(atlasBases.collectMany { base -> [
             file("src/main/resources/assets/combatant/font/msdf/${base}.json"),
             file("src/main/resources/assets/combatant/font/msdf/${base}.png")
@@ -368,6 +367,18 @@ tasks.withType(JavaCompile).configureEach {
     if (targetJavaVersion >= 10 || JavaVersion.current().isJava10Compatible()) {
         it.options.release.set(targetJavaVersion)
     }
+}
+
+tasks.named("compileJava", JavaCompile) {
+    options.compilerArgs.add("-Acombatant.indexName=main")
+}
+
+tasks.named("compileDevJava", JavaCompile) {
+    options.compilerArgs.add("-Acombatant.indexName=dev")
+}
+
+tasks.named("compileVulkanDebugJava", JavaCompile) {
+    options.compilerArgs.add("-Acombatant.indexName=vulkanDebug")
 }
 
 java {

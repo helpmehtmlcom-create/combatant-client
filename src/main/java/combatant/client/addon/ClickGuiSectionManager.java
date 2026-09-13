@@ -12,10 +12,8 @@ import combatant.client.api.v0.clickgui.CombatantClickGuiRenderContext;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.gui.clickgui.sections.ClickGuiSection;
 import combatant.client.features.gui.clickgui.sections.ClickGuiSectionInfo;
+import combatant.client.runtime.discovery.CombatantIndex;
 import combatant.client.util.logging.DebugLog;
-import io.github.classgraph.ClassGraph;
-import io.github.classgraph.ClassInfo;
-import io.github.classgraph.ScanResult;
 import net.fabricmc.loader.api.FabricLoader;
 
 import java.lang.reflect.Constructor;
@@ -26,7 +24,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 
 public enum ClickGuiSectionManager {
     ;
@@ -35,7 +32,7 @@ public enum ClickGuiSectionManager {
     private static final Map<String, OrderedEntry> BUILTIN_SECTIONS = new LinkedHashMap<>();
     private static final Map<String, Entry> ADDON_SECTIONS = new LinkedHashMap<>();
     private static boolean discoveryComplete;
-    private static CompletableFuture<List<String>> discoveryFuture;
+    private static List<String> indexedBuiltinClassNames;
 
     public static synchronized boolean register(String addonId,
                                                 String sectionId,
@@ -91,13 +88,13 @@ public enum ClickGuiSectionManager {
     }
 
     /**
-     * Starts the expensive ClassGraph pass as early as possible without touching section classes.
-     * Only class names are collected off-thread; class loading/constructors stay on the client
+     * Reads the generated builtin index early without touching section classes.
+     * Class loading/constructors stay on the client
      * thread when {@link #prewarm()} (or the first real consumer) commits the result.
      */
-    public static synchronized void beginDiscoveryAsync() {
-        if (discoveryComplete || discoveryFuture != null) return;
-        discoveryFuture = CompletableFuture.supplyAsync(ClickGuiSectionManager::scanBuiltinClassNames);
+    public static synchronized void prepareDiscovery() {
+        if (discoveryComplete || indexedBuiltinClassNames != null) return;
+        indexedBuiltinClassNames = scanBuiltinClassNames();
     }
 
     /** Materializes builtin sections during client warmup instead of the first ClickGUI open. */
@@ -111,35 +108,22 @@ public enum ClickGuiSectionManager {
         }
 
         try {
-            CompletableFuture<List<String>> future = discoveryFuture;
-            List<String> candidates = future != null ? future.join() : scanBuiltinClassNames();
+            List<String> candidates = indexedBuiltinClassNames != null
+                    ? indexedBuiltinClassNames
+                    : scanBuiltinClassNames();
             for (String className : candidates) {
                 registerBuiltin(className);
             }
         } catch (Throwable t) {
             DebugLog.warnOnce("clickgui-section-discovery", "Failed to discover ClickGUI sections", t);
         } finally {
-            discoveryFuture = null;
+            indexedBuiltinClassNames = null;
             discoveryComplete = true;
         }
     }
 
     private static List<String> scanBuiltinClassNames() {
-        try (ScanResult scan = new ClassGraph()
-                .enableClassInfo()
-                .enableAnnotationInfo()
-                .acceptPackages(BUILTIN_PACKAGE)
-                .scan()) {
-            List<ClassInfo> candidates = new ArrayList<>(
-                    scan.getClassesWithAnnotation(ClickGuiSectionInfo.class.getName())
-            );
-            candidates.sort(Comparator.comparing(ClassInfo::getName));
-            ArrayList<String> classNames = new ArrayList<>(candidates.size());
-            for (ClassInfo candidate : candidates) {
-                classNames.add(candidate.getName());
-            }
-            return List.copyOf(classNames);
-        }
+        return CombatantIndex.classNames(CombatantIndex.Kind.CLICK_GUI, BUILTIN_PACKAGE);
     }
 
     private static void registerBuiltin(String className) {

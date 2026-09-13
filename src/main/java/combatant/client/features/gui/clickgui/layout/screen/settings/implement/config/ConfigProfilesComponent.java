@@ -11,6 +11,7 @@ import combatant.client.config.profile.*;
 import org.lwjgl.glfw.GLFW;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.gui.clickgui.ClickGuiSearch;
+import combatant.client.features.gui.clickgui.sound.GuiSound;
 import combatant.client.features.gui.clickgui.layout.screen.settings.SettingsGuiPalette;
 import combatant.client.features.gui.clickgui.layout.screen.settings.implement.config.ConfigProfileCardComponent.CardHit;
 import combatant.client.features.gui.clickgui.layout.screen.settings.render.LayoutRender2D;
@@ -688,6 +689,7 @@ public final class ConfigProfilesComponent {
         clearStatus();
         cancelRename();
         resetScroll();
+        GuiSound.CHANGE_MODE.feedback(0.70);
     }
 
     private void select(ConfigProfileMeta meta) {
@@ -709,6 +711,7 @@ public final class ConfigProfilesComponent {
             selectedDiff = null;
             diffError = null;
             setStatus(ClickGuiI18n.tr("clickgui.settings.config.status.saved", "Saved: %s", selected.name()));
+            GuiSound.BUTTON_YES.feedback(0.85);
         } catch (Exception e) {
             setStatus(ClickGuiI18n.tr("clickgui.settings.config.status.save_failed", "Save failed"));
             DebugLog.error("Failed to save config profile", e);
@@ -724,6 +727,7 @@ public final class ConfigProfilesComponent {
             diffError = null;
             diffPanelComponent.resetScroll();
             setStatus(ClickGuiI18n.tr("clickgui.settings.config.status.overwritten", "Overwritten: %s", selected.name()));
+            GuiSound.BUTTON_YES.feedback(0.85);
         } catch (Exception e) {
             setStatus(ClickGuiI18n.tr("clickgui.settings.config.status.overwrite_failed", "Overwrite failed"));
             DebugLog.error("Failed to overwrite config profile", e);
@@ -756,6 +760,7 @@ public final class ConfigProfilesComponent {
             selectedDiff = null;
             diffError = null;
             setStatus(ClickGuiI18n.tr("clickgui.settings.config.status.applied", "Applied: %s, missing: %s/%s", result.appliedOwners(), result.missingOwners(), result.missingValues()));
+            GuiSound.BUTTON_YES.feedback(0.85);
         } catch (Exception e) {
             setStatus(ClickGuiI18n.tr("clickgui.settings.config.status.apply_failed", "Apply failed"));
             DebugLog.error("Failed to apply config profile", e);
@@ -772,6 +777,7 @@ public final class ConfigProfilesComponent {
                 diffPanelComponent.close();
             }
             setStatus(ClickGuiI18n.tr("clickgui.settings.config.status.deleted", "Deleted: %s", meta.name()));
+            GuiSound.BUTTON.feedback(0.65);
         } catch (Exception e) {
             setStatus(ClickGuiI18n.tr("clickgui.settings.config.status.delete_failed", "Delete failed"));
             DebugLog.error("Failed to delete config profile", e);

@@ -117,7 +117,7 @@ enum UnifiedSettingRenderer {
         BooleanSetting.UiState ui = setting.ui();
         if (!UnifiedSettingsSkin.inside(mx, my, ui.lastX, ui.lastY, ui.lastW, ui.lastH)) return;
         setting.set(!setting.get());
-        GuiSound.CHANGE_MODE.feedback();
+        GuiSound.TOGGLE.feedback();
         if (setting.getParent() != null) setting.getParent().saveConfig();
     }
 
@@ -745,7 +745,7 @@ enum UnifiedSettingRenderer {
             if (!UnifiedSettingsSkin.inside(mx, my, ox - m(2f, 2f), oy - m(1f, 1f), opt.w() + m(4f, 4f), m(16f, 8f)))
                 continue;
             setting.value().set(opt.getId(), !setting.value().get(opt.getId()));
-            GuiSound.CHANGE_MODE.feedback();
+            GuiSound.TOGGLE.feedback();
             if (setting.getParent() != null) setting.getParent().saveConfig();
             return;
         }
@@ -1740,6 +1740,7 @@ enum UnifiedSettingRenderer {
         if (button == 0 && headerHit) {
             ui.editing = !ui.editing;
             clearColorFocus(ui);
+            if (ui.editing) GuiSound.COLOR_OPEN.feedback();
             return;
         }
         if (!ui.editing) return;
@@ -1757,12 +1758,14 @@ enum UnifiedSettingRenderer {
         if (UnifiedSettingsSkin.inside(mx, my, ui.sliderX, ui.sliderY, ui.sliderW, ui.sliderH)) {
             ui.showRgbBars = !ui.showRgbBars;
             clearColorFocus(ui);
+            GuiSound.TOGGLE.feedback();
             return;
         }
         if (UnifiedSettingsSkin.inside(mx, my, ui.rnbX, ui.rnbY, ui.rnbW, ui.rnbH)) {
             value.set(value.isRainbow() ? value.rainbowFallbackHex() : value.toRainbowValue());
             syncColorFromValue(ui, value);
             clearColorFocus(ui);
+            GuiSound.COLOR_SELECT.feedback();
             if (setting.getParent() != null) setting.getParent().saveConfig();
             return;
         }
@@ -1803,7 +1806,10 @@ enum UnifiedSettingRenderer {
         boolean changed = ui.sbFocused || ui.hFocused || ui.aFocused || ui.rFocused || ui.gFocused || ui.bFocused || ui.aRgbFocused;
         ui.presetsScrollbarDragging = false;
         clearColorFocus(ui);
-        if (changed && setting.getParent() != null) setting.getParent().saveConfig();
+        if (changed) {
+            GuiSound.COLOR_SELECT.feedback();
+            if (setting.getParent() != null) setting.getParent().saveConfig();
+        }
     }
 
     static void mouseClickedOutside(ColorSetting setting, double mx, double my, int button) {
@@ -2304,22 +2310,30 @@ enum UnifiedSettingRenderer {
             float px = sx + i * (swatch + gap);
             if (!UnifiedSettingsSkin.inside(mx, my, px, rowY + (ui.presetH - swatch) * 0.5f, swatch, swatch)) continue;
             int color = presets.get(i);
-            if (button == 1) ColorPresetStore.removeExact(color);
-            else applyColor(value, color);
+            if (button == 1) {
+                ColorPresetStore.removeExact(color);
+                GuiSound.BUTTON.feedback(0.65);
+            } else {
+                applyColor(value, color);
+                GuiSound.COLOR_SELECT.feedback();
+            }
             syncColorFromValue(ui, value);
             if (setting.getParent() != null) setting.getParent().saveConfig();
             return true;
         }
         if (button == 0 && UnifiedSettingsSkin.inside(mx, my, ui.presetToggleX, rowY, ui.presetToggleW, ui.presetToggleH)) {
             ui.presetsExpanded = !ui.presetsExpanded;
+            GuiSound.TOGGLE.feedback();
             return true;
         }
         if (button == 0 && UnifiedSettingsSkin.inside(mx, my, ui.savePresetX, rowY, ui.savePresetW, ui.savePresetH)) {
             ColorPresetStore.add(value.getArgb());
+            GuiSound.BUTTON_YES.feedback(0.85);
             return true;
         }
         if (button == 0 && UnifiedSettingsSkin.inside(mx, my, ui.deletePresetX, rowY, ui.deletePresetW, ui.deletePresetH)) {
             ColorPresetStore.removeClosest(value.getArgb());
+            GuiSound.BUTTON.feedback(0.65);
             return true;
         }
 
@@ -2348,8 +2362,13 @@ enum UnifiedSettingRenderer {
                         int index = row * cols + col;
                         if (index >= 0 && index < presets.size()) {
                             int color = presets.get(index);
-                            if (button == 1) ColorPresetStore.removeExact(color);
-                            else applyColor(value, color);
+                            if (button == 1) {
+                                ColorPresetStore.removeExact(color);
+                                GuiSound.BUTTON.feedback(0.65);
+                            } else {
+                                applyColor(value, color);
+                                GuiSound.COLOR_SELECT.feedback();
+                            }
                             syncColorFromValue(ui, value);
                             if (setting.getParent() != null) setting.getParent().saveConfig();
                             return true;
@@ -2383,10 +2402,13 @@ enum UnifiedSettingRenderer {
             ui.hexErrorAnim = 1f;
             return false;
         }
+        int beforeArgb = value.getArgb();
+        boolean beforeRainbow = value.isRainbow();
         applyColor(value, parsed);
         syncColorFromValue(ui, value);
         ui.hexFocused = false;
         ui.hexSelection.clear();
+        if (beforeRainbow || value.getArgb() != beforeArgb) GuiSound.COLOR_SELECT.feedback();
         if (save && setting.getParent() != null) setting.getParent().saveConfig();
         return true;
     }

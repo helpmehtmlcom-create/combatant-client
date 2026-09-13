@@ -32,11 +32,9 @@ import combatant.client.render.map.MapTileUvRect;
 import combatant.client.render.map.MapViewport;
 import combatant.client.render.map.MapVisibleTileSelector;
 import combatant.client.util.logging.DebugLog;
-import combatant.client.util.screen.ClientScreen;
 import combatant.client.util.text.LegacyTextUtil;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screens.options.controls.KeyBindsScreen;
 import net.minecraft.client.renderer.texture.AbstractTexture;
 import net.minecraft.client.resources.language.I18n;
 import org.lwjgl.glfw.GLFW;
@@ -144,10 +142,17 @@ final class XaeroMapSurface {
     private int contextBlockZ;
     private float contextX;
     private float contextY;
+    private double contextWorldX = Double.NaN;
+    private double contextWorldZ = Double.NaN;
+    private XaeroMapUiRenderer.ContextBounds contextBounds;
     private boolean contextOpen;
     private boolean deleteArmed;
+    private boolean helpOpen;
+    private XaeroMapUiRenderer.HelpBounds helpBounds;
     private Drawer drawer = Drawer.NONE;
     private XaeroMapWaypointEditor waypointEditor;
+    private double waypointEditorWorldX = Double.NaN;
+    private double waypointEditorWorldZ = Double.NaN;
     private Action pressedUiAction;
 
     Frame render(float x, float y, float width, float height, float mouseX, float mouseY) {
@@ -224,8 +229,8 @@ final class XaeroMapSurface {
                 && InputConstants.isKeyDown(minecraft.getWindow(), GLFW.GLFW_KEY_TAB);
         elements.setTabDown(tabDown);
         elementSnapshot = elements.collect(processor, dimension, userScale);
-        boolean elementPointerActive = (settings == null || !settings.isOpen())
-                && !contextOpen && waypointEditor == null && drawer == Drawer.NONE
+        boolean elementPointerActive = (settings == null || !settings.isVisible())
+                && !contextOpen && !helpOpen && waypointEditor == null && drawer == Drawer.NONE
                 && contains(mouseX, mouseY);
         hoveredElement = elements.render(elementSnapshot, viewport,
                 elementPointerActive ? mouseX : Float.NaN,
@@ -245,11 +250,13 @@ final class XaeroMapSurface {
             if (consumed) return true;
         }
         if (settings != null && settings.mousePressed(mouseX, mouseY, button)) return true;
+        if (helpOpen && helpBounds != null && helpBounds.contains(mouseX, mouseY)) return true;
         if (contextOpen && clickContext(mouseX, mouseY, button)) return true;
         if (clickUiButton(mouseX, mouseY, button)) return true;
         if (clickDrawer(mouseX, mouseY, button)) return true;
         if (!contains(mouseX, mouseY)) return false;
 
+        helpOpen = false;
         contextOpen = false;
         deleteArmed = false;
         if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
@@ -258,6 +265,17 @@ final class XaeroMapSurface {
             contextBlockX = pointerBlockX;
             contextBlockY = pointerBlockY;
             contextBlockZ = pointerBlockZ;
+            if (rightClickElement != null) {
+                contextWorldX = rightClickElement.worldX();
+                contextWorldZ = rightClickElement.worldZ();
+            } else if (viewport != null) {
+                MapPoint anchor = viewport.unproject(mouseX, mouseY);
+                contextWorldX = anchor.x();
+                contextWorldZ = anchor.z();
+            } else {
+                contextWorldX = contextBlockX;
+                contextWorldZ = contextBlockZ;
+            }
             selectionStartX = selectionEndX = pointerBlockX >> 4;
             selectionStartZ = selectionEndZ = pointerBlockZ >> 4;
             return true;
@@ -281,9 +299,9 @@ final class XaeroMapSurface {
         }
         if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT && rightSelecting) {
             rightSelecting = false;
-            contextX = clamp(mouseX, areaX + 8.0f, areaX + areaWidth - 246.0f);
-            contextY = clamp(mouseY, areaY + 8.0f, areaY + areaHeight - 280.0f);
+            updateContextScreenAnchor();
             contextOpen = true;
+            contextBounds = null;
             rebuildContextEntries();
         }
     }
@@ -303,8 +321,13 @@ final class XaeroMapSurface {
         }
         if (settings != null && settings.keyPressed(keyCode, scanCode, modifiers)) return true;
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            if (helpOpen) {
+                helpOpen = false;
+                return true;
+            }
             if (contextOpen || drawer != Drawer.NONE) {
                 contextOpen = false;
+                contextBounds = null;
                 drawer = Drawer.NONE;
                 return true;
             }
@@ -382,6 +405,7 @@ final class XaeroMapSurface {
         dragging = false;
         rightSelecting = false;
         contextOpen = false;
+        helpOpen = false;
         hoveredElement = null;
         elements.clearHover();
     }
@@ -838,6 +862,7 @@ final class XaeroMapSurface {
                         SupportMods.pac() && effective(WorldMapProfiledConfigOptions.OPAC_CLAIMS),
                         effective(WorldMapProfiledConfigOptions.ZOOM_BUTTONS),
                         drawer,
+                        helpOpen,
                         tr("gui.xaero_box_open_settings", "Settings"),
                         "Recenter",
                         tr("gui.xaero_box_cave_mode", "Cave mode"),
@@ -847,7 +872,7 @@ final class XaeroMapSurface {
                         tr("gui.xaero_box_minimap_radar", "Minimap radar"),
                         tr("gui.xaero_box_pac_displaying_claims", "Claims"),
                         tr("gui.xaero_box_export", "Export"),
-                        tr("gui.xaero_box_controls", "Controls"),
+                        "",
                         tr("gui.xaero_box_zoom_out", "Zoom out"),
                         tr("gui.xaero_box_zoom_in", "Zoom in")
                 ));
@@ -862,34 +887,56 @@ final class XaeroMapSurface {
         XaeroMapUiRenderer.drawZoom(areaX, areaY, areaWidth, areaHeight, destinationScale, palette);
         withMapGlassSource(() -> XaeroMapUiRenderer.drawDrawer(areaX, areaY, areaWidth, mouseX, mouseY,
                 drawer, elementSnapshot, drawerHits,
-                tr("gui.xaero_box_open_waypoints", "Waypoints"), palette));
+                tr("gui.xaero_box_open_waypoints", "Waypoints"), palette, chromeMotion));
+        final XaeroMapUiRenderer.HelpBounds[] helpHolder = new XaeroMapUiRenderer.HelpBounds[1];
+        withMapGlassSource(() -> helpHolder[0] = XaeroMapUiRenderer.drawHelp(
+                areaX, areaY, areaWidth, areaHeight, uiButtons, helpOpen, palette, chromeMotion));
+        helpBounds = helpHolder[0];
         if (contextOpen) {
+            updateContextScreenAnchor();
             rebuildContextEntries();
             final XaeroMapUiRenderer.ContextBounds[] holder = new XaeroMapUiRenderer.ContextBounds[1];
             withMapGlassSource(() -> holder[0] = XaeroMapUiRenderer.drawContext(
                     areaX, areaY, areaWidth, areaHeight,
-                    contextX, contextY, mouseX, mouseY, contextEntries, palette));
-            XaeroMapUiRenderer.ContextBounds bounds = holder[0];
-            if (bounds != null) {
-                contextX = bounds.x();
-                contextY = bounds.y();
-            }
+                    contextX, contextY, mouseX, mouseY, contextEntries, palette, chromeMotion));
+            contextBounds = holder[0];
+        } else {
+            XaeroMapUiRenderer.updateContextClosed(chromeMotion);
+            contextBounds = null;
         }
         if (waypointEditor != null) {
+            if (viewport != null && Double.isFinite(waypointEditorWorldX) && Double.isFinite(waypointEditorWorldZ)) {
+                MapScreenPoint projected = viewport.project(waypointEditorWorldX, waypointEditorWorldZ);
+                waypointEditor.setAnchor((float) projected.x(), (float) projected.y());
+            }
             withMapGlassSource(() -> waypointEditor.render(
                     areaX, areaY, areaWidth, areaHeight, mouseX, mouseY, palette));
-            if (waypointEditor.isClosed()) waypointEditor = null;
+            if (waypointEditor.isClosed()) {
+                waypointEditor = null;
+                waypointEditorWorldX = Double.NaN;
+                waypointEditorWorldZ = Double.NaN;
+            }
         }
         withMapGlassSource(() -> XaeroMapUiRenderer.drawTooltip(areaX, areaY, areaWidth, areaHeight,
                 mouseX, mouseY, uiButtons,
-                (settings != null && settings.isOpen()) || contextOpen || waypointEditor != null,
+                (settings != null && settings.isVisible()) || contextOpen || helpOpen || waypointEditor != null,
                 palette, chromeMotion));
-        if (settings != null) settings.render(areaX, areaY, areaWidth, areaHeight, mouseX, mouseY);
+        if (settings != null) {
+            withMapGlassSource(() -> settings.render(
+                    areaX, areaY, areaWidth, areaHeight, mouseX, mouseY));
+        }
     }
 
     private static void withMapGlassSource(Runnable draw) {
         Renderer2D.COLOR.withLiquidGlassSceneSource(
                 UiBackdropRequest.SceneSource.UI_UNDERLAY, draw);
+    }
+
+    private void updateContextScreenAnchor() {
+        if (viewport == null || !Double.isFinite(contextWorldX) || !Double.isFinite(contextWorldZ)) return;
+        MapScreenPoint projected = viewport.project(contextWorldX, contextWorldZ);
+        contextX = clamp((float) projected.x(), areaX + 4.0f, areaX + areaWidth - 4.0f);
+        contextY = clamp((float) projected.y(), areaY + 4.0f, areaY + areaHeight - 4.0f);
     }
 
     private void drawCoordinates(SettingsGuiPalette palette, MapDimension dimension) {
@@ -986,6 +1033,7 @@ final class XaeroMapSurface {
     }
 
     private void runUiAction(Action action) {
+        if (action != Action.CONTROLS) helpOpen = false;
         switch (action) {
             case SETTINGS -> toggleSettings();
             case RECENTER -> recenter();
@@ -996,7 +1044,14 @@ final class XaeroMapSurface {
             case RADAR -> toggle(WorldMapProfiledConfigOptions.MINIMAP_RADAR);
             case CLAIMS -> toggle(WorldMapProfiledConfigOptions.OPAC_CLAIMS);
             case EXPORT -> exportSelection();
-            case CONTROLS -> openKeyBindings();
+            case CONTROLS -> {
+                helpOpen = !helpOpen;
+                if (helpOpen) {
+                    contextOpen = false;
+                    contextBounds = null;
+                    drawer = Drawer.NONE;
+                }
+            }
             case ZOOM_IN -> changeZoom(1.0, areaX + areaWidth * 0.5f,
                     areaY + areaHeight * 0.5f, false);
             case ZOOM_OUT -> changeZoom(-1.0, areaX + areaWidth * 0.5f,
@@ -1004,20 +1059,16 @@ final class XaeroMapSurface {
         }
     }
 
-    private static void openKeyBindings() {
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft == null || minecraft.gui == null) return;
-        minecraft.gui.setScreen(new KeyBindsScreen(ClientScreen.current(minecraft), minecraft.options));
-    }
-
     private boolean clickDrawer(float mouseX, float mouseY, int button) {
         for (ElementHit hit : drawerHits) {
             if (!hit.contains(mouseX, mouseY)) continue;
             if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
                 rightClickElement = hit.element();
-                contextX = mouseX;
-                contextY = mouseY;
+                contextWorldX = hit.element().worldX();
+                contextWorldZ = hit.element().worldZ();
+                updateContextScreenAnchor();
                 contextOpen = true;
+                contextBounds = null;
                 deleteArmed = false;
                 rebuildContextEntries();
             } else if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
@@ -1032,15 +1083,19 @@ final class XaeroMapSurface {
 
     private boolean clickContext(float mouseX, float mouseY, int button) {
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return true;
-        float width = 340.0f;
-        float rowHeight = 42.0f;
-        float height = 16.0f + contextEntries.size() * rowHeight;
-        if (!inside(mouseX, mouseY, contextX, contextY, width, height)) {
+        XaeroMapUiRenderer.ContextBounds bounds = contextBounds != null
+                ? contextBounds
+                : XaeroMapUiRenderer.contextBounds(
+                        areaX, areaY, areaWidth, areaHeight,
+                        contextX, contextY, contextEntries);
+        if (bounds == null || !inside(mouseX, mouseY,
+                bounds.x(), bounds.y(), bounds.width(), bounds.height())) {
             contextOpen = false;
+            contextBounds = null;
             deleteArmed = false;
             return false;
         }
-        int row = (int) ((mouseY - contextY - 8.0f) / rowHeight);
+        int row = XaeroMapUiRenderer.contextEntryAt(bounds, mouseX, mouseY, contextEntries);
         if (row >= 0 && row < contextEntries.size()) {
             MenuEntry entry = contextEntries.get(row);
             if (entry.enabled()) runContextAction(entry.action());
@@ -1077,6 +1132,7 @@ final class XaeroMapSurface {
             }
         }
         contextOpen = false;
+        contextBounds = null;
         deleteArmed = false;
     }
 
@@ -1106,21 +1162,24 @@ final class XaeroMapSurface {
             contextBlockY = pointerBlockY;
             contextBlockZ = pointerBlockZ;
         }
+        double anchorWorldX = contextBlockX;
+        double anchorWorldZ = contextBlockZ;
+        if (waypoint != null && rightClickElement != null
+                && rightClickElement.handle() == waypoint) {
+            anchorWorldX = rightClickElement.worldX();
+            anchorWorldZ = rightClickElement.worldZ();
+        } else if (waypoint != null && hoveredElement != null
+                && hoveredElement.handle() == waypoint) {
+            anchorWorldX = hoveredElement.worldX();
+            anchorWorldZ = hoveredElement.worldZ();
+        }
+        waypointEditorWorldX = anchorWorldX;
+        waypointEditorWorldZ = anchorWorldZ;
+
         float editorAnchorX = areaX + areaWidth * 0.5f;
         float editorAnchorY = areaY + areaHeight * 0.5f;
         if (viewport != null) {
-            double anchorWorldX = contextBlockX;
-            double anchorWorldZ = contextBlockZ;
-            if (waypoint != null && rightClickElement != null
-                    && rightClickElement.handle() == waypoint) {
-                anchorWorldX = rightClickElement.worldX();
-                anchorWorldZ = rightClickElement.worldZ();
-            } else if (waypoint != null && hoveredElement != null
-                    && hoveredElement.handle() == waypoint) {
-                anchorWorldX = hoveredElement.worldX();
-                anchorWorldZ = hoveredElement.worldZ();
-            }
-            MapScreenPoint projected = viewport.project(anchorWorldX, anchorWorldZ);
+            MapScreenPoint projected = viewport.project(waypointEditorWorldX, waypointEditorWorldZ);
             editorAnchorX = (float) projected.x();
             editorAnchorY = (float) projected.y();
         }

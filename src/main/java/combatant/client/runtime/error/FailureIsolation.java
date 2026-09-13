@@ -8,6 +8,7 @@ package combatant.client.runtime.error;
 import combatant.client.features.gui.clickgui.settings.Setting;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleManager;
+import combatant.client.features.module.sound.ModuleLifecycleSound;
 import combatant.client.runtime.RuntimeGate;
 import combatant.client.runtime.error.FailureRegistry.Failure;
 import combatant.client.runtime.error.FailureRegistry.Scope;
@@ -61,7 +62,7 @@ public final class FailureIsolation {
         if (current == null || current.id() != incident) return;
         try {
             // Even a failed onDisable must finish the non-callback portion of quarantine.
-            module.quarantineAfterFailure();
+            ModuleManager.runWithToggleSoundSuppressed(module::quarantineAfterFailure);
             synchronized (CLEANUP) {
                 CleanupRecord record = CLEANUP.get(module);
                 if (record != null && record.incident() == incident)
@@ -80,7 +81,10 @@ public final class FailureIsolation {
             FailureExecution.reportComponent(key, module.name() + " cleanup", "cleanup", e, FailureBoundary.ISOLATE);
         } finally {
             Failure latest = ErrorHandler.failure(module);
-            if (latest != null && latest.id() == incident) ErrorHandler.quarantine(module);
+            if (latest != null && latest.id() == incident) {
+                ErrorHandler.quarantine(module);
+                ModuleLifecycleSound.HARD_DISABLE.feedback();
+            }
         }
     }
     public static Cleanup cleanupState(Module module) {
@@ -105,19 +109,23 @@ public final class FailureIsolation {
         if (mc == null || !mc.isSameThread() || !RuntimeGate.canRunModules()) return false;
         if (ErrorHandler.beginRecovery(module) == null) return false;
         try (AutoCloseable scope = ErrorHandler.recoveryScope(module)) {
-            boolean ready = module.recoverAfterFailure();
+            boolean ready = ModuleManager.callWithToggleSoundSuppressed(module::recoverAfterFailure);
             if (ready && module.isEnabled() && ErrorHandler.failure(module) != null
                     && ErrorHandler.failure(module).state() == State.RECOVERING) {
-                module.setEnabledManual(true);
+                ModuleManager.runWithToggleSoundSuppressed(() -> module.setEnabledManual(true));
                 ready = module.isEnabled() && ErrorHandler.failure(module) != null
                         && ErrorHandler.failure(module).state() == State.RECOVERING;
             } else ready = false;
-            if (ready) return ErrorHandler.recovered(module);
+            if (ready) {
+                boolean recovered = ErrorHandler.recovered(module);
+                if (recovered) ModuleLifecycleSound.RECOVERY_ENABLE.feedback();
+                return recovered;
+            }
             Failure current = ErrorHandler.failure(module);
             if (current != null && current.state() == State.RECOVERING) {
                 ErrorHandler.recoveryFailed(module);
                 // A vetoed enable has no active resources; quarantine performs the state reset.
-                try { module.quarantineAfterFailure(); }
+                try { ModuleManager.runWithToggleSoundSuppressed(module::quarantineAfterFailure); }
                 catch (RuntimeException e) { reportModule(module, "recovery cleanup", e, true); }
             }
             return false;

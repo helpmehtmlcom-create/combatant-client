@@ -18,6 +18,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import combatant.client.util.player.effect.StatusEffectHeuristics;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.visuals.NoRender;
+import combatant.client.util.particle.ParticleClassCatalog;
 
 @Mixin(ParticleEngine.class)
 public class ParticleManagerMixin {
@@ -43,6 +44,7 @@ public class ParticleManagerMixin {
 
     @Inject(method = "add", at = @At("HEAD"), cancellable = true)
     private void combatant$particleAdd(Particle particle, CallbackInfo ci) {
+        ParticleClassCatalog.observe(particle);
         NoRender noRender = Modules.get(NoRender.class);
         if (noRender != null && noRender.shouldHideParticle(particle)) {
             ci.cancel();

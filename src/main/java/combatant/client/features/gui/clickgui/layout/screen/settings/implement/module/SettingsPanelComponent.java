@@ -23,6 +23,7 @@ import combatant.client.render.engine.renderer.ui.runtime.script.UiScriptModuleH
 import net.minecraft.client.Minecraft;
 import org.lwjgl.glfw.GLFW;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
+import combatant.client.features.gui.clickgui.sound.GuiSound;
 import combatant.client.features.gui.clickgui.layout.screen.settings.SettingsGuiPalette;
 import combatant.client.features.gui.clickgui.settings.Setting;
 import combatant.client.features.gui.clickgui.settings.SettingErrorView;
@@ -121,6 +122,7 @@ private static final float DROPDOWN_PANEL_W = 115.0f;
 
     public void open(String id, String title, List<Setting> source, boolean hudContext) {
         if (id == null) return;
+        boolean soundOpen = !openTarget || !id.equals(targetId);
         resetHudPreview();
         this.targetId = id;
         this.title = title == null || title.isBlank() ? id : title;
@@ -143,6 +145,7 @@ private static final float DROPDOWN_PANEL_W = 115.0f;
             this.pillActiveAnim = 1f;
             applyHudPreviewMode();
         }
+        if (soundOpen) settingsSurfaceSound(id, true).feedback();
     }
 
     public void openEditor(String id, String title, List<Setting> source) {
@@ -152,8 +155,18 @@ private static final float DROPDOWN_PANEL_W = 115.0f;
     }
 
     public void close() {
+        boolean soundClose = openTarget;
+        String closingId = targetId;
         openTarget = false;
         dragging = false;
+        if (soundClose) settingsSurfaceSound(closingId, false).feedback();
+    }
+
+    private static GuiSound settingsSurfaceSound(String id, boolean opening) {
+        Module module = id == null ? null : ModuleManager.get(id);
+        boolean enabled = module != null && module.isEnabled();
+        if (opening) return enabled ? GuiSound.MODULE_ON_OPEN : GuiSound.MODULE_OPEN;
+        return enabled ? GuiSound.MODULE_ON_CLOSE : GuiSound.MODULE_CLOSE;
     }
 
     public boolean isActive() {

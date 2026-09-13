@@ -14,7 +14,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Marks a static asset lifecycle hook discovered through ClassGraph. */
+/** Marks a static asset lifecycle hook included in the generated component index. */
 @UsedImplicitly
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.METHOD)

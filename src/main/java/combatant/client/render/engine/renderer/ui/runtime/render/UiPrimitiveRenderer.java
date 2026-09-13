@@ -45,6 +45,16 @@ public final class UiPrimitiveRenderer {
         };
     }
 
+    private static boolean isRectPrimitivePreset(String shape, UiProps props) {
+        String raw = props != null ? props.string("preset", shape) : shape;
+        String preset = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+        return switch (preset) {
+            case "", "primitive", "procedural-panel", "procedural_panel",
+                 "panel-primitive", "panel_primitive", "rect", "rectangle" -> true;
+            default -> false;
+        };
+    }
+
     private static Renderer2D.LiquidGlassPreset glassPreset(UiProps props) {
         String value = props != null ? props.string("glassPreset", "balanced") : "balanced";
         return switch (value.trim().toLowerCase(Locale.ROOT)) {
@@ -403,7 +413,7 @@ public final class UiPrimitiveRenderer {
                         renderer.liquidGlassCompound(
                                 compound,
                                 color(props.get("glassTint"), 0xFFFFFFFF),
-                                props.number("glassAlpha", 1.0f),
+                                props.number("glassAlpha", 1.0f) * renderAlpha,
                                 props.number("blurAlpha", style.blurAlpha()) * renderAlpha,
                                 glassPreset(props)
                         ));
@@ -422,14 +432,23 @@ public final class UiPrimitiveRenderer {
         if (primitiveShape) {
             UiPrimitive primitive = buildPrimitive(props, style, shape, x, y, w, h);
             if (props.bool("liquidGlass", style.liquidGlass())) {
-                UiBackdropRuntime.drawLiquidGlass(renderer, props, () ->
-                        renderer.liquidGlassPrimitive(
-                                primitive,
-                                color(props.get("glassTint"), 0xFFFFFFFF),
-                                props.number("glassAlpha", 1.0f),
-                                props.number("blurAlpha", style.blurAlpha()) * renderAlpha,
-                                glassPreset(props)
-                        ));
+                UiBackdropRuntime.drawLiquidGlass(renderer, props, () -> {
+                    int glassTint = color(props.get("glassTint"), 0xFFFFFFFF);
+                    float glassAlpha = props.number("glassAlpha", 1.0f) * renderAlpha;
+                    float blurAlpha = props.number("blurAlpha", style.blurAlpha()) * renderAlpha;
+                    Renderer2D.LiquidGlassPreset preset = glassPreset(props);
+                    if (primitive.shaderEligible()) {
+                        renderer.liquidGlassPrimitive(primitive, glassTint, glassAlpha, blurAlpha, preset);
+                    } else if (isRectPrimitivePreset(shape, props)) {
+                        // Rounded/corner-authored RECT primitives can lower to >8 polygon points.
+                        // Do not let scripted UI take down the whole surface: preserve the
+                        // intended rectangular glass through the dedicated analytic rect path.
+                        float radius = Math.max(0.0f, props.number("radius", style.radius()));
+                        float rounding = Math.max(radius, primitive.rounding());
+                        renderer.liquidGlassRect(x, y, w, h, rounding,
+                                glassTint, glassAlpha, blurAlpha, preset);
+                    }
+                });
             }
             UiPaint fillPaint = buildPaint(props, fill, linearGradient, gradientStart, gradientEnd, gradientAngle, gradientOffset);
             if ((fillPaint.solidColor() >>> 24) > 0 || linearGradient || hasFillCornerColors(props)) {

@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 final class SoundRegistryTest {
     @Test
-    void classGraphDiscoversAnnotatedCatalog() {
+    void generatedIndexDiscoversAnnotatedCatalog() {
         SoundRegistry registry = SoundRegistry.get();
         registry.discover("combatant.client.features.gui.clickgui.sound");
 

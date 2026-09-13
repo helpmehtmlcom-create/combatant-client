@@ -9,6 +9,7 @@ package combatant.client.features.gui.clickgui.layout.screen.settings.implement.
 
 import combatant.client.render.engine.renderer.RenderWarpStack;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
+import combatant.client.features.gui.clickgui.sound.GuiSound;
 import combatant.client.features.gui.clickgui.settings.SettingErrorView;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleManager;
@@ -42,6 +43,8 @@ public final class ModuleComponent {
     private final Map<String, Float> stateAnimById = new HashMap<>();
     private final Map<String, Float> hoverAnimById = new HashMap<>();
     private final Map<String, StatusRender> statusRenderById = new HashMap<>();
+    private String lastHoverSoundCardId;
+    private String hoverSoundCardIdThisFrame;
     private float scroll;
     private float smoothedScroll;
     private boolean scrollbarVisible;
@@ -120,7 +123,11 @@ public final class ModuleComponent {
                        List<CardEntry> entries,
                        float scale) {
         hits.clear();
-        if (entries.isEmpty()) return;
+        hoverSoundCardIdThisFrame = null;
+        if (entries.isEmpty()) {
+            lastHoverSoundCardId = null;
+            return;
+        }
 
         int[] offsets = calculateOffsets(entries, scale);
         int column = 0;
@@ -165,6 +172,7 @@ public final class ModuleComponent {
         if (clipped) ScissorFunction.pop();
 
         renderScrollbar(menuX, menuY, menuH, clamped, scale, palette);
+        lastHoverSoundCardId = hoverSoundCardIdThisFrame;
     }
 
     public boolean mousePressedScrollbar(float mx, float my, int button) {
@@ -207,6 +215,10 @@ public final class ModuleComponent {
         boolean quarantined = ErrorHandler.blocked(faultModule);
         float enabledAnim = stateAnimById.compute(entry.getId(), (k, v) -> AnimationUtility.approach(v == null ? 0f : v, entry.enabled() ? 1f : 0f, 0.16f));
         boolean hovered = ClickGuiMath.insideRect(ClickGuiRenderer.getMouseX(), ClickGuiRenderer.getMouseY(), x, y, w, h);
+        if (hovered) {
+            hoverSoundCardIdThisFrame = entry.getId();
+            if (!entry.getId().equals(lastHoverSoundCardId)) GuiSound.MODULE_HOVER.feedback(0.60);
+        }
         float hoverAnim = hoverAnimById.compute(entry.getId(), (k, v) -> AnimationUtility.approach(v == null ? 0f : v, hovered ? 1f : 0f, 0.18f));
         Parallax parallax = computeParallax(ClickGuiRenderer.getMouseX(), ClickGuiRenderer.getMouseY(), x, y, w, h, hoverAnim);
         int brightnessOffset = Math.round(9f * enabledAnim);

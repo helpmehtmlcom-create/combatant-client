@@ -20,8 +20,8 @@ public enum CombatantRenderEngineBootstrap {
 
     public static void init() {
         RenderBoundaryAudit.runOnce();
-        // Overlap the expensive ClickGUI ClassGraph scan with the rest of client bootstrap.
-        ClickGuiSectionManager.beginDiscoveryAsync();
+        // Read the generated ClickGUI component index alongside the rest of client bootstrap.
+        ClickGuiSectionManager.prepareDiscovery();
         // RHI backend selection must be lazy: onInitializeClient can run before RenderSystem has
         // created the final GpuDevice, which would permanently select the wrong backend on Vulkan.
         Renderer2D.init();

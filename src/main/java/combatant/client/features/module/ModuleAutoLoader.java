@@ -13,9 +13,7 @@ import combatant.client.runtime.error.FailureIsolation;
 
 import combatant.client.util.logging.DebugLog;
 import combatant.client.runtime.error.ErrorHandler;
-import io.github.classgraph.ClassGraph;
-import io.github.classgraph.ClassInfo;
-import io.github.classgraph.ScanResult;
+import combatant.client.runtime.discovery.CombatantIndex;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
@@ -76,15 +74,8 @@ public enum ModuleAutoLoader {
             discoveryStarted = true;
         }
 
-        try (ScanResult scan = new ClassGraph()
-                .enableClassInfo()
-                .enableAnnotationInfo()
-                .acceptPackages(basePackage)
-                .scan()) {
-            Set<String> candidates = new LinkedHashSet<>();
-            addAnnotatedCandidates(scan, candidates, ModuleInfo.class);
-
-            for (String className : candidates) {
+        try {
+            for (String className : CombatantIndex.classNames(CombatantIndex.Kind.MODULE, basePackage)) {
                 loadCandidate(className);
             }
         } finally {
@@ -92,14 +83,6 @@ public enum ModuleAutoLoader {
                 discoveryFinished = true;
             }
             logUnmatchedDisableRequests();
-        }
-    }
-
-    private static void addAnnotatedCandidates(ScanResult scan,
-                                               Set<String> candidates,
-                                               Class<?> annotationType) {
-        for (ClassInfo info : scan.getClassesWithAnnotation(annotationType.getName())) {
-            candidates.add(info.getName());
         }
     }
 

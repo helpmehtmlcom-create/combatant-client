@@ -25,7 +25,7 @@ import combatant.client.features.gui.clickgui.settings.SliderSetting;
 import combatant.client.features.gui.clickgui.settings.TextSetting;
 import combatant.client.features.gui.hud.script.HudScriptLayouts;
 import combatant.client.features.theme.Theme;
-import combatant.client.features.theme.Themes;
+import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.ui.runtime.core.UiRuntime;
 import combatant.client.render.engine.renderer.ui.runtime.render.UiProjectionMode;
@@ -86,6 +86,8 @@ final class XaeroMapSettingsPanel {
 
     private Category selectedCategory = Category.DISPLAY;
     private boolean open;
+    private float openAnim;
+    private float contentAnim = 1.0f;
     private boolean searchFocused;
     private String search = "";
     private float x;
@@ -187,15 +189,21 @@ final class XaeroMapSettingsPanel {
         return open;
     }
 
+    boolean isVisible() {
+        return open || openAnim > 0.002f;
+    }
+
     void toggle() {
         open = !open;
-        if (!open) searchFocused = false;
+        if (open) contentAnim = 0.0f;
+        else searchFocused = false;
     }
 
     void openCave() {
         selectedCategory = Category.CAVE;
         scroll = 0.0f;
         open = true;
+        contentAnim = 0.0f;
         searchFocused = false;
     }
 
@@ -206,21 +214,49 @@ final class XaeroMapSettingsPanel {
 
     void render(float viewportX, float viewportY, float viewportWidth, float viewportHeight,
                 float mouseX, float mouseY) {
-        if (!open) return;
+        float dt = AnimationUtility.deltaTime();
+        float target = open ? 1.0f : 0.0f;
+        openAnim = AnimationUtility.approach(openAnim, target, dt, open ? 10.5f : 12.0f);
+        openAnim = AnimationUtility.snap(openAnim, target, 0.002f);
+        contentAnim = AnimationUtility.approach(contentAnim, 1.0f, dt, 8.5f);
+        contentAnim = AnimationUtility.snap(contentAnim, 1.0f, 0.002f);
+        if (!open && openAnim <= 0.001f) {
+            openAnim = 0.0f;
+            hits.clear();
+            categoryHits.clear();
+            return;
+        }
 
         width = Math.min(DESIGN_WIDTH, Math.max(MIN_WIDTH, viewportWidth - SCREEN_INSET));
         height = Math.min(DESIGN_HEIGHT, Math.max(MIN_HEIGHT, viewportHeight - SCREEN_INSET));
+        float eased = easeOutCubic(openAnim);
         x = viewportX + (viewportWidth - width) * 0.5f;
-        y = viewportY + (viewportHeight - height) * 0.5f;
+        y = viewportY + (viewportHeight - height) * 0.5f + (1.0f - eased) * 16.0f;
 
         SolidBrowserLayout layout = SolidBrowserLayout.of(width, height);
         updateInteractiveGeometry(layout);
-        renderBrowserSurface(layout);
-        searchComponent.render(searchX, searchY, searchW, searchH, searchModel);
-        renderSettingsContent(layout, mouseX, mouseY);
+
+        float lifecycleAlpha = smootherStep(openAnim);
+
+        // The scripted Browser owns its lifecycle alpha through UiRenderContext so text, images,
+        // primitives and glass all decay together. Do not multiply Renderer2D alpha around it as
+        // well, otherwise the optical surface fades twice while runtime text only fades once.
+        renderBrowserSurface(layout, lifecycleAlpha);
+
+        double previousRendererAlpha = Renderer2D.COLOR.getAlpha();
+        float previousGuiAlpha = ClickGuiRenderer.getRenderAlphaMultiplier();
+        Renderer2D.COLOR.setAlpha(previousRendererAlpha * lifecycleAlpha);
+        ClickGuiRenderer.setRenderAlphaMultiplier(previousGuiAlpha * lifecycleAlpha);
+        try {
+            searchComponent.render(searchX, searchY, searchW, searchH, searchModel);
+            renderSettingsContent(layout, mouseX, mouseY, contentAnim);
+        } finally {
+            ClickGuiRenderer.restoreRenderAlphaMultiplier(previousGuiAlpha);
+            Renderer2D.COLOR.setAlpha(previousRendererAlpha);
+        }
     }
 
-    private void renderBrowserSurface(SolidBrowserLayout layout) {
+    private void renderBrowserSurface(SolidBrowserLayout layout, float lifecycleAlpha) {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.getResourceManager() == null) return;
         HudScriptLayouts.pollReloadCombo(mc);
@@ -238,10 +274,6 @@ final class XaeroMapSettingsPanel {
         props.put("title", "World Map");
         props.put("selectedCategory", selectedCategory.id);
         props.put("accent", hex(Theme.theme().accent()));
-        Themes.GradientSpec categoryStroke = Themes.hudAccentGradient();
-        props.put("categoryStrokeStart", hex(categoryStroke.start()));
-        props.put("categoryStrokeEnd", hex(categoryStroke.end()));
-        props.put("categoryStrokeAngle", categoryStroke.angleDeg());
         props.put("layout", layout.toProps());
         List<LinkedHashMap<String, Object>> categories = new ArrayList<>();
         for (Category category : Category.values()) {
@@ -274,16 +306,18 @@ final class XaeroMapSettingsPanel {
         );
         if (runtime != null) {
             runtime.render(new UiRenderContext(Renderer2D.COLOR, ClickGuiRenderer.getOnestMedium(), null, 0.0f,
-                    UiProjectionMode.CURRENT));
+                    UiProjectionMode.CURRENT, lifecycleAlpha));
         }
     }
 
-    private void renderSettingsContent(SolidBrowserLayout layout, float mouseX, float mouseY) {
+    private void renderSettingsContent(SolidBrowserLayout layout, float mouseX, float mouseY, float transition) {
         SettingsGuiPalette palette = SettingsGuiPalette.current();
         hits.clear();
 
+        float contentEase = easeOutCubic(transition);
+        float contentAlpha = 0.62f + 0.38f * smootherStep(transition);
         float contentX = x + layout.detailX + layout.contentX;
-        float contentY = y + layout.contentY;
+        float contentY = y + layout.contentY + (1.0f - contentEase) * 8.0f;
         float contentW = layout.contentWidth;
         float contentH = layout.contentHeight;
         float cursorY = contentY + scroll;
@@ -293,6 +327,10 @@ final class XaeroMapSettingsPanel {
         float rowGap = 10.0f;
 
         boolean clipped = ScissorFunction.pushRaw(contentX, contentY, contentW, contentH);
+        double previousRendererAlpha = Renderer2D.COLOR.getAlpha();
+        float previousGuiAlpha = ClickGuiRenderer.getRenderAlphaMultiplier();
+        Renderer2D.COLOR.setAlpha(previousRendererAlpha * contentAlpha);
+        ClickGuiRenderer.setRenderAlphaMultiplier(previousGuiAlpha * contentAlpha);
         try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.SETTINGS, 1.0f)) {
             List<Entry> visible = entries.stream().filter(this::matches).toList();
             for (int index = 0; index < visible.size();) {
@@ -320,12 +358,15 @@ final class XaeroMapSettingsPanel {
                 index += right == null ? 1 : 2;
             }
         } finally {
+            ClickGuiRenderer.restoreRenderAlphaMultiplier(previousGuiAlpha);
+            Renderer2D.COLOR.setAlpha(previousRendererAlpha);
             if (clipped) ScissorFunction.pop();
         }
 
         if (total <= 0.0f) {
             ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), "No matching settings",
-                    contentX + 6.0f, contentY + 16.0f, 18.0f, palette.panelMuted(), false);
+                    contentX + 6.0f, contentY + 16.0f, 18.0f,
+                    SettingsGuiPalette.withAlpha(palette.panelMuted(), Math.round(255.0f * contentAlpha)), false);
         }
         maxScroll = Math.max(0.0f, total - contentH);
         scroll = clamp(scroll, -maxScroll, 0.0f);
@@ -352,10 +393,10 @@ final class XaeroMapSettingsPanel {
     }
 
     boolean mousePressed(float mouseX, float mouseY, int button) {
-        if (!open) return false;
+        if (!open) return isVisible();
         if (!inside(mouseX, mouseY, x, y, width, height)) {
             close();
-            return false;
+            return true;
         }
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && inside(mouseX, mouseY, closeX, closeY, closeW, closeH)) {
             close();
@@ -367,7 +408,10 @@ final class XaeroMapSettingsPanel {
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             for (CategoryHit hit : categoryHits) {
                 if (!hit.contains(mouseX, mouseY)) continue;
-                selectedCategory = hit.category;
+                if (selectedCategory != hit.category) {
+                    selectedCategory = hit.category;
+                    contentAnim = 0.0f;
+                }
                 scroll = 0.0f;
                 return true;
             }
@@ -392,7 +436,8 @@ final class XaeroMapSettingsPanel {
     }
 
     boolean mouseScrolled(float mouseX, float mouseY, double amount) {
-        if (!open || !inside(mouseX, mouseY, x, y, width, height)) return false;
+        if (!isVisible()) return false;
+        if (!open || !inside(mouseX, mouseY, x, y, width, height)) return true;
         try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.SETTINGS, 1.0f)) {
             for (Hit hit : hits) {
                 if (inside(mouseX, mouseY, hit.x, hit.y, hit.width, hit.height)
@@ -646,6 +691,17 @@ final class XaeroMapSettingsPanel {
             translated = fallback;
         }
         return LegacyTextUtil.stripLegacy(translated).replace('\n', ' ').replace('\r', ' ').trim();
+    }
+
+    private static float easeOutCubic(float value) {
+        float t = clamp(value, 0.0f, 1.0f);
+        float inv = 1.0f - t;
+        return 1.0f - inv * inv * inv;
+    }
+
+    private static float smootherStep(float value) {
+        float t = clamp(value, 0.0f, 1.0f);
+        return t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f);
     }
 
     private static float clamp(float value, float min, float max) { return Math.max(min, Math.min(max, value)); }

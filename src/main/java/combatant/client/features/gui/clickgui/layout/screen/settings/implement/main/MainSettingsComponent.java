@@ -9,6 +9,7 @@ package combatant.client.features.gui.clickgui.layout.screen.settings.implement.
 
 import combatant.client.config.SettingDef;
 import combatant.client.config.SettingOwner;
+import combatant.client.features.gui.clickgui.sound.GuiSound;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.gui.clickgui.layout.screen.settings.SettingsGuiPalette;
 import combatant.client.features.gui.clickgui.layout.screen.settings.render.LayoutRender2D;
@@ -139,6 +140,7 @@ public final class MainSettingsComponent {
             if (!hit.sectionId().equals(selectedId)) {
                 selectedId = hit.sectionId();
                 resetScroll();
+                GuiSound.CHANGE_MODE.feedback(0.70);
             }
             return true;
         }

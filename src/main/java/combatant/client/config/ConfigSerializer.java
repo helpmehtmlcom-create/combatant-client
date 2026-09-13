@@ -9,9 +9,7 @@ package combatant.client.config;
 
 import com.google.gson.*;
 import de.marhali.json5.*;
-import io.github.classgraph.ClassGraph;
-import io.github.classgraph.ClassInfo;
-import io.github.classgraph.ScanResult;
+import combatant.client.runtime.discovery.CombatantIndex;
 import combatant.client.config.subsystem.ConfigSubsystem;
 import combatant.client.config.values.ConfigValue;
 import combatant.client.features.gui.hud.AbstractHudElement;
@@ -65,15 +63,11 @@ public enum ConfigSerializer {
     //   Bulk load / save helpers
     // =============================================================
 
-    @SuppressWarnings("unused") // kept for bulk-loading singletons via ClassGraph
+    @SuppressWarnings("unused")
     public static void loadAll() {
-        try (ScanResult sc = new ClassGraph()
-                .enableClassInfo()
-                .acceptPackages("combatant.client")
-                .scan()) {
-
-            for (ClassInfo ci : sc.getClassesImplementing(ConfigObject.class)) {
-                Class<?> cls = ci.loadClass();
+        try {
+            for (String className : CombatantIndex.classNames(CombatantIndex.Kind.CONFIG, "combatant.client")) {
+                Class<?> cls = Class.forName(className, false, ConfigSerializer.class.getClassLoader());
                 ConfigObject inst = singletonConfigObjectFor(cls);
                 if (inst != null && !(inst instanceof ConfigAggregate)) {
                     load(inst);
@@ -86,13 +80,9 @@ public enum ConfigSerializer {
     }
 
     public static void saveAll() {
-        try (ScanResult sc = new ClassGraph()
-                .enableClassInfo()
-                .acceptPackages("combatant.client")
-                .scan()) {
-
-            for (ClassInfo ci : sc.getClassesImplementing(ConfigObject.class)) {
-                Class<?> cls = ci.loadClass();
+        try {
+            for (String className : CombatantIndex.classNames(CombatantIndex.Kind.CONFIG, "combatant.client")) {
+                Class<?> cls = Class.forName(className, false, ConfigSerializer.class.getClassLoader());
                 ConfigObject inst = singletonConfigObjectFor(cls);
                 if (inst != null && !(inst instanceof ConfigAggregate)) {
                     save(inst);

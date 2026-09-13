@@ -3848,5 +3848,6 @@
   "combatant.error.phase.runtime_control": "Runtime control",
   "combatant.error.phase.extension": "Extension execution",
   "combatant.error.phase.world": "World rendering",
-  "setting.esp.frame_color_source.option.Relations": "Relations"
+  "setting.esp.frame_color_source.option.Relations": "Relations",
+  "setting.hud_element.vanilla_buttons.replace_button_sounds": "Replace Button Sounds"
 }

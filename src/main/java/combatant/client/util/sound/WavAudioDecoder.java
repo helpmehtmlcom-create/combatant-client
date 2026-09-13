@@ -15,6 +15,16 @@ import java.util.Arrays;
 
 /** RIFF/WAVE PCM16 decoder used internally by the format-independent sound system. */
 final class WavAudioDecoder implements AudioDecoder {
+    private static final int PCM_ENCODING = 0x0001;
+    private static final int EXTENSIBLE_ENCODING = 0xfffe;
+    private static final byte[] PCM_SUBFORMAT_GUID = {
+            0x01, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+            0x10, 0x00,
+            (byte) 0x80, 0x00,
+            0x00, (byte) 0xaa, 0x00, 0x38, (byte) 0x9b, 0x71
+    };
+
     @Override
     public PcmAudioData decode(InputStream input) throws IOException {
         byte[] bytes = input.readAllBytes();
@@ -39,10 +49,13 @@ final class WavAudioDecoder implements AudioDecoder {
             if (chunkId == 0x20746D66) {
                 if (unsignedSize < 16L) throw new IOException("Invalid WAV: fmt chunk too small");
                 int start = (int) dataStart;
-                encoding = buffer.getShort(start) & 0xffff;
+                int declaredEncoding = buffer.getShort(start) & 0xffff;
                 channels = buffer.getShort(start + 2) & 0xffff;
                 sampleRate = buffer.getInt(start + 4);
                 bitsPerSample = buffer.getShort(start + 14) & 0xffff;
+                encoding = declaredEncoding == EXTENSIBLE_ENCODING
+                        ? extensibleEncoding(buffer, start, unsignedSize, bitsPerSample)
+                        : declaredEncoding;
             } else if (chunkId == 0x61746164 && unsignedSize > 0L) {
                 pcm = Arrays.copyOfRange(bytes, (int) dataStart, (int) dataEnd);
             }
@@ -56,9 +69,31 @@ final class WavAudioDecoder implements AudioDecoder {
             throw new IOException("Invalid WAV: missing fmt chunk");
         }
         if (pcm == null || pcm.length == 0) throw new IOException("Invalid WAV: missing data chunk");
-        if (encoding != 1) throw new IOException("Unsupported WAV encoding: " + encoding + " (PCM required)");
+        if (encoding != PCM_ENCODING) {
+            throw new IOException("Unsupported WAV encoding: " + encoding + " (PCM required)");
+        }
         if (bitsPerSample != 16) throw new IOException("Unsupported WAV bit depth: " + bitsPerSample);
         if (channels != 1 && channels != 2) throw new IOException("Unsupported WAV channel count: " + channels);
         return new PcmAudioData(channels, sampleRate, pcm);
+    }
+
+    private static int extensibleEncoding(ByteBuffer buffer,
+                                          int fmtStart,
+                                          long fmtSize,
+                                          int bitsPerSample) throws IOException {
+        if (fmtSize < 40L) throw new IOException("Invalid extensible WAV: fmt chunk too small");
+        int extensionSize = buffer.getShort(fmtStart + 16) & 0xffff;
+        if (extensionSize < 22) throw new IOException("Invalid extensible WAV: extension too small");
+
+        int validBits = buffer.getShort(fmtStart + 18) & 0xffff;
+        if (validBits != 0 && validBits != bitsPerSample) {
+            throw new IOException("Unsupported extensible WAV valid bit depth: " + validBits);
+        }
+        for (int i = 0; i < PCM_SUBFORMAT_GUID.length; i++) {
+            if (buffer.get(fmtStart + 24 + i) != PCM_SUBFORMAT_GUID[i]) {
+                throw new IOException("Unsupported extensible WAV subformat (PCM required)");
+            }
+        }
+        return PCM_ENCODING;
     }
 }

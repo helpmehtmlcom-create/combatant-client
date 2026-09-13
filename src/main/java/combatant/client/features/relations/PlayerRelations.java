@@ -8,6 +8,10 @@
 package combatant.client.features.relations;
 
 import combatant.client.util.logging.DebugLog;
+import combatant.client.util.sound.SoundAsset;
+import combatant.client.util.sound.SoundCatalog;
+import combatant.client.util.sound.SoundKey;
+import combatant.client.util.sound.SoundOptions;
 import net.minecraft.util.Util;
 import combatant.client.config.ConfigNameProvider;
 import combatant.client.config.ConfigObject;
@@ -153,11 +157,15 @@ public final class PlayerRelations implements ConfigObject, ConfigNameProvider {
     }
 
     public boolean addFriend(String name) {
-        return friends.get().add(name);
+        boolean changed = friends.get().add(name);
+        if (changed) RelationSound.FRIEND_ADD.play(SoundOptions.gain(0.80));
+        return changed;
     }
 
     public boolean removeFriend(String name) {
-        return friends.get().remove(name);
+        boolean changed = friends.get().remove(name);
+        if (changed) RelationSound.FRIEND_REMOVE.play(SoundOptions.gain(0.80));
+        return changed;
     }
 
     public boolean addEnemy(String name) {
@@ -347,5 +355,13 @@ public final class PlayerRelations implements ConfigObject, ConfigNameProvider {
             this.lastTickMs = lastTickMs;
             this.paused = paused;
         }
+    }
+
+    @SoundCatalog(namespace = "combatant", root = "sounds/misc", idPrefix = "relations")
+    private enum RelationSound implements SoundKey {
+        @SoundAsset(value = "friendadd.wav", id = "friend_add")
+        FRIEND_ADD,
+        @SoundAsset(value = "friendremove.wav", id = "friend_remove")
+        FRIEND_REMOVE
     }
 }

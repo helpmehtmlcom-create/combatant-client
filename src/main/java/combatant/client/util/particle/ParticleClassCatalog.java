@@ -7,11 +7,7 @@
 
 package combatant.client.util.particle;
 
-import io.github.classgraph.ClassGraph;
-import io.github.classgraph.ClassInfo;
-import io.github.classgraph.ScanResult;
 import net.minecraft.client.particle.Particle;
-import combatant.client.util.logging.DebugLog;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -19,14 +15,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Lazily discovered catalog of client particle implementation classes.
+ * Catalog of client particle implementation classes observed by the particle engine.
  *
  * <p>The picker stores class names rather than particle registry ids. This is
  * deliberate: one particle option can resolve to different runtime particle
  * implementations and modded particles do not have to be known to Combatant
- * at compile time.</p>
+ * at compile time. Entries appear as soon as the implementation is used.</p>
  */
 public enum ParticleClassCatalog {
     ;
@@ -35,7 +32,15 @@ public enum ParticleClassCatalog {
             .comparing(Entry::label, String.CASE_INSENSITIVE_ORDER)
             .thenComparing(Entry::id, String.CASE_INSENSITIVE_ORDER);
 
+    private static final Set<String> OBSERVED = ConcurrentHashMap.newKeySet();
     private static volatile List<Entry> discovered;
+
+    public static void observe(Particle particle) {
+        if (particle == null) return;
+        String className = particle.getClass().getName();
+        if (className.isBlank() || !OBSERVED.add(className)) return;
+        discovered = null;
+    }
 
     public static List<Entry> entries(Set<String> selectedIds) {
         LinkedHashMap<String, Entry> merged = new LinkedHashMap<>();
@@ -63,27 +68,13 @@ public enum ParticleClassCatalog {
             snapshot = discovered;
             if (snapshot != null) return snapshot;
 
-            LinkedHashMap<String, Entry> found = new LinkedHashMap<>();
-            try (ScanResult scan = new ClassGraph()
-                    .enableClassInfo()
-                    .ignoreClassVisibility()
-                    .scan()) {
-                for (ClassInfo info : scan.getSubclasses(Particle.class.getName())) {
-                    String className = info.getName();
-                    if (className == null || className.isBlank()) continue;
-                    found.putIfAbsent(className, new Entry(className, labelForClassName(className)));
-                }
-            } catch (Throwable error) {
-                DebugLog.warnOnce(
-                        "particle-class-catalog-discovery",
-                        "Failed to discover particle implementation classes: %s",
-                        error.toString()
-                );
+            ArrayList<Entry> found = new ArrayList<>(OBSERVED.size());
+            for (String className : OBSERVED) {
+                found.add(new Entry(className, labelForClassName(className)));
             }
 
-            snapshot = new ArrayList<>(found.values());
-            snapshot.sort(ENTRY_ORDER);
-            discovered = List.copyOf(snapshot);
+            found.sort(ENTRY_ORDER);
+            discovered = List.copyOf(found);
             return discovered;
         }
     }

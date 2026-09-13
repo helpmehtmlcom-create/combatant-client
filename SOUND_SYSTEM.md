@@ -1,6 +1,7 @@
 # Combatant sound system
 
-Sound catalogs live next to their owner and are discovered automatically by ClassGraph.
+Sound catalogs live next to their owner and are indexed at compile time. A catalog is also
+registered lazily when one of its keys is first resolved, including keys supplied by addons.
 There is no central registration list. A new WAV or OGG sound needs one annotated enum
 constant and the resource itself:
 

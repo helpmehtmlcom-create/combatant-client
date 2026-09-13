@@ -37,6 +37,7 @@ import combatant.client.util.input.KeyManager;
 import combatant.client.util.logging.DebugLog;
 
 import java.util.*;
+import java.util.function.BooleanSupplier;
 
 public enum ModuleManager {
     ;
@@ -537,6 +538,29 @@ public enum ModuleManager {
 
     public static boolean isToggleNotificationSuppressed() {
         return suppressToggleNotifications;
+    }
+
+    /** Runs one lifecycle transition without the ordinary module-toggle sound. */
+    public static void runWithToggleSoundSuppressed(Runnable action) {
+        if (action == null) return;
+        boolean previous = suppressToggleSound;
+        suppressToggleSound = true;
+        try {
+            action.run();
+        } finally {
+            suppressToggleSound = previous;
+        }
+    }
+
+    public static boolean callWithToggleSoundSuppressed(BooleanSupplier action) {
+        if (action == null) return false;
+        boolean previous = suppressToggleSound;
+        suppressToggleSound = true;
+        try {
+            return action.getAsBoolean();
+        } finally {
+            suppressToggleSound = previous;
+        }
     }
 
     /**

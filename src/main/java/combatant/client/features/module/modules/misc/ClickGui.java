@@ -46,19 +46,25 @@ public class ClickGui extends Module {
 
     private static Map<String, Boolean> defaultGuiSounds() {
         Map<String, Boolean> out = new LinkedHashMap<>();
+        out.put("button", true);
+        out.put("buttonyes", true);
         out.put("guibinding", true);
         out.put("guibindingnull", true);
         out.put("guibindingstart", true);
         out.put("guibindreset", true);
         out.put("guichangemode", true);
-        out.put("guiyes", true);
-        out.put("guino", true);
+        out.put("gui_open", true);
+        out.put("gui_close", true);
+        out.put("guicoloropen", true);
+        out.put("guicolorselect", true);
+        out.put("guimodulehover", true);
         out.put("moduleopen", true);
         out.put("moduleclose", true);
         out.put("moduleonopen", true);
         out.put("moduleonclose", true);
         out.put("guiscroll", true);
         out.put("guislidermove", true);
+        out.put("toggle", true);
         return out;
     }
 
@@ -70,7 +76,7 @@ public class ClickGui extends Module {
                 || ClientScreen.current() instanceof ClickGuiEditorScreen);
 
         if (!suppressScreenClose && clickGuiScreen) {
-            GuiSound.CLOSE.feedback(0.25);
+            GuiSound.CLOSE.feedback();
             ClickGuiRenderer.beginCloseAnimation();
             return;
         }

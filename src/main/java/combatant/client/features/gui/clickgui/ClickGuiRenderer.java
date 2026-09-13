@@ -59,6 +59,7 @@ public enum ClickGuiRenderer {
     private static final Minecraft MC = Minecraft.getInstance();
     private static final String MODULES_TAB_ID = "combatant:modules";
     private static final String SETTINGS_TAB_ID = "combatant:settings";
+    private static final String MAP_TAB_ID = "combatant:map";
     private static final float TAB_HEIGHT = 34f;
     private static final float TAB_GAP = 0f;
     private static final float TAB_PAD_X = 18f;
@@ -519,6 +520,19 @@ public enum ClickGuiRenderer {
 
     public static boolean isClosingForExit() {
         return closingForExit;
+    }
+
+    /**
+     * The Map section owns the entire viewport and renders from Xaero map data, not the live
+     * GameRenderer world target. While it is the active main ClickGUI section there is no reason
+     * to submit the 3D world or Combatant HUD layers hidden behind it.
+     */
+    public static boolean suppressesBackgroundRendering() {
+        return MC != null
+                && ClientScreen.current() instanceof ClickGuiScreen
+                && MAP_TAB_ID.equals(activeTabId)
+                && !closingForExit
+                && lifecycleAnim > 0.001f;
     }
 
     private static boolean isInputReady() {
@@ -1967,7 +1981,7 @@ public enum ClickGuiRenderer {
         if (mainScreen == null) {
             mainScreen = new ClickGuiScreen();
         }
-        GuiSound.OPEN.feedback(0.25);
+        GuiSound.OPEN.feedback();
         ClientScreen.show(MC, mainScreen);
     }
 

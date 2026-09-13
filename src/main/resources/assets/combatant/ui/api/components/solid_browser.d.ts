@@ -169,6 +169,7 @@ export type SolidStyled = {
   tokens?: Partial<SolidBrowserTokens>;
   palette?: Partial<SolidBrowserPalette>;
   accent?: string;
+  appearance?: "solid" | "settings-category" | "liquid-glass" | "liquid-settings-category";
 };
 
 export type SolidNavigationItemProps = SolidInteraction & SolidStyled & {
@@ -239,6 +240,16 @@ export type SolidBrowserProps = SolidStyled & {
   blurQuality?: number;
   blurBrightness?: number;
   blurAlpha?: number;
+  border?: boolean;
+  separators?: boolean;
+  glassTint?: string;
+  glassAlpha?: number;
+  glassPreset?: string;
+  glassRounding?: number;
+  glassInnerGlow?: number;
+  glassInnerGlowSize?: number;
+  glassInnerGlowColor?: string;
+  uiUnderlay?: string;
 
   navigationHeader?: SolidSlot;
   navigationItems?: SolidSlot;

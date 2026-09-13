@@ -8,10 +8,8 @@
 package combatant.client.util.sound;
 
 import net.minecraft.resources.Identifier;
+import combatant.client.runtime.discovery.CombatantIndex;
 import combatant.client.util.logging.DebugLog;
-import io.github.classgraph.ClassGraph;
-import io.github.classgraph.ClassInfo;
-import io.github.classgraph.ScanResult;
 
 import java.lang.reflect.Field;
 import java.util.Collections;
@@ -42,7 +40,10 @@ public final class SoundRegistry {
         if (key == null) throw new IllegalArgumentException("Sound key cannot be null");
         SoundDefinition found = byKey.get(key);
         if (found != null) return found;
-        discover(key.getClass().getPackageName());
+        Class<?> catalogType = key instanceof Enum<?> enumKey
+                ? enumKey.getDeclaringClass()
+                : key.getClass();
+        registerCatalog(catalogType);
         found = byKey.get(key);
         if (found == null) throw new IllegalArgumentException("Unregistered sound key: " + key);
         return found;
@@ -78,7 +79,7 @@ public final class SoundRegistry {
         }
     }
 
-    /** Discovers every annotated catalog without initializing unrelated scanned classes. */
+    /** Registers annotated catalogs listed by the compile-time generated index. */
     public synchronized void discover(String... basePackages) {
         String[] packages = basePackages == null ? new String[0] : Arrays.stream(basePackages)
                 .filter(value -> value != null && !value.isBlank())
@@ -86,18 +87,17 @@ public final class SoundRegistry {
                 .toArray(String[]::new);
         String scope = packages.length == 0 ? "*" : String.join(";", packages);
         if (discoveredScopes.contains("*") || !discoveredScopes.add(scope)) return;
-        ClassGraph graph = new ClassGraph()
-                .enableClassInfo()
-                .enableAnnotationInfo()
-                .ignoreClassVisibility();
-        if (packages.length > 0) graph = graph.acceptPackages(packages);
-        try (ScanResult scan = graph.scan()) {
-            for (ClassInfo info : scan.getClassesWithAnnotation(SoundCatalog.class.getName())) {
+        try {
+            for (String className : CombatantIndex.classNames(CombatantIndex.Kind.SOUND)) {
+                if (packages.length > 0 && Arrays.stream(packages).noneMatch(
+                        pkg -> className.equals(pkg) || className.startsWith(pkg + "."))) {
+                    continue;
+                }
                 try {
-                    Class<?> type = Class.forName(info.getName(), false, SoundRegistry.class.getClassLoader());
+                    Class<?> type = Class.forName(className, false, SoundRegistry.class.getClassLoader());
                     registerCatalog(type);
                 } catch (Throwable error) {
-                    DebugLog.error("Failed to register sound catalog: %s", error, info.getName());
+                    DebugLog.error("Failed to register sound catalog: %s", error, className);
                 }
             }
         } catch (Throwable error) {

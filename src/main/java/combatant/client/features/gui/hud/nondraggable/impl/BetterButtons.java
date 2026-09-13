@@ -70,6 +70,8 @@ public final class BetterButtons extends AbstractHudElement {
     private static Screen LAST_SCREEN;
     private final EnumValue<Style> style =
             new EnumValue<>("style", Style.DEFAULT, Style.values());
+    private final BooleanValue replaceButtonSounds =
+            new BooleanValue("replace_button_sounds", true);
     private final RGBAColorValue gradientBaseColor =
             new RGBAColorValue("gradient_base_color", "#FF2F2929");
     private final RGBAColorValue gradientColor =
@@ -820,6 +822,7 @@ public final class BetterButtons extends AbstractHudElement {
     @Override
     protected void defineSettings(List<SettingDef> defs) {
         defs.add(SettingDef.mode(style));
+        defs.add(SettingDef.bool(replaceButtonSounds));
         defs.add(SettingDef.color(gradientBaseColor).visibleWhen(this::isGradientStyle));
         defs.add(SettingDef.color(gradientColor).visibleWhen(this::isGradientStyle));
         defs.add(SettingDef.number(gradientAngle).visibleWhen(this::isGradientStyle));
@@ -846,6 +849,10 @@ public final class BetterButtons extends AbstractHudElement {
 
     public boolean useUiButtons() {
         return !RuntimeGate.isPanic() && isEnabled();
+    }
+
+    public boolean useCustomButtonSounds() {
+        return !RuntimeGate.isPanic() && enabledValue().get() && replaceButtonSounds.get();
     }
 
     private boolean isGradientStyle() {

@@ -36,8 +36,6 @@ export function buildTemplate(ctx) {
   const width = Math.max(720, num(p.width, 976));
   const height = Math.max(470, num(p.height, 636));
   const accent = str(p.accent, "#FF906BFF");
-  const categoryStrokeStart = str(p.categoryStrokeStart, accent);
-  const categoryStrokeEnd = str(p.categoryStrokeEnd, accent);
   const categories = categoryList(p.categories);
   const selected = str(p.selectedCategory, categories.length ? str(categories[0].id, "general") : "general");
   const layout = p.layout && typeof p.layout === "object" ? p.layout : {};
@@ -48,10 +46,12 @@ export function buildTemplate(ctx) {
     key: `map-settings:nav:${str(category.id, index.toString())}`,
     selected: str(category.id, "") === selected,
     accent,
-    appearance: "settings-category",
-    strokeStart: categoryStrokeStart,
-    strokeEnd: categoryStrokeEnd,
-    strokeAngle: num(p.categoryStrokeAngle, 90),
+    appearance: "liquid-settings-category",
+    tokens: {
+      navItemRadius: 8,
+      hoverMotionMs: 240,
+      stateMotionMs: 190,
+    },
     width: navRowWidth,
     height: navRowHeight,
     label: str(category.label, "Map"),
@@ -68,6 +68,27 @@ export function buildTemplate(ctx) {
     height,
     layout,
     accent,
+    appearance: "liquid-glass",
+    glassTint: "#7615121B",
+    glassAlpha: 1.0,
+    blurAlpha: 1.0,
+    glassPreset: "balanced",
+    glassInnerGlow: 0.014,
+    glassInnerGlowSize: 4.0,
+    uiUnderlay: "auto",
+    palette: {
+      surface: "#A815121B",
+      surfaceWeak: "#4618151D",
+      separator: "#24FFFFFF",
+    },
+    tokens: {
+      rootRadius: 20,
+      rootBlurAlpha: 1.0,
+      navItemRadius: 8,
+      hoverMotionMs: 240,
+      stateMotionMs: 190,
+      appearMotionMs: 300,
+    },
     combinedNavigation: true,
     navigationHeader: ui.svg({
       key: "map-settings:logo",
@@ -84,6 +105,8 @@ export function buildTemplate(ctx) {
     detailClose: SolidBrowserSurface.closeButton({
       key: "map-settings:close",
       accent,
+      appearance: "liquid-glass",
+      tokens: { hoverMotionMs: 240, stateMotionMs: 180 },
       icon: svg("map-settings:close-icon", "x"),
     }),
     detailContent: [],

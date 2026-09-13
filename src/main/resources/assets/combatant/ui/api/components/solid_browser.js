@@ -263,20 +263,47 @@ export class SolidBrowserSurface {
     const key = ui.str(props.key, "solid-browser");
     const x = ui.num(props.x, 0);
     const y = ui.num(props.y, 0);
+    const appearance = ui.str(props.appearance, "solid").toLowerCase();
+    const liquid = appearance === "liquid-glass" || appearance === "liquid_glass" || appearance === "glass";
+    const blurAlpha = ui.clamp(props.blurAlpha === undefined ? t.rootBlurAlpha : props.blurAlpha);
+
+    const rootSurface = liquid
+      ? ui.shape({
+          key: `${key}:surface`,
+          shape: "procedural-panel",
+          class: ui.abs(0, 0, l.width, l.height),
+          // Keep the glass root as a 4-point analytic RECT. Rounded UiPrimitive
+          // corners lower to a tessellated polygon (>8 vertices) and are not
+          // eligible for the liquid-glass primitive shader. The primitive's
+          // analytic rounding gives us the same visual radius without tessellation.
+          rounding: ui.num(props.glassRounding, t.rootRadius),
+          fill: "#00000000",
+          liquidGlass: true,
+          glassTint: ui.str(props.glassTint, ui.color.alpha(p.surface, 0.50)),
+          glassAlpha: ui.clamp(props.glassAlpha === undefined ? 1 : props.glassAlpha),
+          blurAlpha,
+          glassPreset: ui.str(props.glassPreset, "balanced"),
+          glassInnerGlow: ui.num(props.glassInnerGlow, 0.018),
+          glassInnerGlowSize: ui.num(props.glassInnerGlowSize, 4.2),
+          glassInnerGlowColor: ui.str(props.glassInnerGlowColor, ui.color.alpha(p.foreground, 0.07)),
+          uiUnderlay: ui.str(props.uiUnderlay, "auto"),
+          interactive: false,
+        })
+      : ui.roundedRect({
+          key: `${key}:surface`,
+          x: 0, y: 0, w: l.width, h: l.height,
+          radius: t.rootRadius,
+          fill: p.surface,
+          blur: props.blur !== false,
+          blurQuality: ui.num(props.blurQuality, t.rootBlurQuality),
+          blurBrightness: ui.num(props.blurBrightness, t.rootBlurBrightness),
+          blurAlpha,
+          interactive: false,
+        });
 
     const children = [
-      ui.roundedRect({
-        key: `${key}:surface`,
-        x: 0, y: 0, w: l.width, h: l.height,
-        radius: t.rootRadius,
-        fill: p.surface,
-        blur: props.blur !== false,
-        blurQuality: ui.num(props.blurQuality, t.rootBlurQuality),
-        blurBrightness: ui.num(props.blurBrightness, t.rootBlurBrightness),
-        blurAlpha: ui.clamp(props.blurAlpha === undefined ? t.rootBlurAlpha : props.blurAlpha),
-        interactive: false,
-      }),
-      ui.roundedRect({
+      rootSurface,
+      ...(liquid || props.border === false ? [] : [ui.roundedRect({
         key: `${key}:border`,
         x: 0, y: 0, w: l.width, h: l.height,
         radius: t.rootRadius,
@@ -284,8 +311,8 @@ export class SolidBrowserSurface {
         stroke: p.separator,
         strokeWidth: t.rootStrokeWidth,
         interactive: false,
-      }),
-      ...SolidBrowserSurface._separators(key, l, t, p),
+      })]),
+      ...(props.separators === false ? [] : SolidBrowserSurface._separators(key, l, t, p)),
       SolidBrowserSurface._navigationPane(key, l, t, p, props),
       ...(props.combinedNavigation ? [] : [SolidBrowserSurface._collectionPane(key, l, t, p, props)]),
       SolidBrowserSurface._detailPane(key, l, t, p, props),
@@ -307,7 +334,9 @@ export class SolidBrowserSurface {
     const height = Math.max(size, ui.num(props.height, size));
     const label = ui.str(props.label, "");
     const icon = SolidBrowserSurface._slotNode(props.icon);
-    const settingsCategory = props.appearance === "settings-category";
+    const appearance = ui.str(props.appearance, "solid").toLowerCase();
+    const liquidCategory = appearance === "liquid-settings-category" || appearance === "liquid-glass" || appearance === "liquid_glass";
+    const settingsCategory = appearance === "settings-category" || liquidCategory;
     const stateValues = { selected: !!props.selected };
     const stateMotions = SolidBrowserSurface._motions(t, ["selected"]);
 
@@ -320,9 +349,20 @@ export class SolidBrowserSurface {
       children: [
         ui.roundedRect({
           key: `${key}:bg`, x: 0, y: 0, w: width, h: height,
-          radius: t.navItemRadius,
-          fill: settingsCategory ? p.surface : p.surfaceWeak,
-          fillReactive: {
+          radius: liquidCategory ? Math.max(4, t.navItemRadius - 1) : t.navItemRadius,
+          fill: liquidCategory ? "#00000000" : (settingsCategory ? p.surface : p.surfaceWeak),
+          stroke: !liquidCategory && settingsCategory ? ui.str(props.strokeStart, p.accent) : undefined,
+          strokeWidth: !liquidCategory && settingsCategory ? 1 : 0,
+          strokeStartColor: !liquidCategory && settingsCategory ? ui.str(props.strokeStart, p.accent) : undefined,
+          strokeEndColor: !liquidCategory && settingsCategory ? ui.str(props.strokeEnd, p.accent) : undefined,
+          strokeAngle: !liquidCategory && settingsCategory ? ui.num(props.strokeAngle, 90) : undefined,
+          fillReactive: liquidCategory ? {
+            base: p.foreground,
+            mix: p.accent,
+            mixTerms: { hover: 0.12, selected: 0.18 },
+            alphaBase: 0.0,
+            alphaTerms: { hover: 0.045, selected: 0.070 },
+          } : {
             base: settingsCategory ? p.surface : p.surfaceWeak,
             mix: p.foreground,
             mixTerms: { hover: settingsCategory ? 0.045 : 0.025, selected: settingsCategory ? 0.035 : 0 },
@@ -330,6 +370,16 @@ export class SolidBrowserSurface {
           stateSource: "parent",
           interactive: false,
         }),
+        ...(liquidCategory ? [ui.roundedRect({
+          key: `${key}:indicator`, x: 3, y: height * 0.5 - 1.5, w: 3, h: 3,
+          radius: 1.5, fill: p.accent,
+          fillReactive: {
+            base: p.accent,
+            alphaBase: 0.0,
+            alphaTerms: { hover: 0.16, selected: 0.92 },
+          },
+          stateSource: "parent", interactive: false,
+        })] : []),
         ...(icon ? [SolidBrowserSurface._placeVisual(icon, t.navItemPadding, (height - t.navIconSize) * 0.5, t.navIconSize, t.navIconSize, {
           tintReactive: {
             base: p.foreground,
@@ -502,6 +552,8 @@ export class SolidBrowserSurface {
     const p = SolidBrowserSurface.palette(props.accent || "#FF906BFF", props.palette || {});
     const key = ui.str(props.key, "solid-close");
     const icon = SolidBrowserSurface._slotNode(props.icon);
+    const appearance = ui.str(props.appearance, "solid").toLowerCase();
+    const liquid = appearance === "liquid-glass" || appearance === "liquid_glass";
     return ui.button({
       key,
       class: ui.abs(0, 0, t.detailCloseSize, t.detailCloseSize, "cursor-pointer"),
@@ -510,8 +562,11 @@ export class SolidBrowserSurface {
       children: [
         ui.roundedRect({
           key: `${key}:bg`, x: 0, y: 0, w: t.detailCloseSize, h: t.detailCloseSize,
-          radius: t.detailCloseRadius, fill: p.surfaceWeak,
-          fillReactive: { base: p.surfaceWeak, mix: p.foreground, mixTerms: { hover: 0.07 } },
+          radius: t.detailCloseRadius, fill: liquid ? "#00000000" : p.surfaceWeak,
+          fillReactive: liquid ? {
+            base: p.foreground, mix: p.accent, mixTerms: { hover: 0.12 },
+            alphaBase: 0.0, alphaTerms: { hover: 0.075 },
+          } : { base: p.surfaceWeak, mix: p.foreground, mixTerms: { hover: 0.07 } },
           stateSource: "parent", interactive: false,
         }),
         ...(icon ? [SolidBrowserSurface._placeVisual(

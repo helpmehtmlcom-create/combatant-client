@@ -9,10 +9,8 @@ package combatant.client.features.command;
 
 import com.mojang.brigadier.context.StringRange;
 import com.mojang.brigadier.suggestion.Suggestion;
+import combatant.client.runtime.discovery.CombatantIndex;
 import combatant.client.util.logging.DebugLog;
-import io.github.classgraph.ClassGraph;
-import io.github.classgraph.ClassInfo;
-import io.github.classgraph.ScanResult;
 import net.minecraft.client.Minecraft;
 
 import java.lang.reflect.Constructor;
@@ -175,16 +173,8 @@ public enum CommandManager {
     }
 
     private static void discover(String basePackage) {
-        try (ScanResult scan = new ClassGraph()
-                .enableClassInfo()
-                .enableAnnotationInfo()
-                .acceptPackages(basePackage)
-                .scan()) {
-            scan.getClassesWithAnnotation(CommandInfo.class.getName()).stream()
-                    .map(ClassInfo::getName)
-                    .sorted(String.CASE_INSENSITIVE_ORDER)
-                    .forEach(CommandManager::loadCandidate);
-        }
+        CombatantIndex.classNames(CombatantIndex.Kind.COMMAND, basePackage)
+                .forEach(CommandManager::loadCandidate);
     }
 
     private static void loadCandidate(String className) {

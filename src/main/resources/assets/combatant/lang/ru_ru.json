@@ -3618,5 +3618,6 @@
   "combatant.error.phase.runtime_control": "Управление модулем",
   "combatant.error.phase.extension": "Выполнение расширения",
   "combatant.error.phase.world": "Рендер мира",
-  "setting.esp.frame_color_source.option.Relations": "Отношения"
+  "setting.esp.frame_color_source.option.Relations": "Отношения",
+  "setting.hud_element.vanilla_buttons.replace_button_sounds": "Заменять звуки кнопок"
 }

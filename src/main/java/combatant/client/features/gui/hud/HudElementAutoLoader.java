@@ -7,12 +7,10 @@
 
 package combatant.client.features.gui.hud;
 
-import io.github.classgraph.ClassGraph;
-import io.github.classgraph.ClassInfo;
-import io.github.classgraph.ScanResult;
 import combatant.client.features.gui.hud.draggable.DraggableHudElement;
 import combatant.client.features.gui.hud.draggable.DraggableHudElementRegistry;
 import combatant.client.features.gui.hud.nondraggable.StaticHudElementRegistry;
+import combatant.client.runtime.discovery.CombatantIndex;
 import combatant.client.util.logging.DebugLog;
 
 import java.lang.reflect.Constructor;
@@ -40,17 +38,8 @@ public enum HudElementAutoLoader {
     private static void load(String basePackage, boolean includeDraggable, boolean includeStatic) {
         List<RegisteredHudElement> elements = new ArrayList<>();
 
-        try (ScanResult scan = new ClassGraph()
-                .enableClassInfo()
-                .enableAnnotationInfo()
-                .acceptPackages(basePackage)
-                .scan()) {
-            for (ClassInfo info : scan.getClassesWithAnnotation(HudElementRegister.class.getName())) {
-                addCandidate(elements, info);
-            }
-            for (ClassInfo info : scan.getClassesWithAnnotation(HudElementInfo.class.getName())) {
-                addCandidate(elements, info);
-            }
+        for (String className : CombatantIndex.classNames(CombatantIndex.Kind.HUD, basePackage)) {
+            addCandidate(elements, className);
         }
 
         elements.sort(Comparator
@@ -84,11 +73,10 @@ public enum HudElementAutoLoader {
         }
     }
 
-    private static void addCandidate(List<RegisteredHudElement> elements, ClassInfo info) {
-        if (info.isAbstract()) return;
-
+    private static void addCandidate(List<RegisteredHudElement> elements, String className) {
         try {
-            Class<?> type = info.loadClass();
+            Class<?> type = Class.forName(className, false, HudElementAutoLoader.class.getClassLoader());
+            if (Modifier.isAbstract(type.getModifiers())) return;
             int order = 0;
             HudElementInfo elementInfo = type.getAnnotation(HudElementInfo.class);
             if (elementInfo != null) {
@@ -101,7 +89,7 @@ public enum HudElementAutoLoader {
 
             elements.add(new RegisteredHudElement(type, order));
         } catch (Throwable t) {
-            DebugLog.error("Failed to inspect HUD element: %s", t, info.getName());
+            DebugLog.error("Failed to inspect HUD element: %s", t, className);
         }
     }
 

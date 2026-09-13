@@ -16,6 +16,7 @@ import combatant.client.render.engine.svg.SvgRenderOptions;
 import org.lwjgl.glfw.GLFW;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.gui.clickgui.ClickGuiSearch;
+import combatant.client.features.gui.clickgui.sound.GuiSound;
 import combatant.client.features.gui.clickgui.layout.screen.settings.implement.config.ConfigProfilesComponent;
 import combatant.client.features.gui.clickgui.layout.screen.settings.implement.main.MainSettingsComponent;
 import combatant.client.features.gui.clickgui.layout.screen.settings.implement.module.ModuleComponent;
@@ -296,6 +297,7 @@ public final class MenuScreen {
             if (hitCategory != category) {
                 category = hitCategory;
                 categoryTransition = 0f;
+                GuiSound.CHANGE_MODE.feedback(0.70);
                 moduleComponent.resetScroll();
                 themeComponent.resetScroll();
                 mainSettingsComponent.resetScroll();
@@ -311,12 +313,16 @@ public final class MenuScreen {
             if (action == null) return false;
             if (action.type() == ThemeComponent.ThemeActionType.SELECT && action.themeId() != null) {
                 Theme.setTheme(action.themeId());
+                GuiSound.CHANGE_MODE.feedback(0.70);
             } else if (action.type() == ThemeComponent.ThemeActionType.ADD) {
                 openThemeEditor(EditableClickGuiTheme.createFromCurrent());
+                GuiSound.BUTTON.feedback(0.70);
             } else if (action.type() == ThemeComponent.ThemeActionType.EDIT && action.themeId() != null) {
                 openThemeEditor(EditableClickGuiTheme.existing(action.themeId()));
+                GuiSound.BUTTON.feedback(0.70);
             } else if (action.type() == ThemeComponent.ThemeActionType.DELETE && action.themeId() != null) {
                 Theme.deleteCustomTheme(action.themeId());
+                GuiSound.BUTTON.feedback(0.65);
             }
             return true;
         }

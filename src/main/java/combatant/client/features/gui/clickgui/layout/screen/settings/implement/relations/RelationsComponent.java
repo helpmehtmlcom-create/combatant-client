@@ -9,6 +9,7 @@ package combatant.client.features.gui.clickgui.layout.screen.settings.implement.
 
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.gui.clickgui.ClickGuiSearch;
+import combatant.client.features.gui.clickgui.sound.GuiSound;
 import combatant.client.features.gui.clickgui.layout.screen.settings.SettingsGuiPalette;
 import combatant.client.features.gui.clickgui.layout.screen.settings.implement.relations.RelationPlayerCardComponent.CardHit;
 import combatant.client.features.gui.clickgui.layout.screen.settings.render.LayoutRender2D;
@@ -215,6 +216,7 @@ public final class RelationsComponent {
             if (enabledToggle.contains(mx, my)) {
                 StaffHeuristicsConfig cfg = StaffHeuristicsConfig.get();
                 cfg.setEnabled(!cfg.enabled());
+                GuiSound.TOGGLE.feedback();
                 return true;
             }
             if (prefixInputRect.contains(mx, my)) return focusField(ActiveField.PREFIX);
@@ -982,6 +984,7 @@ public final class RelationsComponent {
                 onlinePicker.open(tab.pickerMode());
             }
             clearStatus();
+            GuiSound.CHANGE_MODE.feedback(0.70);
         }
         movementInputBlocked = onlinePicker.blocksMovementInput();
         return true;
