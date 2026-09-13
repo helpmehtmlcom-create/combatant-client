@@ -38,7 +38,9 @@ public final class UiPrimitiveRenderer {
     private static boolean isCompoundShape(String shape) {
         return switch (shape) {
             case "island-blob", "island_blob", "metaball", "metaballs",
-                 "smooth-box-union", "smooth_box_union", "compound-sdf", "compound_sdf" -> true;
+                 "smooth-box-union", "smooth_box_union",
+                 "smooth-squircle-union", "smooth_squircle_union",
+                 "compound-sdf", "compound_sdf" -> true;
             default -> false;
         };
     }
@@ -906,6 +908,18 @@ public final class UiPrimitiveRenderer {
     private UiCompoundSdf buildCompoundSdf(UiProps props, String shape,
                                              double x, double y, double w, double h) {
         float smoothing = Math.max(0.0f, props.number("smoothing", props.number("smoothness", 10.0f)));
+        if (shape.equals("smooth-squircle-union") || shape.equals("smooth_squircle_union")) {
+            UiRect first = compoundRect(props.get("first"), x, y,
+                    UiRect.of(x, y + h * 0.16, w * 0.62, h * 0.68));
+            UiRect second = compoundRect(props.get("second"), x, y,
+                    UiRect.of(x + w * 0.38, y + h * 0.16, w * 0.62, h * 0.68));
+            float defaultExponent = props.number("exponent", 4.0f);
+            return UiCompoundSdf.smoothSquircleUnion(
+                    first, props.number("firstExponent", defaultExponent),
+                    second, props.number("secondExponent", defaultExponent),
+                    smoothing
+            );
+        }
         if (shape.equals("smooth-box-union") || shape.equals("smooth_box_union")
                 || shape.equals("compound-sdf") || shape.equals("compound_sdf")) {
             UiRect first = compoundRect(props.get("first"), x, y,

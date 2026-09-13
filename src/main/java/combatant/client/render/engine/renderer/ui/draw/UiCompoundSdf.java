@@ -12,17 +12,18 @@ import java.util.Arrays;
 /**
  * Small backend-neutral 2D implicit/compound-SDF descriptor.
  *
- * <p>UI backend evaluates either up to four
- * circle sources (IslandBlob/metaball-like smooth union) or a smooth union of two rounded
- * boxes in one analytic quad. Larger fields belong to a future field backend, not to a
- * growing list of special UI shaders.</p>
+ * <p>UI backend evaluates either up to four circle sources (IslandBlob/metaball-like smooth
+ * union), a smooth union of two rounded boxes, or a smooth union of two squircle boxes in one
+ * analytic quad. Larger fields belong to a future field backend, not to a growing list of
+ * special UI shaders.</p>
  */
 public final class UiCompoundSdf {
     public static final int MAX_CIRCLES = 4;
 
     public enum Mode {
         ISLAND_BLOB,
-        SMOOTH_BOX_UNION
+        SMOOTH_BOX_UNION,
+        SMOOTH_SQUIRCLE_UNION
     }
 
     public record Circle(double centerX, double centerY, double radius) {
@@ -39,6 +40,8 @@ public final class UiCompoundSdf {
     private final UiRect secondBox;
     private final float firstRadius;
     private final float secondRadius;
+    private final float firstSquircleExponent;
+    private final float secondSquircleExponent;
 
     private UiCompoundSdf(Mode mode,
                           UiRect bounds,
@@ -47,7 +50,9 @@ public final class UiCompoundSdf {
                           UiRect firstBox,
                           UiRect secondBox,
                           float firstRadius,
-                          float secondRadius) {
+                          float secondRadius,
+                          float firstSquircleExponent,
+                          float secondSquircleExponent) {
         this.mode = mode;
         this.bounds = bounds;
         this.smoothing = Math.max(0.0f, smoothing);
@@ -56,6 +61,8 @@ public final class UiCompoundSdf {
         this.secondBox = secondBox;
         this.firstRadius = Math.max(0.0f, firstRadius);
         this.secondRadius = Math.max(0.0f, secondRadius);
+        this.firstSquircleExponent = normalizeSquircleExponent(firstSquircleExponent);
+        this.secondSquircleExponent = normalizeSquircleExponent(secondSquircleExponent);
     }
 
     public static Circle circle(double centerX, double centerY, double radius) {
@@ -75,7 +82,8 @@ public final class UiCompoundSdf {
         }
         float smooth = (float) Math.max(0.0, smoothing);
         UiRect bounds = circleBounds(copy, smooth);
-        return new UiCompoundSdf(Mode.ISLAND_BLOB, bounds, smooth, copy, null, null, 0f, 0f);
+        return new UiCompoundSdf(Mode.ISLAND_BLOB, bounds, smooth, copy, null, null,
+                0f, 0f, 4f, 4f);
     }
 
     public static UiCompoundSdf smoothBoxUnion(UiRect first,
@@ -96,7 +104,9 @@ public final class UiCompoundSdf {
                 first,
                 second,
                 (float) firstRadius,
-                (float) secondRadius
+                (float) secondRadius,
+                4f,
+                4f
         );
     }
 
@@ -106,6 +116,45 @@ public final class UiCompoundSdf {
         return smoothBoxUnion(
                 UiRect.of(ax, ay, aw, ah), firstRadius,
                 UiRect.of(bx, by, bw, bh), secondRadius,
+                smoothing
+        );
+    }
+
+    /**
+     * Smooth union of two superellipse/squircle boxes. This keeps the authored squircle
+     * silhouette on both lobes while allowing the SDF field between them to form a real
+     * metaball-like neck instead of falling back to circles or ordinary rounded boxes.
+     */
+    public static UiCompoundSdf smoothSquircleUnion(UiRect first,
+                                                     double firstExponent,
+                                                     UiRect second,
+                                                     double secondExponent,
+                                                     double smoothing) {
+        if (first == null || second == null) {
+            throw new IllegalArgumentException("Smooth squircle union requires two boxes");
+        }
+        float smooth = (float) Math.max(0.0, smoothing);
+        UiRect bounds = unionBounds(first, second, smooth);
+        return new UiCompoundSdf(
+                Mode.SMOOTH_SQUIRCLE_UNION,
+                bounds,
+                smooth,
+                null,
+                first,
+                second,
+                0f,
+                0f,
+                normalizeSquircleExponent((float) firstExponent),
+                normalizeSquircleExponent((float) secondExponent)
+        );
+    }
+
+    public static UiCompoundSdf smoothSquircleUnion(double ax, double ay, double aw, double ah, double firstExponent,
+                                                     double bx, double by, double bw, double bh, double secondExponent,
+                                                     double smoothing) {
+        return smoothSquircleUnion(
+                UiRect.of(ax, ay, aw, ah), firstExponent,
+                UiRect.of(bx, by, bw, bh), secondExponent,
                 smoothing
         );
     }
@@ -150,6 +199,14 @@ public final class UiCompoundSdf {
         return secondRadius;
     }
 
+    public float firstSquircleExponent() {
+        return firstSquircleExponent;
+    }
+
+    public float secondSquircleExponent() {
+        return secondSquircleExponent;
+    }
+
     private static UiRect circleBounds(Circle[] circles, float smoothing) {
         double minX = Double.POSITIVE_INFINITY;
         double minY = Double.POSITIVE_INFINITY;
@@ -171,5 +228,10 @@ public final class UiCompoundSdf {
         double maxX = Math.max(a.x() + a.width(), b.x() + b.width()) + smoothing;
         double maxY = Math.max(a.y() + a.height(), b.y() + b.height()) + smoothing;
         return UiRect.of(minX, minY, Math.max(0.0, maxX - minX), Math.max(0.0, maxY - minY));
+    }
+
+    private static float normalizeSquircleExponent(float exponent) {
+        if (!Float.isFinite(exponent)) return 4.0f;
+        return Math.max(2.0f, Math.min(16.0f, exponent));
     }
 }

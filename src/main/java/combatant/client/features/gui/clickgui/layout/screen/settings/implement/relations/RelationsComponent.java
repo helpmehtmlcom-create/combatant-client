@@ -15,6 +15,7 @@ import combatant.client.features.gui.clickgui.layout.screen.settings.render.Layo
 import combatant.client.features.gui.clickgui.layout.screen.settings.render.SettingsCardTransition;
 import combatant.client.features.gui.clickgui.util.ClickGuiI18n;
 import combatant.client.features.gui.clickgui.util.ClickGuiMath;
+import combatant.client.features.module.modules.misc.DefineTarget;
 import combatant.client.features.relations.PlayerRelations;
 import combatant.client.features.relations.StaffHeuristicsConfig;
 import combatant.client.render.engine.animation.AnimationUtility;
@@ -39,6 +40,7 @@ public final class RelationsComponent {
     private static final String I18N = "clickgui.settings.relations.";
 
     private final RelationPlayerCardComponent cardComponent = new RelationPlayerCardComponent();
+    private final OnlineRelationPlayerPickerComponent onlinePicker;
     private final List<CardEntryHit> cardHits = new ArrayList<>();
     private final List<ChipHit> chipHits = new ArrayList<>();
 
@@ -57,6 +59,7 @@ public final class RelationsComponent {
     private Rect staffPill = Rect.ZERO;
     private Rect playerInputRect = Rect.ZERO;
     private Rect addTypedButton = Rect.ZERO;
+    private Rect reservedPickerButton = Rect.ZERO;
     private Rect enabledToggle = Rect.ZERO;
     private Rect prefixInputRect = Rect.ZERO;
     private Rect suffixInputRect = Rect.ZERO;
@@ -87,14 +90,21 @@ public final class RelationsComponent {
     private float enemiesHoverAnim;
     private float staffHoverAnim;
     private float addHoverAnim;
+    private float pickerHoverAnim;
 
     private static boolean movementInputBlocked;
+
+    public RelationsComponent() {
+        this.onlinePicker = new OnlineRelationPlayerPickerComponent(this::setStatus);
+    }
 
     public void resetScroll() {
         scroll = 0f;
         smoothedScroll = 0f;
         draggingScrollbar = false;
         activeField = ActiveField.NONE;
+        onlinePicker.close();
+        onlinePicker.resetScroll();
         movementInputBlocked = false;
     }
 
@@ -107,7 +117,7 @@ public final class RelationsComponent {
         chipHits.clear();
         resetTransientRects();
         SettingsGuiPalette palette = SettingsGuiPalette.current();
-        movementInputBlocked = activeField != ActiveField.NONE;
+        movementInputBlocked = activeField != ActiveField.NONE || onlinePicker.blocksMovementInput();
 
         float areaX = menuX + 31f * scale;
         float areaY = menuY + 33f * scale;
@@ -122,10 +132,19 @@ public final class RelationsComponent {
 
         float workspaceY = areaY + toolbarH + 7f * scale;
         float workspaceH = Math.max(1f, areaY + areaH - workspaceY);
+        if (onlinePicker.isVisible()) {
+            listX = areaX;
+            listY = workspaceY;
+            listW = areaW;
+            listH = workspaceH;
+            onlinePicker.render(areaX, workspaceY, areaW, workspaceH, mx, my, scale, palette);
+            return;
+        }
         renderMainPanel(areaX, workspaceY, areaW, workspaceH, entries, mx, my, scale, palette);
     }
 
     public boolean mousePressedScrollbar(float mx, float my, int button) {
+        if (onlinePicker.isVisible()) return onlinePicker.mousePressedScrollbar(mx, my, button);
         if (button != 0 || !isScrollbarHovered(mx, my)) return false;
         draggingScrollbar = true;
         scrollbarDragOffset = ClickGuiMath.insideRect(mx, my, scrollbarX, scrollbarThumbY, scrollbarW, scrollbarThumbH)
@@ -136,10 +155,15 @@ public final class RelationsComponent {
     }
 
     public void mouseReleased(int button) {
+        onlinePicker.mouseReleased(button);
         if (button == 0) draggingScrollbar = false;
     }
 
     public void scroll(float mx, float my, double amount) {
+        if (onlinePicker.isVisible()) {
+            onlinePicker.scroll(mx, my, amount);
+            return;
+        }
         if (!ClickGuiMath.insideRect(mx, my, listX, listY, listW, listH)) return;
         scroll += (float) (amount * 22f);
     }
@@ -151,10 +175,40 @@ public final class RelationsComponent {
         if (enemiesPill.contains(mx, my)) return switchTab(RelationTab.ENEMIES);
         if (staffPill.contains(mx, my)) return switchTab(RelationTab.STAFF);
 
-        if (playerInputRect.contains(mx, my)) return focusField(ActiveField.PLAYER);
+        if (playerInputRect.contains(mx, my)) {
+            if (onlinePicker.isOpen()) {
+                activeField = ActiveField.NONE;
+                onlinePicker.focusSearch();
+                movementInputBlocked = onlinePicker.blocksMovementInput();
+                clearStatus();
+                return true;
+            }
+            return focusField(ActiveField.PLAYER);
+        }
         if (addTypedButton.contains(mx, my)) {
+            if (onlinePicker.isOpen()) {
+                onlinePicker.clearSearch();
+                onlinePicker.focusSearch();
+                movementInputBlocked = onlinePicker.blocksMovementInput();
+                return true;
+            }
             commitPlayerInput();
             return true;
+        }
+        if (reservedPickerButton.contains(mx, my)) {
+            activeField = ActiveField.NONE;
+            onlinePicker.toggle(tab.pickerMode());
+            movementInputBlocked = onlinePicker.blocksMovementInput();
+            clearStatus();
+            return true;
+        }
+
+        if (onlinePicker.isVisible()) {
+            if (onlinePicker.click(mx, my, button)) {
+                movementInputBlocked = onlinePicker.blocksMovementInput();
+                return true;
+            }
+            return false;
         }
 
         if (tab == RelationTab.STAFF) {
@@ -201,6 +255,10 @@ public final class RelationsComponent {
     }
 
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (onlinePicker.keyPressed(keyCode, scanCode, modifiers)) {
+            movementInputBlocked = activeField != ActiveField.NONE || onlinePicker.blocksMovementInput();
+            return true;
+        }
         if (activeField == ActiveField.NONE) return false;
 
         boolean ctrl = (modifiers & GLFW.GLFW_MOD_CONTROL) != 0;
@@ -226,6 +284,10 @@ public final class RelationsComponent {
     }
 
     public boolean charTyped(char chr, int modifiers) {
+        if (onlinePicker.charTyped(chr, modifiers)) {
+            movementInputBlocked = activeField != ActiveField.NONE || onlinePicker.blocksMovementInput();
+            return true;
+        }
         if (activeField == ActiveField.NONE) return false;
         if (chr >= 32 && chr != 127) appendToField(activeField, String.valueOf(chr));
         return true;
@@ -273,28 +335,71 @@ public final class RelationsComponent {
                 activeA, activeB, activeB, activeA
         );
 
+        // Explicit segmented-control separators. They stay visible between all
+        // three modes while the inset active pill remains visually independent.
+        drawPillSeparator(x + segmentW, y, h, scale, palette);
+        drawPillSeparator(x + segmentW * 2f, y, h, scale, palette);
+
         drawSegment(friendsPill, tr("tab.friends", "Friends"), tab == RelationTab.FRIENDS, friendsHoverAnim, scale, palette);
         drawSegment(enemiesPill, tr("tab.enemies", "Enemies"), tab == RelationTab.ENEMIES, enemiesHoverAnim, scale, palette);
         drawSegment(staffPill, tr("tab.staff", "Staff"), tab == RelationTab.STAFF, staffHoverAnim, scale, palette);
 
         float action = h;
-        float fieldW = Math.min(122f * scale, Math.max(72f * scale, w - modeW - action - 18f * scale));
-        float fieldX = x + w - action - 4f * scale - fieldW;
+        float gap = 4f * scale;
+        reservedPickerButton = new Rect(x + w - action, y, action, h);
+        addTypedButton = new Rect(reservedPickerButton.x() - gap - action, y, action, h);
+        float fieldRight = addTypedButton.x() - gap;
+        float minFieldW = 72f * scale;
+        float desiredFieldW = 122f * scale;
+        float maxFieldW = Math.max(40f * scale, fieldRight - (x + modeW + 12f * scale));
+        float fieldW = Math.min(desiredFieldW, Math.max(minFieldW, maxFieldW));
+        fieldW = Math.min(fieldW, maxFieldW);
+        float fieldX = fieldRight - fieldW;
         playerInputRect = new Rect(fieldX, y, fieldW, h);
-        addTypedButton = new Rect(x + w - action, y, action, h);
 
-        drawInput(
-                playerInputRect,
-                playerInput,
-                tr("placeholder.nick", "Nick"),
-                activeField == ActiveField.PLAYER,
-                mx,
-                my,
+        boolean onlineMode = onlinePicker.isOpen();
+        if (onlineMode) {
+            String query = onlinePicker.searchText();
+            drawInput(
+                    playerInputRect,
+                    query,
+                    tr("placeholder.search_online", "Search online"),
+                    onlinePicker.isSearchFocused(),
+                    mx,
+                    my,
+                    scale,
+                    palette
+            );
+            addHoverAnim = updateHover(addHoverAnim, addTypedButton.contains(mx, my), dt);
+            drawIconButton(addTypedButton, "rotate-ccw", addHoverAnim, query == null || query.isBlank(), scale, palette);
+        } else {
+            drawInput(
+                    playerInputRect,
+                    playerInput,
+                    tr("placeholder.nick", "Nick"),
+                    activeField == ActiveField.PLAYER,
+                    mx,
+                    my,
+                    scale,
+                    palette
+            );
+            addHoverAnim = updateHover(addHoverAnim, addTypedButton.contains(mx, my), dt);
+            drawIconButton(addTypedButton, "check", addHoverAnim, false, scale, palette);
+        }
+
+        pickerHoverAnim = updateHover(
+                pickerHoverAnim,
+                reservedPickerButton.contains(mx, my) || onlinePicker.isVisible(),
+                dt
+        );
+        drawIconButton(
+                reservedPickerButton,
+                onlineMode ? "panel-right-close" : "user-plus",
+                pickerHoverAnim,
+                false,
                 scale,
                 palette
         );
-        addHoverAnim = updateHover(addHoverAnim, addTypedButton.contains(mx, my), dt);
-        drawAddButton(addTypedButton, addHoverAnim, scale, palette);
 
         float statusX = x + modeW + 8f * scale;
         float statusW = Math.max(0f, fieldX - statusX - 7f * scale);
@@ -592,6 +697,22 @@ public final class RelationsComponent {
         renderScrollbar(x, y, w, h, maxScroll, scale, palette);
     }
 
+    private void drawPillSeparator(float x,
+                                   float y,
+                                   float h,
+                                   float scale,
+                                   SettingsGuiPalette palette) {
+        float lineW = Math.max(0.55f * scale, 0.45f);
+        float padY = 4f * scale;
+        LayoutRender2D.rect(
+                x - lineW * 0.5f,
+                y + padY,
+                lineW,
+                Math.max(1f, h - padY * 2f),
+                SettingsGuiPalette.withAlpha(palette.glassEdgeSoft(), 92)
+        );
+    }
+
     private void drawSegment(Rect rect,
                              String label,
                              boolean active,
@@ -679,6 +800,48 @@ public final class RelationsComponent {
         } finally {
             if (clipped) ScissorFunction.pop();
         }
+    }
+
+    private void drawIconButton(Rect rect,
+                                String icon,
+                                float hover,
+                                boolean disabled,
+                                float scale,
+                                SettingsGuiPalette palette) {
+        if (!disabled && rect.contains(ClickGuiRenderer.getMouseX(), ClickGuiRenderer.getMouseY())) {
+            SystemCursor.set(SystemCursor.CursorType.HAND);
+        }
+
+        int bgA = disabled
+                ? LayoutRender2D.alpha(palette.controlSurface(), 0.36f)
+                : SettingsGuiPalette.withAlpha(
+                        SettingsGuiPalette.mix(palette.controlSurface(), palette.controlSurfaceHover(), 0.18f + hover * 0.42f),
+                        118 + Math.round(28f * hover)
+                );
+        int bgB = disabled
+                ? LayoutRender2D.alpha(palette.controlSurface(), 0.30f)
+                : SettingsGuiPalette.withAlpha(
+                        SettingsGuiPalette.mix(palette.controlSurface(), tab.color(), 0.04f + hover * 0.12f),
+                        112 + Math.round(30f * hover)
+                );
+
+        float radius = 4f * scale;
+        LayoutRender2D.roundedQuad(rect.x(), rect.y(), rect.w(), rect.h(), radius, bgA, bgB, bgB, bgA);
+        LayoutRender2D.roundedStroke(
+                rect.x(), rect.y(), rect.w(), rect.h(), radius, 0.45f * scale,
+                SettingsGuiPalette.withAlpha(palette.glassEdgeSoft(), disabled ? 48 : 92)
+        );
+
+        int iconColor = disabled ? LayoutRender2D.alpha(palette.panelMuted(), 0.50f) : palette.menuCategoryText();
+        float iconSize = Math.min(rect.w(), rect.h()) - 6f * scale;
+        Renderer2D.COLOR.svg(
+                icon,
+                rect.x() + (rect.w() - iconSize) * 0.5f,
+                rect.y() + (rect.h() - iconSize) * 0.5f,
+                iconSize,
+                iconSize,
+                SvgRenderOptions.overrideColor(iconColor)
+        );
     }
 
     private void drawAddButton(Rect rect,
@@ -815,9 +978,12 @@ public final class RelationsComponent {
             scroll = 0f;
             smoothedScroll = 0f;
             draggingScrollbar = false;
+            if (onlinePicker.isVisible()) {
+                onlinePicker.open(tab.pickerMode());
+            }
             clearStatus();
         }
-        movementInputBlocked = false;
+        movementInputBlocked = onlinePicker.blocksMovementInput();
         return true;
     }
 
@@ -1123,6 +1289,14 @@ public final class RelationsComponent {
                 case FRIENDS -> rel.colorFriend();
                 case ENEMIES -> rel.colorEnemy();
                 case STAFF -> rel.colorStaff();
+            };
+        }
+
+        private DefineTarget.RelationTargetMode pickerMode() {
+            return switch (this) {
+                case FRIENDS -> DefineTarget.RelationTargetMode.FRIEND;
+                case ENEMIES -> DefineTarget.RelationTargetMode.ENEMY;
+                case STAFF -> DefineTarget.RelationTargetMode.STAFF;
             };
         }
     }

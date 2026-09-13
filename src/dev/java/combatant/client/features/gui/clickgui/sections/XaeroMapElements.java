@@ -435,29 +435,76 @@ final class XaeroMapElements {
         ClientConfigManager config = WorldMap.INSTANCE.getConfigs().getClientConfigManager();
         double configuredScale = (Double) config.getEffective(
                 (ConfigOption<Double>) WorldMapProfiledConfigOptions.WAYPOINT_SCALE);
-        float scale = (float) Math.max(0.85, Math.min(1.8, configuredScale));
-        float size = 31.0f * scale + (highlighted ? 2.5f : 0.0f);
-        float x = (float) point.x() - size * 0.5f;
-        float y = (float) point.y() - size;
-        float alpha = element.disabled() ? 0.35f : 1.0f;
-        int color = withAlpha(element.color(), alpha);
+        float scale = (float) Math.max(0.82, Math.min(1.35, configuredScale));
+        float alpha = element.disabled() ? 0.38f : 1.0f;
+        int accent = withAlpha(element.color(), alpha);
+
+        float headRadius = (highlighted ? 8.0f : 7.1f) * scale;
+        float stemWidth = Math.max(1.7f, headRadius * 0.32f);
+        float stemHeight = (highlighted ? 6.2f : 5.4f) * scale;
+        float tipRadius = Math.max(1.15f, headRadius * 0.16f);
+        float cx = (float) point.x();
+        float tipY = (float) point.y();
+        float headCenterY = tipY - stemHeight - headRadius;
+        float headDiameter = headRadius * 2.0f;
 
         Renderer2D renderer = Renderer2D.COLOR;
-        renderer.svg("map-pin", x, y, size, size, SvgRenderOptions.overrideColor(color));
-
-        if (element.symbol() != null && !element.symbol().isBlank()) {
-            String symbol = element.symbol().substring(0, Math.min(2, element.symbol().length()));
-            float symbolSize = (symbol.length() > 1 ? 9.5f : 11.5f) * scale;
-            float symbolWidth = ClickGuiRenderer.textWidth(ClickGuiRenderer.getOnestBold(), symbol, symbolSize);
-            // map-pin.svg uses a 24x24 viewBox with the marker head centered at (12, 10).
-            // Position the glyph against that head instead of guessing from the bottom anchor.
-            float symbolCenterY = y + size * (10.0f / 24.0f);
-            ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestBold(), symbol,
-                    (float) point.x() - symbolWidth * 0.5f,
-                    symbolCenterY - symbolSize * 0.48f,
-                    symbolSize, withAlpha(0xFFF7FAFC, alpha), false);
+        float shadowPad = highlighted ? 4.5f : 3.25f;
+        renderer.roundedRectSoftShadow(
+                cx - headRadius - shadowPad * 0.5f,
+                headCenterY - headRadius - shadowPad * 0.5f,
+                headDiameter + shadowPad,
+                headDiameter + shadowPad,
+                headRadius + shadowPad * 0.18f,
+                highlighted ? 6.5f : 5.0f,
+                0.06f,
+                withAlpha(0x000000, alpha * (highlighted ? 0.64f : 0.5f))
+        );
+        renderer.roundedRect(
+                cx - stemWidth * 0.5f,
+                headCenterY + headRadius * 0.48f,
+                stemWidth,
+                stemHeight,
+                stemWidth * 0.5f,
+                withAlpha(0xCC0A0D12, alpha)
+        );
+        renderer.circle(cx, tipY, tipRadius * 1.45f, withAlpha(0xB0000000, alpha * 0.7f));
+        renderer.circle(cx, tipY, tipRadius, accent);
+        renderer.circle(cx, headCenterY, headRadius + (highlighted ? 1.3f : 1.0f), withAlpha(0xC2000000, alpha));
+        renderer.circle(cx, headCenterY, headRadius, accent);
+        if (highlighted) {
+            renderer.circleStroke(cx, headCenterY, headRadius + 0.65f, 1.0f, withAlpha(0xFFF7FAFC, alpha * 0.65f));
         }
-        return size;
+
+        String symbol = element.symbol();
+        if (symbol != null && !symbol.isBlank()) {
+            symbol = symbol.substring(0, Math.min(2, symbol.length())).toUpperCase(java.util.Locale.ROOT);
+            float symbolSize = (symbol.length() > 1 ? 8.15f : 9.5f) * scale;
+            float symbolWidth = ClickGuiRenderer.textWidth(ClickGuiRenderer.getOnestBold(), symbol, symbolSize);
+            float textX = cx - symbolWidth * 0.5f;
+            float textY = headCenterY - symbolSize * 0.48f;
+            ClickGuiRenderer.drawText(
+                    ClickGuiRenderer.getOnestBold(),
+                    symbol,
+                    textX,
+                    textY + 0.75f,
+                    symbolSize,
+                    withAlpha(0xA0000000, alpha * 0.9f),
+                    false
+            );
+            ClickGuiRenderer.drawText(
+                    ClickGuiRenderer.getOnestBold(),
+                    symbol,
+                    textX,
+                    textY,
+                    symbolSize,
+                    withAlpha(0xFFF8FBFD, alpha),
+                    false
+            );
+        } else {
+            renderer.circle(cx, headCenterY, Math.max(1.5f, headRadius * 0.22f), withAlpha(0xFFF8FBFD, alpha));
+        }
+        return headRadius * 2.0f + stemHeight + tipRadius;
     }
 
     private float drawPlayer(MapScreenPoint point, Element element, boolean highlighted) {

@@ -416,7 +416,9 @@ public final class UiPassCompiler {
             needsUiUnderlay |= batch.backdropRequest.requiresUiUnderlayCapture();
             if (batch.type == UiBatchType.BLUR || batch.type == UiBatchType.BLUR_CORNERS
                     || batch.type.usesPreparedGlass() && batch.backdropRequest.sceneBlur().enabled()) {
-                String sceneDomain = batch.backdropRequest.requiresCapturedScene()
+                String sceneDomain = batch.backdropRequest.usesUiUnderlayAsScene()
+                        ? "ui-underlay"
+                        : batch.backdropRequest.requiresCapturedScene()
                         ? "captured-world"
                         : "surface";
                 declareBlurChain(descriptors, sceneDomain, batch.blurQuality.iterations, screenWidth, screenHeight);

@@ -39,7 +39,7 @@ public abstract class WaypointWorldRendererMixin {
                                                       MinimapElementGraphics graphics,
                                                       XaeroBufferProvider bufferProvider,
                                                       CallbackInfoReturnable<Boolean> cir) {
-        if (XaeroWaypointHudOverlay.ownsXaeroWorldWaypoints()) {
+        if (XaeroWaypointHudOverlay.shouldSuppressNativeXaeroWaypoints()) {
             cir.setReturnValue(false);
         }
     }

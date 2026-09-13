@@ -88,6 +88,25 @@ public record UiBackdropRequest(SceneSource sceneSource,
         );
     }
 
+    /**
+     * Liquid-glass semantics for UI-native surfaces: the already accumulated UI underlay is the
+     * optical scene itself. Both the sharp refraction/rim source and the prepared blur therefore
+     * come from UI content instead of the pre-HUD world capture.
+     */
+    public static UiBackdropRequest uiUnderlayGlass(@Nullable UiRect bounds,
+                                                    UiBlurQuality quality,
+                                                    float offsetPx) {
+        return new UiBackdropRequest(
+                SceneSource.UI_UNDERLAY,
+                UiUnderlayMode.NONE,
+                BlurParameters.of(quality, offsetPx),
+                BlurParameters.NONE,
+                1.0f,
+                0.0f,
+                bounds
+        );
+    }
+
     /** Cheap backdrop blur: sample only the scene captured before HUD/UI, with no glass material. */
     public static UiBackdropRequest capturedSceneBlur(@Nullable UiRect bounds,
                                                       UiBlurQuality quality,
@@ -126,7 +145,11 @@ public record UiBackdropRequest(SceneSource sceneSource,
     }
 
     public boolean requiresUiUnderlayCapture() {
-        return uiUnderlayMode != UiUnderlayMode.NONE;
+        return sceneSource == SceneSource.UI_UNDERLAY || uiUnderlayMode != UiUnderlayMode.NONE;
+    }
+
+    public boolean usesUiUnderlayAsScene() {
+        return sceneSource == SceneSource.UI_UNDERLAY;
     }
 
     /** Compatibility key for sharing one capture/blur preparation across adjacent effects. */
@@ -143,7 +166,9 @@ public record UiBackdropRequest(SceneSource sceneSource,
         /** Scene/target captured before HUD/UI accumulation. */
         CAPTURED_SCENE,
         /** Color accumulated in the active target before this ordered effect. */
-        CURRENT_TARGET
+        CURRENT_TARGET,
+        /** UI accumulated into the dedicated underlay target for this deferred layer. */
+        UI_UNDERLAY
     }
 
     public enum UiUnderlayMode {

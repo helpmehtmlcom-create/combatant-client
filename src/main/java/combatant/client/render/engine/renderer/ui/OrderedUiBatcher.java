@@ -195,8 +195,7 @@ public final class OrderedUiBatcher {
         if (normalizedBackdrop.requiresCapturedScene() && normalizedBackdrop.sceneBlur().enabled()) {
             UiBlurResources.requestLiquidGlassBlur();
         }
-        if (type == UiBatchType.LIQUID_GLASS
-                && normalizedBackdrop.uiUnderlayMode() != UiBackdropRequest.UiUnderlayMode.NONE) {
+        if (type == UiBatchType.LIQUID_GLASS && normalizedBackdrop.requiresUiUnderlayCapture()) {
             UiBlurResources.requestUiUnderlay(UiDeferredScheduler.layerForCurrentPhase(false));
         }
         UiScissorSnapshot scissor = ScissorFunction.currentSnapshot();
@@ -473,8 +472,13 @@ public final class OrderedUiBatcher {
                 if (batch.type == UiBatchType.BLUR || batch.type == UiBatchType.BLUR_CORNERS) {
                     flushPendingDraws(pendingDraws);
                     boolean capturedScene = batch.backdropRequest.requiresCapturedScene();
-                    GpuTextureView blurSourceView = capturedScene ? liquidSourceView : batch.view;
-                    GpuSampler blurSourceSampler = capturedScene ? liquidSourceSampler : batch.sampler;
+                    boolean uiUnderlayScene = batch.backdropRequest.usesUiUnderlayAsScene();
+                    GpuTextureView blurSourceView = uiUnderlayScene
+                            ? uiUnderlayView
+                            : capturedScene ? liquidSourceView : batch.view;
+                    GpuSampler blurSourceSampler = (uiUnderlayScene || capturedScene)
+                            ? PostProcessManager.getSampler()
+                            : batch.sampler;
                     int blurPassCalls = prepareSharedBlur(mc, blurSourceView, blurSourceSampler, screenW, screenH, uiScale,
                             batch.blurQuality, batch.blurOffsetPx);
                     if (sharedBlurredView != null && sharedBlurredSampler != null) {
@@ -496,7 +500,7 @@ public final class OrderedUiBatcher {
                         continue;
                     }
                     // Captured-scene blur must never degrade to the accumulated HUD target.
-                    if (capturedScene || batch.view == mainColorView) {
+                    if (capturedScene || uiUnderlayScene || batch.view == mainColorView) {
                         continue;
                     }
                 }
@@ -504,8 +508,14 @@ public final class OrderedUiBatcher {
                 if (batch.type.usesPreparedGlass()) {
                     flushPendingDraws(pendingDraws);
                     boolean capturedScene = batch.backdropRequest.requiresCapturedScene();
-                    GpuTextureView sourceView = capturedScene && liquidSourceView != null ? liquidSourceView : batch.view;
-                    GpuSampler sourceSampler = capturedScene && liquidSourceSampler != null ? liquidSourceSampler : batch.sampler;
+                    boolean uiUnderlayScene = batch.backdropRequest.usesUiUnderlayAsScene();
+                    GpuSampler backdropSampler = PostProcessManager.getSampler();
+                    GpuTextureView sourceView = uiUnderlayScene
+                            ? uiUnderlayView
+                            : capturedScene && liquidSourceView != null ? liquidSourceView : batch.view;
+                    GpuSampler sourceSampler = uiUnderlayScene
+                            ? backdropSampler
+                            : capturedScene && liquidSourceSampler != null ? liquidSourceSampler : batch.sampler;
                     boolean clippedComposite = batch.clipSnapshot.active();
                     if (!batch.backdropRequest.sceneBlur().enabled()) {
                         resetSharedBlur();
@@ -513,6 +523,10 @@ public final class OrderedUiBatcher {
                         adoptFrameBlurCache(sourceView, sourceSampler, screenW, screenH, uiScale,
                                 batch.blurQuality, batch.blurOffsetPx);
                     } else {
+                        // UI underlay content can change between two glass surfaces in the same
+                        // ordered stream. Never reuse a blur only because the texture handle stayed
+                        // the same; rebuild after the preceding underlay contributions were replayed.
+                        if (uiUnderlayScene) resetSharedBlur();
                         drawCalls += prepareSharedBlur(mc, sourceView, sourceSampler, screenW, screenH, uiScale,
                                 batch.blurQuality, batch.blurOffsetPx);
                     }
@@ -525,7 +539,7 @@ public final class OrderedUiBatcher {
 
                     GpuTextureView glassUiUnderlayView = uiUnderlayView;
                     GpuSampler glassUiUnderlaySampler = PostProcessManager.getSampler();
-                    boolean useUiUnderlay = batch.backdropRequest.requiresUiUnderlayCapture()
+                    boolean useUiUnderlay = batch.backdropRequest.uiUnderlayMode() != UiBackdropRequest.UiUnderlayMode.NONE
                             && glassUiUnderlayView != null
                             && glassUiUnderlaySampler != null;
                     if (useUiUnderlay
@@ -1156,7 +1170,8 @@ public final class OrderedUiBatcher {
                           float uiScale,
                           Renderer2D.BlurQuality blurQuality,
                           float offsetPx) {
-        if (CombatantRenderSystem.rhi().shapeClip().isActive()) {
+        if (CombatantRenderSystem.rhi().shapeClip().isActive()
+                && !UiBlurResources.isUiUnderlaySource(sourceView)) {
             adoptFrameBlurCache(sourceView, sourceSampler, screenW, screenH, uiScale, blurQuality, offsetPx);
             return 0;
         }

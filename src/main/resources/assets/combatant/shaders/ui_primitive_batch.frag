@@ -77,6 +77,21 @@ float roundedRectSdfLocal(vec2 p, vec4 rect, float radius) {
     return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
 }
 
+float squircleSdfLocal(vec2 p, vec4 rect, float exponent) {
+    vec2 center = rect.xy + rect.zw * 0.5;
+    vec2 halfSize = max(rect.zw * 0.5, vec2(0.0001));
+    float n = clamp(exponent, 2.0, 16.0);
+    vec2 q = abs(p - center) / halfSize;
+    vec2 qn = pow(q, vec2(n));
+    float implicit = qn.x + qn.y - 1.0;
+    vec2 gradient = n * vec2(
+        pow(max(q.x, 0.000001), n - 1.0) / halfSize.x,
+        pow(max(q.y, 0.000001), n - 1.0) / halfSize.y
+    );
+    float radial = (pow(max(qn.x + qn.y, 0.000001), 1.0 / n) - 1.0) * min(halfSize.x, halfSize.y);
+    return length(gradient) > 0.00001 ? implicit / length(gradient) : radial;
+}
+
 float islandBlobSdf(vec2 p, int count, float smoothing) {
     float d = circleSdf(p, compoundSource(0).xyz);
     for (int i = 1; i < 4; i++) {
@@ -89,6 +104,12 @@ float islandBlobSdf(vec2 p, int count, float smoothing) {
 float smoothBoxUnionSdf(vec2 p, float smoothing) {
     float first = roundedRectSdfLocal(p, v_Params, max(v_Params3.x, 0.0));
     float second = roundedRectSdfLocal(p, v_Params2, max(v_Params3.y, 0.0));
+    return smoothMinimum(first, second, smoothing);
+}
+
+float smoothSquircleUnionSdf(vec2 p, float smoothing) {
+    float first = squircleSdfLocal(p, v_Params, max(v_Params3.x, 2.0));
+    float second = squircleSdfLocal(p, v_Params2, max(v_Params3.y, 2.0));
     return smoothMinimum(first, second, smoothing);
 }
 
@@ -129,6 +150,8 @@ void main() {
         d = islandBlobSdf(local, count, rounding);
     } else if (mode == 2) {
         d = smoothBoxUnionSdf(local, rounding);
+    } else if (mode == 3) {
+        d = smoothSquircleUnionSdf(local, rounding);
     } else {
         d = convexPrimitiveSdf(local, count, rounding);
     }

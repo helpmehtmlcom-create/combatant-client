@@ -155,6 +155,21 @@ float compoundRoundedRectSdf(vec2 p, vec4 rect, float radius) {
     return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
 }
 
+float compoundSquircleSdf(vec2 p, vec4 rect, float exponent) {
+    vec2 center = rect.xy + rect.zw * 0.5;
+    vec2 halfSize = max(rect.zw * 0.5, vec2(0.0001));
+    float n = clamp(exponent, 2.0, 16.0);
+    vec2 q = abs(p - center) / halfSize;
+    vec2 qn = pow(q, vec2(n));
+    float implicit = qn.x + qn.y - 1.0;
+    vec2 gradient = n * vec2(
+        pow(max(q.x, 0.000001), n - 1.0) / halfSize.x,
+        pow(max(q.y, 0.000001), n - 1.0) / halfSize.y
+    );
+    float radial = (pow(max(qn.x + qn.y, 0.000001), 1.0 / n) - 1.0) * min(halfSize.x, halfSize.y);
+    return length(gradient) > 0.00001 ? implicit / length(gradient) : radial;
+}
+
 float islandBlobSDF(vec2 localPos) {
     int count = int(clamp(floor(v_Params6.x + 0.5), 1.0, 4.0));
     float smoothing = max(v_Params6.y, 0.0);
@@ -170,6 +185,13 @@ float smoothBoxUnionSDF(vec2 localPos) {
     float smoothing = max(v_Params6.y, 0.0);
     float first = compoundRoundedRectSdf(localPos, v_Params, max(v_Params4.x, 0.0));
     float second = compoundRoundedRectSdf(localPos, v_Params3, max(v_Params4.y, 0.0));
+    return smoothMinimum(first, second, smoothing);
+}
+
+float smoothSquircleUnionSDF(vec2 localPos) {
+    float smoothing = max(v_Params6.y, 0.0);
+    float first = compoundSquircleSdf(localPos, v_Params, max(v_Params4.x, 2.0));
+    float second = compoundSquircleSdf(localPos, v_Params3, max(v_Params4.y, 2.0));
     return smoothMinimum(first, second, smoothing);
 }
 
@@ -197,6 +219,7 @@ float glassShapeSDF(vec2 p, vec2 halfSize, vec4 radius, float exponent, bool squ
     if (shapeMode == 1) return primitiveSDF(localPos);
     if (shapeMode == 2) return islandBlobSDF(localPos);
     if (shapeMode == 3) return smoothBoxUnionSDF(localPos);
+    if (shapeMode == 4) return smoothSquircleUnionSDF(localPos);
     return squircle ? squircleSDF(p, halfSize, exponent) : roundedBoxSDF(p, halfSize, radius, exponent);
 }
 

@@ -140,6 +140,7 @@ public final class Renderer2D {
     private final int[] warpedShapeVertexTmp = new int[81];
     private final double[] progressShapeTmp = new double[256];
     private double alpha = 1.0;
+    private @Nullable UiBackdropRequest.SceneSource liquidGlassSceneSourceOverride;
     private @Nullable UiBackdropRequest.UiUnderlayMode liquidGlassUiUnderlayOverride;
     private UiBlurQuality liquidGlassUiBlurQuality = UiBlurQuality.LOW;
     private float liquidGlassUiBlurOffsetPx = 0.85f;
@@ -196,6 +197,22 @@ public final class Renderer2D {
             draw.run();
         } finally {
             liquidGlassMaterial = previous;
+        }
+    }
+
+    /**
+     * Overrides the optical scene sampled by liquid glass emitted inside {@code draw}.
+     * UI_UNDERLAY is intended for glass that sits on top of custom-rendered UI surfaces (map,
+     * previews, editors) and must refract that UI instead of the pre-HUD world capture.
+     */
+    public void withLiquidGlassSceneSource(UiBackdropRequest.SceneSource source, Runnable draw) {
+        if (draw == null) return;
+        UiBackdropRequest.SceneSource previous = liquidGlassSceneSourceOverride;
+        liquidGlassSceneSourceOverride = source;
+        try {
+            draw.run();
+        } finally {
+            liquidGlassSceneSourceOverride = previous;
         }
     }
 
@@ -3195,8 +3212,14 @@ public final class Renderer2D {
             payload[5] = second.y() - bounds.y();
             payload[6] = second.width();
             payload[7] = second.height();
-            payload[8] = compound.firstRadius();
-            payload[9] = compound.secondRadius();
+            if (compound.mode() == UiCompoundSdf.Mode.SMOOTH_SQUIRCLE_UNION) {
+                shapeMode = 4;
+                payload[8] = compound.firstSquircleExponent();
+                payload[9] = compound.secondSquircleExponent();
+            } else {
+                payload[8] = compound.firstRadius();
+                payload[9] = compound.secondRadius();
+            }
         }
 
         boolean auto = beginAutoBatch();
@@ -3299,8 +3322,10 @@ public final class Renderer2D {
     private UiBackdropRequest liquidGlassBackdrop(UiRect bounds,
                                                    UiBlurQuality sceneQuality,
                                                    float sceneOffsetPx) {
-        UiBackdropRequest request = UiBackdropRequest.capturedSceneGlass(
-                bounds, sceneQuality, sceneOffsetPx);
+        UiBackdropRequest.SceneSource sceneSource = liquidGlassSceneSourceOverride;
+        UiBackdropRequest request = sceneSource == UiBackdropRequest.SceneSource.UI_UNDERLAY
+                ? UiBackdropRequest.uiUnderlayGlass(bounds, sceneQuality, sceneOffsetPx)
+                : UiBackdropRequest.capturedSceneGlass(bounds, sceneQuality, sceneOffsetPx);
         UiBackdropRequest.UiUnderlayMode mode = liquidGlassUiUnderlayOverride;
         if (mode == null) {
             mode = UiBackdropRequest.UiUnderlayMode.NONE;
@@ -4352,7 +4377,7 @@ public final class Renderer2D {
                 payload[o + 3] = 0.0f;
             }
         } else {
-            mode = 2;
+            mode = compound.mode() == UiCompoundSdf.Mode.SMOOTH_SQUIRCLE_UNION ? 3 : 2;
             sourceCount = 2;
             UiRect first = compound.firstBox();
             UiRect second = compound.secondBox();
@@ -4364,8 +4389,13 @@ public final class Renderer2D {
             payload[5] = (float) (second.y() - y);
             payload[6] = second.width();
             payload[7] = second.height();
-            payload[8] = compound.firstRadius();
-            payload[9] = compound.secondRadius();
+            if (mode == 3) {
+                payload[8] = compound.firstSquircleExponent();
+                payload[9] = compound.secondSquircleExponent();
+            } else {
+                payload[8] = compound.firstRadius();
+                payload[9] = compound.secondRadius();
+            }
         }
 
         float strokeWidth = !fill && stroke != null ? stroke.thickness() : 0.0f;
