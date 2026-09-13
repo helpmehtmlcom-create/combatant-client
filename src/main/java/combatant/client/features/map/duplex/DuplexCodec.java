@@ -16,37 +16,44 @@ import java.security.MessageDigest;
 import java.util.Base64;
 import java.util.UUID;
 
+/** Binary DUPLEX frame codec. Transport framing (TCP length prefix) is intentionally separate. */
 public final class DuplexCodec {
     private static final int MAGIC = 0x43424458;
     private static final int VERSION = 1;
     private static final int MAC_BYTES = 32;
-    private static final String PREFIX = "CBX1:";
+    private static final int MAX_PAYLOAD_BYTES = 4096;
+    private static final String LEGACY_TEXT_PREFIX = "CBX1:";
 
     private DuplexCodec() {}
 
-    public static String encode(DuplexFrame frame, String token) {
+    public static byte[] encodeBinary(DuplexFrame frame, String token) {
         byte[] payload = frame.payload();
-        if (payload.length > 4096) throw new IllegalArgumentException("Payload exceeds 4096 bytes");
-        ByteBuffer body = ByteBuffer.allocate(4+1+1+8+16+16+2+payload.length).order(ByteOrder.BIG_ENDIAN);
-        body.putInt(MAGIC).put((byte)VERSION).put((byte)frame.type().ordinal()).putLong(frame.sequence());
+        if (payload.length > MAX_PAYLOAD_BYTES) {
+            throw new IllegalArgumentException("Payload exceeds " + MAX_PAYLOAD_BYTES + " bytes");
+        }
+        ByteBuffer body = ByteBuffer.allocate(4 + 1 + 1 + 8 + 16 + 16 + 2 + payload.length)
+                .order(ByteOrder.BIG_ENDIAN);
+        body.putInt(MAGIC).put((byte) VERSION).put((byte) frame.type().ordinal()).putLong(frame.sequence());
         putUuid(body, frame.sessionId());
         putUuid(body, frame.senderId());
-        body.putShort((short)payload.length).put(payload);
+        body.putShort((short) payload.length).put(payload);
         byte[] unsigned = body.array();
         byte[] mac = hmac(unsigned, token);
         ByteBuffer out = ByteBuffer.allocate(unsigned.length + MAC_BYTES);
         out.put(unsigned).put(mac);
-        return PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(out.array());
+        return out.array();
     }
 
-    public static DuplexFrame decode(String line, String token) {
-        if (line == null || !line.startsWith(PREFIX)) throw new IllegalArgumentException("Invalid Duplex frame prefix");
-        byte[] bytes = Base64.getUrlDecoder().decode(line.substring(PREFIX.length()));
-        if (bytes.length < 4+1+1+8+16+16+2+MAC_BYTES) throw new IllegalArgumentException("Truncated Duplex frame");
+    public static DuplexFrame decodeBinary(byte[] bytes, String token) {
+        if (bytes == null || bytes.length < 4 + 1 + 1 + 8 + 16 + 16 + 2 + MAC_BYTES) {
+            throw new IllegalArgumentException("Truncated Duplex frame");
+        }
         int bodyLen = bytes.length - MAC_BYTES;
         byte[] body = java.util.Arrays.copyOf(bytes, bodyLen);
         byte[] actual = java.util.Arrays.copyOfRange(bytes, bodyLen, bytes.length);
-        if (!MessageDigest.isEqual(actual, hmac(body, token))) throw new SecurityException("Invalid Duplex frame MAC");
+        if (!MessageDigest.isEqual(actual, hmac(body, token))) {
+            throw new SecurityException("Invalid Duplex frame MAC");
+        }
 
         ByteBuffer in = ByteBuffer.wrap(body).order(ByteOrder.BIG_ENDIAN);
         if (in.getInt() != MAGIC) throw new IllegalArgumentException("Invalid Duplex frame magic");
@@ -58,16 +65,32 @@ public final class DuplexCodec {
         UUID session = getUuid(in);
         UUID sender = getUuid(in);
         int payloadLen = Short.toUnsignedInt(in.getShort());
-        if (payloadLen != in.remaining()) throw new IllegalArgumentException("Invalid Duplex payload length");
+        if (payloadLen > MAX_PAYLOAD_BYTES || payloadLen != in.remaining()) {
+            throw new IllegalArgumentException("Invalid Duplex payload length");
+        }
         byte[] payload = new byte[payloadLen];
         in.get(payload);
         return new DuplexFrame(values[type], sequence, session, sender, payload);
     }
 
+    /** Compatibility helper for old diagnostics/tools; local TCP runtime uses the binary methods. */
+    public static String encode(DuplexFrame frame, String token) {
+        return LEGACY_TEXT_PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(encodeBinary(frame, token));
+    }
+
+    /** Compatibility helper for old diagnostics/tools; local TCP runtime uses the binary methods. */
+    public static DuplexFrame decode(String line, String token) {
+        if (line == null || !line.startsWith(LEGACY_TEXT_PREFIX)) {
+            throw new IllegalArgumentException("Invalid Duplex frame prefix");
+        }
+        return decodeBinary(Base64.getUrlDecoder().decode(line.substring(LEGACY_TEXT_PREFIX.length())), token);
+    }
+
     private static byte[] hmac(byte[] body, String token) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
-            byte[] key = (token == null ? "" : token).getBytes(StandardCharsets.UTF_8);
+            String material = token == null || token.isBlank() ? "combatant-local-duplex" : token;
+            byte[] key = material.getBytes(StandardCharsets.UTF_8);
             mac.init(new SecretKeySpec(key, "HmacSHA256"));
             return mac.doFinal(body);
         } catch (Exception e) {

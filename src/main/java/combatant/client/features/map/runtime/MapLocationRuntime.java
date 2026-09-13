@@ -6,7 +6,7 @@
  */
 package combatant.client.features.map.runtime;
 
-import combatant.client.config.subsystem.DuplexIrcConfig;
+import combatant.client.config.subsystem.DuplexLocalConfig;
 import combatant.client.events.EventHandler;
 import combatant.client.events.impl.GameTickEvent;
 import combatant.client.features.map.duplex.DuplexBearingSample;
@@ -56,12 +56,13 @@ import java.util.UUID;
 public final class MapLocationRuntime {
     private static final MapLocationRuntime INSTANCE = new MapLocationRuntime();
 
-    private final DuplexIrcConfig duplexConfig = DuplexIrcConfig.get();
+    private final DuplexLocalConfig duplexConfig = DuplexLocalConfig.get();
     private final DuplexRuntime duplex = new DuplexRuntime();
     private final Map<UUID, Long> lastDuplexRevision = new HashMap<>();
 
     private String activeServerFingerprint = "";
     private String activeWorldFingerprint = "";
+    private int activeDuplexConfigFingerprint;
 
     private MapLocationRuntime() {
     }
@@ -364,12 +365,16 @@ public final class MapLocationRuntime {
             if (!activeServerFingerprint.isEmpty() || !activeWorldFingerprint.isEmpty()) duplex.close();
             activeServerFingerprint = "";
             activeWorldFingerprint = "";
+            activeDuplexConfigFingerprint = 0;
             lastDuplexRevision.clear();
             return;
         }
-        if (server.equals(activeServerFingerprint) && world.equals(activeWorldFingerprint)) return;
+        int configFingerprint = duplexConfig.runtimeFingerprint();
+        if (server.equals(activeServerFingerprint) && world.equals(activeWorldFingerprint)
+                && configFingerprint == activeDuplexConfigFingerprint) return;
         activeServerFingerprint = server;
         activeWorldFingerprint = world;
+        activeDuplexConfigFingerprint = configFingerprint;
         lastDuplexRevision.clear();
         duplex.start(server, world);
     }
@@ -381,6 +386,7 @@ public final class MapLocationRuntime {
         duplex.close();
         activeServerFingerprint = "";
         activeWorldFingerprint = "";
+        activeDuplexConfigFingerprint = 0;
         lastDuplexRevision.clear();
     }
 

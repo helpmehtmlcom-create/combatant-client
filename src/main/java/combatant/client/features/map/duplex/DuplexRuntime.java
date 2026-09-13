@@ -7,7 +7,7 @@
 
 package combatant.client.features.map.duplex;
 
-import combatant.client.config.subsystem.DuplexIrcConfig;
+import combatant.client.config.subsystem.DuplexLocalConfig;
 
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 public final class DuplexRuntime implements AutoCloseable {
-    private final DuplexIrcConfig config;
+    private final DuplexLocalConfig config;
     private final UUID senderId = UUID.randomUUID();
     private final AtomicLong sequence = new AtomicLong();
     private final DuplexPeerWindow replayWindow = new DuplexPeerWindow();
@@ -26,7 +26,7 @@ public final class DuplexRuntime implements AutoCloseable {
     private final ConcurrentHashMap<UUID, DuplexBearingSample> remoteBearings = new ConcurrentHashMap<>();
     private final AtomicReference<Map<UUID, DuplexEstimate>> estimates = new AtomicReference<>(Map.of());
 
-    private volatile DuplexIrcTransport transport;
+    private volatile DuplexLocalTcpTransport transport;
     private volatile DuplexState state = DuplexState.DISCONNECTED;
     private volatile UUID sessionId;
     private volatile String serverFingerprint = "";
@@ -34,16 +34,31 @@ public final class DuplexRuntime implements AutoCloseable {
     private volatile UUID peerId;
     private volatile long lastPeerAt;
     private volatile long lastHeartbeatAt;
+    private volatile long lastConnectionGeneration;
 
     public DuplexRuntime() {
-        this(DuplexIrcConfig.get());
+        this(DuplexLocalConfig.get());
     }
 
-    DuplexRuntime(DuplexIrcConfig config) {
+    DuplexRuntime(DuplexLocalConfig config) {
         this.config = config;
     }
 
     public DuplexState state() { return state; }
+    public UUID senderId() { return senderId; }
+    public boolean transportConnected() {
+        DuplexLocalTcpTransport current = transport;
+        return current != null && current.connected();
+    }
+    public String transportEndpoint() {
+        DuplexLocalTcpTransport current = transport;
+        return current == null ? "127.0.0.1:" + config.port() : current.endpoint();
+    }
+    public String transportLastError() {
+        DuplexLocalTcpTransport current = transport;
+        return current == null ? "" : current.lastError();
+    }
+
     public Map<UUID, DuplexEstimate> estimates() {
         Map<UUID, DuplexEstimate> current = estimates.get();
         if (current.isEmpty()) return current;
@@ -57,36 +72,48 @@ public final class DuplexRuntime implements AutoCloseable {
         }
         return filtered.size() == current.size() ? current : Map.copyOf(filtered);
     }
-    public UUID senderId() { return senderId; }
 
     public synchronized void start(String serverFingerprint, String worldFingerprint) {
         close();
-        if (!config.enabled() || config.host().isBlank() || config.channel().isBlank()
-                || config.sessionToken().isBlank()) {
+        if (!config.enabled()) {
             state = DuplexState.DISCONNECTED;
             return;
         }
+
         this.serverFingerprint = normalize(serverFingerprint);
         this.worldFingerprint = normalize(worldFingerprint);
-        this.sessionId = deriveSessionId(config.sessionToken(), this.serverFingerprint, this.worldFingerprint);
+        this.sessionId = deriveSessionId(config.sessionToken(), this.serverFingerprint, this.worldFingerprint,
+                config.port());
         this.state = DuplexState.HANDSHAKING;
-        DuplexIrcTransport next = new DuplexIrcTransport(config);
+        this.lastConnectionGeneration = 0L;
+
+        DuplexLocalTcpTransport next = new DuplexLocalTcpTransport(config.role(), config.port(), config.reconnectMs());
         next.setMessageSink(this::onPayload);
         this.transport = next;
         next.start();
-        sendHello();
-        state = DuplexState.SESSION_VERIFY;
     }
 
     public void tick() {
-        DuplexIrcTransport current = transport;
+        DuplexLocalTcpTransport current = transport;
         if (current == null || state == DuplexState.DISCONNECTED) return;
+
         long now = System.currentTimeMillis();
+        if (!current.connected()) {
+            if (!current.running() || lastConnectionGeneration > 0L) state = DuplexState.DEGRADED;
+            pruneEstimates(now);
+            return;
+        }
+
+        long generation = current.connectionGeneration();
+        if (generation != lastConnectionGeneration) {
+            onTransportConnected(generation);
+        }
+
         if (now - lastHeartbeatAt >= config.heartbeatMs()) {
             send(DuplexMessageType.HEARTBEAT, DuplexPayloads.text(Long.toString(now)));
             lastHeartbeatAt = now;
         }
-        if (peerId != null && now - lastPeerAt > Math.max(5000L, config.heartbeatMs() * 3L)) {
+        if (peerId != null && now - lastPeerAt > Math.max(2000L, config.heartbeatMs() * 3L)) {
             state = DuplexState.DEGRADED;
         }
         pruneEstimates(now);
@@ -97,28 +124,39 @@ public final class DuplexRuntime implements AutoCloseable {
         localBearings.put(sample.targetUuid(), sample);
         tryPair(sample.targetUuid());
         // During handshake the peer intentionally ignores bearing frames. Returning false keeps
-        // the coordinator's revision dirty so the same immutable sample is retried once READY.
+        // the coordinator's revision dirty. On reconnect READY also replays the latest local set.
         if (state != DuplexState.READY) return false;
         return send(DuplexMessageType.BEARING_SAMPLE, DuplexPayloads.bearing(sample));
     }
 
-    private void sendHello() {
-        send(DuplexMessageType.HELLO, DuplexPayloads.text(
+    private void onTransportConnected(long generation) {
+        lastConnectionGeneration = generation;
+        peerId = null;
+        lastPeerAt = 0L;
+        lastHeartbeatAt = 0L;
+        remoteBearings.clear();
+        replayWindow.clear();
+        state = DuplexState.HANDSHAKING;
+        if (sendHello()) state = DuplexState.SESSION_VERIFY;
+    }
+
+    private boolean sendHello() {
+        return send(DuplexMessageType.HELLO, DuplexPayloads.text(
                 config.role().name(), serverFingerprint, worldFingerprint));
     }
 
     private boolean send(DuplexMessageType type, byte[] payload) {
-        DuplexIrcTransport current = transport;
+        DuplexLocalTcpTransport current = transport;
         UUID session = sessionId;
-        if (current == null || session == null) return false;
+        if (current == null || session == null || !current.connected()) return false;
         DuplexFrame frame = new DuplexFrame(type, sequence.incrementAndGet(), session, senderId, payload);
-        return current.sendPayload(DuplexCodec.encode(frame, config.sessionToken()));
+        return current.sendPayload(DuplexCodec.encodeBinary(frame, config.sessionToken()));
     }
 
-    private void onPayload(String payload) {
+    private void onPayload(byte[] payload) {
         DuplexFrame frame;
         try {
-            frame = DuplexCodec.decode(payload, config.sessionToken());
+            frame = DuplexCodec.decodeBinary(payload, config.sessionToken());
         } catch (RuntimeException ignored) {
             return;
         }
@@ -129,11 +167,12 @@ public final class DuplexRuntime implements AutoCloseable {
         switch (frame.type()) {
             case HELLO -> handleHello(frame);
             case HEARTBEAT -> {
-                peerId = frame.senderId();
+                if (peerId == null) return;
+                if (!peerId.equals(frame.senderId())) return;
                 if (state == DuplexState.DEGRADED) state = DuplexState.READY;
             }
             case BEARING_SAMPLE -> {
-                if (state != DuplexState.READY) return;
+                if (state != DuplexState.READY || peerId == null || !peerId.equals(frame.senderId())) return;
                 DuplexBearingSample sample;
                 try {
                     sample = DuplexPayloads.readBearing(frame.payload());
@@ -146,6 +185,7 @@ public final class DuplexRuntime implements AutoCloseable {
             case GOODBYE -> {
                 if (frame.senderId().equals(peerId)) {
                     peerId = null;
+                    remoteBearings.clear();
                     state = DuplexState.DEGRADED;
                 }
             }
@@ -166,6 +206,7 @@ public final class DuplexRuntime implements AutoCloseable {
             state = DuplexState.DEGRADED;
             return;
         }
+
         DuplexRole remoteRole;
         try {
             remoteRole = DuplexRole.valueOf(fields[0]);
@@ -176,9 +217,22 @@ public final class DuplexRuntime implements AutoCloseable {
             state = DuplexState.DEGRADED;
             return;
         }
+
+        boolean newlyReady = state != DuplexState.READY || peerId == null || !peerId.equals(frame.senderId());
         peerId = frame.senderId();
         state = DuplexState.READY;
-        sendHello();
+        if (newlyReady) {
+            // Ack once. A peer already READY does not answer again, avoiding HELLO ping-pong.
+            sendHello();
+            resendLocalBearings();
+        }
+    }
+
+    private void resendLocalBearings() {
+        if (state != DuplexState.READY) return;
+        for (DuplexBearingSample sample : localBearings.values()) {
+            if (sample != null) send(DuplexMessageType.BEARING_SAMPLE, DuplexPayloads.bearing(sample));
+        }
     }
 
     private void tryPair(UUID target) {
@@ -211,22 +265,27 @@ public final class DuplexRuntime implements AutoCloseable {
 
     @Override
     public synchronized void close() {
-        DuplexIrcTransport current = transport;
-        if (current != null && sessionId != null) {
+        DuplexLocalTcpTransport current = transport;
+        if (current != null && sessionId != null && current.connected()) {
             try { send(DuplexMessageType.GOODBYE, new byte[0]); } catch (RuntimeException ignored) {}
-            current.close();
         }
+        if (current != null) current.close();
         transport = null;
         state = DuplexState.DISCONNECTED;
         peerId = null;
+        sessionId = null;
+        lastConnectionGeneration = 0L;
+        lastPeerAt = 0L;
+        lastHeartbeatAt = 0L;
         localBearings.clear();
         remoteBearings.clear();
         estimates.set(Map.of());
         replayWindow.clear();
     }
 
-    private static UUID deriveSessionId(String token, String server, String world) {
-        String key = "combatant-duplex-irc\n" + token + "\n" + server + "\n" + world;
+    private static UUID deriveSessionId(String token, String server, String world, int port) {
+        String key = "combatant-duplex-local\n" + (token == null ? "" : token) + "\n"
+                + port + "\n" + server + "\n" + world;
         return UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8));
     }
 
