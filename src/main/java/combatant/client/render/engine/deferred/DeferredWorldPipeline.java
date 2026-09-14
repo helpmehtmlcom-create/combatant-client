@@ -379,14 +379,6 @@ public final class DeferredWorldPipeline {
             lightingResolvedThisFrame = true;
             resourceBindings.bindTexture(DeferredResource.SCENE_COLOR, sceneColor);
             executeStage(DeferredStage.POST_LIGHTING);
-            executeStage(DeferredStage.REFLECTION_CAPTURE_PREPARE);
-            executeStage(DeferredStage.REFLECTION_CAPTURE);
-            executeStage(DeferredStage.REFLECTION_PREPARE);
-            executeStage(DeferredStage.REFLECTION_TRACE);
-            executeStage(DeferredStage.REFLECTION_RESOLVE);
-            executeStage(DeferredStage.REFLECTION_DENOISE);
-            executeStage(DeferredStage.REFLECTION_HISTORY);
-            executeStage(DeferredStage.REFLECTION_COMPOSITE);
             return true;
         } catch (Throwable t) {
             DebugLog.warnOnChange(
@@ -484,9 +476,32 @@ public final class DeferredWorldPipeline {
         return targets;
     }
 
-    public void beforeTranslucency() {
+    public void beforeTranslucency(GpuTextureView sceneColor, @Nullable GpuTextureView depth) {
         if (!enabled() || targets == null) return;
+        resourceBindings.bindTexture(DeferredResource.SCENE_COLOR, sceneColor);
+        resourceBindings.bindTexture(DeferredResource.MAIN_DEPTH, depth);
         executeStage(DeferredStage.FORWARD_OPAQUE);
+
+        // Forward opaque/entity rendering may have changed the primary depth after the terrain
+        // deferred resolve. Refresh the screen-space tracing inputs at the real opaque/translucent
+        // boundary so reflection/indirect producers never consume a terrain-only depth snapshot.
+        executeStage(DeferredStage.PRE_TRANSLUCENCY_DEPTH_RESOLVE);
+        executeStage(DeferredStage.PRE_TRANSLUCENCY_VELOCITY_RESOLVE);
+        executeStage(DeferredStage.PRE_TRANSLUCENCY_DEPTH_PYRAMID);
+        executeStage(DeferredStage.RADIANCE_CAPTURE);
+        executeStage(DeferredStage.INDIRECT_PREPARE);
+        executeStage(DeferredStage.INDIRECT_TRACE);
+        executeStage(DeferredStage.INDIRECT_TEMPORAL);
+        executeStage(DeferredStage.INDIRECT_HISTORY);
+        executeStage(DeferredStage.REFLECTION_CAPTURE_PREPARE);
+        executeStage(DeferredStage.REFLECTION_CAPTURE);
+        executeStage(DeferredStage.REFLECTION_PREPARE);
+        executeStage(DeferredStage.REFLECTION_TRACE);
+        executeStage(DeferredStage.REFLECTION_RESOLVE);
+        executeStage(DeferredStage.REFLECTION_TEMPORAL);
+        executeStage(DeferredStage.REFLECTION_DENOISE);
+        executeStage(DeferredStage.REFLECTION_HISTORY);
+        executeStage(DeferredStage.REFLECTION_COMPOSITE);
         executeStage(DeferredStage.PRE_TRANSLUCENCY);
     }
 

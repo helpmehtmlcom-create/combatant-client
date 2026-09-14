@@ -87,8 +87,11 @@ final class DeferredBackendPasses implements AutoCloseable {
     private final DeferredShadowResolveSource shadowResolve = new DeferredShadowResolveSource();
     private final DeferredContactShadowSource contactShadows = new DeferredContactShadowSource();
     private final DeferredAmbientOcclusionSource ambientOcclusion = new DeferredAmbientOcclusionSource();
+    private final DeferredSceneRadianceSource sceneRadiance = new DeferredSceneRadianceSource();
+    private final DeferredIndirectLightSource indirectLight = new DeferredIndirectLightSource();
     private final DeferredReflectionCascadeSource reflectionCascades = new DeferredReflectionCascadeSource();
     private final DeferredReflectionSource reflections = new DeferredReflectionSource();
+    private final DeferredTemporalSignalSource temporalSignals = new DeferredTemporalSignalSource();
     private final DeferredTemporalHistorySource temporalHistory = new DeferredTemporalHistorySource();
 
     void install(ArrayList<DeferredPassSpec> passes) {
@@ -126,11 +129,39 @@ final class DeferredBackendPasses implements AutoCloseable {
                 .when(context -> context.isValid(DeferredResource.RESOLVED_DEPTH))
                 .execute(this::buildDepthPyramid)
                 .build());
+        // Refresh primary screen-space inputs after forward opaque/entity rendering. These are
+        // distinct graph passes rather than manually re-running the early geometry stages, so
+        // WRITE_AFTER_* hazards from FORWARD_OPAQUE are represented explicitly by the frame graph.
+        passes.add(DeferredPassSpec.builder("world.pre_translucency.depth.resolve", DeferredStage.PRE_TRANSLUCENCY_DEPTH_RESOLVE)
+                .read(DeferredResource.MAIN_DEPTH)
+                .write(DeferredResource.RESOLVED_DEPTH)
+                .requires(RhiShaderStage.COMPUTE)
+                .when(context -> context.resources().texture(DeferredResource.MAIN_DEPTH) != null)
+                .execute(this::resolveDepth)
+                .build());
+        passes.add(DeferredPassSpec.builder("world.pre_translucency.velocity.camera", DeferredStage.PRE_TRANSLUCENCY_VELOCITY_RESOLVE)
+                .read(DeferredResource.RESOLVED_DEPTH)
+                .write(DeferredResource.VELOCITY)
+                .requires(RhiShaderStage.COMPUTE)
+                .when(context -> context.isValid(DeferredResource.RESOLVED_DEPTH)
+                        && context.primaryView().hasTemporalHistory())
+                .execute(this::resolveCameraVelocity)
+                .build());
+        passes.add(DeferredPassSpec.builder("world.pre_translucency.depth.pyramid", DeferredStage.PRE_TRANSLUCENCY_DEPTH_PYRAMID)
+                .read(DeferredResource.RESOLVED_DEPTH)
+                .write(DeferredResource.DEPTH_PYRAMID)
+                .requires(RhiShaderStage.COMPUTE)
+                .when(context -> context.isValid(DeferredResource.RESOLVED_DEPTH))
+                .execute(this::buildDepthPyramid)
+                .build());
         shadowResolve.install(passes);
         contactShadows.install(passes);
         ambientOcclusion.install(passes);
+        sceneRadiance.install(passes);
+        indirectLight.install(passes);
         reflectionCascades.install(passes);
         reflections.install(passes);
+        temporalSignals.install(passes);
         temporalHistory.install(passes);
     }
 
@@ -145,7 +176,10 @@ final class DeferredBackendPasses implements AutoCloseable {
         shadowResolve.prepare(rhi);
         contactShadows.prepare(rhi);
         ambientOcclusion.prepare(rhi);
+        sceneRadiance.prepare(rhi);
+        indirectLight.prepare(rhi);
         reflections.prepare(rhi);
+        temporalSignals.prepare(rhi);
         temporalHistory.prepare(rhi);
     }
 
@@ -157,8 +191,11 @@ final class DeferredBackendPasses implements AutoCloseable {
         shadowResolve.release(releaseOwner);
         contactShadows.release(releaseOwner);
         ambientOcclusion.release(releaseOwner);
+        sceneRadiance.release(releaseOwner);
+        indirectLight.release(releaseOwner);
         reflectionCascades.release(releaseOwner);
         reflections.release(releaseOwner);
+        temporalSignals.release(releaseOwner);
         temporalHistory.release(releaseOwner);
         owner = null;
     }
@@ -276,6 +313,8 @@ final class DeferredBackendPasses implements AutoCloseable {
             shadowResolve.release(previous);
             contactShadows.release(previous);
             ambientOcclusion.release(previous);
+            sceneRadiance.release(previous);
+            indirectLight.release(previous);
             reflectionCascades.release(previous);
             reflections.release(previous);
             temporalHistory.release(previous);

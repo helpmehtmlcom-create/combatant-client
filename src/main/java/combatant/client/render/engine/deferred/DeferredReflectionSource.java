@@ -44,7 +44,6 @@ final class DeferredReflectionSource implements AutoCloseable {
     private static final Identifier TRACE_SHADER = id("deferred/reflection_trace");
     private static final Identifier RESOLVE_SHADER = id("deferred/reflection_resolve");
     private static final Identifier RESOLVE_CASCADE_SHADER = id("deferred/reflection_resolve_cascade");
-    private static final Identifier HISTORY_SHADER = id("deferred/reflection_history_store");
 
     private static final Std430StructLayout TRACE_DATA_LAYOUT = Std430StructLayout.builder()
             .member("inverseProjection", Std430Type.MAT4)
@@ -84,21 +83,16 @@ final class DeferredReflectionSource implements AutoCloseable {
             new ShaderResourceSlot(8, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(9, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
     ));
-    private static final ShaderResourceLayout HISTORY_LAYOUT = new ShaderResourceLayout(List.of(
-            new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
-            new ShaderResourceSlot(1, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY)
-    ));
 
     private CombatantRhi owner;
     private RhiComputePipeline tracePipeline;
     private RhiComputePipeline resolvePipeline;
     private RhiComputePipeline resolveCascadePipeline;
-    private RhiComputePipeline historyPipeline;
     private RhiStorageBuffer traceData;
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.reflection.prepare", DeferredStage.REFLECTION_PREPARE)
-                .read(DeferredResource.SCENE_COLOR, DeferredResource.RESOLVED_DEPTH,
+                .read(DeferredResource.SCENE_RADIANCE, DeferredResource.RESOLVED_DEPTH,
                         DeferredResource.DEPTH_PYRAMID, DeferredResource.GBUFFER_GEOMETRY)
                 .write(DeferredResource.REFLECTION_TRACE_DATA)
                 .requires(RhiShaderStage.COMPUTE)
@@ -106,12 +100,12 @@ final class DeferredReflectionSource implements AutoCloseable {
                         && context.primaryView().current() != null
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
                         && context.isValid(DeferredResource.DEPTH_PYRAMID)
-                        && context.resources().texture(DeferredResource.SCENE_COLOR) != null
+                        && context.isValid(DeferredResource.SCENE_RADIANCE)
                         && context.resources().texture(DeferredResource.GBUFFER_GEOMETRY) != null)
                 .execute(this::prepareFrame)
                 .build());
         passes.add(DeferredPassSpec.builder("world.reflection.trace", DeferredStage.REFLECTION_TRACE)
-                .read(DeferredResource.SCENE_COLOR, DeferredResource.GBUFFER_GEOMETRY,
+                .read(DeferredResource.SCENE_RADIANCE, DeferredResource.GBUFFER_GEOMETRY,
                         DeferredResource.RESOLVED_DEPTH, DeferredResource.DEPTH_PYRAMID,
                         DeferredResource.REFLECTION_TRACE_DATA)
                 .write(DeferredResource.REFLECTION_TRACE_COLOR, DeferredResource.REFLECTION_TRACE_CONFIDENCE)
@@ -126,20 +120,12 @@ final class DeferredReflectionSource implements AutoCloseable {
                         DeferredResource.REFLECTION_TRACE_DATA,
                         DeferredResource.REFLECTION_CASCADE_COLOR, DeferredResource.REFLECTION_CASCADE_DEPTH,
                         DeferredResource.REFLECTION_CASCADE_DATA)
-                .write(DeferredResource.REFLECTION_COLOR, DeferredResource.REFLECTION_CONFIDENCE)
+                .write(DeferredResource.REFLECTION_RESOLVED_COLOR, DeferredResource.REFLECTION_RESOLVED_CONFIDENCE)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.settings().reflectionsEnabled()
                         && context.isValid(DeferredResource.REFLECTION_TRACE_COLOR)
                         && context.isValid(DeferredResource.REFLECTION_TRACE_CONFIDENCE))
                 .execute(this::resolve)
-                .build());
-        passes.add(DeferredPassSpec.builder("world.reflection.history", DeferredStage.REFLECTION_HISTORY)
-                .read(DeferredResource.REFLECTION_COLOR)
-                .write(DeferredResource.HISTORY_REFLECTION)
-                .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.settings().reflectionsEnabled()
-                        && context.isValid(DeferredResource.REFLECTION_COLOR))
-                .execute(this::storeHistory)
                 .build());
     }
 
@@ -148,7 +134,6 @@ final class DeferredReflectionSource implements AutoCloseable {
         tracePipeline();
         resolvePipeline();
         resolveCascadePipeline();
-        historyPipeline();
         traceData();
     }
 
@@ -197,7 +182,7 @@ final class DeferredReflectionSource implements AutoCloseable {
 
     private void trace(DeferredPassContext context) {
         ensureOwner(context.rhi());
-        GpuTextureView scene = requireTexture(context, DeferredResource.SCENE_COLOR);
+        GpuTextureView scene = requireTexture(context, DeferredResource.SCENE_RADIANCE);
         GpuTextureView geometry = requireTexture(context, DeferredResource.GBUFFER_GEOMETRY);
         GpuTextureView depth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
         GpuTextureView pyramid = requireTexture(context, DeferredResource.DEPTH_PYRAMID);
@@ -229,8 +214,8 @@ final class DeferredReflectionSource implements AutoCloseable {
         ensureOwner(context.rhi());
         GpuTextureView traceColor = requireTexture(context, DeferredResource.REFLECTION_TRACE_COLOR);
         GpuTextureView traceConfidence = requireTexture(context, DeferredResource.REFLECTION_TRACE_CONFIDENCE);
-        RhiStorageImage color = requireImage(context, DeferredResource.REFLECTION_COLOR);
-        RhiStorageImage confidence = requireImage(context, DeferredResource.REFLECTION_CONFIDENCE);
+        RhiStorageImage color = requireImage(context, DeferredResource.REFLECTION_RESOLVED_COLOR);
+        RhiStorageImage confidence = requireImage(context, DeferredResource.REFLECTION_RESOLVED_CONFIDENCE);
         GpuSampler nearest = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
 
         boolean hasCascade = context.isValid(DeferredResource.REFLECTION_CASCADE_COLOR)
@@ -287,21 +272,6 @@ final class DeferredReflectionSource implements AutoCloseable {
         ));
     }
 
-    private void storeHistory(DeferredPassContext context) {
-        ensureOwner(context.rhi());
-        GpuTextureView color = requireTexture(context, DeferredResource.REFLECTION_COLOR);
-        RhiStorageImage history = requireImage(context, DeferredResource.HISTORY_REFLECTION);
-        GpuSampler nearest = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
-        context.advancedShaders().dispatch(new ComputeDispatchCommand(
-                "Combatant reflection history capture",
-                historyPipeline(),
-                groups(history.descriptor().width()), groups(history.descriptor().height()), 1,
-                List.of(),
-                List.of(new SampledTextureBinding(0, color, nearest)),
-                List.of(new StorageImageBinding(1, history, StorageAccess.WRITE_ONLY))
-        ));
-    }
-
     private void ensureOwner(CombatantRhi rhi) {
         if (owner == rhi) return;
         closeOwned();
@@ -327,10 +297,6 @@ final class DeferredReflectionSource implements AutoCloseable {
         return resolveCascadePipeline;
     }
 
-    private RhiComputePipeline historyPipeline() {
-        if (historyPipeline == null) historyPipeline = pipeline("combatant-reflection-history", HISTORY_SHADER, HISTORY_LAYOUT);
-        return historyPipeline;
-    }
 
     private RhiStorageBuffer traceData() {
         if (owner == null) throw new IllegalStateException("Reflection source has no RHI owner");
@@ -351,7 +317,6 @@ final class DeferredReflectionSource implements AutoCloseable {
         tracePipeline = close(tracePipeline);
         resolvePipeline = close(resolvePipeline);
         resolveCascadePipeline = close(resolveCascadePipeline);
-        historyPipeline = close(historyPipeline);
         if (traceData != null) {
             try { traceData.close(); } catch (Throwable ignored) { }
             traceData = null;

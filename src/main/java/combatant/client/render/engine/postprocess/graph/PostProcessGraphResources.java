@@ -85,7 +85,9 @@ public final class PostProcessGraphResources implements AutoCloseable {
         bindDeferred(PostProcessResource.SHADOW_DEPTH, DeferredResource.SHADOW_DEPTH);
         bindDeferred(PostProcessResource.SHADOW_COLOR, DeferredResource.SHADOW_COLOR);
         bindDeferred(PostProcessResource.AMBIENT_OCCLUSION, DeferredResource.AMBIENT_OCCLUSION);
+        bindDeferred(PostProcessResource.SCENE_RADIANCE, DeferredResource.SCENE_RADIANCE);
         bindDeferred(PostProcessResource.INDIRECT_LIGHT, DeferredResource.INDIRECT_LIGHT);
+        bindDeferred(PostProcessResource.INDIRECT_CONFIDENCE, DeferredResource.INDIRECT_CONFIDENCE);
         bindDeferred(PostProcessResource.LIGHTING_COLOR, DeferredResource.LIGHTING_COLOR);
         bindDeferred(PostProcessResource.REFLECTION_COLOR, DeferredResource.REFLECTION_COLOR);
         bindDeferred(PostProcessResource.REFLECTION_CONFIDENCE, DeferredResource.REFLECTION_CONFIDENCE);

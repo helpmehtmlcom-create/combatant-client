@@ -64,6 +64,7 @@ final class DeferredReflectionCascadeSource implements AutoCloseable {
     private int capturedCascadeCount;
     private int capturedFaceResolution;
     private float capturedFarDistance;
+    private Object captureWorld;
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.reflection.cascade.prepare", DeferredStage.REFLECTION_CAPTURE_PREPARE)
@@ -82,6 +83,12 @@ final class DeferredReflectionCascadeSource implements AutoCloseable {
     private void prepareViews(DeferredPassContext context) {
         DeferredPrimaryViewSource.FrameView primary = context.primaryView().current();
         if (primary == null) return;
+
+        Object currentWorld = Minecraft.getInstance().level;
+        if (captureWorld != currentWorld) {
+            releaseCaptureOnly();
+            captureWorld = currentWorld;
+        }
 
         DeferredRuntimeConfig.Snapshot settings = context.settings();
         if (!settings.reflectionsEnabled()) {
@@ -257,7 +264,7 @@ final class DeferredReflectionCascadeSource implements AutoCloseable {
         atlas = new TextureTarget(
                 "combatant-deferred-reflection-cascade-atlas",
                 Math.max(1, width), Math.max(1, height), true,
-                GpuFormat.RGBA8_UNORM
+                GpuFormat.RGBA16_FLOAT
         );
         atlasWidth = Math.max(1, width);
         atlasHeight = Math.max(1, height);
@@ -342,6 +349,7 @@ final class DeferredReflectionCascadeSource implements AutoCloseable {
         capturedCascadeCount = 0;
         capturedFaceResolution = 0;
         capturedFarDistance = 0.0f;
+        captureWorld = null;
     }
 
     private void releaseCaptureOnly() {

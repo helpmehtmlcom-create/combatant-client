@@ -68,7 +68,13 @@ public final class DeferredRuntimeConfig {
             float ambientOcclusionBias,
             int ambientOcclusionMaxMip,
             float ambientOcclusionMipBias,
+            boolean indirectLightEnabled,
             float indirectLightScale,
+            int indirectLightSampleCount,
+            float indirectLightRadius,
+            float indirectLightBias,
+            int indirectLightMaxMip,
+            float indirectLightMipBias,
             boolean reflectionsEnabled,
             float reflectionTraceScale,
             float reflectionOutputScale,
@@ -104,7 +110,13 @@ public final class DeferredRuntimeConfig {
             int shadowResolution,
             float shadowSplitLambda,
             float shadowCasterDistance,
-            int depthPyramidMaxMipLevels
+            int depthPyramidMaxMipLevels,
+            boolean indirectTemporalEnabled,
+            float indirectTemporalHistoryWeight,
+            float indirectTemporalDepthThreshold,
+            boolean reflectionTemporalEnabled,
+            float reflectionTemporalHistoryWeight,
+            float reflectionTemporalDepthThreshold
     ) {
         public static Snapshot defaults() {
             return new Snapshot(
@@ -115,7 +127,13 @@ public final class DeferredRuntimeConfig {
                     0.025f,
                     4,
                     0.0f,
+                    true,
                     0.5f,
+                    12,
+                    6.0f,
+                    0.05f,
+                    4,
+                    0.0f,
                     true,
                     0.5f,
                     0.5f,
@@ -151,7 +169,13 @@ public final class DeferredRuntimeConfig {
                     2048,
                     0.5f,
                     64.0f,
-                    0
+                    0,
+                    true,
+                    0.9f,
+                    0.01f,
+                    true,
+                    0.9f,
+                    0.01f
             );
         }
 
@@ -165,7 +189,13 @@ public final class DeferredRuntimeConfig {
                     floatProperty("combatant.render.deferred.aoBias", d.ambientOcclusionBias),
                     intProperty("combatant.render.deferred.aoMaxMip", d.ambientOcclusionMaxMip),
                     floatProperty("combatant.render.deferred.aoMipBias", d.ambientOcclusionMipBias),
+                    booleanProperty("combatant.render.deferred.indirect", d.indirectLightEnabled),
                     floatProperty("combatant.render.deferred.indirectScale", d.indirectLightScale),
+                    intProperty("combatant.render.deferred.indirectSamples", d.indirectLightSampleCount),
+                    floatProperty("combatant.render.deferred.indirectRadius", d.indirectLightRadius),
+                    floatProperty("combatant.render.deferred.indirectBias", d.indirectLightBias),
+                    intProperty("combatant.render.deferred.indirectMaxMip", d.indirectLightMaxMip),
+                    floatProperty("combatant.render.deferred.indirectMipBias", d.indirectLightMipBias),
                     booleanProperty("combatant.render.deferred.reflections", d.reflectionsEnabled),
                     floatProperty("combatant.render.deferred.reflectionTraceScale", d.reflectionTraceScale),
                     floatProperty("combatant.render.deferred.reflectionOutputScale", d.reflectionOutputScale),
@@ -201,7 +231,13 @@ public final class DeferredRuntimeConfig {
                     intProperty("combatant.render.deferred.shadowResolution", d.shadowResolution),
                     floatProperty("combatant.render.deferred.shadowSplitLambda", d.shadowSplitLambda),
                     floatProperty("combatant.render.deferred.shadowCasterDistance", d.shadowCasterDistance),
-                    intProperty("combatant.render.deferred.depthPyramidMaxMipLevels", d.depthPyramidMaxMipLevels)
+                    intProperty("combatant.render.deferred.depthPyramidMaxMipLevels", d.depthPyramidMaxMipLevels),
+                    booleanProperty("combatant.render.deferred.indirectTemporal", d.indirectTemporalEnabled),
+                    floatProperty("combatant.render.deferred.indirectTemporalHistoryWeight", d.indirectTemporalHistoryWeight),
+                    floatProperty("combatant.render.deferred.indirectTemporalDepthThreshold", d.indirectTemporalDepthThreshold),
+                    booleanProperty("combatant.render.deferred.reflectionTemporal", d.reflectionTemporalEnabled),
+                    floatProperty("combatant.render.deferred.reflectionTemporalHistoryWeight", d.reflectionTemporalHistoryWeight),
+                    floatProperty("combatant.render.deferred.reflectionTemporalDepthThreshold", d.reflectionTemporalDepthThreshold)
             ).validated();
         }
 
@@ -214,7 +250,13 @@ public final class DeferredRuntimeConfig {
                     clamp(ambientOcclusionBias, 0.0f, 1.0f),
                     clamp(ambientOcclusionMaxMip, 0, 16),
                     clamp(ambientOcclusionMipBias, -4.0f, 4.0f),
+                    indirectLightEnabled,
                     clamp(indirectLightScale, 0.125f, 1.0f),
+                    clamp(indirectLightSampleCount, 4, 64),
+                    clamp(indirectLightRadius, 0.25f, 64.0f),
+                    clamp(indirectLightBias, 0.0f, 1.0f),
+                    clamp(indirectLightMaxMip, 0, 16),
+                    clamp(indirectLightMipBias, -4.0f, 4.0f),
                     reflectionsEnabled,
                     clamp(reflectionTraceScale, 0.125f, 1.0f),
                     clamp(reflectionOutputScale, 0.125f, 1.0f),
@@ -250,7 +292,13 @@ public final class DeferredRuntimeConfig {
                     clamp(shadowResolution, 256, 8192),
                     clamp(shadowSplitLambda, 0.0f, 1.0f),
                     clamp(shadowCasterDistance, 0.0f, 1024.0f),
-                    clamp(depthPyramidMaxMipLevels, 0, 32)
+                    clamp(depthPyramidMaxMipLevels, 0, 32),
+                    indirectTemporalEnabled,
+                    clamp(indirectTemporalHistoryWeight, 0.0f, 0.99f),
+                    clamp(indirectTemporalDepthThreshold, 0.00001f, 0.25f),
+                    reflectionTemporalEnabled,
+                    clamp(reflectionTemporalHistoryWeight, 0.0f, 0.99f),
+                    clamp(reflectionTemporalDepthThreshold, 0.00001f, 0.25f)
             );
         }
 
@@ -297,7 +345,13 @@ public final class DeferredRuntimeConfig {
         private float ambientOcclusionBias;
         private int ambientOcclusionMaxMip;
         private float ambientOcclusionMipBias;
+        private boolean indirectLightEnabled;
         private float indirectLightScale;
+        private int indirectLightSampleCount;
+        private float indirectLightRadius;
+        private float indirectLightBias;
+        private int indirectLightMaxMip;
+        private float indirectLightMipBias;
         private boolean reflectionsEnabled;
         private float reflectionTraceScale;
         private float reflectionOutputScale;
@@ -334,6 +388,12 @@ public final class DeferredRuntimeConfig {
         private float shadowSplitLambda;
         private float shadowCasterDistance;
         private int depthPyramidMaxMipLevels;
+        private boolean indirectTemporalEnabled;
+        private float indirectTemporalHistoryWeight;
+        private float indirectTemporalDepthThreshold;
+        private boolean reflectionTemporalEnabled;
+        private float reflectionTemporalHistoryWeight;
+        private float reflectionTemporalDepthThreshold;
 
         private Builder(Snapshot s) {
             if (s == null) s = Snapshot.defaults();
@@ -344,7 +404,13 @@ public final class DeferredRuntimeConfig {
             ambientOcclusionBias = s.ambientOcclusionBias();
             ambientOcclusionMaxMip = s.ambientOcclusionMaxMip();
             ambientOcclusionMipBias = s.ambientOcclusionMipBias();
+            indirectLightEnabled = s.indirectLightEnabled();
             indirectLightScale = s.indirectLightScale();
+            indirectLightSampleCount = s.indirectLightSampleCount();
+            indirectLightRadius = s.indirectLightRadius();
+            indirectLightBias = s.indirectLightBias();
+            indirectLightMaxMip = s.indirectLightMaxMip();
+            indirectLightMipBias = s.indirectLightMipBias();
             reflectionsEnabled = s.reflectionsEnabled();
             reflectionTraceScale = s.reflectionTraceScale();
             reflectionOutputScale = s.reflectionOutputScale();
@@ -381,6 +447,12 @@ public final class DeferredRuntimeConfig {
             shadowSplitLambda = s.shadowSplitLambda();
             shadowCasterDistance = s.shadowCasterDistance();
             depthPyramidMaxMipLevels = s.depthPyramidMaxMipLevels();
+            indirectTemporalEnabled = s.indirectTemporalEnabled();
+            indirectTemporalHistoryWeight = s.indirectTemporalHistoryWeight();
+            indirectTemporalDepthThreshold = s.indirectTemporalDepthThreshold();
+            reflectionTemporalEnabled = s.reflectionTemporalEnabled();
+            reflectionTemporalHistoryWeight = s.reflectionTemporalHistoryWeight();
+            reflectionTemporalDepthThreshold = s.reflectionTemporalDepthThreshold();
         }
 
         public Builder ambientOcclusionEnabled(boolean value) { ambientOcclusionEnabled = value; return this; }
@@ -390,7 +462,13 @@ public final class DeferredRuntimeConfig {
         public Builder ambientOcclusionBias(float value) { ambientOcclusionBias = value; return this; }
         public Builder ambientOcclusionMaxMip(int value) { ambientOcclusionMaxMip = value; return this; }
         public Builder ambientOcclusionMipBias(float value) { ambientOcclusionMipBias = value; return this; }
+        public Builder indirectLightEnabled(boolean value) { indirectLightEnabled = value; return this; }
         public Builder indirectLightScale(float value) { indirectLightScale = value; return this; }
+        public Builder indirectLightSampleCount(int value) { indirectLightSampleCount = value; return this; }
+        public Builder indirectLightRadius(float value) { indirectLightRadius = value; return this; }
+        public Builder indirectLightBias(float value) { indirectLightBias = value; return this; }
+        public Builder indirectLightMaxMip(int value) { indirectLightMaxMip = value; return this; }
+        public Builder indirectLightMipBias(float value) { indirectLightMipBias = value; return this; }
         public Builder reflectionsEnabled(boolean value) { reflectionsEnabled = value; return this; }
         public Builder reflectionTraceScale(float value) { reflectionTraceScale = value; return this; }
         public Builder reflectionOutputScale(float value) { reflectionOutputScale = value; return this; }
@@ -427,6 +505,12 @@ public final class DeferredRuntimeConfig {
         public Builder shadowSplitLambda(float value) { shadowSplitLambda = value; return this; }
         public Builder shadowCasterDistance(float value) { shadowCasterDistance = value; return this; }
         public Builder depthPyramidMaxMipLevels(int value) { depthPyramidMaxMipLevels = value; return this; }
+        public Builder indirectTemporalEnabled(boolean value) { indirectTemporalEnabled = value; return this; }
+        public Builder indirectTemporalHistoryWeight(float value) { indirectTemporalHistoryWeight = value; return this; }
+        public Builder indirectTemporalDepthThreshold(float value) { indirectTemporalDepthThreshold = value; return this; }
+        public Builder reflectionTemporalEnabled(boolean value) { reflectionTemporalEnabled = value; return this; }
+        public Builder reflectionTemporalHistoryWeight(float value) { reflectionTemporalHistoryWeight = value; return this; }
+        public Builder reflectionTemporalDepthThreshold(float value) { reflectionTemporalDepthThreshold = value; return this; }
 
         public Snapshot build() {
             return new Snapshot(
@@ -437,7 +521,13 @@ public final class DeferredRuntimeConfig {
                     ambientOcclusionBias,
                     ambientOcclusionMaxMip,
                     ambientOcclusionMipBias,
+                    indirectLightEnabled,
                     indirectLightScale,
+                    indirectLightSampleCount,
+                    indirectLightRadius,
+                    indirectLightBias,
+                    indirectLightMaxMip,
+                    indirectLightMipBias,
                     reflectionsEnabled,
                     reflectionTraceScale,
                     reflectionOutputScale,
@@ -473,7 +563,13 @@ public final class DeferredRuntimeConfig {
                     shadowResolution,
                     shadowSplitLambda,
                     shadowCasterDistance,
-                    depthPyramidMaxMipLevels
+                    depthPyramidMaxMipLevels,
+                    indirectTemporalEnabled,
+                    indirectTemporalHistoryWeight,
+                    indirectTemporalDepthThreshold,
+                    reflectionTemporalEnabled,
+                    reflectionTemporalHistoryWeight,
+                    reflectionTemporalDepthThreshold
             ).validated();
         }
     }

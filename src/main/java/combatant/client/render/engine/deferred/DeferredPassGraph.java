@@ -234,6 +234,7 @@ public final class DeferredPassGraph {
                                               CompiledFrameGraph graph,
                                               DeferredPassContext context) {
         Map<BarrierKey, BarrierResources> grouped = new LinkedHashMap<>();
+        Set<BarrierKey> genericTextureBarriers = new HashSet<>();
         for (CompiledFrameGraph.Dependency dependency : graph.dependencies()) {
             if (dependency.consumerIndex() != consumerIndex) continue;
             DeferredResource resource = resource(dependency.resource());
@@ -241,13 +242,27 @@ public final class DeferredPassGraph {
 
             RhiStorageBuffer buffer = context.resources().buffer(resource);
             RhiStorageImage image = context.resources().storageImage(resource);
-            if (buffer == null && image == null) continue;
+            boolean genericTexture = image == null && context.resources().texture(resource) != null;
+            if (buffer == null && image == null && !genericTexture) continue;
 
             DeferredPassSpec producer = passes.get(dependency.producerIndex());
             DeferredPassSpec consumer = passes.get(dependency.consumerIndex());
+            RhiResourceBarrier.Access sourceAccess = barrierAccess(access(producer, dependency.resource()));
+            RhiResourceBarrier.Access destinationAccess = barrierAccess(access(consumer, dependency.resource()));
+            if (genericTexture) {
+                // Mojang-owned render targets/atlas views do not expose a Combatant RhiStorageImage.
+                // Use a conservative global memory dependency so framebuffer writes are visible to
+                // later compute/sampled consumers on both GL and Vulkan.
+                genericTextureBarriers.add(new BarrierKey(
+                        RhiResourceBarrier.Stage.ALL, sourceAccess,
+                        RhiResourceBarrier.Stage.ALL, destinationAccess
+                ));
+            }
+
+            if (buffer == null && image == null) continue;
             BarrierKey key = new BarrierKey(
-                    barrierStage(producer), barrierAccess(access(producer, dependency.resource())),
-                    barrierStage(consumer), barrierAccess(access(consumer, dependency.resource()))
+                    barrierStage(producer), sourceAccess,
+                    barrierStage(consumer), destinationAccess
             );
             BarrierResources values = grouped.computeIfAbsent(key, ignored -> new BarrierResources());
             if (buffer != null && !values.buffers.contains(buffer)) values.buffers.add(buffer);
@@ -261,6 +276,13 @@ public final class DeferredPassGraph {
                     key.sourceStage, key.sourceAccess,
                     key.destinationStage, key.destinationAccess,
                     resources.buffers, resources.images
+            ));
+        }
+        for (BarrierKey key : genericTextureBarriers) {
+            context.advancedShaders().barrier(new RhiResourceBarrier(
+                    key.sourceStage, key.sourceAccess,
+                    key.destinationStage, key.destinationAccess,
+                    List.of(), List.of()
             ));
         }
     }

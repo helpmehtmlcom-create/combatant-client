@@ -46,7 +46,10 @@ public abstract class SodiumWorldRendererTerrainMixin {
         CombatantRenderSystem.sodium().terrainInterop().beforeTerrainDraw(
                 matrices, pass, cameraX, cameraY, cameraZ, fog, sampler);
         if (pass == DefaultTerrainRenderPasses.TRANSLUCENT) {
-            CombatantRenderSystem.deferredWorld().beforeTranslucency();
+            CombatantRenderSystem.deferredWorld().beforeTranslucency(
+                    pass.getTarget().getColorTextureView(),
+                    pass.getTarget().getDepthTextureView()
+            );
         } else if (CombatantRenderSystem.deferredWorld().enabled()) {
             CombatantRenderSystem.deferredWorld().beforeTerrainSubmission();
         }

@@ -44,7 +44,7 @@ final class LocatorWaypointExtractor {
                 if (value instanceof Number n) {
                     return new Extracted(LocatorObservationType.BEARING_ONLY,
                             Double.NaN, Double.NaN, Double.NaN,
-                            normalize(Math.toRadians(n.doubleValue())), Double.NaN);
+                            normalize(n.doubleValue()), Double.NaN);
                 }
             }
         } catch (ReflectiveOperationException | RuntimeException ignored) {
