@@ -91,6 +91,7 @@ final class DeferredBackendPasses implements AutoCloseable {
     private final DeferredIndirectLightSource indirectLight = new DeferredIndirectLightSource();
     private final DeferredReflectionCascadeSource reflectionCascades = new DeferredReflectionCascadeSource();
     private final DeferredReflectionSource reflections = new DeferredReflectionSource();
+    private final DeferredDisocclusionSource disocclusion = new DeferredDisocclusionSource();
     private final DeferredTemporalSignalSource temporalSignals = new DeferredTemporalSignalSource();
     private final DeferredReflectionDenoiseSource reflectionDenoise = new DeferredReflectionDenoiseSource();
     private final DeferredTemporalHistorySource temporalHistory = new DeferredTemporalHistorySource();
@@ -162,6 +163,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         indirectLight.install(passes);
         reflectionCascades.install(passes);
         reflections.install(passes);
+        disocclusion.install(passes);
         temporalSignals.install(passes);
         reflectionDenoise.install(passes);
         temporalHistory.install(passes);
@@ -181,6 +183,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         sceneRadiance.prepare(rhi);
         indirectLight.prepare(rhi);
         reflections.prepare(rhi);
+        disocclusion.prepare(rhi);
         temporalSignals.prepare(rhi);
         reflectionDenoise.prepare(rhi);
         temporalHistory.prepare(rhi);
@@ -198,6 +201,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         indirectLight.release(releaseOwner);
         reflectionCascades.release(releaseOwner);
         reflections.release(releaseOwner);
+        disocclusion.release(releaseOwner);
         temporalSignals.release(releaseOwner);
         reflectionDenoise.release(releaseOwner);
         temporalHistory.release(releaseOwner);
@@ -321,6 +325,7 @@ final class DeferredBackendPasses implements AutoCloseable {
             indirectLight.release(previous);
             reflectionCascades.release(previous);
             reflections.release(previous);
+            disocclusion.release(previous);
             temporalSignals.release(previous);
             reflectionDenoise.release(previous);
             temporalHistory.release(previous);
@@ -411,6 +416,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         indirectLight.close();
         reflectionCascades.close();
         reflections.close();
+        disocclusion.close();
         temporalSignals.close();
         reflectionDenoise.close();
         temporalHistory.close();

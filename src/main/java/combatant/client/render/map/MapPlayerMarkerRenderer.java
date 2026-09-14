@@ -84,15 +84,27 @@ public final class MapPlayerMarkerRenderer {
                                  int accentArgb,
                                  float size,
                                  float alpha) {
+        drawLabel(centerX, centerY, playerUuid, playerName, "", accentArgb, size, alpha);
+    }
+
+    public static void drawLabel(float centerX,
+                                 float centerY,
+                                 UUID playerUuid,
+                                 String playerName,
+                                 String statusLabel,
+                                 int accentArgb,
+                                 float size,
+                                 float alpha) {
         alpha = clamp01(alpha);
         if (alpha <= 0.001f || size <= 0.0f) return;
         String name = resolveDisplayName(playerUuid, playerName);
         if (name.isBlank()) return;
+        String suffix = statusLabel == null ? "" : statusLabel.trim();
+        String label = suffix.isBlank() ? name : name + " · " + suffix;
 
-        float x = centerX - size * 0.5f;
         float y = centerY - size * 0.5f;
         float textSize = Math.max(10.5f, size * 0.39f);
-        float textW = ClickGuiRenderer.textWidth(ClickGuiRenderer.getOnestMedium(), name, textSize);
+        float textW = ClickGuiRenderer.textWidth(ClickGuiRenderer.getOnestMedium(), label, textSize);
         float padX = 5.5f;
         float labelH = textSize + 5.0f;
         float labelW = textW + padX * 2.0f;
@@ -102,7 +114,7 @@ public final class MapPlayerMarkerRenderer {
                 withAlpha(accentArgb, 0.24f * alpha));
         Renderer2D.COLOR.roundedRectStroke(labelX, labelY, labelW, labelH, 5.5f, 1.0f, 0.7f,
                 withAlpha(accentArgb, 0.72f * alpha));
-        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), name,
+        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), label,
                 labelX + padX, labelY + 2.1f, textSize, withAlpha(0xFFF7FAFC, alpha), false);
     }
 

@@ -19,6 +19,7 @@ public record HeuristicObservation(
         double observerX,
         double observerZ,
         double bearingRadians,
+        double minimumHorizontalRange,
         long observedAtMs,
         long sourceRevision,
         double weight
@@ -31,6 +32,7 @@ public record HeuristicObservation(
         if (!Double.isFinite(observerX) || !Double.isFinite(observerZ) || !Double.isFinite(bearingRadians)) {
             throw new IllegalArgumentException("Non-finite observation");
         }
+        if (!Double.isFinite(minimumHorizontalRange) || minimumHorizontalRange < 0.0) minimumHorizontalRange = 0.0;
         if (!(weight > 0.0) || !Double.isFinite(weight)) weight = 1.0;
     }
 

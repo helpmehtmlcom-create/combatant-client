@@ -28,6 +28,10 @@ public record DeferredPassContext(
         return rhi.advancedShaders();
     }
 
+    public DeferredHistoryDescriptor history() {
+        return primaryView.historyDescriptor();
+    }
+
     /** Persistent history is false here until a successful producer has initialized it. */
     public boolean isValid(DeferredResource resource) {
         return resources.isValid(resource);

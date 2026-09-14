@@ -43,6 +43,8 @@ import combatant.client.features.map.heuristic.HeuristicRuntimeStats;
 import combatant.client.features.map.heuristic.HeuristicObservation;
 import combatant.client.features.map.heuristic.HeuristicTargetMetrics;
 import combatant.client.features.map.heuristic.MapTriangulationMode;
+import combatant.client.features.map.runtime.PlayerTrackingRangeRuntime;
+import combatant.client.features.map.runtime.PlayerTrackingRangeSnapshot;
 import combatant.client.features.maplink.model.MapLinkProfile;
 import combatant.client.features.maplink.model.MapLinkProviderType;
 import combatant.client.features.maplink.model.MapLinkProfileState;
@@ -939,6 +941,8 @@ final class XaeroMapSettingsPanel {
         addSubsystemSetting(MapHeuristicConfig.get(), Category.TRIANGULATION, "minBaseline");
         addSubsystemSetting(MapHeuristicConfig.get(), Category.TRIANGULATION, "minBearingDeltaDegrees");
         addSubsystemSetting(MapHeuristicConfig.get(), Category.TRIANGULATION, "bearingNoiseDegrees");
+        addSubsystemSetting(MapHeuristicConfig.get(), Category.TRIANGULATION, "liveSourceGraceMs");
+        addSubsystemSetting(MapHeuristicConfig.get(), Category.TRIANGULATION, "staleEstimateDisplayMs");
 
         entries.add(new Entry(new SectionHeaderSetting(
                 tr("gui.combatant.map.triangulation.section.reset", "Movement & rejection"),
@@ -1064,6 +1068,12 @@ final class XaeroMapSettingsPanel {
 
     private void revealMapLinkProfile(String id) {
         selectMapLinkProfile(id);
+        // "Edit" is a navigation action, not merely row selection. A search query can keep the
+        // editor controls filtered out, which previously made the pencil look completely dead.
+        // Always leave search mode and reveal the selected profile's editor in the MapLink section.
+        selectedCategory = Category.MAPLINK;
+        search = "";
+        searchFocused = false;
         pendingRevealSetting = mapLinkEditorAnchor;
     }
 
@@ -2194,8 +2204,11 @@ final class XaeroMapSettingsPanel {
                     + "  ·  " + stats.solved() + " " + tr("gui.combatant.map.triangulation.runtime.solved", "resolved");
             ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), summary,
                     x + 6.0f, y + 29.0f, 13.2f, palette.panelMuted(), false);
+            PlayerTrackingRangeSnapshot tracking = PlayerTrackingRangeRuntime.get().snapshot();
+            ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), trackingRangeSummary(tracking),
+                    x + 6.0f, y + 47.0f, 11.7f, palette.panelMuted(), false);
 
-            float rowY = y + 54.0f;
+            float rowY = y + 70.0f;
             if (targets.isEmpty()) {
                 ClickGuiRenderer.drawRoundedRect(x + 4.0f, rowY, Math.max(1.0f, width - 8.0f), 62.0f, 9.0f,
                         SettingsGuiPalette.withAlpha(palette.panelText(), 6));
@@ -2271,12 +2284,32 @@ final class XaeroMapSettingsPanel {
             }
         }
 
+        private String trackingRangeSummary(PlayerTrackingRangeSnapshot tracking) {
+            if (tracking == null || tracking.observedAtMs() <= 0L) {
+                return tr("gui.combatant.map.triangulation.tracking.waiting", "Server ranges: waiting for connection state");
+            }
+            String playerRange;
+            if (tracking.hasEmpiricalBoundary()) {
+                playerRange = "~" + Math.round(tracking.playerTrackingBoundaryBlocks()) + "m"
+                        + " (" + tracking.boundarySampleCount() + " samples)";
+            } else if (tracking.confirmedPlayerTrackingLowerBoundBlocks() > 0.0) {
+                playerRange = "≥" + Math.round(tracking.confirmedPlayerTrackingLowerBoundBlocks()) + "m";
+            } else {
+                playerRange = tr("gui.combatant.map.triangulation.tracking.unknown", "learning");
+            }
+            return tr("gui.combatant.map.triangulation.tracking.simulation", "Simulation") + " "
+                    + Math.round(tracking.simulationDistanceBlocks()) + "m"
+                    + "  ·  " + tr("gui.combatant.map.triangulation.tracking.view", "chunk view") + " "
+                    + Math.round(tracking.viewDistanceBlocks()) + "m"
+                    + "  ·  " + tr("gui.combatant.map.triangulation.tracking.players", "player tracking") + " " + playerRange;
+        }
+
         @Override public void mouseClicked(double mx, double my, int button) {}
 
         @Override
         public float getHeight() {
             int rows = displayTelemetry().size();
-            return 56.0f + (rows == 0 ? 62.0f : rows * ROW_H);
+            return 72.0f + (rows == 0 ? 62.0f : rows * ROW_H);
         }
 
         @Override

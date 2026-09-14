@@ -55,7 +55,8 @@ final class DeferredTemporalSignalSource implements AutoCloseable {
             new ShaderResourceSlot(6, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(7, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
             new ShaderResourceSlot(8, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
-            new ShaderResourceSlot(9, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
+            new ShaderResourceSlot(9, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(10, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
     ));
     private static final ShaderResourceLayout COPY_LAYOUT = new ShaderResourceLayout(List.of(
             new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
@@ -109,7 +110,7 @@ final class DeferredTemporalSignalSource implements AutoCloseable {
         passes.add(DeferredPassSpec.builder(name, stage)
                 .read(currentColor, currentConfidence, DeferredResource.VELOCITY,
                         DeferredResource.RESOLVED_DEPTH, DeferredResource.HISTORY_DEPTH,
-                        historyColor, historyConfidence)
+                        DeferredResource.DISOCCLUSION_MASK, historyColor, historyConfidence)
                 .write(outputColor, outputConfidence)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.isValid(currentColor) && context.isValid(currentConfidence))
@@ -160,16 +161,19 @@ final class DeferredTemporalSignalSource implements AutoCloseable {
         DeferredRuntimeConfig.Snapshot settings = context.settings();
         boolean temporalEnabled = indirect ? settings.indirectTemporalEnabled() : settings.reflectionTemporalEnabled();
         boolean historyValid = temporalEnabled
+                && context.history().valid()
                 && context.isValid(historyColorResource)
                 && context.isValid(historyConfidenceResource)
                 && context.isValid(DeferredResource.HISTORY_DEPTH)
                 && context.isValid(DeferredResource.VELOCITY)
                 && context.isValid(DeferredResource.RESOLVED_DEPTH)
+                && context.isValid(DeferredResource.DISOCCLUSION_MASK)
                 && context.resources().texture(historyColorResource) != null
                 && context.resources().texture(historyConfidenceResource) != null
                 && context.resources().texture(DeferredResource.HISTORY_DEPTH) != null
                 && context.resources().texture(DeferredResource.VELOCITY) != null
-                && context.resources().texture(DeferredResource.RESOLVED_DEPTH) != null;
+                && context.resources().texture(DeferredResource.RESOLVED_DEPTH) != null
+                && context.resources().texture(DeferredResource.DISOCCLUSION_MASK) != null;
 
         GpuSampler nearest = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
         GpuSampler linear = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
@@ -200,7 +204,7 @@ final class DeferredTemporalSignalSource implements AutoCloseable {
         context.advancedShaders().dispatch(new ComputeDispatchCommand(
                 "Combatant temporal signal resolve",
                 resolvePipeline(), groups(outputColor.descriptor().width()), groups(outputColor.descriptor().height()), 1,
-                List.of(new StorageBinding(9, paramBuffer, 0L, writer.byteSize(), StorageAccess.READ_ONLY)),
+                List.of(new StorageBinding(10, paramBuffer, 0L, writer.byteSize(), StorageAccess.READ_ONLY)),
                 List.of(
                         new SampledTextureBinding(0, currentColor, linear),
                         new SampledTextureBinding(1, currentConfidence, nearest),
@@ -208,7 +212,8 @@ final class DeferredTemporalSignalSource implements AutoCloseable {
                         new SampledTextureBinding(3, requireTexture(context, DeferredResource.RESOLVED_DEPTH), nearest),
                         new SampledTextureBinding(4, requireTexture(context, historyColorResource), linear),
                         new SampledTextureBinding(5, requireTexture(context, historyConfidenceResource), nearest),
-                        new SampledTextureBinding(6, requireTexture(context, DeferredResource.HISTORY_DEPTH), nearest)
+                        new SampledTextureBinding(6, requireTexture(context, DeferredResource.HISTORY_DEPTH), nearest),
+                        new SampledTextureBinding(9, requireTexture(context, DeferredResource.DISOCCLUSION_MASK), nearest)
                 ),
                 List.of(
                         new StorageImageBinding(7, outputColor, StorageAccess.WRITE_ONLY),

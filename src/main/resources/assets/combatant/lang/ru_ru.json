@@ -3841,5 +3841,13 @@
   "gui.combatant.map.error.incompatible": "Интеграция с картой мира несовместима",
   "gui.combatant.map.common.auto": "Авто",
   "gui.combatant.map.common.xaero_setting": "Настройка Xaero",
-  "gui.combatant.map.players.advanced_markers": "Расширенные маркеры игроков"
+  "setting.map_heuristic.liveSourceGraceMs": "Пауза перед устареванием позиции",
+  "setting.map_heuristic.staleEstimateDisplayMs": "Время показа устаревшей позиции",
+  "gui.combatant.map.location.stale": "устарело",
+  "gui.combatant.map.location.stale_now": "только что устарело",
+  "gui.combatant.map.triangulation.tracking.waiting": "Дистанции сервера: ожидание состояния соединения",
+  "gui.combatant.map.triangulation.tracking.unknown": "обучение",
+  "gui.combatant.map.triangulation.tracking.simulation": "Симуляция",
+  "gui.combatant.map.triangulation.tracking.view": "чанки",
+  "gui.combatant.map.triangulation.tracking.players": "видимость игроков"
 }

@@ -18,7 +18,8 @@ layout(binding = 5) uniform sampler2D u_HistoryConfidence;
 layout(binding = 6) uniform sampler2D u_HistoryDepth;
 layout(binding = 7, rgba16f) writeonly uniform image2D u_OutputColor;
 layout(binding = 8, r8) writeonly uniform image2D u_OutputConfidence;
-layout(std430, binding = 9) readonly buffer TemporalParams { vec4 params; } u_Temporal;
+layout(binding = 9) uniform sampler2D u_DisocclusionMask;
+layout(std430, binding = 10) readonly buffer TemporalParams { vec4 params; } u_Temporal;
 
 void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
@@ -33,12 +34,13 @@ void main() {
     float historyAccept = 0.0;
     vec4 history = current;
     float historyConfidence = 0.0;
-    if (inside) {
+    float explicitHistoryAccept = 1.0 - step(0.5, textureLod(u_DisocclusionMask, uv, 0.0).r);
+    if (inside && explicitHistoryAccept > 0.0) {
         float currentDepth = textureLod(u_CurrentDepth, uv, 0.0).r;
         float previousDepth = textureLod(u_HistoryDepth, previousUv, 0.0).r;
         float depthDelta = abs(currentDepth - previousDepth);
         float depthScale = max(max(abs(currentDepth), abs(previousDepth)), 1e-3);
-        historyAccept = depthDelta <= u_Temporal.params.y * depthScale ? 1.0 : 0.0;
+        historyAccept = depthDelta <= u_Temporal.params.y * depthScale ? explicitHistoryAccept : 0.0;
         history = textureLod(u_HistoryColor, previousUv, 0.0);
         historyConfidence = textureLod(u_HistoryConfidence, previousUv, 0.0).r;
     }

@@ -9,6 +9,7 @@ package combatant.client.render.engine.deferred;
 
 import com.mojang.blaze3d.textures.GpuTextureView;
 import combatant.client.render.engine.framegraph.FrameGraphResourceKind;
+import combatant.client.render.engine.framegraph.FrameGraphResourceLifetime;
 import combatant.client.render.engine.rhi.CombatantRhi;
 import combatant.client.render.engine.rhi.shader.RhiStorageBuffer;
 import combatant.client.render.engine.rhi.shader.RhiStorageImage;
@@ -25,6 +26,7 @@ public final class DeferredResourceBindings {
             new EnumMap<>(DeferredResource.class);
     private final DeferredResourceAllocator allocator;
     private long frameId = Long.MIN_VALUE;
+    private long historyEpoch = Long.MIN_VALUE;
 
     public DeferredResourceBindings(DeferredResourceAllocator allocator) {
         if (allocator == null) throw new IllegalArgumentException("allocator");
@@ -37,15 +39,34 @@ public final class DeferredResourceBindings {
     }
 
     public void beginFrame(long frameId) {
-        if (this.frameId == frameId) return;
+        beginFrame(frameId, historyEpoch);
+    }
+
+    public void beginFrame(long frameId, long historyEpoch) {
+        if (this.frameId == frameId && this.historyEpoch == historyEpoch) return;
         this.frameId = frameId;
+        this.historyEpoch = historyEpoch;
         if (allocator != null) allocator.beginFrame(frameId);
         clearBindings();
+    }
+
+    /** Synchronizes persistent-resource validity after a mid-frame history invalidation. */
+    public void setHistoryEpoch(long historyEpoch) {
+        if (this.historyEpoch == historyEpoch) return;
+        this.historyEpoch = historyEpoch;
+        for (DeferredResource resource : DeferredResource.values()) {
+            if (resource.key().lifetime() != FrameGraphResourceLifetime.PERSISTENT) continue;
+            textures.remove(resource);
+            buffers.remove(resource);
+            images.remove(resource);
+            owned.remove(resource);
+        }
     }
 
     /** Drops every non-owning logical binding after runtime/device/world teardown. */
     public void reset() {
         frameId = Long.MIN_VALUE;
+        historyEpoch = Long.MIN_VALUE;
         clearBindings();
     }
 
@@ -97,10 +118,10 @@ public final class DeferredResourceBindings {
     /** True when the resource contains defined data for this frame/history generation. */
     public boolean isValid(DeferredResource resource) {
         DeferredResourceAllocator.Allocation allocation = owned.get(resource);
-        if (allocation != null) return allocation.valid();
+        if (allocation != null) return allocationValid(resource, allocation);
         if (allocator != null) {
             DeferredResourceAllocator.Allocation persistent = allocator.current(resource);
-            if (persistent != null) return persistent.valid();
+            if (persistent != null) return allocationValid(resource, persistent);
         }
         return isBound(resource);
     }
@@ -122,7 +143,8 @@ public final class DeferredResourceBindings {
         if (isBound(resource)) return isValid(resource);
         if (allocator == null) return false;
         DeferredResourceAllocator.Allocation allocation = allocator.current(resource);
-        if (allocation == null || !matchesCurrentPolicy(resource, allocation, settings)) return false;
+        if (allocation == null || !matchesCurrentPolicy(resource, allocation, settings)
+                || !allocationValid(resource, allocation)) return false;
         owned.put(resource, allocation);
         bindTexture(resource, allocation.view());
         bindStorageImage(resource, allocation.storageImage());
@@ -131,7 +153,12 @@ public final class DeferredResourceBindings {
 
     public void markWritten(DeferredResource resource) {
         DeferredResourceAllocator.Allocation allocation = owned.get(resource);
-        if (allocation != null) allocation.markValid();
+        if (allocation == null) return;
+        if (resource.key().lifetime() == FrameGraphResourceLifetime.PERSISTENT) {
+            allocation.markValid(historyEpoch);
+        } else {
+            allocation.markValid();
+        }
     }
 
     public void ensureTexture(DeferredResource resource, CombatantRhi rhi) {
@@ -185,8 +212,19 @@ public final class DeferredResourceBindings {
                 && allocation.mipLevels() == mipLevels;
     }
 
+    private boolean allocationValid(DeferredResource resource, DeferredResourceAllocator.Allocation allocation) {
+        if (resource != null && resource.key().lifetime() == FrameGraphResourceLifetime.PERSISTENT) {
+            return allocation.validForEpoch(historyEpoch);
+        }
+        return allocation.valid();
+    }
+
     public long frameId() {
         return frameId;
+    }
+
+    public long historyEpoch() {
+        return historyEpoch;
     }
 
     private static void requireTextureResource(DeferredResource resource) {

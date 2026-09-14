@@ -4071,5 +4071,13 @@
   "gui.combatant.map.error.incompatible": "World Map integration is incompatible",
   "gui.combatant.map.common.auto": "Auto",
   "gui.combatant.map.common.xaero_setting": "Xaero setting",
-  "gui.combatant.map.players.advanced_markers": "Advanced player markers"
+  "setting.map_heuristic.liveSourceGraceMs": "Live-source grace",
+  "setting.map_heuristic.staleEstimateDisplayMs": "Stale estimate display TTL",
+  "gui.combatant.map.location.stale": "stale",
+  "gui.combatant.map.location.stale_now": "stale now",
+  "gui.combatant.map.triangulation.tracking.waiting": "Server ranges: waiting for connection state",
+  "gui.combatant.map.triangulation.tracking.unknown": "learning",
+  "gui.combatant.map.triangulation.tracking.simulation": "Simulation",
+  "gui.combatant.map.triangulation.tracking.view": "chunk view",
+  "gui.combatant.map.triangulation.tracking.players": "player tracking"
 }

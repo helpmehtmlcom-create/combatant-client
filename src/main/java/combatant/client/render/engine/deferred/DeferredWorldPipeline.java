@@ -33,6 +33,7 @@ import org.joml.Vector4fc;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.function.Supplier;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Combatant-owned world geometry stage.
@@ -61,6 +62,12 @@ public final class DeferredWorldPipeline {
     private long targetFrameId = Long.MIN_VALUE;
     private DeferredRuntimeConfig.Snapshot frameSettings = DeferredRuntimeConfig.current();
     private long frameSettingsGeneration = DeferredRuntimeConfig.generation();
+    private long temporalPolicyGeneration = Long.MIN_VALUE;
+    private int temporalWidth = -1;
+    private int temporalHeight = -1;
+    private int temporalSamples = -1;
+    private final AtomicReference<DeferredHistoryResetReason> pendingExternalHistoryReset =
+            new AtomicReference<>(DeferredHistoryResetReason.NONE);
     private boolean clearedThisFrame;
     private boolean lightingResolvedThisFrame;
     private boolean frameSetupExecuted;
@@ -87,6 +94,14 @@ public final class DeferredWorldPipeline {
     /** Runtime toggle. The requested state is committed at the next safe world-frame boundary. */
     public void requestEnabled(boolean enabled) {
         requestedEnabled = enabled;
+    }
+
+    /** Thread-safe typed lifecycle event from exact Minecraft producers such as player teleport. */
+    public void requestHistoryReset(DeferredHistoryResetReason reason) {
+        if (reason == null || reason == DeferredHistoryResetReason.NONE) return;
+        if (!requestedEnabled && !enabled()) return;
+        pendingExternalHistoryReset.getAndUpdate(current ->
+                current == DeferredHistoryResetReason.NONE ? reason : current);
     }
 
     public LifecycleState lifecycleState() {
@@ -185,6 +200,7 @@ public final class DeferredWorldPipeline {
         try {
             DeferredRuntimeAssets.reprepareAfterBackendSwitch(minecraft.getResourceManager());
             physicalResources.reset();
+            primaryView.queueHistoryReset(DeferredHistoryResetReason.BACKEND_CHANGE);
         } catch (Throwable error) {
             requestedEnabled = false;
             lifecycleState = LifecycleState.FAILED;
@@ -436,14 +452,25 @@ public final class DeferredWorldPipeline {
             targets = null;
             sampleableTargets = null;
             targetOwner = null;
+            temporalWidth = -1;
+            temporalHeight = -1;
+            temporalSamples = -1;
         }
 
         long frameId = CombatantRenderSystem.ensureFrameContext().frameId();
         if (frameStateId == frameId) return;
         frameStateId = frameId;
+        DeferredHistoryResetReason externalReset = pendingExternalHistoryReset.getAndSet(DeferredHistoryResetReason.NONE);
+        if (externalReset != DeferredHistoryResetReason.NONE) {
+            primaryView.invalidateHistory(frameId, externalReset);
+        }
         frameSettings = DeferredRuntimeConfig.current();
         frameSettingsGeneration = DeferredRuntimeConfig.generation();
-        resourceBindings.beginFrame(frameId);
+        if (temporalPolicyGeneration != Long.MIN_VALUE && temporalPolicyGeneration != frameSettingsGeneration) {
+            primaryView.invalidateHistory(frameId, DeferredHistoryResetReason.POLICY_CHANGE);
+        }
+        temporalPolicyGeneration = frameSettingsGeneration;
+        resourceBindings.beginFrame(frameId, primaryView.historyDescriptor().epoch());
         secondaryViews.beginFrame(frameId);
         clearedThisFrame = false;
         lightingResolvedThisFrame = false;
@@ -464,6 +491,12 @@ public final class DeferredWorldPipeline {
                 && targets.width() == width && targets.height() == height && targets.samples() == samples) {
             return targets;
         }
+        if (temporalWidth >= 0 && (temporalWidth != width || temporalHeight != height || temporalSamples != samples)) {
+            primaryView.invalidateHistory(frameId, DeferredHistoryResetReason.RESIZE);
+        }
+        temporalWidth = width;
+        temporalHeight = height;
+        temporalSamples = samples;
 
         RenderTarget surface = acquire(resources, "world-gbuffer-surface", width, height, samples, SURFACE_FORMAT);
         RenderTarget geometry = acquire(resources, "world-gbuffer-geometry", width, height, samples, GEOMETRY_FORMAT);
@@ -488,6 +521,7 @@ public final class DeferredWorldPipeline {
         executeStage(DeferredStage.PRE_TRANSLUCENCY_DEPTH_RESOLVE);
         executeStage(DeferredStage.PRE_TRANSLUCENCY_VELOCITY_RESOLVE);
         executeStage(DeferredStage.PRE_TRANSLUCENCY_DEPTH_PYRAMID);
+        executeStage(DeferredStage.PRE_TRANSLUCENCY_TEMPORAL_VALIDATION);
         executeStage(DeferredStage.RADIANCE_CAPTURE);
         executeStage(DeferredStage.INDIRECT_PREPARE);
         executeStage(DeferredStage.INDIRECT_TRACE);
@@ -558,6 +592,11 @@ public final class DeferredWorldPipeline {
         targetOwner = null;
         targets = null;
         sampleableTargets = null;
+        temporalPolicyGeneration = Long.MIN_VALUE;
+        temporalWidth = -1;
+        temporalHeight = -1;
+        temporalSamples = -1;
+        pendingExternalHistoryReset.set(DeferredHistoryResetReason.NONE);
         frameSetupExecuted = false;
         shadowExecuted = false;
         preGeometryExecuted = false;
@@ -586,6 +625,7 @@ public final class DeferredWorldPipeline {
     }
 
     private void executeStage(DeferredStage stage) {
+        resourceBindings.setHistoryEpoch(primaryView.historyDescriptor().epoch());
         CombatantRenderSystem.deferredGraph().execute(
                 stage, CombatantRenderSystem.ensureFrameContext(), resourceBindings, secondaryViews, primaryView,
                 frameSettings

@@ -15,6 +15,7 @@ public record MapPlayerMarker(String id,
                               double worldZ,
                               UUID playerUuid,
                               String playerName,
+                              String statusLabel,
                               int accentArgb,
                               String sourceGlyph,
                               float sizePixels,
@@ -23,6 +24,7 @@ public record MapPlayerMarker(String id,
     public MapPlayerMarker {
         Objects.requireNonNull(id, "id");
         playerName = playerName == null ? "" : playerName.trim();
+        statusLabel = statusLabel == null ? "" : statusLabel.trim();
         sourceGlyph = sourceGlyph == null ? "" : sourceGlyph.trim();
         if (!Double.isFinite(worldX) || !Double.isFinite(worldZ)
                 || !Float.isFinite(sizePixels) || sizePixels <= 0.0f

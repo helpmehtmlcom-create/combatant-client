@@ -53,7 +53,7 @@ public final class LocatorRuntime {
             return;
         }
 
-        double ox = mc.player.getX(), oz = mc.player.getZ();
+        double ox = mc.player.getX(), oy = mc.player.getY(), oz = mc.player.getZ();
         long now = System.currentTimeMillis();
         List<LocatorObservation> out = new ArrayList<>();
         Set<String> seen = new HashSet<>();
@@ -96,12 +96,16 @@ public final class LocatorRuntime {
                 if (!synthetic.equals(onlineResolved)) HeuristicRuntime.get().clear(synthetic);
             }
 
+            double minimumHorizontalRange = e.type() == LocatorObservationType.BEARING_ONLY
+                    ? safeHorizontalRangeFloor(mc, oy, LocatorWaypointExtractor.AZIMUTH_MIN_DISTANCE_3D)
+                    : 0.0;
             LocatorObservation observation = new LocatorObservation(uuid, name, e.type(), ox, oz,
-                    e.x(), e.y(), e.z(), e.bearingRadians(), e.uncertaintyRadius(), now, rev, generation);
+                    e.x(), e.y(), e.z(), e.bearingRadians(), e.uncertaintyRadius(), minimumHorizontalRange,
+                    now, rev, generation);
             out.add(observation);
             if (uuid != null && e.type() == LocatorObservationType.BEARING_ONLY) {
                 HeuristicRuntime.get().offer(new HeuristicObservation(uuid, name, session, generation,
-                        ox, oz, e.bearingRadians(), now, rev, 1.0));
+                        ox, oz, e.bearingRadians(), minimumHorizontalRange, now, rev, 1.0));
             }
         });
 
@@ -155,6 +159,21 @@ public final class LocatorRuntime {
             return n;
         }
         return r.revision();
+    }
+
+    /**
+     * Converts the vanilla 3D azimuth threshold into a conservative X/Z-only lower bound.
+     * The solver does not know target Y, so we subtract the largest vertical separation that is
+     * physically possible in the current dimension. If height alone could explain the 332-block
+     * distance, the safe horizontal floor is zero rather than making up a stronger constraint.
+     */
+    private static double safeHorizontalRangeFloor(Minecraft mc, double observerY, double minDistance3d) {
+        if (mc == null || mc.level == null || !(minDistance3d > 0.0) || !Double.isFinite(observerY)) return 0.0;
+        double minY = mc.level.getMinY();
+        double maxY = mc.level.getMaxY();
+        double maxVertical = Math.max(Math.abs(observerY - minY), Math.abs(maxY - observerY));
+        double squared = minDistance3d * minDistance3d - maxVertical * maxVertical;
+        return squared > 0.0 ? Math.sqrt(squared) : 0.0;
     }
 
     private static long fingerprint(String key, LocatorWaypointExtractor.Extracted e,

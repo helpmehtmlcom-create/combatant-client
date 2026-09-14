@@ -779,9 +779,11 @@ final class XaeroMapSurface {
             if (location.source() == PlayerLocationSource.LOCAL_ENTITY_EXACT
                     && !MapUiConfig.get().advancedPlayerMarkers()) continue;
 
-            float alpha = location.source() == PlayerLocationSource.HISTORICAL ? 0.48f : freshnessAlpha(location, now);
+            float alpha = location.source() == PlayerLocationSource.HISTORICAL ? 0.42f : freshnessAlpha(location, now);
+            String statusLabel = location.source() == PlayerLocationSource.HISTORICAL
+                    ? staleAgeLabel(location, now) : "";
             players.add(new MapPlayerMarker(
-                    "location-player:" + id, location.x(), location.z(), id, name, accent,
+                    "location-player:" + id, location.x(), location.z(), id, name, statusLabel, accent,
                     sourceGlyph(location.source()), location.exact() ? 29.0f : 27.0f, alpha,
                     300 + location.source().priority()));
 
@@ -823,7 +825,7 @@ final class XaeroMapSurface {
                 float radius = marker.sizePixels() * 0.8f + 24.0f;
                 if (!clip.intersects(new MapRect(point.x() - radius, point.y() - radius, radius * 2.0f, radius * 2.0f))) continue;
                 MapPlayerMarkerRenderer.drawLabel((float) point.x(), (float) point.y(), marker.playerUuid(), marker.playerName(),
-                        marker.accentArgb(), marker.sizePixels(), marker.alpha());
+                        marker.statusLabel(), marker.accentArgb(), marker.sizePixels(), marker.alpha());
             }
         }
     }
@@ -838,6 +840,22 @@ final class XaeroMapSurface {
             case LOCATOR_BEARING -> "navigation";
             case HISTORICAL -> "map-pin";
         };
+    }
+
+    private static String staleAgeLabel(PlayerLocationSnapshot location, long now) {
+        if (location == null) return tr("gui.combatant.map.location.stale", "stale");
+        long lostAt = metadataLong(location, "lastLocatorSeenAt");
+        long age = lostAt > 0L ? Math.max(0L, now - lostAt) : location.ageMs(now);
+        if (age < 1_000L) return tr("gui.combatant.map.location.stale_now", "stale now");
+        long seconds = Math.max(1L, age / 1_000L);
+        return tr("gui.combatant.map.location.stale", "stale") + " " + seconds + "s";
+    }
+
+    private static long metadataLong(PlayerLocationSnapshot location, String key) {
+        if (location == null || location.metadata() == null || key == null) return 0L;
+        String value = location.metadata().get(key);
+        if (value == null || value.isBlank()) return 0L;
+        try { return Long.parseLong(value); } catch (NumberFormatException ignored) { return 0L; }
     }
 
     private static float freshnessAlpha(PlayerLocationSnapshot location, long now) {

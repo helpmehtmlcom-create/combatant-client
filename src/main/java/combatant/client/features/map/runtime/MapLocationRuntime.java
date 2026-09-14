@@ -8,6 +8,7 @@ package combatant.client.features.map.runtime;
 
 import combatant.client.config.subsystem.DuplexLocalConfig;
 import combatant.client.config.subsystem.MapTriangulationConfig;
+import combatant.client.config.subsystem.MapHeuristicConfig;
 import combatant.client.events.EventHandler;
 import combatant.client.events.impl.GameTickEvent;
 import combatant.client.features.map.duplex.DuplexBearingSample;
@@ -67,6 +68,8 @@ public final class MapLocationRuntime {
     private final DuplexLocalConfig duplexConfig = DuplexLocalConfig.get();
     private final DuplexRuntime duplex = new DuplexRuntime();
     private final Map<UUID, Long> lastDuplexRevision = new HashMap<>();
+    private final Map<UUID, Long> lastLocatorSeenAt = new HashMap<>();
+    private final MapHeuristicConfig heuristicConfig = MapHeuristicConfig.get();
 
     private String activeServerFingerprint = "";
     private String activeWorldFingerprint = "";
@@ -106,6 +109,8 @@ public final class MapLocationRuntime {
 
         LocatorRuntime.get().capture(mc, session);
         List<LocatorObservation> locator = LocatorRuntime.get().snapshot();
+        PlayerTrackingRangeRuntime.get().capture(mc, session, locator);
+        updateLocatorSeenTimes(locator);
         for (LocatorObservation observation : locator) {
             if (observation.targetUuid() != null && observation.type() == LocatorObservationType.EXACT_POSITION) {
                 exactTargets.add(observation.targetUuid());
@@ -116,7 +121,7 @@ public final class MapLocationRuntime {
         forwardDuplexBearings(locator, immutableExactTargets);
         duplex.tick();
 
-        Map<UUID, HeuristicEstimate> heuristic = HeuristicRuntime.get().snapshot();
+        Map<UUID, HeuristicEstimate> heuristic = rejectLocallyImpossibleEstimates(mc, locator, HeuristicRuntime.get().snapshot());
         Map<UUID, DuplexEstimate> duplexEstimates = duplex.estimates();
 
         Captured captured = captureLocations(mc, server, world, mapLink, locator, heuristic, duplexEstimates);
@@ -212,18 +217,33 @@ public final class MapLocationRuntime {
         }
 
         if (heuristic != null) {
+            Set<UUID> locatorPresent = locatorTargetIds(locator);
             for (HeuristicEstimate estimate : heuristic.values()) {
                 if (estimate == null || estimate.targetUuid() == null) continue;
-                String name = names.getOrDefault(estimate.targetUuid(), "");
-                locations.add(new PlayerLocationSnapshot(estimate.targetUuid(), name, serverIdentity, currentWorldIdentity,
-                        PlayerLocationSource.TRIANGULATED, estimate.updatedAtMs(), estimate.updatedAtMs(),
+                UUID target = estimate.targetUuid();
+                String name = names.getOrDefault(target, "");
+                boolean liveInput = locatorPresent.contains(target);
+                long lastSeen = liveInput ? now : lastLocatorSeenAt.getOrDefault(target, estimate.updatedAtMs());
+                long sourceLostAge = Math.max(0L, now - lastSeen);
+                if (!liveInput && sourceLostAge > heuristicConfig.staleEstimateDisplayMs()) continue;
+                boolean historical = !liveInput && sourceLostAge > heuristicConfig.liveSourceGraceMs();
+                Map<String, String> metadata = new LinkedHashMap<>();
+                metadata.put("samples", Integer.toString(estimate.sampleCount()));
+                metadata.put("inliers", Integer.toString(estimate.inlierCount()));
+                metadata.put("segment", Long.toString(estimate.segmentId()));
+                metadata.put("liveInput", Boolean.toString(liveInput));
+                if (!liveInput) {
+                    metadata.put("lastLocatorSeenAt", Long.toString(lastSeen));
+                    metadata.put("sourceLostAgeMs", Long.toString(sourceLostAge));
+                }
+                locations.add(new PlayerLocationSnapshot(target, name, serverIdentity, currentWorldIdentity,
+                        historical ? PlayerLocationSource.HISTORICAL : PlayerLocationSource.TRIANGULATED,
+                        estimate.updatedAtMs(), estimate.updatedAtMs(),
                         estimate.x(), Double.NaN, estimate.z(), Double.NaN,
                         estimate.uncertaintyMajor(), estimate.uncertaintyMinor(),
                         estimate.uncertaintyAngleRadians(), estimate.confidence(),
-                        "single_client", estimate.updatedAtMs(),
-                        Map.of("samples", Integer.toString(estimate.sampleCount()),
-                                "inliers", Integer.toString(estimate.inlierCount()),
-                                "segment", Long.toString(estimate.segmentId()))));
+                        historical ? "single_client_stale" : "single_client", estimate.updatedAtMs(),
+                        Map.copyOf(metadata)));
             }
         }
 
@@ -373,6 +393,51 @@ public final class MapLocationRuntime {
     }
 
 
+    private void updateLocatorSeenTimes(List<LocatorObservation> observations) {
+        long now = System.currentTimeMillis();
+        if (observations != null) {
+            for (LocatorObservation observation : observations) {
+                if (observation != null && observation.targetUuid() != null) {
+                    lastLocatorSeenAt.put(observation.targetUuid(), now);
+                }
+            }
+        }
+        long keep = Math.max(heuristicConfig.maxSampleAgeMs(), heuristicConfig.staleEstimateDisplayMs()) * 2L;
+        lastLocatorSeenAt.entrySet().removeIf(entry -> now - entry.getValue() > keep);
+    }
+
+    private Map<UUID, HeuristicEstimate> rejectLocallyImpossibleEstimates(Minecraft mc,
+                                                                           List<LocatorObservation> locator,
+                                                                           Map<UUID, HeuristicEstimate> estimates) {
+        if (estimates == null || estimates.isEmpty()) return estimates == null ? Map.of() : estimates;
+        Set<UUID> locatorPresent = locatorTargetIds(locator);
+        Set<UUID> local = localExactTargets(mc);
+        Map<UUID, HeuristicEstimate> filtered = null;
+        for (Map.Entry<UUID, HeuristicEstimate> entry : estimates.entrySet()) {
+            UUID id = entry.getKey();
+            HeuristicEstimate estimate = entry.getValue();
+            if (id == null || estimate == null || local.contains(id) || !locatorPresent.contains(id)) continue;
+            if (!PlayerTrackingRangeRuntime.get().contradictsLocalAbsence(mc, estimate.x(), estimate.z(), estimate.uncertaintyMajor())) continue;
+            // Negative local visibility is strong evidence: the whole estimate lies well inside a
+            // radius where this session has already received player entities, yet this target is not
+            // present locally while locator still says it exists. Drop the segment instead of
+            // painting a convincing-but-impossible marker next to the observer.
+            HeuristicRuntime.get().clear(id);
+            if (filtered == null) filtered = new LinkedHashMap<>(estimates);
+            filtered.remove(id);
+        }
+        return filtered == null ? estimates : Map.copyOf(filtered);
+    }
+
+    private static Set<UUID> locatorTargetIds(List<LocatorObservation> observations) {
+        if (observations == null || observations.isEmpty()) return Set.of();
+        Set<UUID> ids = new HashSet<>();
+        for (LocatorObservation observation : observations) {
+            if (observation != null && observation.targetUuid() != null) ids.add(observation.targetUuid());
+        }
+        return ids.isEmpty() ? Set.of() : Set.copyOf(ids);
+    }
+
     private static Set<UUID> localExactTargets(Minecraft mc) {
         if (mc == null || mc.level == null || mc.player == null) return Set.of();
         UUID self = mc.player.getUUID();
@@ -420,6 +485,8 @@ public final class MapLocationRuntime {
         HeuristicRuntime.get().endSession();
         persistHeuristicEvents(HeuristicRuntime.get().drainLifecycleEvents());
         LocatorRuntime.get().clear();
+        PlayerTrackingRangeRuntime.get().clear();
+        lastLocatorSeenAt.clear();
         activeLocationSession = null;
         activeConnectionIdentity = null;
     }

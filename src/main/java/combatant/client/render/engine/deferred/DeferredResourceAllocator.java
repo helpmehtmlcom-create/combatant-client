@@ -158,6 +158,7 @@ public final class DeferredResourceAllocator implements AutoCloseable {
         private final AutoCloseable owned;
         private boolean closed;
         private boolean valid;
+        private long validEpoch = Long.MIN_VALUE;
 
         private Allocation(AllocationKey key,
                            GpuTextureView view,
@@ -199,13 +200,23 @@ public final class DeferredResourceAllocator implements AutoCloseable {
             return !closed && valid;
         }
 
+        public boolean validForEpoch(long epoch) {
+            return !closed && valid && validEpoch == epoch;
+        }
+
         public void markValid() {
+            markValid(Long.MIN_VALUE);
+        }
+
+        public void markValid(long epoch) {
             if (closed) throw new IllegalStateException("Deferred allocation is closed");
             valid = true;
+            validEpoch = epoch;
         }
 
         private void invalidate() {
             valid = false;
+            validEpoch = Long.MIN_VALUE;
         }
 
         @Override

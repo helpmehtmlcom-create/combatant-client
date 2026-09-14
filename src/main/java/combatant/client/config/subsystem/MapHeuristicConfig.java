@@ -31,6 +31,8 @@ public final class MapHeuristicConfig extends SubsystemConfig {
     private final NumberValue<Double> teleportResidualSigma = number("teleportResidualSigma", 1.5, 0.5, 8.0);
     private final NumberValue<Integer> teleportConfirmSamples = number("teleportConfirmSamples", 3, 2, 8);
     private final NumberValue<Integer> teleportCandidateMaxAgeMs = number("teleportCandidateMaxAgeMs", 20000, 1000, 120000);
+    private final NumberValue<Integer> liveSourceGraceMs = number("liveSourceGraceMs", 2500, 0, 30000);
+    private final NumberValue<Integer> staleEstimateDisplayMs = number("staleEstimateDisplayMs", 30000, 1000, 300000);
 
     private MapHeuristicConfig() { loadConfig(); }
     public static MapHeuristicConfig get() { return INSTANCE; }
@@ -48,6 +50,8 @@ public final class MapHeuristicConfig extends SubsystemConfig {
     public double teleportResidualSigma() { return teleportResidualSigma.get().doubleValue(); }
     public int teleportConfirmSamples() { return teleportConfirmSamples.get().intValue(); }
     public int teleportCandidateMaxAgeMs() { return teleportCandidateMaxAgeMs.get().intValue(); }
+    public int liveSourceGraceMs() { return liveSourceGraceMs.get().intValue(); }
+    public int staleEstimateDisplayMs() { return staleEstimateDisplayMs.get().intValue(); }
 
     @Override
     public List<SettingDef> getSettingDefs() {
@@ -65,7 +69,9 @@ public final class MapHeuristicConfig extends SubsystemConfig {
                 SettingDef.number("teleportResidualFloor", teleportResidualFloor),
                 SettingDef.number("teleportResidualSigma", teleportResidualSigma),
                 SettingDef.number("teleportConfirmSamples", teleportConfirmSamples),
-                SettingDef.number("teleportCandidateMaxAgeMs", teleportCandidateMaxAgeMs)
+                SettingDef.number("teleportCandidateMaxAgeMs", teleportCandidateMaxAgeMs),
+                SettingDef.number("liveSourceGraceMs", liveSourceGraceMs),
+                SettingDef.number("staleEstimateDisplayMs", staleEstimateDisplayMs)
         );
     }
 }

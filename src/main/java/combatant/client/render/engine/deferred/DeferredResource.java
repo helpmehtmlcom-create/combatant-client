@@ -28,6 +28,8 @@ public enum DeferredResource {
             DeferredTextureSpec.computeAttachment(GpuFormat.R32_FLOAT, DeferredTextureSpec.ResolutionClass.FULL)),
     DEPTH_PYRAMID(FrameGraphResourceKey.transientTexture("world.depth.pyramid"),
             DeferredTextureSpec.compute(GpuFormat.R32_FLOAT, DeferredTextureSpec.ResolutionClass.FULL, true)),
+    DISOCCLUSION_MASK(FrameGraphResourceKey.transientTexture("world.temporal.disocclusion"),
+            DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.FULL, false)),
     SHADOW_DEPTH(FrameGraphResourceKey.transientTexture("world.shadow.depth"), null),
     SHADOW_CASCADE_DATA(FrameGraphResourceKey.transientBuffer("world.shadow.cascades"), null),
     SHADOW_CASCADE_VISIBILITY(FrameGraphResourceKey.transientTexture("world.shadow.cascade_visibility"),

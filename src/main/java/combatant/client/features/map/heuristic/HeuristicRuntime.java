@@ -325,7 +325,9 @@ public final class HeuristicRuntime {
         double residual = Math.abs(lineResidual(observation, estimate.x(), estimate.z()));
         double uncertainty = Math.max(estimate.uncertaintyMinor(), Math.min(estimate.uncertaintyMajor(), 64.0));
         double threshold = Math.max(config.teleportResidualFloor(), uncertainty * config.teleportResidualSigma());
-        return residual > threshold || forward(observation, estimate.x(), estimate.z()) < -config.forwardRejectTolerance();
+        return residual > threshold
+                || forward(observation, estimate.x(), estimate.z()) < -config.forwardRejectTolerance()
+                || violatesMinimumRange(observation, estimate.x(), estimate.z());
     }
 
     private void addBreakCandidate(TargetState state, HeuristicObservation observation, long now) {
@@ -442,6 +444,13 @@ public final class HeuristicRuntime {
     private static List<HeuristicObservation> newestSamples(ArrayDeque<HeuristicObservation> samples, int count) {
         List<HeuristicObservation> all = new ArrayList<>(samples);
         return all.subList(Math.max(0, all.size() - Math.max(2, count)), all.size());
+    }
+
+    private static boolean violatesMinimumRange(HeuristicObservation o, double x, double z) {
+        double minimum = o.minimumHorizontalRange();
+        if (!(minimum > 0.0)) return false;
+        // Small tolerance absorbs block-center / interpolation noise without weakening the source constraint.
+        return Math.hypot(x - o.observerX(), z - o.observerZ()) + 1.5 < minimum;
     }
 
     private static double lineResidual(HeuristicObservation o, double x, double z) {
