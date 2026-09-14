@@ -20,4 +20,12 @@ public interface IVulkanBackendInfo {
     long combatant$vma();
 
     VulkanPhysicalDevice combatant$physicalDevice();
+
+    /**
+     * Immutable device-limit snapshot captured while Mojang's VulkanPhysicalDevice properties
+     * are known to be valid. Do not re-read native-backed VkPhysicalDeviceProperties later.
+     */
+    long combatant$minStorageBufferOffsetAlignment();
+
+    long combatant$maxStorageBufferRange();
 }

@@ -83,7 +83,7 @@ final class XaeroMapUiRenderer {
                 state.drawer() == XaeroMapSurface.Drawer.PLAYERS, true));
         cursor -= size + CONTROL_GROUP_GAP;
 
-        out.add(new XaeroMapSurface.UiButton(XaeroMapSurface.Action.RADAR_LIST, "list-filter",
+        out.add(new XaeroMapSurface.UiButton(XaeroMapSurface.Action.RADAR_LIST, "list",
                 right, cursor, size, state.radarListTooltip(),
                 state.drawer() == XaeroMapSurface.Drawer.RADAR, state.radarAvailable()));
         cursor -= size + CONTROL_ISLAND_GAP;
@@ -622,6 +622,7 @@ final class XaeroMapUiRenderer {
                            List<XaeroMapSurface.TargetRow> targets,
                            List<XaeroMapSurface.ElementHit> hits,
                            List<XaeroMapSurface.TargetHit> targetHits,
+                           boolean teleportAllowed,
                            SettingsGuiPalette palette,
                            ChromeMotion motion) {
         hits.clear();
@@ -745,7 +746,7 @@ final class XaeroMapUiRenderer {
             if (rendered == XaeroMapSurface.Drawer.PLAYERS) {
                 XaeroMapSurface.TargetRow target = targetRows.get(hoveredIndex);
                 boolean hasPosition = target.location() != null && target.location().hasPosition();
-                boolean teleportable = target.teleportable();
+                boolean teleportable = hasPosition && target.location().exact() && teleportAllowed;
                 SystemCursor.set(teleportable ? SystemCursor.CursorType.CROSSHAIR
                         : hasPosition ? SystemCursor.CursorType.HAND : SystemCursor.CursorType.NOT_ALLOWED);
             } else {
@@ -792,7 +793,7 @@ final class XaeroMapUiRenderer {
                 String meta = targetMeta(target);
                 ClickGuiRenderer.drawText(ClickGuiRenderer.getIosevkaRegular(), meta,
                         x + 47.0f + shift, rowY + 25.0f, 11.0f, muted, false);
-                boolean teleportable = target.teleportable();
+                boolean teleportable = exact && teleportAllowed;
                 targetHits.add(new XaeroMapSurface.TargetHit(target,
                         x + 8.0f, rowY, bodyWidth - 15.0f, rowHeight, teleportable));
             }

@@ -82,8 +82,7 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
         if (backend.combatant$vma() == 0L) {
             throw new UnsupportedOperationException("Native Vulkan storage allocator is unavailable");
         }
-        long maxRange = Integer.toUnsignedLong(
-                backend.combatant$physicalDevice().vkPhysicalDeviceProperties().limits().maxStorageBufferRange());
+        long maxRange = backend.combatant$maxStorageBufferRange();
         if (descriptor.byteSize() > maxRange) {
             throw new IllegalArgumentException("Storage buffer exceeds Vulkan maxStorageBufferRange: size="
                     + descriptor.byteSize() + " max=" + maxRange + " label=" + descriptor.label());
@@ -806,15 +805,11 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
     }
 
     private static long storageBufferOffsetAlignment() {
-        IVulkanBackendInfo backend = requireBackend();
-        return Math.max(1L, backend.combatant$physicalDevice()
-                .vkPhysicalDeviceProperties().limits().minStorageBufferOffsetAlignment());
+        return Math.max(1L, requireBackend().combatant$minStorageBufferOffsetAlignment());
     }
 
     private static long maxStorageBufferRange() {
-        IVulkanBackendInfo backend = requireBackend();
-        return Integer.toUnsignedLong(backend.combatant$physicalDevice()
-                .vkPhysicalDeviceProperties().limits().maxStorageBufferRange());
+        return requireBackend().combatant$maxStorageBufferRange();
     }
 
     private static void validateStorageImageFormat(IVulkanBackendInfo backend, StorageImageDescriptor descriptor) {

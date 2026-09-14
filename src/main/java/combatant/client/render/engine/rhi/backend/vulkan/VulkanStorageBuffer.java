@@ -75,10 +75,10 @@ final class VulkanStorageBuffer implements RhiStorageBuffer {
 
         this.logicalSize = descriptor.byteSize();
         if (logicalSize <= 0L) throw new IllegalArgumentException("Storage buffer size must be positive");
-        long alignment = Math.max(1L,
-                backend.combatant$physicalDevice().vkPhysicalDeviceProperties().limits().minStorageBufferOffsetAlignment());
+        long alignment = Math.max(1L, backend.combatant$minStorageBufferOffsetAlignment());
         this.uploadStride = align(logicalSize, alignment);
-        long physicalSize = Math.multiplyExact(uploadStride, (long) SUBMIT_RING_SIZE * MAX_UPLOADS_PER_SUBMIT);
+        long ringSlots = Math.multiplyExact((long) SUBMIT_RING_SIZE, MAX_UPLOADS_PER_SUBMIT);
+        long physicalSize = Math.multiplyExact(uploadStride, ringSlots);
 
         try (MemoryStack stack = MemoryStack.stackPush()) {
             int usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT

@@ -41,7 +41,6 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.AbstractTexture;
 import net.minecraft.client.resources.language.I18n;
-import net.fabricmc.loader.api.FabricLoader;
 import org.lwjgl.glfw.GLFW;
 import xaero.lib.client.graphics.GpuTextureAndView;
 import xaero.lib.client.config.ClientConfigManager;
@@ -168,8 +167,12 @@ final class XaeroMapSurface {
         areaWidth = width;
         areaHeight = height;
         hoveredElement = null;
+        // The map itself is not a permanent "move" affordance. Keep the native cursor neutral
+        // until the user is actually panning/selecting or points at an interactive overlay.
+        // Otherwise the whole surface looked draggable even while simply inspecting the map.
         if (contains(mouseX, mouseY)) {
-            SystemCursor.set(rightSelecting ? SystemCursor.CursorType.CROSSHAIR : SystemCursor.CursorType.MOVE);
+            if (rightSelecting) SystemCursor.set(SystemCursor.CursorType.CROSSHAIR);
+            else if (dragging) SystemCursor.set(SystemCursor.CursorType.MOVE);
         }
 
         WorldMapSession session = WorldMapSession.getCurrentSession();
@@ -861,10 +864,7 @@ final class XaeroMapSurface {
 
     private void drawMapUi(MapProcessor processor, MapDimension dimension, float mouseX, float mouseY) {
         SettingsGuiPalette palette = SettingsGuiPalette.current();
-        // SupportMods reflects Xaero's live integration state and can still be false while the
-        // installed minimap session is coming up. Installation is the correct UX capability test;
-        // runtime collection itself continues to guard on SupportMods.minimap().
-        boolean radarAvailable = FabricLoader.getInstance().isModLoaded("xaerominimap");
+        boolean radarAvailable = SupportMods.minimap();
         XaeroMapUiRenderer.layoutButtons(uiButtons, areaX, areaY, areaWidth, areaHeight,
                 new XaeroMapUiRenderer.ChromeState(
                         settings != null && settings.isOpen(),
@@ -879,7 +879,7 @@ final class XaeroMapSurface {
                         drawer,
                         helpOpen,
                         tr("gui.xaero_box_open_settings", "Settings"),
-                        tr("gui.combatant.map.chrome.recenter", "Recenter"),
+                        "Recenter",
                         tr("gui.xaero_box_cave_mode", "Cave mode"),
                         tr("gui.xaero_dimension_toggle_button", "Switch dimension"),
                         tr("gui.xaero_box_open_waypoints", "Waypoints"),
@@ -888,9 +888,7 @@ final class XaeroMapSurface {
                                 ? tr("gui.combatant.map.chrome.radar", "Entity radar")
                                 : tr("gui.combatant.map.chrome.radar_unavailable", "Entity radar · Xaero Minimap required"),
                         tr("gui.xaero_box_pac_displaying_claims", "Claims"),
-                        radarAvailable
-                                ? tr("gui.combatant.map.chrome.radar_list", "Radar list")
-                                : tr("gui.combatant.map.chrome.radar_list_unavailable", "Radar list · Xaero Minimap required"),
+                        tr("gui.combatant.map.chrome.radar_list", "Radar list"),
                         tr("gui.combatant.map.chrome.controls", "Controls"),
                         tr("gui.xaero_box_zoom_out", "Zoom out"),
                         tr("gui.xaero_box_zoom_in", "Zoom in")
@@ -906,7 +904,7 @@ final class XaeroMapSurface {
         XaeroMapUiRenderer.drawZoom(areaX, areaY, areaWidth, areaHeight, destinationScale, palette);
         withMapGlassSource(() -> XaeroMapUiRenderer.drawDrawer(areaX, areaY, areaWidth, mouseX, mouseY,
                 drawer, elementSnapshot, targetedRows(), drawerHits, targetHits,
-                palette, chromeMotion));
+                effective(WorldMapProfiledConfigOptions.MAP_TELEPORT_ALLOWED), palette, chromeMotion));
         final XaeroMapUiRenderer.HelpBounds[] helpHolder = new XaeroMapUiRenderer.HelpBounds[1];
         withMapGlassSource(() -> helpHolder[0] = XaeroMapUiRenderer.drawHelp(
                 areaX, areaY, areaWidth, areaHeight, uiButtons, helpOpen, palette, chromeMotion));
@@ -1259,8 +1257,7 @@ final class XaeroMapSurface {
         locations.forEach((id, location) -> {
             if (config.isTargeted(id, location.playerName())) {
                 String name = location.playerName().isBlank() ? config.nameForTarget(id) : location.playerName();
-                rows.put(id, new TargetRow(id, targetName(name, id), location,
-                        targetTeleportable(location)));
+                rows.put(id, new TargetRow(id, targetName(name, id), location));
             }
         });
         Set<String> ids = config.targetedPlayersValue().get();
@@ -1270,8 +1267,7 @@ final class XaeroMapSurface {
                     UUID id = UUID.fromString(raw == null ? "" : raw.trim());
                     PlayerLocationSnapshot location = locations.get(id);
                     rows.putIfAbsent(id, new TargetRow(id,
-                            targetName(config.nameForTarget(id), id), location,
-                            targetTeleportable(location)));
+                            targetName(config.nameForTarget(id), id), location));
                 } catch (IllegalArgumentException ignored) {
                 }
             }
@@ -1286,9 +1282,7 @@ final class XaeroMapSurface {
                         .findFirst().orElse(null);
                 if (resolved == null) {
                     UUID id = MapTriangulationConfig.offlineTargetUuid(name);
-                    PlayerLocationSnapshot location = locations.get(id);
-                    rows.putIfAbsent(id, new TargetRow(id, name, location,
-                            targetTeleportable(location)));
+                    rows.putIfAbsent(id, new TargetRow(id, name, locations.get(id)));
                 }
             }
         }
@@ -1606,8 +1600,7 @@ final class XaeroMapSurface {
         }
     }
 
-    record TargetRow(UUID playerUuid, String name, PlayerLocationSnapshot location,
-                     boolean teleportable) {
+    record TargetRow(UUID playerUuid, String name, PlayerLocationSnapshot location) {
     }
 
     record TargetHit(TargetRow target, float x, float y, float width, float height,

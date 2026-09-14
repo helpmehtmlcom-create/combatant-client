@@ -23,6 +23,7 @@ import org.lwjgl.vulkan.VkImageFormatProperties;
 import org.lwjgl.vulkan.VkPhysicalDeviceDepthStencilResolvePropertiesKHR;
 import org.lwjgl.vulkan.VkPhysicalDeviceFeatures;
 import org.lwjgl.vulkan.VkPhysicalDeviceLimits;
+import org.lwjgl.vulkan.VkPhysicalDeviceProperties;
 import org.lwjgl.vulkan.VkPhysicalDeviceProperties2;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -52,6 +53,8 @@ public abstract class VulkanDeviceMixin implements IVulkanBackendInfo {
     @Unique private VkDevice combatant$vkDevice;
     @Unique private long combatant$vma;
     @Unique private VulkanPhysicalDevice combatant$physicalDevice;
+    @Unique private long combatant$minStorageBufferOffsetAlignment = 1L;
+    @Unique private long combatant$maxStorageBufferRange;
 
     @Override
     public VkDevice combatant$vkDevice() {
@@ -66,6 +69,16 @@ public abstract class VulkanDeviceMixin implements IVulkanBackendInfo {
     @Override
     public VulkanPhysicalDevice combatant$physicalDevice() {
         return combatant$physicalDevice;
+    }
+
+    @Override
+    public long combatant$minStorageBufferOffsetAlignment() {
+        return combatant$minStorageBufferOffsetAlignment;
+    }
+
+    @Override
+    public long combatant$maxStorageBufferRange() {
+        return combatant$maxStorageBufferRange;
     }
 
 
@@ -84,20 +97,28 @@ public abstract class VulkanDeviceMixin implements IVulkanBackendInfo {
         combatant$vkDevice = device;
         combatant$vma = vma;
         combatant$physicalDevice = physicalDevice;
-        if (physicalDevice == null || physicalDevice.vkPhysicalDeviceProperties() == null) return;
-        VkPhysicalDeviceLimits limits = physicalDevice.vkPhysicalDeviceProperties().limits();
-        int framebufferSamples = limits.framebufferColorSampleCounts()
-                & limits.framebufferDepthSampleCounts()
-                & limits.framebufferStencilSampleCounts();
+        if (physicalDevice == null) return;
 
         try (MemoryStack stack = MemoryStack.stackPush()) {
+            // Copy the limits we need while querying the VkPhysicalDevice directly. The LWJGL
+            // structs exposed by Mojang are native-backed views and must not become long-lived
+            // configuration state for Combatant.
+            VkPhysicalDeviceProperties deviceProperties = VkPhysicalDeviceProperties.calloc(stack);
+            vkGetPhysicalDeviceProperties(physicalDevice.vkPhysicalDevice(), deviceProperties);
+            VkPhysicalDeviceLimits limits = deviceProperties.limits();
+            combatant$minStorageBufferOffsetAlignment = Math.max(1L, limits.minStorageBufferOffsetAlignment());
+            combatant$maxStorageBufferRange = Integer.toUnsignedLong(limits.maxStorageBufferRange());
+            int framebufferSamples = limits.framebufferColorSampleCounts()
+                    & limits.framebufferDepthSampleCounts()
+                    & limits.framebufferStencilSampleCounts();
+
             VkPhysicalDeviceFeatures features = VkPhysicalDeviceFeatures.calloc(stack);
             vkGetPhysicalDeviceFeatures(physicalDevice.vkPhysicalDevice(), features);
             VulkanRenderStateBridge.configureAdvancedShaderCapabilities(
                     physicalDevice.computeQueueFamilyAndIndex() != null,
                     features.tessellationShader(),
                     features.geometryShader(),
-                    Integer.toUnsignedLong(limits.maxStorageBufferRange()) > 0L
+                    combatant$maxStorageBufferRange > 0L
             );
             int textureUsage = GpuTexture.USAGE_COPY_DST
                     | GpuTexture.USAGE_COPY_SRC
@@ -124,10 +145,10 @@ public abstract class VulkanDeviceMixin implements IVulkanBackendInfo {
 
             VkPhysicalDeviceDepthStencilResolvePropertiesKHR resolve =
                     VkPhysicalDeviceDepthStencilResolvePropertiesKHR.calloc(stack).sType$Default();
-            VkPhysicalDeviceProperties2 properties = VkPhysicalDeviceProperties2.calloc(stack)
+            VkPhysicalDeviceProperties2 properties2 = VkPhysicalDeviceProperties2.calloc(stack)
                     .sType$Default()
                     .pNext(resolve);
-            vkGetPhysicalDeviceProperties2(physicalDevice.vkPhysicalDevice(), properties);
+            vkGetPhysicalDeviceProperties2(physicalDevice.vkPhysicalDevice(), properties2);
             VulkanRenderStateBridge.configureMsaaCapabilities(
                     framebufferSamples,
                     resolve.supportedDepthResolveModes(),

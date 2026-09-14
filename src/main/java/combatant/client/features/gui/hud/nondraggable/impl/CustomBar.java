@@ -8,6 +8,7 @@
 package combatant.client.features.gui.hud.nondraggable.impl;
 
 import com.mojang.authlib.GameProfile;
+import combatant.client.config.subsystem.MapTriangulationConfig;
 import combatant.client.config.values.*;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -27,7 +28,11 @@ import combatant.client.config.SettingDef;
 import combatant.client.features.gui.hud.AbstractHudElement;
 import combatant.client.features.gui.hud.HudElementRegister;
 import combatant.client.features.gui.hud.HudRenderUtil;
-import combatant.client.features.gui.hud.draggable.impl.HudNotifier;
+import combatant.client.features.map.location.PlayerLocationService;
+import combatant.client.features.map.location.PlayerLocationSnapshot;
+import combatant.client.features.map.location.PlayerLocationSource;
+import combatant.client.features.map.locator.LocatorObservation;
+import combatant.client.features.map.locator.LocatorRuntime;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.core.ViewportContext;
@@ -40,7 +45,6 @@ import combatant.client.render.helpers.MatteHudStyle;
 import combatant.client.render.helpers.PlayerHeadRenderer;
 import combatant.client.runtime.RuntimeGate;
 import combatant.client.util.input.KeyManager;
-import combatant.client.features.maplink.runtime.MapLinkLocatorBridge;
 import combatant.client.util.player.PlayerSkinResolver;
 
 import java.awt.*;
@@ -158,24 +162,6 @@ public final class CustomBar extends AbstractHudElement {
             new NumberValue<>("locator_label_angle", 6.0f, 4.0f, 45.0f);
     private final BooleanValue locatorLabelDistance =
             new BooleanValue("locator_label_distance", true);
-    private final BooleanValue locatorSearchEnabled =
-            new BooleanValue("locator_search_enabled", true);
-    private final SetValue locatorSearchPlayers =
-            new SetValue("locator_search_list", new java.util.LinkedHashSet<>(java.util.List.of("imhorny")));
-    private final RGBColorValue locatorSearchColor =
-            new RGBColorValue("locator_search_color", "#FFAA00");
-    private final RGBColorValue locatorDimmedColor =
-            new RGBColorValue("locator_dimmed_color", "#777777");
-    private final BooleanValue locatorDimmedScaleOnly =
-            new BooleanValue("locator_dimmed_scale_only", true);
-    private final BooleanValue locatorMapFilterEnabled =
-            new BooleanValue("locator_map_filter_enabled", false);
-    private final StringValue locatorMapServer =
-            new StringValue("locator_map_server", "");
-    private final StringValue locatorMapUrl =
-            new StringValue("locator_map_url", "example");
-    private final KeyBindValue locatorTargetToggle =
-            new KeyBindValue("locator_target_toggle", "NONE");
     private final KeyBindValue locatorBarToggle =
             new KeyBindValue("locator_bar_toggle", "U");
 
@@ -464,9 +450,13 @@ public final class CustomBar extends AbstractHudElement {
             }
         };
 
-        Set<UUID> mapPlayers = bm.isLocatorMapFilterEnabled()
-                ? MapLinkLocatorBridge.exactPlayerIds(mc, bm.getLocatorMapServer(), bm.getLocatorMapUrl())
-                : Collections.emptySet();
+        // Keep vanilla TrackedWaypoint geometry for the HUD rail, but resolve identity, targets
+        // and source precedence through the shared map domain instead of Bar-local state.
+        Map<String, LocatorObservation> locatorObservations = locatorObservationIndex();
+        Map<UUID, PlayerLocationSnapshot> unifiedLocations = PlayerLocationService.get().snapshot().bestByPlayer();
+        Map<String, PlayerLocationSnapshot> unifiedLocationsByName = unifiedLocationNameIndex(unifiedLocations);
+        MapTriangulationConfig triangulation = MapTriangulationConfig.get();
+        boolean hasConfiguredTargets = triangulation.targetedCount() > 0;
         boolean labelsEnabled = drawHeads && bm.isLocatorLabelsEnabled();
         LocatorLabelMode labelMode = labelsEnabled
                 ? bm.getLocatorLabelMode()
@@ -481,14 +471,19 @@ public final class CustomBar extends AbstractHudElement {
 
         handler.forEachWaypoint(mc.player, waypoint -> {
             if (isSourcePlayer(mc.player, waypoint)) return;
-            UUID wpUuid = waypoint.id().left().orElse(null);
-            if (wpUuid != null && !mapPlayers.isEmpty() && mapPlayers.contains(wpUuid)) return;
+            UUID directUuid = waypoint.id().left().orElse(null);
+            String name = getWaypointName(mc, waypoint, directUuid);
+            UUID resolvedUuid = resolveUnifiedLocatorUuid(directUuid, name, locatorObservations);
+            PlayerLocationSnapshot unifiedLocation = findUnifiedLocation(
+                    resolvedUuid, name, unifiedLocations, unifiedLocationsByName);
+            if (resolvedUuid == null && unifiedLocation != null) resolvedUuid = unifiedLocation.playerUuid();
+            if (isSupersededByUnifiedExact(mc, unifiedLocation)) return;
+            UUID wpUuid = resolvedUuid;
 
             double yaw = waypoint.yawAngleToCamera(mc.level, yawProvider, tickProgress);
             if (yaw <= -LOCATOR_ANGLE_RANGE || yaw >= LOCATOR_ANGLE_RANGE) return;
 
             float dist = Mth.sqrt((float) waypoint.distanceSquared(mc.player));
-            String name = getWaypointName(mc, waypoint, wpUuid);
             String key = locatorLabelKey(waypoint, wpUuid);
 
             candidates.add(new LocatorCandidate(
@@ -531,17 +526,17 @@ public final class CustomBar extends AbstractHudElement {
             float dist = candidate.dist;
             UUID wpUuid = candidate.uuid;
 
-            boolean isTarget = isLocatorTarget(wpUuid, bm);
-            boolean isDimmed = isLocatorDimmed(wpUuid, bm);
-            float headScale = locatorHeadScale(dist, isTarget, isDimmed, bm);
+            boolean isTarget = isLocatorTarget(wpUuid, candidate.name);
+            boolean isDimmed = hasConfiguredTargets && !isTarget;
+            float headScale = locatorHeadScale(dist, isTarget, isDimmed);
             float headSize = LOCATOR_HEAD_SIZE * headScale;
             float headRadius = LOCATOR_HEAD_RADIUS * headScale;
             float headY = barY + (LOCATOR_BAR_HEIGHT - headSize) * 0.5f + LOCATOR_HEAD_GAP;
 
-            int baseColor = resolveWaypointColor(candidate.waypoint);
+            int baseColor = resolveWaypointColor(candidate.waypoint, isTarget, isDimmed);
             RenderColor headColor = new RenderColor(applyBarAlpha(0xFFFFFFFF, bm));
             RenderColor outlineColor = isTarget
-                    ? new RenderColor(applyBarAlpha(0xFF000000 | bm.getLocatorSearchColorRgb(), bm))
+                    ? new RenderColor(applyBarAlpha(locatorTargetColor(), bm))
                     : locatorOutlineColor(baseColor, dist, bm);
             float outlineThickness = locatorOutlineThickness(dist) * headScale;
             if (isTarget) {
@@ -631,7 +626,7 @@ public final class CustomBar extends AbstractHudElement {
                         float headRadius = head.radius * scale;
                         float headOutline = head.outlineThickness * scale;
                         if (head.target) {
-                            int glow = applyBarAlpha(HudRenderUtil.scaleAlpha(0xFF000000 | bm.getLocatorSearchColorRgb(), 0.28f), bm);
+                            int glow = applyBarAlpha(HudRenderUtil.scaleAlpha(locatorTargetColor(), 0.28f), bm);
                             Renderer2D.COLOR.roundedRect(
                                     headX - 1.9f * scale,
                                     headYScaled - 1.9f * scale,
@@ -968,32 +963,21 @@ public final class CustomBar extends AbstractHudElement {
                 .orElse(false);
     }
 
-    private static int resolveWaypointColor(TrackedWaypoint waypoint) {
-        CustomBar bm = CustomBar.get();
-
-        UUID wpUuid = waypoint.id().left().orElse(null);
-        boolean isPlayerWaypoint = wpUuid != null;
-
-        if (bm != null && bm.isLocatorSearchEnabled() && isPlayerWaypoint) {
-            Set<String> targets = bm.getLocatorSearchPlayers();
-            if (targets != null && !targets.isEmpty()) {
-
-                if (isPlayerInTargets(wpUuid, targets)) {
-                    return 0xFF000000 | bm.getLocatorSearchColorRgb();
-                }
-
-                return 0xFF000000 | bm.getLocatorDimmedColorRgb();
-            }
-        }
-
+    private static int resolveWaypointColor(TrackedWaypoint waypoint, boolean target, boolean dimmed) {
+        if (target) return locatorTargetColor();
         var cfg = waypoint.icon();
+        int base;
         if (cfg != null && cfg.color.isPresent()) {
-            return 0xFF000000 | (cfg.color.get() & 0x00FFFFFF);
+            base = 0xFF000000 | (cfg.color.get() & 0x00FFFFFF);
+        } else {
+            int rgb = waypoint.id().map(CustomBar::colorFromUuid, CustomBar::colorFromName);
+            base = 0xFF000000 | (rgb & 0x00FFFFFF);
         }
+        return dimmed ? HudRenderUtil.mixColor(base, theme().textMuted(), 0.68f) : base;
+    }
 
-        int rgb = waypoint.id()
-                .map(CustomBar::colorFromUuid, CustomBar::colorFromName);
-        return 0xFF000000 | (rgb & 0x00FFFFFF);
+    private static int locatorTargetColor() {
+        return HudRenderUtil.mixColor(theme().accent(), theme().textPrimary(), 0.10f);
     }
 
     private static RenderColor locatorOutlineColor(int baseArgb, float dist, CustomBar bm) {
@@ -1026,7 +1010,9 @@ public final class CustomBar extends AbstractHudElement {
         }
 
         if (profile == null && uuid != null) {
-            profile = new GameProfile(uuid, uuid.toString());
+            String fallbackName = waypoint.id().right().orElse(null);
+            profile = new GameProfile(uuid,
+                    fallbackName != null && !fallbackName.isBlank() ? fallbackName : uuid.toString());
         }
 
         if (profile == null) {
@@ -1067,24 +1053,13 @@ public final class CustomBar extends AbstractHudElement {
         };
     }
 
-    private static boolean isLocatorTarget(UUID wpUuid, CustomBar bm) {
-        if (bm == null || wpUuid == null || !bm.isLocatorSearchEnabled()) return false;
-        Set<String> targets = bm.getLocatorSearchPlayers();
-        if (targets == null || targets.isEmpty()) return false;
-        return isPlayerInTargets(wpUuid, targets);
+    private static boolean isLocatorTarget(UUID wpUuid, String name) {
+        return MapTriangulationConfig.get().isTargeted(wpUuid, name);
     }
 
-    private static boolean isLocatorDimmed(UUID wpUuid, CustomBar bm) {
-        if (bm == null || wpUuid == null || !bm.isLocatorSearchEnabled()) return false;
-        Set<String> targets = bm.getLocatorSearchPlayers();
-        if (targets == null || targets.isEmpty()) return false;
-        return !isPlayerInTargets(wpUuid, targets);
-    }
-
-    private static float locatorHeadScale(float dist, boolean isTarget, boolean isDimmed, CustomBar bm) {
+    private static float locatorHeadScale(float dist, boolean isTarget, boolean isDimmed) {
         if (isTarget) return 1.0f;
-        boolean dimmedOnly = bm != null && bm.isLocatorDimmedScaleOnly();
-        if (dimmedOnly && !isDimmed) return 1.0f;
+        if (!isDimmed) return 1.0f;
 
         float range = LOCATOR_HEAD_SCALE_END - LOCATOR_HEAD_SCALE_START;
         if (range <= 0.0f) return 1.0f;
@@ -1194,37 +1169,66 @@ public final class CustomBar extends AbstractHudElement {
         return UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8));
     }
 
-    private static boolean isPlayerInTargets(UUID wpUuid, Set<String> targets) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc == null || mc.getConnection() == null) return false;
+    private static Map<String, LocatorObservation> locatorObservationIndex() {
+        List<LocatorObservation> observations = LocatorRuntime.get().snapshot();
+        if (observations == null || observations.isEmpty()) return Collections.emptyMap();
 
-        for (String raw : targets) {
-            if (raw == null) continue;
-            String t = raw.trim();
-            if (t.isEmpty()) continue;
-
-            if (t.equalsIgnoreCase(wpUuid.toString())) {
-                return true;
-            }
-
-            PlayerInfo entry = findEntryByName(mc, t);
-            if (entry != null && entry.getProfile() != null) {
-                if (wpUuid.equals(entry.getProfile().id())) {
-                    return true;
-                }
+        Map<String, LocatorObservation> index = new HashMap<>(observations.size() * 2);
+        for (LocatorObservation observation : observations) {
+            if (observation == null) continue;
+            UUID uuid = observation.targetUuid();
+            if (uuid != null) index.put("uuid:" + uuid, observation);
+            String name = observation.targetName();
+            if (name != null && !name.isBlank()) {
+                index.put("name:" + name.trim().toLowerCase(Locale.ROOT), observation);
             }
         }
-        return false;
+        return index;
     }
 
-    private static PlayerInfo findEntryByName(Minecraft mc, String name) {
-        for (PlayerInfo e : mc.getConnection().getOnlinePlayers()) {
-            if (e.getProfile() != null
-                    && e.getProfile().name().equalsIgnoreCase(name)) {
-                return e;
-            }
+    private static UUID resolveUnifiedLocatorUuid(UUID directUuid,
+                                                  String name,
+                                                  Map<String, LocatorObservation> observations) {
+        if (directUuid != null) return directUuid;
+        if (name == null || name.isBlank()) return null;
+
+        LocatorObservation observation = observations.get("name:" + name.trim().toLowerCase(Locale.ROOT));
+        if (observation != null && observation.targetUuid() != null) {
+            return observation.targetUuid();
         }
-        return null;
+        return MapTriangulationConfig.get().isTargetedName(name)
+                ? MapTriangulationConfig.offlineTargetUuid(name)
+                : null;
+    }
+
+    private static Map<String, PlayerLocationSnapshot> unifiedLocationNameIndex(
+            Map<UUID, PlayerLocationSnapshot> locations) {
+        if (locations == null || locations.isEmpty()) return Collections.emptyMap();
+        Map<String, PlayerLocationSnapshot> index = new HashMap<>(locations.size());
+        for (PlayerLocationSnapshot snapshot : locations.values()) {
+            if (snapshot == null || snapshot.playerName() == null || snapshot.playerName().isBlank()) continue;
+            index.put(snapshot.playerName().trim().toLowerCase(Locale.ROOT), snapshot);
+        }
+        return index;
+    }
+
+    private static PlayerLocationSnapshot findUnifiedLocation(
+            UUID uuid,
+            String name,
+            Map<UUID, PlayerLocationSnapshot> byUuid,
+            Map<String, PlayerLocationSnapshot> byName) {
+        PlayerLocationSnapshot snapshot = uuid == null ? null : byUuid.get(uuid);
+        if (snapshot != null || name == null || name.isBlank()) return snapshot;
+        return byName.get(name.trim().toLowerCase(Locale.ROOT));
+    }
+
+    private static boolean isSupersededByUnifiedExact(Minecraft mc, PlayerLocationSnapshot snapshot) {
+        if (mc == null || mc.level == null || snapshot == null || !snapshot.exact()) return false;
+        if (snapshot.source().priority() <= PlayerLocationSource.LOCATOR_EXACT.priority()) return false;
+
+        String currentDimension = mc.level.dimension().identifier().toString();
+        String snapshotDimension = snapshot.worldIdentity().dimensionKey();
+        return snapshotDimension.isBlank() || currentDimension.equals(snapshotDimension);
     }
 
     private static int colorFromUuid(UUID uuid) {
@@ -1263,44 +1267,16 @@ public final class CustomBar extends AbstractHudElement {
                         && locatorLabelModeUsesCenter()));
         defs.add(SettingDef.bool(locatorLabelDistance)
                 .visibleWhen(() -> locatorModeEnabled() && locatorLabels.get()));
-
-        defs.add(SettingDef.bool(locatorSearchEnabled).visibleWhen(this::locatorModeEnabled));
-        defs.add(SettingDef.textList(locatorSearchPlayers)
-                .visibleWhen(() -> locatorModeEnabled() && locatorSearchEnabled.get()));
-        defs.add(SettingDef.colorNoAlpha(locatorDimmedColor)
-                .visibleWhen(() -> locatorModeEnabled()
-                        && locatorSearchEnabled.get()
-                        && !locatorSearchPlayers.get().isEmpty()));
-        defs.add(SettingDef.colorNoAlpha(locatorSearchColor)
-                .visibleWhen(() -> locatorModeEnabled()
-                        && locatorSearchEnabled.get()
-                        && !locatorSearchPlayers.get().isEmpty()));
-        defs.add(SettingDef.bool(locatorDimmedScaleOnly).visibleWhen(this::locatorModeEnabled));
-        defs.add(SettingDef.bool(locatorMapFilterEnabled).visibleWhen(this::locatorModeEnabled));
-        defs.add(SettingDef.text(locatorMapServer)
-                .visibleWhen(() -> locatorModeEnabled() && locatorMapFilterEnabled.get()));
-        defs.add(SettingDef.text(locatorMapUrl)
-                .visibleWhen(() -> locatorModeEnabled() && locatorMapFilterEnabled.get()));
-
-        defs.add(SettingDef.bind(locatorTargetToggle, BindMode.PRESS).visibleWhen(this::locatorModeEnabled));
         defs.add(SettingDef.bind(locatorBarToggle, BindMode.PRESS).visibleWhen(this::locatorModeEnabled));
     }
 
     @Override
     protected void onLoaded() {
-        registerBind(locatorTargetToggle);
         registerBind(locatorBarToggle);
     }
 
     @Override
     public void onTick() {
-        if (KeyManager.wasPressed(bindingName(locatorTargetToggle))) {
-            boolean next = !locatorSearchEnabled.get();
-            locatorSearchEnabled.set(next);
-            HudNotifier.pushState("Locator target", next);
-            saveConfig();
-        }
-
         if (KeyManager.wasPressed(bindingName(locatorBarToggle))) {
             BarMode mode = barMode.get();
             if (mode != BarMode.AUTO) {
@@ -1402,38 +1378,6 @@ public final class CustomBar extends AbstractHudElement {
 
     private boolean isThemeMode() {
         return !isCustomMode();
-    }
-
-    public boolean isLocatorSearchEnabled() {
-        return !RuntimeGate.isPanic() && locatorModeEnabled() && locatorSearchEnabled.get();
-    }
-
-    public Set<String> getLocatorSearchPlayers() {
-        return locatorSearchPlayers.get();
-    }
-
-    public int getLocatorDimmedColorRgb() {
-        return locatorDimmedColor.getArgb() & 0x00FFFFFF;
-    }
-
-    public int getLocatorSearchColorRgb() {
-        return locatorSearchColor.getArgb() & 0x00FFFFFF;
-    }
-
-    public boolean isLocatorDimmedScaleOnly() {
-        return locatorDimmedScaleOnly.get();
-    }
-
-    public boolean isLocatorMapFilterEnabled() {
-        return locatorMapFilterEnabled.get();
-    }
-
-    public String getLocatorMapServer() {
-        return locatorMapServer.get();
-    }
-
-    public String getLocatorMapUrl() {
-        return locatorMapUrl.get();
     }
 
     public boolean isLocatorLabelsEnabled() {
