@@ -8,11 +8,16 @@
 package combatant.client.mixins.sodium;
 
 import com.mojang.blaze3d.textures.GpuSampler;
+import com.mojang.blaze3d.textures.FilterMode;
 import combatant.client.render.engine.core.CombatantRenderSystem;
+import combatant.client.render.engine.deferred.DeferredWorldPipeline;
 import net.caffeinemc.mods.sodium.client.render.SodiumWorldRenderer;
 import net.caffeinemc.mods.sodium.client.render.chunk.ChunkRenderMatrices;
+import net.caffeinemc.mods.sodium.client.render.chunk.terrain.DefaultTerrainRenderPasses;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.TerrainRenderPass;
 import net.caffeinemc.mods.sodium.client.util.FogParameters;
+import net.minecraft.client.Minecraft;
+import com.mojang.blaze3d.systems.RenderSystem;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -32,6 +37,9 @@ public abstract class SodiumWorldRendererTerrainMixin {
                                               FogParameters fog,
                                               GpuSampler sampler,
                                               CallbackInfo ci) {
+        if (pass == DefaultTerrainRenderPasses.TRANSLUCENT) {
+            CombatantRenderSystem.deferredWorld().beforeTranslucency();
+        }
         CombatantRenderSystem.sodium().terrainInterop().beforeTerrainDraw(
                 matrices, pass, cameraX, cameraY, cameraZ, fog, sampler);
     }
@@ -45,6 +53,20 @@ public abstract class SodiumWorldRendererTerrainMixin {
                                              FogParameters fog,
                                              GpuSampler sampler,
                                              CallbackInfo ci) {
+        if (pass == DefaultTerrainRenderPasses.CUTOUT && CombatantRenderSystem.deferredWorld().enabled()) {
+            DeferredWorldPipeline.LightingState lighting = new DeferredWorldPipeline.LightingState(
+                    fog.red(), fog.green(), fog.blue(), fog.alpha(),
+                    fog.environmentalStart(), fog.environmentalEnd(),
+                    fog.renderStart(), fog.renderEnd()
+            );
+            CombatantRenderSystem.deferredWorld().resolveLighting(
+                    pass.getTarget().getColorTextureView(),
+                    Minecraft.getInstance().gameRenderer.lightmap(),
+                    RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST),
+                    RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR),
+                    lighting
+            );
+        }
         CombatantRenderSystem.sodium().terrainInterop().afterTerrainDraw(
                 matrices, pass, cameraX, cameraY, cameraZ, fog, sampler);
     }

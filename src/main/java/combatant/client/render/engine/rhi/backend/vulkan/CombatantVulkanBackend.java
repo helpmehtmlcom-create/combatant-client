@@ -341,12 +341,16 @@ public final class CombatantVulkanBackend implements CombatantRhi {
             );
             GpuBufferSlice meshData = MeshUniforms.get();
 
-            stats.renderPass(command.colorAttachment, null);
-            try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
-                    () -> command.label,
-                    command.colorAttachment,
-                    clearColor(command.clearColor)
-            )) {
+            RenderPassDescriptor descriptor = RenderPassDescriptor.create(() -> command.label)
+                    .withColorAttachment(command.colorAttachment, clearColor(command.clearColor))
+                    .withRenderArea(new RenderPass.RenderArea(
+                            0, 0, command.colorAttachment.getWidth(0), command.colorAttachment.getHeight(0)
+                    ));
+            if (command.depthAttachment != null) {
+                descriptor.withDepthAttachment(command.depthAttachment, command.clearDepth);
+            }
+            stats.renderPass(command.colorAttachment, command.depthAttachment);
+            try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(descriptor)) {
                 if (command.pipelineSpec == null) pipelines.require(command.pipeline);
                 stats.pipelineUse(command.pipeline, command.pipelineSpec,
                         command.uniforms.size() + 1, command.samplers.size(), true);

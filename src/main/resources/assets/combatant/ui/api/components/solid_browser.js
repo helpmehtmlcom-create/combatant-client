@@ -400,7 +400,7 @@ export class SolidBrowserSurface {
           stateSource: "parent", interactive: false,
           class: ui.abs(t.navItemPadding + t.navIconSize + 12, (height - 16) * 0.5,
             Math.max(0, width - t.navItemPadding * 2 - t.navIconSize - 12), 16,
-            `font-${ui.str(props.font, "OnestMedium")}-1.00 text-align-left`),
+            `font-${ui.str(props.font, "OnestMedium")}-${ui.fmt(ui.num(props.fontSize, 1.00))} text-align-left`),
         })] : []),
       ],
     });

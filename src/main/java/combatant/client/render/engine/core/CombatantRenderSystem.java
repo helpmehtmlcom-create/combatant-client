@@ -10,6 +10,8 @@ package combatant.client.render.engine.core;
 import com.mojang.blaze3d.systems.RenderSystem;
 import combatant.client.render.engine.compat.immediatelyfast.ImmediatelyFastRuntime;
 import combatant.client.render.engine.compat.immediatelyfast.ImmediatelyFastRuntimeSnapshot;
+import combatant.client.render.engine.deferred.DeferredWorldPipeline;
+import combatant.client.render.engine.deferred.DeferredPassGraph;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.renderer.ui.ItemBatchRenderer;
 import combatant.client.render.iris.IrisRuntime;
@@ -58,6 +60,8 @@ public enum CombatantRenderSystem {
     ;
     private static final Logger LOGGER = LoggerFactory.getLogger("Combatant");
     private static final SodiumRenderBridge SODIUM = new SodiumRenderBridge();
+    private static final DeferredWorldPipeline DEFERRED_WORLD = new DeferredWorldPipeline();
+    private static final DeferredPassGraph DEFERRED_GRAPH = new DeferredPassGraph();
     private static final CombatantFrameGraph FRAME_GRAPH = new CombatantFrameGraph();
     private static final CombatantUniformAllocator UNIFORMS = new CombatantUniformAllocator();
 
@@ -131,6 +135,7 @@ public enum CombatantRenderSystem {
         rhi = next;
         backendKind = desired;
         try {
+            DEFERRED_WORLD.releasePhysicalResources();
             previous.close();
         } catch (Throwable t) {
             DebugLog.warnOnChange(
@@ -216,6 +221,14 @@ public enum CombatantRenderSystem {
 
     public static SodiumRenderBridge sodium() {
         return SODIUM;
+    }
+
+    public static DeferredWorldPipeline deferredWorld() {
+        return DEFERRED_WORLD;
+    }
+
+    public static DeferredPassGraph deferredGraph() {
+        return DEFERRED_GRAPH;
     }
 
     public static RenderResourceManager resources() {
@@ -414,6 +427,7 @@ public enum CombatantRenderSystem {
         if (!initialized) return;
         try {
             UiMsaaClipLayer.shutdown();
+            DEFERRED_WORLD.releasePhysicalResources();
             UNIFORMS.close();
             rhi.close();
         } finally {

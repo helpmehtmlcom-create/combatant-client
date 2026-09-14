@@ -387,11 +387,11 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
 
     private static void bindStorageImages(List<StorageImageBinding> bindings) {
         for (StorageImageBinding binding : bindings) {
-            if (!(binding.image().view() instanceof GlTextureView texture) || texture.isClosed()) {
+            if (!(binding.image().storageView(binding.mipLevel()) instanceof GlTextureView texture) || texture.isClosed()) {
                 throw new IllegalArgumentException("Storage image does not belong to the active OpenGL backend");
             }
             int format = GlConst.toGlInternalId(binding.image().descriptor().format());
-            GL42C.glBindImageTexture(binding.binding(), texture.glId(), 0, false, 0,
+            GL42C.glBindImageTexture(binding.binding(), texture.glId(), binding.mipLevel(), false, 0,
                     glImageAccess(binding.access()), format);
         }
     }

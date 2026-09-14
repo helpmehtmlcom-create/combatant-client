@@ -1704,7 +1704,8 @@ enum UnifiedSettingRenderer {
         float cy = ui.squareY + slide;
         float containerX = cx - m(5f, 5f);
         float containerY = cy - m(5f, 5f);
-        float containerW = x + w - m(5f, 5f) - containerX;
+        float pickerRight = (hasAlpha ? ui.alphaX + ui.alphaW : ui.hueX + ui.hueW);
+        float containerW = Math.max(m(96f, 72f), pickerRight + m(5f, 5f) - containerX);
         float containerH = colorExpandedHeight(ui, hasAlpha);
         UnifiedSettingsSkin.drawSurface(containerX, containerY, containerW, containerH, m(6f, 6f), 0.90f);
 
@@ -1931,7 +1932,10 @@ enum UnifiedSettingRenderer {
         ui.squareX = x + sidePad;
         ui.squareY = y + colorHeaderH() + m(6f, 5f);
         ui.squareH = m(82f, 60f);
-        ui.squareW = Math.max(m(74f, 44f), w - sidePad * 2f - rightInset - verticalBars * barW - verticalBars * barGap);
+        float availableSquareW = Math.max(m(74f, 44f), w - sidePad * 2f - rightInset - verticalBars * barW - verticalBars * barGap);
+        // SV is a visual picker, not a horizontal slider. Very wide settings columns used to turn
+        // this into a 4:1 strip, which is hard to read and inconsistent with the rest of the UI.
+        ui.squareW = Math.min(availableSquareW, Math.max(m(96f, 72f), ui.squareH * 1.18f));
         ui.hueX = ui.squareX + ui.squareW + barGap;
         ui.hueY = ui.squareY;
         ui.hueW = barW;
@@ -1980,7 +1984,8 @@ enum UnifiedSettingRenderer {
         ui.rgbBottom = ui.squareY + ui.squareH + rgbBlockH;
 
         float actionX = ui.squareX;
-        float actionW = Math.max(1f, x + w - m(10f, 10f) - actionX);
+        float pickerRight = hasAlpha ? ui.alphaX + ui.alphaW : ui.hueX + ui.hueW;
+        float actionW = Math.max(1f, pickerRight - actionX);
         float gap = m(4f, 4f);
         ui.presetX = actionX;
         ui.presetY = ui.rgbBottom + m(6f, 4f);

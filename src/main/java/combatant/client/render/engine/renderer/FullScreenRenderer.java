@@ -102,6 +102,16 @@ public enum FullScreenRenderer {
             return this;
         }
 
+        public Draw depthAttachment(GpuTextureView view) {
+            builder.depthAttachment(view);
+            return this;
+        }
+
+        public Draw depthAttachment(RenderTarget framebuffer) {
+            if (framebuffer != null) builder.depthAttachment(framebuffer.getDepthTextureView());
+            return this;
+        }
+
         public Draw pipeline(RenderPipeline pipeline) {
             builder.pipeline(pipeline);
             return this;

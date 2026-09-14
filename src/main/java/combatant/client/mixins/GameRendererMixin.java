@@ -541,10 +541,27 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
                      TracyGpuProfiler.Scope ignoredGpu = TracyGpuProfiler.beginZone("3d:visual_stack")) {
                     CombatantVisuals.renderWorldBase(minecraft, tickCounter.getGameTimeDeltaPartialTick(true));
                 }
+                com.mojang.blaze3d.pipeline.RenderTarget resolvedMain = minecraft.gameRenderer.mainRenderTarget();
+                com.mojang.blaze3d.textures.GpuTextureView resolvedDepth = WorldSceneDepth.hasMain()
+                        ? WorldSceneDepth.mainDepthView()
+                        : resolvedMain.getDepthTextureView();
+                CombatantRenderSystem.deferredWorld().beforePostProcess(
+                        resolvedMain.getColorTextureView(), resolvedDepth
+                );
             }
             try (RenderPhaseScope combatant$postPreHandPhase = CombatantRenderSystem.phase(RenderPhase.WORLD_POST_PRE_HAND)) {
                 PostProcessManager.renderAll(PostProcessPass.Phase.PRE_HAND,
                         tickCounter.getGameTimeDeltaPartialTick(true));
+                com.mojang.blaze3d.pipeline.RenderTarget resolvedMain = minecraft != null
+                        ? minecraft.gameRenderer.mainRenderTarget() : null;
+                if (resolvedMain != null) {
+                    com.mojang.blaze3d.textures.GpuTextureView resolvedDepth = WorldSceneDepth.hasMain()
+                            ? WorldSceneDepth.mainDepthView()
+                            : resolvedMain.getDepthTextureView();
+                    CombatantRenderSystem.deferredWorld().afterPostProcess(
+                            resolvedMain.getColorTextureView(), resolvedDepth
+                    );
+                }
                 combatant$renderCombatantWorldAfterPreHandPostProcess(tickCounter);
             }
         }
@@ -594,6 +611,15 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
             try (RenderPhaseScope combatant$postHandPhase = CombatantRenderSystem.phase(RenderPhase.WORLD_POST_HAND)) {
                 PostProcessManager.renderAll(PostProcessPass.Phase.POST_HAND,
                         tickCounter.getGameTimeDeltaPartialTick(true));
+                if (minecraft != null) {
+                    com.mojang.blaze3d.pipeline.RenderTarget resolvedMain = minecraft.gameRenderer.mainRenderTarget();
+                    com.mojang.blaze3d.textures.GpuTextureView resolvedDepth = WorldSceneDepth.hasMain()
+                            ? WorldSceneDepth.mainDepthView()
+                            : resolvedMain.getDepthTextureView();
+                    CombatantRenderSystem.deferredWorld().finalComposite(
+                            resolvedMain.getColorTextureView(), resolvedDepth
+                    );
+                }
             }
         }
     }

@@ -143,6 +143,7 @@ public enum CombatantRenderPipelines {
     public static final Identifier SHADER_DAMAGE_TINT_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/damage_tint.frag");
     public static final Identifier SHADER_KILL_BLUR_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/kill_blur.frag");
     public static final Identifier SHADER_POSTPROCESS_COPY_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/postprocess_copy.frag");
+    public static final Identifier SHADER_DEFERRED_TERRAIN_LIGHTING_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/deferred_terrain_lighting.frag");
     public static final Identifier SHADER_MAIN_MENU_TEXTURE_BACKGROUND_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/main_menu_texture_background.frag");
     public static final Identifier SHADER_MENU_BACKGROUND_AURORA_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/menu_background_aurora.frag");
     public static final Identifier SHADER_MENU_BACKGROUND_WAVES_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/menu_background_waves.frag");
@@ -1159,6 +1160,24 @@ public enum CombatantRenderPipelines {
             .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
+            .withCull(false)
+            .build()
+    );
+    /** Neutral deferred resolve. Artistic lighting is layered on this contract later. */
+    public static final RenderPipeline DEFERRED_TERRAIN_LIGHTING = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
+            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/deferred_terrain_lighting"))
+            .withDomain(PipelineDomain.FULLSCREEN)
+            .withVertexFormat(CombatantVertexFormats.POS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexShader(SHADER_DAMAGE_TINT_VERT)
+            .withFragmentShader(SHADER_DEFERRED_TERRAIN_LIGHTING_FRAG)
+            .withSampler("u_GbufferSurface")
+            .withSampler("u_GbufferGeometry")
+            .withSampler("u_GbufferAuxiliary")
+            .withSampler("u_LightTex")
+            .withUniform("DeferredLighting", UniformType.UNIFORM_BUFFER)
+            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withoutBlend()
             .withCull(false)
             .build()
     );

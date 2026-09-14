@@ -55,6 +55,7 @@ export function buildTemplate(ctx) {
     width: navRowWidth,
     height: navRowHeight,
     label: str(category.label, "Map"),
+    fontSize: 1.12,
     icon: svg(`map-settings:nav-icon:${index}`, category.icon),
   }));
 
@@ -88,6 +89,8 @@ export function buildTemplate(ctx) {
       hoverMotionMs: 240,
       stateMotionMs: 190,
       appearMotionMs: 300,
+      detailTitleFontSize: 1.54,
+      detailDescriptionFontSize: 0.96,
     },
     combinedNavigation: true,
     navigationHeader: ui.svg({

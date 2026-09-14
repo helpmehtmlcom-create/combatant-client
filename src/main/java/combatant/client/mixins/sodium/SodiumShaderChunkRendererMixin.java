@@ -7,6 +7,11 @@
 
 package combatant.client.mixins.sodium;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.llamalad7.mixinextras.sugar.Local;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+import net.caffeinemc.mods.sodium.client.render.chunk.terrain.TerrainRenderPass;
 import net.minecraft.resources.Identifier;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
@@ -23,6 +28,24 @@ import combatant.client.render.engine.core.CombatantRenderSystem;
 @Pseudo
 @Mixin(targets = "net.caffeinemc.mods.sodium.client.render.chunk.ShaderChunkRenderer", remap = false)
 public abstract class SodiumShaderChunkRendererMixin {
+    @WrapOperation(
+            method = "createShader",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lcom/mojang/blaze3d/pipeline/RenderPipeline$Builder;build()Lcom/mojang/blaze3d/pipeline/RenderPipeline;"
+            )
+    )
+    private RenderPipeline combatant$configureDeferredTerrainPipeline(
+            RenderPipeline.Builder builder,
+            Operation<RenderPipeline> original,
+            @Local(argsOnly = true) TerrainRenderPass pass
+    ) {
+        if (!pass.isTranslucent()) {
+            CombatantRenderSystem.deferredWorld().configureGeometryPipeline(builder);
+        }
+        return original.call(builder);
+    }
+
     @ModifyArg(
             method = "createShader",
             at = @At(

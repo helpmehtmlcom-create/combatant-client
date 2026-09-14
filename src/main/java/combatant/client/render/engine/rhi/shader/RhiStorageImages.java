@@ -10,6 +10,8 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.GpuTexture;
 import com.mojang.blaze3d.textures.GpuTextureView;
 
+import java.util.Arrays;
+
 /** Creates storage-capable images through Mojang's active GpuDevice instead of a parallel texture owner. */
 public final class RhiStorageImages {
     private RhiStorageImages() {}
@@ -24,7 +26,8 @@ public final class RhiStorageImages {
         if (descriptor.renderAttachment()) usage |= GpuTexture.USAGE_RENDER_ATTACHMENT;
 
         GpuTexture texture = RenderSystem.getDevice().createTexture(
-                descriptor.label(), usage, descriptor.format(), descriptor.width(), descriptor.height(), 1, 1);
+                descriptor.label(), usage, descriptor.format(), descriptor.width(), descriptor.height(),
+                1, descriptor.mipLevels());
         GpuTextureView view = null;
         try {
             view = RenderSystem.getDevice().createTextureView(texture);
@@ -40,12 +43,14 @@ public final class RhiStorageImages {
         private final StorageImageDescriptor descriptor;
         private final GpuTexture texture;
         private final GpuTextureView view;
+        private final GpuTextureView[] storageViews;
         private boolean closed;
 
         private OwnedStorageImage(StorageImageDescriptor descriptor, GpuTexture texture, GpuTextureView view) {
             this.descriptor = descriptor;
             this.texture = texture;
             this.view = view;
+            this.storageViews = new GpuTextureView[descriptor.mipLevels()];
         }
 
         @Override public StorageImageDescriptor descriptor() { return descriptor; }
@@ -57,9 +62,25 @@ public final class RhiStorageImages {
         }
 
         @Override
+        public GpuTextureView storageView(int mipLevel) {
+            if (closed) throw new IllegalStateException("Storage image is closed: " + descriptor.label());
+            if (mipLevel < 0 || mipLevel >= storageViews.length) {
+                throw new IndexOutOfBoundsException("Storage image mip " + mipLevel
+                        + " outside [0, " + storageViews.length + ")");
+            }
+            GpuTextureView result = storageViews[mipLevel];
+            if (result == null) {
+                result = RenderSystem.getDevice().createTextureView(texture, mipLevel, 1);
+                storageViews[mipLevel] = result;
+            }
+            return result;
+        }
+
+        @Override
         public void close() {
             if (closed) return;
             closed = true;
+            Arrays.stream(storageViews).filter(java.util.Objects::nonNull).forEach(GpuTextureView::close);
             view.close();
             texture.close();
         }

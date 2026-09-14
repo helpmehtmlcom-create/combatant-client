@@ -18,9 +18,22 @@ in float fadeFactor;
 in float v_ViewDistance;
 flat in uint v_CombatantSurfaceFlags;
 
+#ifdef COMBATANT_DEFERRED_GBUFFER
+in vec4 v_CombatantBaseColor;
+in vec2 v_CombatantLightCoord;
+in vec3 v_CombatantViewPosition;
+flat in uint v_CombatantMaterialParams;
+#endif
+
 uniform sampler2D u_BlockTex;
 
-out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;
+
+#ifdef COMBATANT_DEFERRED_GBUFFER
+layout(location = 1) out vec4 combatantGbufferSurface;
+layout(location = 2) out vec4 combatantGbufferGeometry;
+layout(location = 3) out vec4 combatantGbufferAuxiliary;
+#endif
 
 const uint COMBATANT_SURFACE_SOFT_FADE = 1u << 0u;
 
@@ -79,9 +92,24 @@ vec4 sampleRGSS(sampler2D source, vec2 uv, vec2 pixelSize) {
     return mix(nearestColor, rgssColor, blendFactor);
 }
 
+#ifdef COMBATANT_DEFERRED_GBUFFER
+vec2 combatant_encode_octahedral(vec3 normal) {
+    normal /= abs(normal.x) + abs(normal.y) + abs(normal.z);
+    vec2 encoded = normal.xy;
+    if (normal.z < 0.0) {
+        encoded = (1.0 - abs(encoded.yx)) * sign(encoded.xy);
+    }
+    return encoded * 0.5 + 0.5;
+}
+
+float combatant_encode_distance(float distanceValue) {
+    return clamp((log2(1.0 + max(distanceValue, 0.0)) + 1.0) / 17.0, 1.0 / 255.0, 1.0);
+}
+#endif
+
 void main() {
-    vec4 color = u_UseRGSS ? sampleRGSS(u_BlockTex, v_TexCoord, u_TexelSize) : sampleNearest(u_BlockTex, v_TexCoord, u_TexelSize);
-    color *= v_Color;
+    vec4 texel = u_UseRGSS ? sampleRGSS(u_BlockTex, v_TexCoord, u_TexelSize) : sampleNearest(u_BlockTex, v_TexCoord, u_TexelSize);
+    vec4 color = texel * v_Color;
 
     if ((v_CombatantSurfaceFlags & COMBATANT_SURFACE_SOFT_FADE) != 0u) {
         float obstructionAlpha = smoothstep(0.18, 0.85, v_ViewDistance);
@@ -95,4 +123,24 @@ void main() {
 #endif
 
     fragColor = _linearFog(color, v_FragDistance, u_FogColor, u_EnvironmentFog, u_RenderFog, fadeFactor);
+
+#ifdef COMBATANT_DEFERRED_GBUFFER
+    vec3 viewNormal = normalize(cross(dFdx(v_CombatantViewPosition), dFdy(v_CombatantViewPosition)));
+    if (!gl_FrontFacing) {
+        viewNormal = -viewNormal;
+    }
+    vec3 albedo = texel.rgb * v_CombatantBaseColor.rgb;
+    float material = float(v_CombatantMaterialParams & 255u) / 255.0;
+    combatantGbufferSurface = vec4(albedo, 1.0);
+    combatantGbufferGeometry = vec4(
+        combatant_encode_octahedral(viewNormal),
+        clamp(v_CombatantLightCoord, 0.0, 1.0)
+    );
+    combatantGbufferAuxiliary = vec4(
+        combatant_encode_distance(v_FragDistance.y),
+        combatant_encode_distance(v_FragDistance.x),
+        clamp(fadeFactor, 0.0, 1.0),
+        material
+    );
+#endif
 }

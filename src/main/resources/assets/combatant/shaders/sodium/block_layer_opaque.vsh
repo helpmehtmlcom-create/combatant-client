@@ -16,6 +16,13 @@ out vec2 v_TexCoord;
 out float v_ViewDistance;
 flat out uint v_CombatantSurfaceFlags;
 
+#ifdef COMBATANT_DEFERRED_GBUFFER
+out vec4 v_CombatantBaseColor;
+out vec2 v_CombatantLightCoord;
+out vec3 v_CombatantViewPosition;
+flat out uint v_CombatantMaterialParams;
+#endif
+
 #ifdef USE_FOG
 out vec2 v_FragDistance;
 out float fadeFactor;
@@ -115,4 +122,11 @@ void main() {
     v_TexCoord = (_vert_tex_diffuse_coord_bias * u_TexCoordShrink) + _vert_tex_diffuse_coord;
     v_ViewDistance = length(viewPosition.xyz);
     v_CombatantSurfaceFlags = a_CombatantSurfaceFlags;
+
+#ifdef COMBATANT_DEFERRED_GBUFFER
+    v_CombatantBaseColor = _vert_color;
+    v_CombatantLightCoord = _vert_tex_light_coord;
+    v_CombatantViewPosition = viewPosition.xyz;
+    v_CombatantMaterialParams = _material_params;
+#endif
 }

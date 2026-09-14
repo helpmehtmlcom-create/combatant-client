@@ -1,0 +1,266 @@
+/*
+ * This file is part of the Combatant Client distribution.
+ * Copyright (c) 2026 pivosos2007.
+ *
+ * Licensed under the GNU General Public License v3.0.
+ */
+
+package combatant.client.render.engine.deferred;
+
+import combatant.client.render.engine.core.CombatantRenderSystem;
+import combatant.client.render.engine.core.RenderFrameContext;
+import combatant.client.render.engine.core.RenderPhaseScope;
+import combatant.client.render.engine.framegraph.CompiledFrameGraph;
+import combatant.client.render.engine.framegraph.FrameGraphContractCompiler;
+import combatant.client.render.engine.framegraph.FrameGraphAccess;
+import combatant.client.render.engine.framegraph.FrameGraphPassContract;
+import combatant.client.render.engine.framegraph.FrameGraphResourceKey;
+import combatant.client.render.engine.rhi.CombatantRhi;
+import combatant.client.render.engine.rhi.shader.RhiResourceBarrier;
+import combatant.client.render.engine.rhi.shader.RhiStorageBuffer;
+import combatant.client.render.engine.rhi.shader.RhiStorageImage;
+import combatant.client.render.engine.rhi.shader.RhiShaderStage;
+import combatant.client.util.logging.DebugLog;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Ordered world-pass registry. Geometry producers remain externally driven during migration;
+ * compute/tessellation/post stages register here and execute only at explicit phase boundaries.
+ */
+public final class DeferredPassGraph {
+    private static final Comparator<DeferredPassSpec> ORDER = Comparator
+            .comparingInt((DeferredPassSpec pass) -> pass.stage().ordinal())
+            .thenComparingInt(DeferredPassSpec::priority)
+            .thenComparing(DeferredPassSpec::id);
+
+    private final ArrayList<DeferredPassSpec> corePasses = new ArrayList<>();
+    private final ArrayList<DeferredPassSpec> extensionPasses = new ArrayList<>();
+    private List<DeferredPassSpec> ordered = List.of();
+    private CompiledFrameGraph compiled = new CompiledFrameGraph(List.of(), List.of());
+    private boolean dirty = true;
+
+    public DeferredPassGraph() {
+        corePasses.add(DeferredPassSpec.builder("world.geometry.opaque", DeferredStage.OPAQUE_GEOMETRY)
+                .write(DeferredResource.SCENE_COLOR, DeferredResource.MAIN_DEPTH,
+                        DeferredResource.GBUFFER_SURFACE, DeferredResource.GBUFFER_GEOMETRY,
+                        DeferredResource.GBUFFER_AUXILIARY)
+                .external().build());
+        corePasses.add(DeferredPassSpec.builder("world.geometry.cutout", DeferredStage.CUTOUT_GEOMETRY)
+                .readWrite(DeferredResource.SCENE_COLOR, DeferredResource.MAIN_DEPTH,
+                        DeferredResource.GBUFFER_SURFACE, DeferredResource.GBUFFER_GEOMETRY,
+                        DeferredResource.GBUFFER_AUXILIARY)
+                .external().build());
+        corePasses.add(DeferredPassSpec.builder("world.lighting.neutral", DeferredStage.LIGHTING)
+                .read(DeferredResource.GBUFFER_SURFACE, DeferredResource.GBUFFER_GEOMETRY,
+                        DeferredResource.GBUFFER_AUXILIARY)
+                .write(DeferredResource.SCENE_COLOR)
+                .external().build());
+        corePasses.add(DeferredPassSpec.builder("world.forward.opaque", DeferredStage.FORWARD_OPAQUE)
+                .readWrite(DeferredResource.SCENE_COLOR, DeferredResource.MAIN_DEPTH)
+                .external().build());
+        corePasses.add(DeferredPassSpec.builder("world.translucency.forward", DeferredStage.TRANSLUCENCY)
+                .readWrite(DeferredResource.SCENE_COLOR, DeferredResource.MAIN_DEPTH)
+                .external().build());
+        corePasses.add(DeferredPassSpec.builder("world.postprocess.external", DeferredStage.POST_PROCESS)
+                .read(DeferredResource.MAIN_DEPTH)
+                .readWrite(DeferredResource.SCENE_COLOR)
+                .external().build());
+    }
+
+    public synchronized AutoCloseable register(DeferredPassSpec pass) {
+        if (pass == null) return () -> { };
+        if (containsId(pass.id())) throw new IllegalArgumentException("Duplicate deferred pass id: " + pass.id());
+        extensionPasses.add(pass);
+        dirty = true;
+        return () -> unregister(pass);
+    }
+
+    public synchronized CompiledFrameGraph compile() {
+        ensureCompiled();
+        return compiled;
+    }
+
+    public void execute(DeferredStage stage, RenderFrameContext frame, DeferredResourceBindings resources) {
+        if (stage == null || frame == null || resources == null) return;
+        List<DeferredPassSpec> snapshot;
+        CompiledFrameGraph compiledSnapshot;
+        synchronized (this) {
+            ensureCompiled();
+            snapshot = ordered;
+            compiledSnapshot = compiled;
+        }
+
+        CombatantRhi rhi = CombatantRenderSystem.rhi();
+        DeferredPassContext context = new DeferredPassContext(stage, frame, rhi, resources);
+        try (RenderPhaseScope ignored = CombatantRenderSystem.phase(stage.renderPhase(), "deferred:" + stage.name().toLowerCase())) {
+            for (int passIndex = 0; passIndex < snapshot.size(); passIndex++) {
+                DeferredPassSpec pass = snapshot.get(passIndex);
+                if (pass.stage() != stage || pass.externallyDriven()) continue;
+                if (!supports(pass, rhi)) {
+                    DebugLog.warnOnChange(
+                            "deferred.pass.unsupported." + pass.id(),
+                            pass.requiredShaderStages().toString(),
+                            "[Deferred] skipping pass %s; required shader stages are unavailable: %s",
+                            pass.id(), pass.requiredShaderStages()
+                    );
+                    continue;
+                }
+                try {
+                    prepareResources(pass, context);
+                    lowerAdvancedBarriers(passIndex, snapshot, compiledSnapshot, context);
+                    pass.executor().execute(context);
+                    markWrites(pass, context.resources());
+                } catch (Throwable t) {
+                    DebugLog.warnOnChange(
+                            "deferred.pass.failed." + pass.id(),
+                            t.getClass().getSimpleName() + "|" + t.getMessage(),
+                            "[Deferred] pass %s failed: %s: %s",
+                            pass.id(), t.getClass().getSimpleName(), t.getMessage()
+                    );
+                }
+            }
+        }
+    }
+
+    public synchronized List<DeferredPassSpec> passes() {
+        ensureCompiled();
+        return ordered;
+    }
+
+    private synchronized void unregister(DeferredPassSpec pass) {
+        if (extensionPasses.remove(pass)) dirty = true;
+    }
+
+    private boolean containsId(String id) {
+        for (DeferredPassSpec pass : corePasses) if (pass.id().equals(id)) return true;
+        for (DeferredPassSpec pass : extensionPasses) if (pass.id().equals(id)) return true;
+        return false;
+    }
+
+    private void ensureCompiled() {
+        if (!dirty) return;
+        ArrayList<DeferredPassSpec> next = new ArrayList<>(corePasses.size() + extensionPasses.size());
+        next.addAll(corePasses);
+        next.addAll(extensionPasses);
+        next.sort(ORDER);
+
+        Set<String> ids = new HashSet<>();
+        ArrayList<FrameGraphPassContract> contracts = new ArrayList<>(next.size());
+        for (DeferredPassSpec pass : next) {
+            if (!ids.add(pass.id())) throw new IllegalStateException("Duplicate deferred pass id: " + pass.id());
+            contracts.add(pass.contract());
+        }
+        compiled = FrameGraphContractCompiler.compile(contracts);
+        ordered = List.copyOf(next);
+        dirty = false;
+    }
+
+    private static boolean supports(DeferredPassSpec pass, CombatantRhi rhi) {
+        for (RhiShaderStage stage : pass.requiredShaderStages()) {
+            if (!rhi.advancedShaders().supports(stage)) return false;
+        }
+        return true;
+    }
+
+    private static void prepareResources(DeferredPassSpec pass, DeferredPassContext context) {
+        for (var use : pass.resources()) {
+            DeferredResource resource = resource(use.resource());
+            if (resource == null || resource.textureSpec() == null || context.resources().isBound(resource)) {
+                continue;
+            }
+            context.resources().ensureTexture(resource, context.rhi());
+        }
+    }
+
+    private static void markWrites(DeferredPassSpec pass, DeferredResourceBindings resources) {
+        for (var use : pass.resources()) {
+            if (!use.access().writes()) continue;
+            DeferredResource resource = resource(use.resource());
+            if (resource != null) resources.markWritten(resource);
+        }
+    }
+
+    private static void lowerAdvancedBarriers(int consumerIndex,
+                                              List<DeferredPassSpec> passes,
+                                              CompiledFrameGraph graph,
+                                              DeferredPassContext context) {
+        Map<BarrierKey, BarrierResources> grouped = new LinkedHashMap<>();
+        for (CompiledFrameGraph.Dependency dependency : graph.dependencies()) {
+            if (dependency.consumerIndex() != consumerIndex) continue;
+            DeferredResource resource = resource(dependency.resource());
+            if (resource == null) continue;
+
+            RhiStorageBuffer buffer = context.resources().buffer(resource);
+            RhiStorageImage image = context.resources().storageImage(resource);
+            if (buffer == null && image == null) continue;
+
+            DeferredPassSpec producer = passes.get(dependency.producerIndex());
+            DeferredPassSpec consumer = passes.get(dependency.consumerIndex());
+            BarrierKey key = new BarrierKey(
+                    barrierStage(producer), barrierAccess(access(producer, dependency.resource())),
+                    barrierStage(consumer), barrierAccess(access(consumer, dependency.resource()))
+            );
+            BarrierResources values = grouped.computeIfAbsent(key, ignored -> new BarrierResources());
+            if (buffer != null && !values.buffers.contains(buffer)) values.buffers.add(buffer);
+            if (image != null && !values.images.contains(image)) values.images.add(image);
+        }
+
+        for (Map.Entry<BarrierKey, BarrierResources> entry : grouped.entrySet()) {
+            BarrierKey key = entry.getKey();
+            BarrierResources resources = entry.getValue();
+            context.advancedShaders().barrier(new RhiResourceBarrier(
+                    key.sourceStage, key.sourceAccess,
+                    key.destinationStage, key.destinationAccess,
+                    resources.buffers, resources.images
+            ));
+        }
+    }
+
+    private static DeferredResource resource(FrameGraphResourceKey key) {
+        for (DeferredResource resource : DeferredResource.values()) {
+            if (resource.key().equals(key)) return resource;
+        }
+        return null;
+    }
+
+    private static FrameGraphAccess access(DeferredPassSpec pass, FrameGraphResourceKey resource) {
+        for (var use : pass.resources()) if (use.resource().equals(resource)) return use.access();
+        throw new IllegalStateException("Pass " + pass.id() + " does not declare " + resource.name());
+    }
+
+    private static RhiResourceBarrier.Stage barrierStage(DeferredPassSpec pass) {
+        if (pass.stage() == DeferredStage.DEPTH_RESOLVE) return RhiResourceBarrier.Stage.TRANSFER;
+        if (pass.requiredShaderStages().contains(RhiShaderStage.COMPUTE)) {
+            return RhiResourceBarrier.Stage.COMPUTE;
+        }
+        return RhiResourceBarrier.Stage.GRAPHICS;
+    }
+
+    private static RhiResourceBarrier.Access barrierAccess(FrameGraphAccess access) {
+        return switch (access) {
+            case READ -> RhiResourceBarrier.Access.READ;
+            case WRITE -> RhiResourceBarrier.Access.WRITE;
+            case READ_WRITE -> RhiResourceBarrier.Access.READ_WRITE;
+        };
+    }
+
+    private record BarrierKey(
+            RhiResourceBarrier.Stage sourceStage,
+            RhiResourceBarrier.Access sourceAccess,
+            RhiResourceBarrier.Stage destinationStage,
+            RhiResourceBarrier.Access destinationAccess
+    ) {
+    }
+
+    private static final class BarrierResources {
+        private final ArrayList<RhiStorageBuffer> buffers = new ArrayList<>();
+        private final ArrayList<RhiStorageImage> images = new ArrayList<>();
+    }
+}

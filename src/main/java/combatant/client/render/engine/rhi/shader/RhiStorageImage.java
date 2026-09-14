@@ -12,8 +12,16 @@ import com.mojang.blaze3d.textures.GpuTextureView;
 public interface RhiStorageImage extends AutoCloseable {
     StorageImageDescriptor descriptor();
 
-    /** Ordinary Mojang texture view so the result can re-enter normal graphics/material paths. */
+    /** Full mip-chain view used when the image re-enters ordinary sampled graphics paths. */
     GpuTextureView view();
+
+    /** Single-mip view used for native image load/store bindings. */
+    default GpuTextureView storageView(int mipLevel) {
+        if (mipLevel != 0) {
+            throw new IndexOutOfBoundsException("Storage image exposes only mip 0");
+        }
+        return view();
+    }
 
     @Override
     void close();

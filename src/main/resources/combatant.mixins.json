@@ -177,6 +177,7 @@
     "sodium.SodiumChunkBuilderMeshingTaskMixin",
     "sodium.SodiumChunkMeshFormatsMixin",
     "sodium.SodiumChunkVertexMixin",
+    "sodium.SodiumDefaultChunkRendererMixin",
     "sodium.SodiumShaderChunkRendererMixin",
     "sodium.SodiumVertexConsumerTrackerMixin",
     "sodium.SodiumWorldRendererFreecamMixin",

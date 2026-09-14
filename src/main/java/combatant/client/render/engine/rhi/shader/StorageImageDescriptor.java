@@ -15,7 +15,8 @@ public record StorageImageDescriptor(String label,
                                      GpuFormat format,
                                      StorageAccess access,
                                      boolean sampled,
-                                     boolean renderAttachment) {
+                                     boolean renderAttachment,
+                                     int mipLevels) {
     public StorageImageDescriptor {
         label = label == null || label.isBlank() ? "combatant-storage-image" : label;
         width = Math.max(1, width);
@@ -24,5 +25,20 @@ public record StorageImageDescriptor(String label,
             throw new IllegalArgumentException("Storage image must use a color format");
         }
         access = access == null ? StorageAccess.READ_WRITE : access;
+        int maximumMipLevels = 32 - Integer.numberOfLeadingZeros(Math.max(width, height));
+        if (mipLevels < 1 || mipLevels > maximumMipLevels) {
+            throw new IllegalArgumentException("Invalid mip count " + mipLevels + " for "
+                    + width + "x" + height + " storage image");
+        }
+    }
+
+    public StorageImageDescriptor(String label,
+                                  int width,
+                                  int height,
+                                  GpuFormat format,
+                                  StorageAccess access,
+                                  boolean sampled,
+                                  boolean renderAttachment) {
+        this(label, width, height, format, access, sampled, renderAttachment, 1);
     }
 }

@@ -1,0 +1,128 @@
+/*
+ * This file is part of the Combatant Client distribution.
+ * Copyright (c) 2026 pivosos2007.
+ *
+ * Licensed under the GNU General Public License v3.0.
+ */
+
+package combatant.client.render.engine.deferred;
+
+import com.mojang.blaze3d.textures.GpuTextureView;
+import combatant.client.render.engine.framegraph.FrameGraphResourceKind;
+import combatant.client.render.engine.rhi.CombatantRhi;
+import combatant.client.render.engine.rhi.shader.RhiStorageBuffer;
+import combatant.client.render.engine.rhi.shader.RhiStorageImage;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.EnumMap;
+
+/** Non-owning bindings of logical graph resources to current-frame RHI objects. */
+public final class DeferredResourceBindings {
+    private final EnumMap<DeferredResource, GpuTextureView> textures = new EnumMap<>(DeferredResource.class);
+    private final EnumMap<DeferredResource, RhiStorageBuffer> buffers = new EnumMap<>(DeferredResource.class);
+    private final EnumMap<DeferredResource, RhiStorageImage> images = new EnumMap<>(DeferredResource.class);
+    private final EnumMap<DeferredResource, DeferredResourceAllocator.Allocation> owned =
+            new EnumMap<>(DeferredResource.class);
+    private final DeferredResourceAllocator allocator;
+    private long frameId = Long.MIN_VALUE;
+
+    public DeferredResourceBindings(DeferredResourceAllocator allocator) {
+        if (allocator == null) throw new IllegalArgumentException("allocator");
+        this.allocator = allocator;
+    }
+
+    /** Standalone bindings are useful for graph validation/tests and never allocate implicitly. */
+    public DeferredResourceBindings() {
+        this.allocator = null;
+    }
+
+    public void beginFrame(long frameId) {
+        if (this.frameId == frameId) return;
+        this.frameId = frameId;
+        if (allocator != null) allocator.beginFrame(frameId);
+        textures.clear();
+        buffers.clear();
+        images.clear();
+        owned.clear();
+    }
+
+    public void bindTexture(DeferredResource resource, @Nullable GpuTextureView view) {
+        requireTextureResource(resource);
+        if (view == null) textures.remove(resource); else textures.put(resource, view);
+    }
+
+    public void bindBuffer(DeferredResource resource, @Nullable RhiStorageBuffer buffer) {
+        if (resource == null || resource.key().kind() != FrameGraphResourceKind.BUFFER) {
+            throw new IllegalArgumentException("Not a buffer resource: " + resource);
+        }
+        if (buffer == null) buffers.remove(resource); else buffers.put(resource, buffer);
+    }
+
+    public void bindStorageImage(DeferredResource resource, @Nullable RhiStorageImage image) {
+        requireTextureResource(resource);
+        if (image == null) {
+            images.remove(resource);
+        } else {
+            images.put(resource, image);
+            textures.putIfAbsent(resource, image.view());
+        }
+    }
+
+    public @Nullable GpuTextureView texture(DeferredResource resource) {
+        return textures.get(resource);
+    }
+
+    public @Nullable RhiStorageBuffer buffer(DeferredResource resource) {
+        return buffers.get(resource);
+    }
+
+    public @Nullable RhiStorageImage storageImage(DeferredResource resource) {
+        return images.get(resource);
+    }
+
+    public boolean isBound(DeferredResource resource) {
+        return textures.containsKey(resource) || buffers.containsKey(resource) || images.containsKey(resource);
+    }
+
+    /** True when the resource contains defined data for this frame/history generation. */
+    public boolean isValid(DeferredResource resource) {
+        DeferredResourceAllocator.Allocation allocation = owned.get(resource);
+        if (allocation != null) return allocation.valid();
+        return isBound(resource);
+    }
+
+    public void markWritten(DeferredResource resource) {
+        DeferredResourceAllocator.Allocation allocation = owned.get(resource);
+        if (allocation != null) allocation.markValid();
+    }
+
+    public void ensureTexture(DeferredResource resource, CombatantRhi rhi) {
+        if (isBound(resource)) return;
+        if (allocator == null) {
+            throw new IllegalStateException("No deferred resource allocator is attached");
+        }
+        GpuTextureView reference = textures.get(DeferredResource.SCENE_COLOR);
+        if (reference == null) reference = textures.get(DeferredResource.MAIN_DEPTH);
+        if (reference == null) {
+            throw new IllegalStateException("Cannot size " + resource + " without scene color/depth");
+        }
+        int samples = reference.texture() instanceof combatant.client.mixininterface.IMsaaTexture msaa
+                ? Math.max(1, msaa.combatant$getSamples()) : 1;
+        DeferredResourceAllocator.Allocation allocation = allocator.acquire(
+                resource, reference.getWidth(0), reference.getHeight(0), samples, rhi
+        );
+        owned.put(resource, allocation);
+        bindTexture(resource, allocation.view());
+        bindStorageImage(resource, allocation.storageImage());
+    }
+
+    public long frameId() {
+        return frameId;
+    }
+
+    private static void requireTextureResource(DeferredResource resource) {
+        if (resource == null || resource.key().kind() == FrameGraphResourceKind.BUFFER) {
+            throw new IllegalArgumentException("Not a texture/external resource: " + resource);
+        }
+    }
+}

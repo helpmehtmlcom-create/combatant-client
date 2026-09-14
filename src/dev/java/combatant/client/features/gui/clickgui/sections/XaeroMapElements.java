@@ -8,16 +8,15 @@
 package combatant.client.features.gui.clickgui.sections;
 
 import combatant.client.compat.xaero.XaeroIntegration;
+import combatant.client.compat.xaero.XaeroMinimapIntegration;
 import combatant.client.compat.xaero.XaeroWaypointSnapshot;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.svg.SvgRenderOptions;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.map.MapScreenPoint;
 import combatant.client.render.map.MapViewport;
 import combatant.client.util.text.LegacyTextUtil;
 import combatant.client.util.text.TextRenderUtil;
-import combatant.client.util.logging.DebugLog;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.AddressMode;
 import com.mojang.blaze3d.textures.FilterMode;
@@ -35,15 +34,10 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.dimension.DimensionType;
 import xaero.common.HudMod;
 import xaero.hud.minimap.BuiltInHudModules;
-import xaero.hud.minimap.Minimap;
 import xaero.hud.minimap.common.config.option.MinimapProfiledConfigOptions;
-import xaero.hud.minimap.element.render.MinimapElementGraphics;
-import xaero.hud.minimap.element.render.MinimapElementRendererHandler;
 import xaero.hud.minimap.module.MinimapSession;
 import xaero.hud.minimap.radar.RadarSession;
 import xaero.hud.minimap.radar.category.setting.EntityRadarCategorySettings;
-import xaero.hud.minimap.radar.icon.RadarIconManager;
-import xaero.hud.minimap.radar.render.element.RadarRenderer;
 import xaero.hud.minimap.radar.state.RadarList;
 import xaero.hud.minimap.waypoint.set.WaypointSet;
 import xaero.hud.minimap.world.MinimapDimensionHelper;
@@ -69,7 +63,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
-import java.lang.reflect.Field;
 
 /** Map-content HUD layer: waypoints, radar entities/loot, tracked players and hover cards only. */
 final class XaeroMapElements {
@@ -86,8 +79,6 @@ final class XaeroMapElements {
     private double playerMapZ = Double.NaN;
     private MinimapWorld waypointWorld;
     private double waypointDimensionDivision = 1.0;
-    private MinimapSession radarIconSession;
-    private RadarIconAccess radarIconAccess;
 
     Snapshot collect(MapProcessor processor, MapDimension dimension, double userScale) {
         visible.clear();
@@ -309,7 +300,6 @@ final class XaeroMapElements {
         if (!dimension.getDimId().equals(minecraft.level.dimension())) return;
         Object currentSession = BuiltInHudModules.MINIMAP.getCurrentSession();
         if (!(currentSession instanceof MinimapSession session)) return;
-        resolveRadarIcons(session);
         RadarSession radar = session.getRadarSession();
         if (radar == null) return;
         Entity camera = minecraft.getCameraEntity();
@@ -539,34 +529,19 @@ final class XaeroMapElements {
 
     private float drawRadarIcon(MapScreenPoint point, Element element, boolean highlighted) {
         if (!element.iconRequested() || !(element.handle() instanceof Entity entity)) return 0.0f;
-        RadarIconAccess access = radarIconAccess;
-        Minecraft minecraft = Minecraft.getInstance();
-        if (access == null || minecraft == null) return 0.0f;
-        try {
-            access.manager().allowPrerender();
-            xaero.common.icon.XaeroIcon icon = access.manager().get(
-                    entity, element.iconScale(), false, false,
-                    access.graphics(), null);
-            if (icon == null || icon == RadarIconManager.DOT || icon == RadarIconManager.FAILED
-                    || icon.getTextureAtlas() == null) return 0.0f;
-            xaero.common.icon.XaeroIconAtlas atlas = icon.getTextureAtlas();
-            float size = XAERO_RADAR_ICON_CONTENT_SIZE
-                    * Math.max(1.0f, xaeroScreenSizeBasedScale() * element.iconScale());
-            float x = (float) point.x() - size * 0.5f;
-            float y = (float) point.y() - size * 0.5f;
-            Renderer2D.COLOR.textureQuad(atlas.getTextureView(), radarIconSampler(),
-                    x, y, size, size,
-                    (icon.getOffsetX() + 1.0) / atlas.getWidth(),
-                    (icon.getOffsetY() + 63.0) / atlas.getWidth(),
-                    (icon.getOffsetX() + 63.0) / atlas.getWidth(),
-                    (icon.getOffsetY() + 1.0) / atlas.getWidth(),
-                    0xFFFFFFFF);
-            return size;
-        } catch (RuntimeException error) {
-            DebugLog.warnOnce("clickgui-map-radar-icon-render",
-                    "Xaero radar icon rendering failed; using its dot presentation", error);
-            return 0.0f;
-        }
+        XaeroMinimapIntegration.RadarIconTexture icon =
+                XaeroMinimapIntegration.radarIcon(entity, element.iconScale());
+        if (icon == null) return 0.0f;
+
+        float size = XAERO_RADAR_ICON_CONTENT_SIZE
+                * Math.max(1.0f, xaeroScreenSizeBasedScale() * element.iconScale());
+        float x = (float) point.x() - size * 0.5f;
+        float y = (float) point.y() - size * 0.5f;
+        Renderer2D.COLOR.textureQuad(icon.textureView(), radarIconSampler(),
+                x, y, size, size,
+                icon.u0(), icon.v0(), icon.u1(), icon.v1(),
+                0xFFFFFFFF);
+        return size;
     }
 
     private float drawRadarDot(MapScreenPoint point, Element element, boolean highlighted) {
@@ -659,34 +634,6 @@ final class XaeroMapElements {
         return RenderSystem.getSamplerCache().getSampler(
                 AddressMode.CLAMP_TO_EDGE, AddressMode.CLAMP_TO_EDGE,
                 FilterMode.NEAREST, FilterMode.NEAREST, false);
-    }
-
-    private void resolveRadarIcons(MinimapSession session) {
-        if (radarIconSession == session) return;
-        radarIconSession = session;
-        radarIconAccess = null;
-        try {
-            Field minimapField = MinimapSession.class.getDeclaredField("minimap");
-            minimapField.setAccessible(true);
-            Minimap minimap = (Minimap) minimapField.get(session);
-            if (minimap == null || minimap.getOverMapRendererHandler() == null) return;
-            MinimapElementRendererHandler handler = minimap.getOverMapRendererHandler();
-            Field renderersField = MinimapElementRendererHandler.class.getDeclaredField("renderers");
-            renderersField.setAccessible(true);
-            Object renderersValue = renderersField.get(handler);
-            if (!(renderersValue instanceof List<?> renderers)) return;
-            Field managerField = RadarRenderer.class.getDeclaredField("radarIconManager");
-            managerField.setAccessible(true);
-            for (Object renderer : renderers) {
-                if (!(renderer instanceof RadarRenderer)) continue;
-                RadarIconManager manager = (RadarIconManager) managerField.get(renderer);
-                if (manager != null) radarIconAccess = new RadarIconAccess(manager, handler.getGuiGraphics());
-                return;
-            }
-        } catch (ReflectiveOperationException | RuntimeException error) {
-            DebugLog.warnOnce("clickgui-map-radar-icons",
-                    "Xaero radar icon manager is unavailable; using its dot presentation", error);
-        }
     }
 
     private Component hoverLabel(Element element) {
@@ -791,6 +738,4 @@ final class XaeroMapElements {
         }
     }
 
-    private record RadarIconAccess(RadarIconManager manager, MinimapElementGraphics graphics) {
-    }
 }

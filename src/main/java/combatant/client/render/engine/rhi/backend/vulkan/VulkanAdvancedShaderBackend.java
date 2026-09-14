@@ -365,7 +365,7 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
                     VkImageSubresourceRange range = images.get(i).subresourceRange();
                     range.aspectMask(VK_IMAGE_ASPECT_COLOR_BIT)
                             .baseMipLevel(0)
-                            .levelCount(1)
+                            .levelCount(rhiImage.descriptor().mipLevels())
                             .baseArrayLayer(0)
                             .layerCount(1);
 
@@ -654,7 +654,7 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
                         .pImageInfo(info);
             }
             for (StorageImageBinding binding : images) {
-                if (!(binding.image().view() instanceof VulkanGpuTextureView texture) || texture.isClosed()) {
+                if (!(binding.image().storageView(binding.mipLevel()) instanceof VulkanGpuTextureView texture) || texture.isClosed()) {
                     throw new IllegalArgumentException("Storage image does not belong to the active Vulkan backend");
                 }
                 VkDescriptorImageInfo.Buffer info = VkDescriptorImageInfo.calloc(1, stack);

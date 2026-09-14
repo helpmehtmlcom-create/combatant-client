@@ -37,6 +37,7 @@ public abstract class Setting {
     private Supplier<String> unavailableReason = () -> null;
     private boolean lastVisible = true;
     private float visibilityAnim = 1f;
+    private boolean visibilityInitialized;
     private long lastAnimTime = System.nanoTime();
     private String cachedDisplayName;
     private String cachedTranslationKey;
@@ -510,6 +511,13 @@ public abstract class Setting {
     public float updateVisibilityAnim() {
         boolean vis = isVisible();
         long now = System.nanoTime();
+        if (!visibilityInitialized) {
+            visibilityInitialized = true;
+            lastVisible = vis;
+            visibilityAnim = vis ? 1f : 0f;
+            lastAnimTime = now;
+            return visibilityAnim;
+        }
         float dt = (now - lastAnimTime) / 1_000_000_000f;
         lastAnimTime = now;
         if (dt <= 0f) dt = 0.0001f;

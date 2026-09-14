@@ -28,6 +28,7 @@ public final class CombatantMixinPlugin implements IMixinConfigPlugin {
             "combatant.client.mixins.sodium.SodiumChunkMeshFormatsMixin",
             "combatant.client.mixins.sodium.SodiumChunkBuilderMeshingTaskMixin",
             "combatant.client.mixins.sodium.SodiumChunkVertexMixin",
+            "combatant.client.mixins.sodium.SodiumDefaultChunkRendererMixin",
             "combatant.client.mixins.sodium.SodiumShaderChunkRendererMixin",
             "combatant.client.mixins.sodium.SodiumVertexConsumerTrackerMixin"
     );
@@ -47,6 +48,7 @@ public final class CombatantMixinPlugin implements IMixinConfigPlugin {
             "combatant.client.mixins.sodium.SodiumChunkMeshFormatsMixin",
             "combatant.client.mixins.sodium.SodiumChunkBuilderMeshingTaskMixin",
             "combatant.client.mixins.sodium.SodiumChunkVertexMixin",
+            "combatant.client.mixins.sodium.SodiumDefaultChunkRendererMixin",
             "combatant.client.mixins.sodium.SodiumShaderChunkRendererMixin"
     );
     private static final Set<String> OPTIONAL_XAERO_MINIMAP_MIXINS = Set.of(

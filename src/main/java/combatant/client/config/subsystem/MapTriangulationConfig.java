@@ -39,6 +39,10 @@ public final class MapTriangulationConfig extends SubsystemConfig {
 
     public static MapTriangulationConfig get() { return INSTANCE; }
     public MapTriangulationMode mode() { return mode.get(); }
+    public void setMode(MapTriangulationMode next) {
+        mode.set(next == null ? MapTriangulationMode.OFF : next);
+        saveConfig();
+    }
     public int minSolveIntervalMs() {
         return mode() == MapTriangulationMode.TARGETED
                 ? targetedMinSolveIntervalMs.get().intValue()

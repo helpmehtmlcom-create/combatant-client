@@ -65,6 +65,12 @@ public final class PostProcessGraphResources implements AutoCloseable {
         put(PostProcessResource.MAIN_COLOR, main.getColorTextureView());
         put(PostProcessResource.MAIN_DEPTH, mainDepth);
         put(PostProcessResource.PRE_TRANSLUCENT_DEPTH, preTranslucentDepth);
+        var gbuffer = CombatantRenderSystem.deferredWorld().currentSampleableTargets();
+        if (gbuffer != null) {
+            put(PostProcessResource.GBUFFER_SURFACE, gbuffer.surface());
+            put(PostProcessResource.GBUFFER_GEOMETRY, gbuffer.geometry());
+            put(PostProcessResource.GBUFFER_AUXILIARY, gbuffer.auxiliary());
+        }
         put(PostProcessResource.GRAPH_SOURCE_COLOR, pingView);
         put(PostProcessResource.GRAPH_DEST_COLOR, pongView);
         this.legacyContext = new PostProcessContext(

@@ -8,8 +8,14 @@
 package combatant.client.features.gui.hud.draggable.impl;
 
 
+import combatant.client.compat.xaero.XaeroMinimapIntegration;
 import combatant.client.config.values.*;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.textures.AddressMode;
+import com.mojang.blaze3d.textures.FilterMode;
+import com.mojang.blaze3d.textures.GpuSampler;
 import combatant.client.util.screen.ClientScreen;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.ChatScreen;
@@ -75,6 +81,7 @@ public final class TargetHud extends DraggableHudElement {
     private static final float FACE_X = 9.0f;
     private static final float FACE_Y = 8.0f;
     private static final float FACE_RADIUS = 4.0f;
+    private static final double XAERO_FACE_UV_CROP = 0.25;
     private static final float CONTENT_GAP = 6.0f;
     private static final float CONTENT_X_OFFSET = -2.0f;
     private static final float CONTENT_Y_OFFSET = -1.0f;
@@ -748,7 +755,7 @@ public final class TargetHud extends DraggableHudElement {
 
         if (target instanceof Player player) {
             drawPlayerFace(player, faceX, faceY, faceSize, faceRadius, tint);
-        } else {
+        } else if (!drawXaeroEntityFace(target, faceX, faceY, faceSize, faceRadius, tint)) {
             drawPlaceholderFace(renderer, textRenderer, target, faceX, faceY, faceSize, faceRadius, alphaFactor, hurtPercent);
         }
 
@@ -862,6 +869,43 @@ public final class TargetHud extends DraggableHudElement {
                 HAT_U0, HAT_V0, HAT_U1, HAT_V1,
                 tint,
                 skin
+        );
+    }
+
+    private boolean drawXaeroEntityFace(LivingEntity target,
+                                        float x,
+                                        float y,
+                                        float size,
+                                        float radius,
+                                        int tint) {
+        if (target == null || !FabricLoader.getInstance().isModLoaded("xaerominimap")) {
+            return false;
+        }
+        try {
+            XaeroMinimapIntegration.RadarIconTexture icon = XaeroMinimapIntegration.radarIcon(target, 1.0f);
+            if (icon == null) return false;
+            double uSpan = icon.u1() - icon.u0();
+            double vSpan = icon.v1() - icon.v0();
+            double uInset = uSpan * XAERO_FACE_UV_CROP;
+            double vInset = vSpan * XAERO_FACE_UV_CROP;
+            Renderer2D.TEXTURE.roundedTexRect(
+                    x, y, size, size,
+                    radius, 1.0f,
+                    icon.u0() + uInset, icon.v0() + vInset,
+                    icon.u1() - uInset, icon.v1() - vInset,
+                    tint,
+                    icon.textureView(), xaeroRadarIconSampler()
+            );
+            return true;
+        } catch (LinkageError ignored) {
+            return false;
+        }
+    }
+
+    private static GpuSampler xaeroRadarIconSampler() {
+        return RenderSystem.getSamplerCache().getSampler(
+                AddressMode.CLAMP_TO_EDGE, AddressMode.CLAMP_TO_EDGE,
+                FilterMode.NEAREST, FilterMode.NEAREST, false
         );
     }
 
