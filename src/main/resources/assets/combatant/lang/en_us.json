@@ -4070,5 +4070,6 @@
   "gui.combatant.map.error.recovering": "World Map is recovering…",
   "gui.combatant.map.error.incompatible": "World Map integration is incompatible",
   "gui.combatant.map.common.auto": "Auto",
-  "gui.combatant.map.common.xaero_setting": "Xaero setting"
+  "gui.combatant.map.common.xaero_setting": "Xaero setting",
+  "gui.combatant.map.players.advanced_markers": "Advanced player markers"
 }

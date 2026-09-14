@@ -124,6 +124,10 @@ final class UiComputeBlurBackend implements AutoCloseable {
             PostProcessExecutionPolicy.logComputeActive("ui-blur", "UI blur");
             return new Result(current, linear);
         } catch (Throwable t) {
+            if (PostProcessExecutionPolicy.isTransientBackendResourceMismatch(t)) {
+                PostProcessExecutionPolicy.warnTransientResourceFallback("ui-blur", "UI blur", t);
+                return null;
+            }
             disabledForSession = true;
             PostProcessExecutionPolicy.warnRuntimeFallback("ui-blur", "UI blur", t);
             closeOwned();

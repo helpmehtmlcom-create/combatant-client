@@ -8,6 +8,7 @@
 package combatant.client.config.subsystem;
 
 import combatant.client.config.SettingDef;
+import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.ModeValue;
 import combatant.client.config.values.RGBColorValue;
 
@@ -19,6 +20,7 @@ public final class MapUiConfig extends SubsystemConfig {
 
     private final ModeValue arrowColorMode = mode("arrowColorMode", "Theme", "Theme", "Custom");
     private final RGBColorValue arrowCustomColor = value(new RGBColorValue("arrowCustomColor", "#F5F8FC"));
+    private final BooleanValue advancedPlayerMarkers = bool("advancedPlayerMarkers", false);
 
     private MapUiConfig() {
         loadConfig();
@@ -44,12 +46,21 @@ public final class MapUiConfig extends SubsystemConfig {
         return arrowCustomColor.getArgb();
     }
 
+    public boolean advancedPlayerMarkers() {
+        return advancedPlayerMarkers.get();
+    }
+
+    public BooleanValue advancedPlayerMarkersValue() {
+        return advancedPlayerMarkers;
+    }
+
     @Override
     public List<SettingDef> getSettingDefs() {
         return List.of(
                 SettingDef.mode("arrowColorMode", arrowColorMode),
                 SettingDef.colorNoAlpha("arrowCustomColor", arrowCustomColor)
-                        .visibleWhen(this::isCustomArrowColor)
+                        .visibleWhen(this::isCustomArrowColor),
+                SettingDef.bool("advancedPlayerMarkers", advancedPlayerMarkers)
         );
     }
 }

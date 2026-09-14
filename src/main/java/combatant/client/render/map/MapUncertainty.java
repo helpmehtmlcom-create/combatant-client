@@ -15,6 +15,7 @@ public record MapUncertainty(String id,
                              double centerZ,
                              double radiusX,
                              double radiusZ,
+                             double angleRadians,
                              int fillArgb,
                              int strokeArgb,
                              int priority) {
@@ -22,8 +23,14 @@ public record MapUncertainty(String id,
         Objects.requireNonNull(id, "id");
         if (!Double.isFinite(centerX) || !Double.isFinite(centerZ)
                 || !Double.isFinite(radiusX) || !Double.isFinite(radiusZ)
+                || !Double.isFinite(angleRadians)
                 || radiusX < 0.0 || radiusZ < 0.0) {
             throw new IllegalArgumentException("Invalid uncertainty geometry.");
         }
+    }
+
+    public MapUncertainty(String id, double centerX, double centerZ, double radiusX, double radiusZ,
+                          int fillArgb, int strokeArgb, int priority) {
+        this(id, centerX, centerZ, radiusX, radiusZ, 0.0, fillArgb, strokeArgb, priority);
     }
 }

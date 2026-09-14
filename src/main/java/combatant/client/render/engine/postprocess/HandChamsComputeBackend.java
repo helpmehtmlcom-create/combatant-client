@@ -133,6 +133,11 @@ public final class HandChamsComputeBackend implements AutoCloseable {
             PostProcessExecutionPolicy.logComputeActive("chams-metallic-occupancy", "Chams metallic occupancy");
             return occupancyDilated.view();
         } catch (Throwable t) {
+            if (PostProcessExecutionPolicy.isTransientBackendResourceMismatch(t)) {
+                PostProcessExecutionPolicy.warnTransientResourceFallback(
+                        "chams-metallic-occupancy", "Chams metallic occupancy", t);
+                return null;
+            }
             occupancyDisabledForSession = true;
             PostProcessExecutionPolicy.warnRuntimeFallback("chams-metallic-occupancy", "Chams metallic occupancy", t);
             closeOccupancyResources();
@@ -222,6 +227,10 @@ public final class HandChamsComputeBackend implements AutoCloseable {
             PostProcessExecutionPolicy.logComputeActive("chams-ghosting", "Chams ghosting");
             return true;
         } catch (Throwable t) {
+            if (PostProcessExecutionPolicy.isTransientBackendResourceMismatch(t)) {
+                PostProcessExecutionPolicy.warnTransientResourceFallback("chams-ghosting", "Chams ghosting", t);
+                return false;
+            }
             ghostDisabledForSession = true;
             PostProcessExecutionPolicy.warnRuntimeFallback("chams-ghosting", "Chams ghosting", t);
             closeGhostResources();

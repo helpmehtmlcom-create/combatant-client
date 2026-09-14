@@ -139,7 +139,7 @@ public enum CombatantRenderSystem {
         try {
             DEFERRED_WORLD.releasePhysicalResources();
             DEFERRED_GRAPH.releaseBackendResources(previous);
-            UiBlurResources.shutdownComputeBlur();
+            UiBlurResources.onBackendChanged();
             PostProcessManager.releaseBackendResources(previous);
             previous.close();
         } catch (Throwable t) {
@@ -438,7 +438,7 @@ public enum CombatantRenderSystem {
             UiMsaaClipLayer.shutdown();
             DEFERRED_WORLD.shutdownRuntime();
             DEFERRED_GRAPH.releaseBackendResources(rhi);
-            UiBlurResources.shutdownComputeBlur();
+            UiBlurResources.onBackendChanged();
             PostProcessManager.releaseBackendResources(rhi);
             UNIFORMS.close();
             rhi.close();

@@ -366,10 +366,18 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
     private static void bindSampledTextures(List<SampledTextureBinding> bindings) {
         for (SampledTextureBinding binding : bindings) {
             if (!(binding.texture() instanceof GlTextureView texture) || texture.isClosed()) {
-                throw new IllegalArgumentException("Sampled texture does not belong to the active OpenGL backend");
+                Object supplied = binding.texture();
+                Object suppliedTexture = binding.texture() != null ? binding.texture().texture() : null;
+                throw new RhiResourceOwnershipException("Sampled texture does not belong to the active OpenGL backend: "
+                        + "binding=" + binding.binding()
+                        + " view=" + className(supplied)
+                        + " texture=" + className(suppliedTexture)
+                        + " closed=" + (binding.texture() != null && binding.texture().isClosed()));
             }
             if (!(binding.sampler() instanceof GlSampler sampler) || sampler.isClosed()) {
-                throw new IllegalArgumentException("Sampler does not belong to the active OpenGL backend");
+                throw new RhiResourceOwnershipException("Sampler does not belong to the active OpenGL backend: "
+                        + "binding=" + binding.binding()
+                        + " sampler=" + className(binding.sampler()));
             }
             GlStateManager._activeTexture(GlConst.GL_TEXTURE0 + binding.binding());
             if (isMultisampled(binding)) {
@@ -379,6 +387,10 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
             }
             GL33C.glBindSampler(binding.binding(), sampler.getId());
         }
+    }
+
+    private static String className(Object value) {
+        return value == null ? "null" : value.getClass().getName();
     }
 
     private static void unbindSampledTextures(List<SampledTextureBinding> bindings) {

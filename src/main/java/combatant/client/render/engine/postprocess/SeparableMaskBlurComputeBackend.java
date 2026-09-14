@@ -83,6 +83,10 @@ public final class SeparableMaskBlurComputeBackend implements AutoCloseable {
             PostProcessExecutionPolicy.logComputeActive("shader-esp-blur", "Shader ESP blur");
             return output.view();
         } catch (Throwable t) {
+            if (PostProcessExecutionPolicy.isTransientBackendResourceMismatch(t)) {
+                PostProcessExecutionPolicy.warnTransientResourceFallback("shader-esp-blur", "Shader ESP blur", t);
+                return null;
+            }
             disabledForSession = true;
             PostProcessExecutionPolicy.warnRuntimeFallback("shader-esp-blur", "Shader ESP blur", t);
             closeOwned();

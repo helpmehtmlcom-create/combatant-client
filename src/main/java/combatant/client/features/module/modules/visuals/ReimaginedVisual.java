@@ -438,9 +438,13 @@ public class ReimaginedVisual extends Module implements PostProcessPass, PostPro
                     PostProcessExecutionPolicy.logComputeActive("depth-of-field", "Depth of Field");
                     return true;
                 } catch (Throwable t) {
-                    dofComputeSupported = false;
-                    PostProcessExecutionPolicy.warnRuntimeFallback("depth-of-field", "Depth of Field", t);
-                    dofComputeBackend.close();
+                    if (PostProcessExecutionPolicy.isTransientBackendResourceMismatch(t)) {
+                        PostProcessExecutionPolicy.warnTransientResourceFallback("depth-of-field", "Depth of Field", t);
+                    } else {
+                        dofComputeSupported = false;
+                        PostProcessExecutionPolicy.warnRuntimeFallback("depth-of-field", "Depth of Field", t);
+                        dofComputeBackend.close();
+                    }
                 }
             }
 

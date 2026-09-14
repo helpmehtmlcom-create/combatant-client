@@ -38,6 +38,8 @@ public final class ClickGuiRichTextRenderer {
                             float alpha,
                             boolean shadow) {
         if (component == null || maxWidth <= 0f || alpha <= 0f) return;
+        alpha *= ClickGuiRenderer.getRenderAlphaMultiplier();
+        if (alpha <= 0.001f) return;
         float cursor = x;
         float remaining = maxWidth;
         for (Segment segment : flatten(component)) {

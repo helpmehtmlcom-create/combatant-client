@@ -188,7 +188,9 @@ public final class MapLocationRuntime {
                             observation.observedAtMs(), observation.observedAtMs(),
                             Double.NaN, Double.NaN, Double.NaN, observation.bearingRadians(),
                             0.0, 0.0, 0.0, 0.25, "locator", observation.sourceRevision(),
-                            Map.of("type", observation.type().name())));
+                            Map.of("type", observation.type().name(),
+                                    "observerX", Double.toString(observation.observerX()),
+                                    "observerZ", Double.toString(observation.observerZ()))));
                 }
             }
         }

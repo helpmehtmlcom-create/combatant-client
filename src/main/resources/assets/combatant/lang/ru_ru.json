@@ -3840,5 +3840,6 @@
   "gui.combatant.map.error.recovering": "Карта мира восстанавливается…",
   "gui.combatant.map.error.incompatible": "Интеграция с картой мира несовместима",
   "gui.combatant.map.common.auto": "Авто",
-  "gui.combatant.map.common.xaero_setting": "Настройка Xaero"
+  "gui.combatant.map.common.xaero_setting": "Настройка Xaero",
+  "gui.combatant.map.players.advanced_markers": "Расширенные маркеры игроков"
 }

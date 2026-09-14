@@ -11,6 +11,8 @@ import combatant.client.config.subsystem.MapUiConfig;
 import combatant.client.config.subsystem.MapTriangulationConfig;
 import combatant.client.features.map.location.PlayerLocationService;
 import combatant.client.features.map.location.PlayerLocationSnapshot;
+import combatant.client.features.map.location.PlayerLocationSource;
+import combatant.client.features.relations.CategoryService;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.gui.clickgui.layout.screen.settings.SettingsGuiPalette;
 import combatant.client.features.theme.Theme;
@@ -19,6 +21,10 @@ import combatant.client.render.engine.renderer.ui.UiBlurResources;
 import combatant.client.render.engine.renderer.ui.UiDeferredScheduler;
 import combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest;
 import combatant.client.render.map.MapGridSpec;
+import combatant.client.render.map.MapBearingRay;
+import combatant.client.render.map.MapPlayerMarker;
+import combatant.client.render.map.MapPlayerMarkerRenderer;
+import combatant.client.render.map.MapUncertainty;
 import combatant.client.render.map.MapOverlaySnapshot;
 import combatant.client.render.map.MapPoint;
 import combatant.client.render.map.MapRect;
@@ -35,6 +41,7 @@ import combatant.client.render.map.MapTileUvRect;
 import combatant.client.render.map.MapViewport;
 import combatant.client.render.map.MapVisibleTileSelector;
 import combatant.client.render.helpers.SystemCursor;
+import combatant.client.render.helpers.ClipFunction;
 import combatant.client.util.logging.DebugLog;
 import combatant.client.util.text.LegacyTextUtil;
 import com.mojang.blaze3d.platform.InputConstants;
@@ -105,6 +112,7 @@ final class XaeroMapSurface {
     private final ArrayList<MenuEntry> contextEntries = new ArrayList<>();
     private final ArrayList<ElementHit> drawerHits = new ArrayList<>();
     private final ArrayList<TargetHit> targetHits = new ArrayList<>();
+    private List<MapPlayerMarker> locationPlayerMarkers = List.of();
 
     private double centerX;
     private double centerZ;
@@ -249,6 +257,7 @@ final class XaeroMapSurface {
                 elementPointerActive ? mouseX : Float.NaN,
                 elementPointerActive ? mouseY : Float.NaN);
         if (hoveredElement != null) SystemCursor.set(SystemCursor.CursorType.HAND);
+        renderLocationPlayerMarkers(viewport);
         drawPlayerArrow(processor, dimension, viewport);
         elements.renderHover(viewport);
         drawMapUi(processor, dimension, mouseX, mouseY);
@@ -726,7 +735,136 @@ final class XaeroMapSurface {
     }
 
     private MapOverlaySnapshot collectOverlays(MapDimension dimension) {
-        return new MapOverlaySnapshot(List.of(), List.of(), List.of());
+        if (dimension == null) return MapOverlaySnapshot.EMPTY;
+        String dimensionKey = dimension.getDimId().identifier().toString();
+        var view = PlayerLocationService.get().snapshot();
+        List<MapPlayerMarker> players = new ArrayList<>();
+        List<MapUncertainty> uncertainty = new ArrayList<>();
+        List<MapBearingRay> bearings = new ArrayList<>();
+        Set<String> bearingKeys = new LinkedHashSet<>();
+        long now = System.currentTimeMillis();
+
+        for (Map.Entry<UUID, PlayerLocationSnapshot> entry : view.bestByPlayer().entrySet()) {
+            UUID id = entry.getKey();
+            PlayerLocationSnapshot location = entry.getValue();
+            if (location == null || !dimensionKey.equals(location.worldIdentity().dimensionKey())) continue;
+
+            String name = MapPlayerMarkerRenderer.resolveDisplayName(id, location.playerName());
+            if (name == null || name.isBlank()) name = MapTriangulationConfig.get().nameForTarget(id);
+            int accent = CategoryService.getColor(name);
+
+            if (!location.hasPosition()) {
+                // Bearing samples are solver input, not a debug history overlay. In the normal map
+                // only the current constraint for an explicitly targeted player is useful. Older
+                // observations stay inside HeuristicRuntime and never remain painted at previous
+                // observer positions.
+                if (location.source() == PlayerLocationSource.LOCATOR_BEARING
+                        && location.hasBearing()
+                        && MapTriangulationConfig.get().isTargeted(id, name)) {
+                    double observerX = metadataDouble(location, "observerX");
+                    double observerZ = metadataDouble(location, "observerZ");
+                    if (Double.isFinite(observerX) && Double.isFinite(observerZ)) {
+                        String key = bearingKey(id, location.sourceRevision());
+                        if (bearingKeys.add(key)) {
+                            bearings.add(new MapBearingRay(
+                                    key, observerX, observerZ, location.bearingRadians(), name,
+                                    withAlpha(accent, 0.66f * freshnessAlpha(location, now)), 1.35,
+                                    150 + location.source().priority()));
+                        }
+                    }
+                }
+                continue;
+            }
+
+            if (location.source() == PlayerLocationSource.LOCAL_ENTITY_EXACT
+                    && !MapUiConfig.get().advancedPlayerMarkers()) continue;
+
+            float alpha = location.source() == PlayerLocationSource.HISTORICAL ? 0.48f : freshnessAlpha(location, now);
+            players.add(new MapPlayerMarker(
+                    "location-player:" + id, location.x(), location.z(), id, name, accent,
+                    sourceGlyph(location.source()), location.exact() ? 29.0f : 27.0f, alpha,
+                    300 + location.source().priority()));
+
+            double major = location.uncertaintyMajor();
+            double minor = location.uncertaintyMinor();
+            if (!location.exact() && (major > 0.0 || minor > 0.0)) {
+                if (major <= 0.0) major = minor;
+                if (minor <= 0.0) minor = major;
+                int fill = withAlpha(accent, location.source() == PlayerLocationSource.LOCATOR_APPROXIMATE ? 0.12f : 0.095f);
+                int stroke = withAlpha(accent, location.source() == PlayerLocationSource.LOCATOR_APPROXIMATE ? 0.68f : 0.58f);
+                uncertainty.add(new MapUncertainty(
+                        "location-uncertainty:" + id, location.x(), location.z(), major, minor,
+                        location.uncertaintyAngleRadians(), fill, stroke, 180 + location.source().priority()));
+            }
+        }
+
+        // Historical/accepted solver observations deliberately stay out of the production
+        // map overlay. They are useful for diagnostics and solving, but rendering them here creates
+        // stale fans anchored at every previous observer position.
+
+        locationPlayerMarkers = List.copyOf(players);
+        return new MapOverlaySnapshot(List.of(), List.of(), List.of(), uncertainty, bearings);
+    }
+
+    private void renderLocationPlayerMarkers(MapViewport viewport) {
+        if (viewport == null || locationPlayerMarkers.isEmpty()) return;
+        MapRect clip = viewport.screenBounds();
+        try (ClipFunction.Scope ignored = ClipFunction.rectScope(clip.x(), clip.y(), clip.width(), clip.height())) {
+            for (MapPlayerMarker marker : locationPlayerMarkers) {
+                MapScreenPoint point = viewport.project(marker.worldX(), marker.worldZ());
+                float radius = marker.sizePixels() * 0.8f + 24.0f;
+                if (!clip.intersects(new MapRect(point.x() - radius, point.y() - radius, radius * 2.0f, radius * 2.0f))) continue;
+                MapPlayerMarkerRenderer.drawMarker((float) point.x(), (float) point.y(), marker.playerUuid(), marker.playerName(),
+                        marker.accentArgb(), marker.sourceGlyph(), marker.sizePixels(), marker.alpha());
+            }
+            Renderer2D.flushBatch();
+            for (MapPlayerMarker marker : locationPlayerMarkers) {
+                MapScreenPoint point = viewport.project(marker.worldX(), marker.worldZ());
+                float radius = marker.sizePixels() * 0.8f + 24.0f;
+                if (!clip.intersects(new MapRect(point.x() - radius, point.y() - radius, radius * 2.0f, radius * 2.0f))) continue;
+                MapPlayerMarkerRenderer.drawLabel((float) point.x(), (float) point.y(), marker.playerUuid(), marker.playerName(),
+                        marker.accentArgb(), marker.sizePixels(), marker.alpha());
+            }
+        }
+    }
+
+    private static String sourceGlyph(PlayerLocationSource source) {
+        if (source == null) return "";
+        return switch (source) {
+            case LOCAL_ENTITY_EXACT -> "";
+            case MAPLINK_EXACT -> "map-pinned";
+            case LOCATOR_EXACT, LOCATOR_APPROXIMATE -> "locate-fixed";
+            case TRIANGULATED, DUPLEX_TRIANGULATED -> "crosshair";
+            case LOCATOR_BEARING -> "navigation";
+            case HISTORICAL -> "map-pin";
+        };
+    }
+
+    private static float freshnessAlpha(PlayerLocationSnapshot location, long now) {
+        long age = location == null ? 0L : location.ageMs(now);
+        if (age <= 2500L) return 1.0f;
+        if (age >= 30000L) return 0.58f;
+        return 1.0f - (age - 2500L) / 27500.0f * 0.42f;
+    }
+
+    private static String bearingKey(UUID id, long sourceRevision) {
+        return "bearing:" + id + ':' + sourceRevision;
+    }
+
+    private static double metadataDouble(PlayerLocationSnapshot location, String key) {
+        if (location == null || location.metadata() == null || key == null) return Double.NaN;
+        String value = location.metadata().get(key);
+        if (value == null || value.isBlank()) return Double.NaN;
+        try {
+            return Double.parseDouble(value);
+        } catch (NumberFormatException ignored) {
+            return Double.NaN;
+        }
+    }
+
+    private static int withAlpha(int argb, float alpha) {
+        return (Math.max(0, Math.min(255, Math.round(Math.max(0.0f, Math.min(1.0f, alpha)) * 255.0f))) << 24)
+                | (argb & 0x00FFFFFF);
     }
 
     private void drawLoading(MapViewport viewport) {

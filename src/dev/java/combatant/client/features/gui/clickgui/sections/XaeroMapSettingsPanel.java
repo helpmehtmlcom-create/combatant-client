@@ -177,6 +177,7 @@ final class XaeroMapSettingsPanel {
         Config primary = manager.getPrimaryConfigManager().getConfig();
 
         addCombatantArrowSettings();
+        addCombatantPlayerSettings();
 
         addProfiled(manager, WorldMapProfiledConfigOptions.COORDINATES, Category.DISPLAY);
         addProfiled(manager, WorldMapProfiledConfigOptions.FOOTSTEPS, Category.DISPLAY);
@@ -679,6 +680,16 @@ final class XaeroMapSettingsPanel {
         color.setI18nEnabled(false, false);
         color.visibleWhen(config::isCustomArrowColor);
         entries.add(new Entry(color, Category.DISPLAY, "custom player arrow color tint"));
+    }
+
+    private void addCombatantPlayerSettings() {
+        MapUiConfig config = MapUiConfig.get();
+        BooleanSetting advanced = new BooleanSetting(
+                tr("gui.combatant.map.players.advanced_markers", "Advanced player markers"),
+                config.advancedPlayerMarkersValue());
+        advanced.setI18nEnabled(false, false);
+        entries.add(new Entry(advanced, Category.PLAYERS,
+                "advanced player markers heads names relations skins expanded display"));
     }
 
     private void addCurrentCaveMode() {

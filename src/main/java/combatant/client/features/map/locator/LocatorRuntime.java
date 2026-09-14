@@ -58,7 +58,7 @@ public final class LocatorRuntime {
             if(e.type()==LocatorObservationType.UNUSABLE)return;
 
             String key=uuid!=null?uuid.toString():"name:"+name.toLowerCase(Locale.ROOT);
-            long fp=fingerprint(key,e);
+            long fp=fingerprint(key,e,ox,oz);
             long rev=revision(key,fp);
             seen.put(key,Boolean.TRUE);
 
@@ -88,11 +88,18 @@ public final class LocatorRuntime {
         }
     }
 
-    private static long fingerprint(String key,LocatorWaypointExtractor.Extracted e) {
+    private static long fingerprint(String key,LocatorWaypointExtractor.Extracted e,double observerX,double observerZ) {
         long h=0xcbf29ce484222325L;
         h=mix(h,key.hashCode()); h=mix(h,e.type().ordinal());
         h=mix(h,Double.doubleToLongBits(e.x())); h=mix(h,Double.doubleToLongBits(e.y()));
         h=mix(h,Double.doubleToLongBits(e.z())); h=mix(h,Double.doubleToLongBits(e.bearingRadians()));
+        // Observer movement is part of a bearing observation. Quantize to blocks so standing still
+        // does not manufacture revisions every tick, while movement can pass through the normal
+        // baseline/information-gain gate instead of being rejected as a duplicate up front. Exact
+        // and chunk-position sources must not change revision just because the observer moved.
+        if (e.type()==LocatorObservationType.BEARING_ONLY) {
+            h=mix(h,(long)Math.floor(observerX)); h=mix(h,(long)Math.floor(observerZ));
+        }
         return h;
     }
 

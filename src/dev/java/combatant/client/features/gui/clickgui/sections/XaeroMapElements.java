@@ -10,6 +10,9 @@ package combatant.client.features.gui.clickgui.sections;
 import combatant.client.compat.xaero.XaeroIntegration;
 import combatant.client.compat.xaero.XaeroMinimapIntegration;
 import combatant.client.compat.xaero.XaeroWaypointSnapshot;
+import combatant.client.config.subsystem.MapUiConfig;
+import combatant.client.features.map.location.PlayerLocationService;
+import combatant.client.features.relations.CategoryService;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.renderer.Renderer2D;
@@ -18,6 +21,7 @@ import combatant.client.render.engine.renderer.ui.draw.UiLiquidGlassMaterial;
 import combatant.client.render.engine.svg.SvgRenderOptions;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.map.MapScreenPoint;
+import combatant.client.render.map.MapPlayerMarkerRenderer;
 import combatant.client.render.map.MapViewport;
 import combatant.client.util.text.LegacyTextUtil;
 import combatant.client.util.text.TextRenderUtil;
@@ -164,7 +168,9 @@ final class XaeroMapElements {
 
         // Persistent Xaero names stay above all icon geometry, but below the active hover card.
         for (Element element : snapshot.elements()) {
-            if (element == hovered || element.kind() != Kind.ENTITY || !element.namesVisible()) continue;
+            boolean advancedPlayerLabel = MapUiConfig.get().advancedPlayerMarkers()
+                    && (element.handle() instanceof Player || element.handle() instanceof PlayerTrackerMapElement<?>);
+            if (element == hovered || (!advancedPlayerLabel && (element.kind() != Kind.ENTITY || !element.namesVisible()))) continue;
             MapScreenPoint point = viewport.project(element.worldX(), element.worldZ());
             if (!viewport.screenBounds().contains(point.x(), point.y())) continue;
             float topExtent = topExtents.getOrDefault(element, 0.0f);
@@ -348,6 +354,28 @@ final class XaeroMapElements {
             int listColor = 0xFF000000 | radar.getColorHelper().getFallbackColor(list).getHex();
             for (Entity entity : list.getEntities()) {
                 if (entity == null || entity == minecraft.player || entity.isRemoved()) continue;
+                if (entity instanceof Player player && MapUiConfig.get().advancedPlayerMarkers()) {
+                    var unified = PlayerLocationService.get().snapshot().best(player.getUUID());
+                    if (unified != null && unified.hasPosition()) continue;
+                    visible.add(new Element(
+                            Kind.ENTITY,
+                            "entity:" + player.getUUID(),
+                            player.getX() / divisor,
+                            player.getZ() / divisor,
+                            styled(player.getDisplayName()),
+                            "",
+                            CategoryService.getColor(player),
+                            false,
+                            true,
+                            false,
+                            false,
+                            Math.max(1.0f, dotSize),
+                            iconScale,
+                            190,
+                            player
+                    ));
+                    continue;
+                }
                 visible.add(new Element(
                         Kind.ENTITY,
                         "entity:" + entity.getUUID(),
@@ -384,6 +412,11 @@ final class XaeroMapElements {
                     && !dimension.getDimId().equals(player.getDimension())) continue;
             double scale = minecraft.level.dimension().equals(player.getDimension()) ? 1.0 : mapDimScale;
             UUID playerId = player.getPlayerId();
+            if (MapUiConfig.get().advancedPlayerMarkers()) {
+                var unified = PlayerLocationService.get().snapshot().best(playerId);
+                if (unified != null && unified.hasPosition()
+                        && dimension.getDimId().identifier().toString().equals(unified.worldIdentity().dimensionKey())) continue;
+            }
             PlayerInfo info = minecraft.getConnection() == null ? null : minecraft.getConnection().getPlayerInfo(playerId);
             Component name = info == null
                     ? Component.literal(playerId.toString())
@@ -399,7 +432,7 @@ final class XaeroMapElements {
                     player.getZ() * scale,
                     name,
                     "",
-                    0xFF55D6BE,
+                    CategoryService.getColor(info == null ? name.getString() : info.getProfile().name()),
                     false,
                     true,
                     false,
@@ -524,6 +557,12 @@ final class XaeroMapElements {
 
     private float drawPlayer(MapScreenPoint point, Element element, boolean highlighted) {
         if (!(element.handle() instanceof PlayerTrackerMapElement<?> tracked)) return 0.0f;
+        if (MapUiConfig.get().advancedPlayerMarkers()) {
+            float size = highlighted ? 31.0f : 28.0f;
+            String name = element.plainName();
+            return MapPlayerMarkerRenderer.drawMarker((float) point.x(), (float) point.y(), tracked.getPlayerId(), name,
+                    element.color(), "", size, 1.0f);
+        }
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft == null || minecraft.getConnection() == null || minecraft.level == null) return 0.0f;
         PlayerInfo info = minecraft.getConnection().getPlayerInfo(tracked.getPlayerId());
@@ -547,6 +586,12 @@ final class XaeroMapElements {
     }
 
     private float drawEntity(MapScreenPoint point, Element element, boolean highlighted) {
+        if (element.handle() instanceof Player player && MapUiConfig.get().advancedPlayerMarkers()) {
+            float size = highlighted ? 31.0f : 28.0f;
+            String name = player.getGameProfile() == null ? element.plainName() : player.getGameProfile().name();
+            return MapPlayerMarkerRenderer.drawMarker((float) point.x(), (float) point.y(), player.getUUID(), name,
+                    CategoryService.getColor(player), "", size, 1.0f);
+        }
         float size = drawRadarIcon(point, element, highlighted);
         if (size <= 0.0f) size = drawRadarDot(point, element, highlighted);
         return size * 0.5f;
@@ -631,6 +676,9 @@ final class XaeroMapElements {
     }
 
     private static double entityHitRadius(Element element) {
+        if (element.handle() instanceof Player && MapUiConfig.get().advancedPlayerMarkers()) {
+            return 18.0;
+        }
         if (element.iconRequested()) {
             return XAERO_RADAR_ICON_HIT_HALF_SIZE
                     * Math.max(0.0f, element.iconScale()) * xaeroScreenSizeBasedScale();
@@ -690,8 +738,8 @@ final class XaeroMapElements {
         float textX = boxX + padX;
         float textY = boxY + padY - 0.25f;
 
-        float glassAlpha = hover ? 0.90f : 0.67f;
-        float blurAlpha = hover ? 0.80f : 0.56f;
+        float glassAlpha = hover ? 0.96f : 0.67f;
+        float blurAlpha = hover ? 0.86f : 0.56f;
         withMapGlassSource(() -> {
             UiLiquidGlassMaterial material = UiLiquidGlassMaterial.DEFAULT.withInnerGlow(
                     hover ? 0.19f : 0.095f,
@@ -700,7 +748,7 @@ final class XaeroMapElements {
             );
             Renderer2D.COLOR.withLiquidGlassMaterial(material, () -> Renderer2D.COLOR.liquidGlassRect(
                     boxX, boxY, boxWidth, boxHeight, radius,
-                    withAlpha(accent, hover ? 0.13f : 0.055f),
+                    withAlpha(accent, hover ? 0.56f : 0.055f),
                     glassAlpha,
                     blurAlpha,
                     Renderer2D.LiquidGlassPreset.BALANCED,
@@ -709,7 +757,7 @@ final class XaeroMapElements {
             ));
             Renderer2D.COLOR.roundedRect(
                     boxX, boxY, boxWidth, boxHeight, radius,
-                    hover ? 0x31080D14 : 0x24080D14
+                    hover ? withAlpha(accent, 0.24f) : 0x24080D14
             );
         });
         drawStyled(parts, textX, textY, size);

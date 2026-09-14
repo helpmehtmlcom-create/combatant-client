@@ -7,6 +7,7 @@
 package combatant.client.render.engine.postprocess;
 
 import combatant.client.render.engine.rhi.CombatantRhi;
+import combatant.client.render.engine.rhi.shader.RhiResourceOwnershipException;
 import combatant.client.util.logging.DebugLog;
 import combatant.client.util.logging.DebugMode;
 
@@ -54,6 +55,24 @@ public enum PostProcessExecutionPolicy {
                 "render-effects-compute-active-" + key,
                 "{}: compute path active",
                 effectName);
+    }
+
+    public static boolean isTransientBackendResourceMismatch(Throwable failure) {
+        Throwable current = failure;
+        while (current != null) {
+            if (current instanceof RhiResourceOwnershipException) return true;
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    public static void warnTransientResourceFallback(String key, String effectName, Throwable failure) {
+        if (!warningLogEnabled()) return;
+        DebugLog.warnOnce(
+                "render-effects-compute-transient-resource-fallback-" + key,
+                "{} compute path saw a stale resource from another backend generation; using raster for this invocation and retrying compute later",
+                effectName,
+                failure);
     }
 
     public static void warnRuntimeFallback(String key, String effectName, Throwable failure) {

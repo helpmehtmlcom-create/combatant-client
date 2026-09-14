@@ -503,6 +503,28 @@ public final class UiBlurResources {
                 Math.max(1, iterations), offsetPx);
     }
 
+    /**
+     * Drops every backend-owned/static UI blur handle at an RHI generation boundary.
+     * Physical TextureTargets remain owned by the old RenderResourceManager and are destroyed
+     * there; this method only prevents stale GL/Vulkan views from crossing into the new backend.
+     */
+    public static void onBackendChanged() {
+        COMPUTE_BLUR.close();
+        effects = null;
+        glassSource = null;
+        uiUnderlay = null;
+        currentTargetSnapshot = null;
+        activeUiUnderlayLayer = null;
+        activeUiUnderlayFrame = Long.MIN_VALUE;
+        worldSourceReady = false;
+        liquidGlassBlurRequested = false;
+        blurBeforeNextShapeClipRequested = false;
+        UI_UNDERLAY_REQUESTED.clear();
+        SURFACE_FRAME_CACHE.clear();
+        CAPTURED_WORLD_FRAME_CACHE.clear();
+        UI_UNDERLAY_FRAME_CACHE.clear();
+    }
+
     public static void shutdownComputeBlur() {
         COMPUTE_BLUR.close();
     }

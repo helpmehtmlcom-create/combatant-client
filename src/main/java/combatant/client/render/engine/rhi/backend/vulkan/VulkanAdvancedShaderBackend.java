@@ -8,6 +8,7 @@
 package combatant.client.render.engine.rhi.backend.vulkan;
 
 import com.mojang.blaze3d.IndexType;
+import com.mojang.blaze3d.textures.GpuTextureView;
 import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanCommandEncoder;
 import com.mojang.blaze3d.vulkan.VulkanConst;
@@ -636,10 +637,18 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
             }
             for (SampledTextureBinding binding : sampled) {
                 if (!(binding.texture() instanceof VulkanGpuTextureView texture) || texture.isClosed()) {
-                    throw new IllegalArgumentException("Sampled texture does not belong to the active Vulkan backend");
+                    GpuTextureView supplied = binding.texture();
+                    Object suppliedTexture = supplied != null ? supplied.texture() : null;
+                    throw new RhiResourceOwnershipException("Sampled texture does not belong to the active Vulkan backend: "
+                            + "binding=" + binding.binding()
+                            + " view=" + className(supplied)
+                            + " texture=" + className(suppliedTexture)
+                            + " closed=" + (supplied != null && supplied.isClosed()));
                 }
                 if (!(binding.sampler() instanceof VulkanGpuSampler sampler)) {
-                    throw new IllegalArgumentException("Sampler does not belong to the active Vulkan backend");
+                    throw new RhiResourceOwnershipException("Sampler does not belong to the active Vulkan backend: "
+                            + "binding=" + binding.binding()
+                            + " sampler=" + className(binding.sampler()));
                 }
                 VkDescriptorImageInfo.Buffer info = VkDescriptorImageInfo.calloc(1, stack);
                 info.get(0).sampler(sampler.vkSampler())
@@ -673,6 +682,10 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
             vkCmdBindDescriptorSets(commandBuffer, bindPoint, pipelineLayout, 0,
                     stack.longs(descriptorSet), null);
         }
+    }
+
+    private static String className(Object value) {
+        return value == null ? "null" : value.getClass().getName();
     }
 
     private long allocateDescriptorSet(VulkanCommandEncoder encoder,
