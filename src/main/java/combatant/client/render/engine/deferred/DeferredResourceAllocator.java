@@ -45,7 +45,8 @@ public final class DeferredResourceAllocator implements AutoCloseable {
                               int fullWidth,
                               int fullHeight,
                               int sceneSamples,
-                              CombatantRhi rhi) {
+                              CombatantRhi rhi,
+                              DeferredRuntimeConfig.Snapshot settings) {
         if (resource == null || resource.textureSpec() == null) {
             throw new IllegalArgumentException("Deferred resource has no physical texture spec: " + resource);
         }
@@ -58,12 +59,16 @@ public final class DeferredResourceAllocator implements AutoCloseable {
         owner = rhi;
 
         DeferredTextureSpec spec = resource.textureSpec();
-        int width = spec.resolution().width(fullWidth);
-        int height = spec.resolution().height(fullHeight);
+        int width = spec.resolution().width(fullWidth, settings);
+        int height = spec.resolution().height(fullHeight, settings);
         int samples = spec.samples() == DeferredTextureSpec.SamplePolicy.MATCH_SCENE
                 ? Math.max(1, sceneSamples) : 1;
         int mipLevels = spec.mipChain()
                 ? 32 - Integer.numberOfLeadingZeros(Math.max(width, height)) : 1;
+        if (resource == DeferredResource.DEPTH_PYRAMID && settings != null
+                && settings.depthPyramidMaxMipLevels() > 0) {
+            mipLevels = Math.min(mipLevels, settings.depthPyramidMaxMipLevels());
+        }
         if (samples > 1 && mipLevels > 1) {
             throw new IllegalStateException("Multisampled deferred resources cannot have mip chains: " + resource);
         }

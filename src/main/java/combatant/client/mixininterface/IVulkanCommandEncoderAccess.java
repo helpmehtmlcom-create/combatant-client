@@ -17,4 +17,7 @@ public interface IVulkanCommandEncoderAccess {
 
     /** Mojang submission generation; used only for submit-local transient native resources. */
     long combatant$currentSubmitIndex();
+
+    /** Last submission Mojang has observed as complete on the GPU. */
+    long combatant$completedSubmitIndex();
 }

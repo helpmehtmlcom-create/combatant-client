@@ -10,6 +10,7 @@ package combatant.client.events;
 import combatant.client.runtime.error.FailureBoundary;
 
 import combatant.client.runtime.error.FailureIsolation;
+import combatant.client.runtime.error.FailureExecution;
 
 import it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap;
 import combatant.client.features.module.Module;
@@ -77,17 +78,26 @@ public final class EventBus {
         if (listener instanceof Module module) {
             registerOwned(module, listener);
         } else {
-            registerOwned(null, listener);
+            registerOwned(null, listener, FailureBoundary.ISOLATE);
         }
     }
 
     public void registerOwned(Module gateModule, Object listener) {
+        registerOwned(gateModule, listener, FailureBoundary.ISOLATE);
+    }
+
+    /** Registers an independently owned service whose failures can be quarantined safely. */
+    public void registerIsolated(Object listener) {
+        registerOwned(null, listener, FailureBoundary.ISOLATE);
+    }
+
+    private void registerOwned(Module gateModule, Object listener, FailureBoundary boundary) {
         if (listener == null) return;
 
         synchronized (lock) {
             if (ownerIndex.containsKey(listener)) return;
 
-            Subscriber[] subs = scan(listener, gateModule);
+            Subscriber[] subs = scan(listener, gateModule, boundary);
             if (subs.length == 0) return;
 
             ownerIndex.put(listener, subs);
@@ -144,6 +154,7 @@ public final class EventBus {
             for (Subscriber sub : subscribers) {
                 Module gate = sub.gateModule;
                 if (gate != null && !gate.isEnabled()) continue;
+                if (sub.boundary == FailureBoundary.ISOLATE && !ErrorHandler.canRun(sub.owner)) continue;
 
                 try (ProfilerPhase.Scope handlerScope = ProfilerPhase.scope(sub.profileLabel)) {
                     sub.invoker.invoke(event);
@@ -161,6 +172,7 @@ public final class EventBus {
         for (Subscriber sub : subscribers) {
             Module gate = sub.gateModule;
             if (gate != null && !gate.isEnabled()) continue;
+            if (sub.boundary == FailureBoundary.ISOLATE && !ErrorHandler.canRun(sub.owner)) continue;
 
             try {
                 sub.invoker.invoke(event);
@@ -174,6 +186,9 @@ public final class EventBus {
         FailureBoundary.requireRecoverable(cause);
         if (sub.gateModule != null) {
             FailureIsolation.reportModule(sub.gateModule, "event " + sub.describe(), cause);
+        } else if (sub.boundary == FailureBoundary.ISOLATE) {
+            FailureExecution.reportComponent(sub.owner, sub.owner.getClass().getSimpleName(),
+                    "event " + sub.describe(), cause, FailureBoundary.ISOLATE);
         } else {
             // Non-module listeners may not have reversible state. Do not quarantine
             // an entire shared service or claim that its state has been recovered.
@@ -197,7 +212,7 @@ public final class EventBus {
         }
     }
 
-    private Subscriber[] scan(Object listener, Module gateModule) {
+    private Subscriber[] scan(Object listener, Module gateModule, FailureBoundary boundary) {
         List<Subscriber> out = new ArrayList<>();
         Class<?> cls = listener.getClass();
 
@@ -215,7 +230,7 @@ public final class EventBus {
             Class<? extends Event> eventType = (Class<? extends Event>) params[0];
 
             EventInvoker invoker = createInvoker(listener, method);
-            out.add(new Subscriber(listener, gateModule, method, invoker, eventType, meta.priority()));
+            out.add(new Subscriber(listener, gateModule, boundary, method, invoker, eventType, meta.priority()));
         }
 
         return out.toArray(Subscriber[]::new);
@@ -286,6 +301,7 @@ public final class EventBus {
     private static final class Subscriber {
         final Object owner;
         final Module gateModule;
+        final FailureBoundary boundary;
         final Method method;
         final EventInvoker invoker;
         final Class<? extends Event> eventType;
@@ -295,12 +311,14 @@ public final class EventBus {
 
         Subscriber(Object owner,
                    Module gateModule,
+                   FailureBoundary boundary,
                    Method method,
                    EventInvoker invoker,
                    Class<? extends Event> eventType,
                    int priority) {
             this.owner = owner;
             this.gateModule = gateModule;
+            this.boundary = boundary;
             this.method = method;
             this.invoker = invoker;
             this.eventType = eventType;

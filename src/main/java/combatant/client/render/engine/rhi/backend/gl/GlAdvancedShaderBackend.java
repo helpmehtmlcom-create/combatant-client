@@ -175,7 +175,7 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
             unbindStorage(command.storageBindings());
             unbindSampledTextures(command.sampledTextures());
             unbindStorageImages(command.storageImages());
-            GlStateManager._glUseProgram(0);
+            GlNativeStateTracker.restoreBlaze3dProgram();
         }
     }
 
@@ -255,7 +255,7 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
             unbindStorage(command.storageBindings());
             unbindSampledTextures(command.sampledTextures());
             unbindStorageImages(command.storageImages());
-            GlStateManager._glUseProgram(0);
+            GlNativeStateTracker.restoreBlaze3dProgram();
         }
     }
 
@@ -436,6 +436,10 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
     }
 
     private static int memoryBarrierBits(RhiResourceBarrier barrier) {
+        if (barrier.sourceStage() == RhiResourceBarrier.Stage.ALL
+                || barrier.destinationStage() == RhiResourceBarrier.Stage.ALL) {
+            return GL42C.GL_ALL_BARRIER_BITS;
+        }
         int bits = GL43C.GL_SHADER_STORAGE_BARRIER_BIT;
         if (!barrier.images().isEmpty()) bits |= GL42C.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT;
         switch (barrier.destinationStage()) {
@@ -446,6 +450,7 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
                     | GL42C.GL_UNIFORM_BARRIER_BIT
                     | GL42C.GL_TEXTURE_FETCH_BARRIER_BIT;
             case COMPUTE -> { }
+            case ALL -> bits = GL42C.GL_ALL_BARRIER_BITS;
         }
         return bits;
     }

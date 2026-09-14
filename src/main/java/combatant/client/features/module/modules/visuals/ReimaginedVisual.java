@@ -16,6 +16,8 @@ import combatant.client.config.values.*;
 import combatant.client.features.module.*;
 import combatant.client.features.module.Module;
 import combatant.client.render.engine.postprocess.*;
+import combatant.client.render.engine.rhi.CombatantRhi;
+import combatant.client.render.engine.rhi.shader.RhiStorageImage;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.language.I18n;
 import org.joml.Matrix4f;
@@ -37,7 +39,7 @@ import java.util.Map;
 
 //todo Description
 @ModuleInfo(id = "reimaginedvisual", displayName = "ReimaginedVisual", category = ModuleCategory.VISUALS)
-public class ReimaginedVisual extends Module implements PostProcessPass {
+public class ReimaginedVisual extends Module implements PostProcessPass, PostProcessBackendResourceOwner {
 
     private static final String SETTING_EFFECTS = "effects";
     private static final String EFFECT_SHADER_SKY = "shader_sky";
@@ -82,6 +84,7 @@ public class ReimaginedVisual extends Module implements PostProcessPass {
     private static final Map<String, Boolean> DEFAULT_SKYBOX_SHADER_LAYERS = createDefaultSkyboxShaderLayers();
     private final Matrix4f dofProjection = new Matrix4f();
     private TextureTarget dofFocusTarget;
+    private final DepthOfFieldComputeBackend dofComputeBackend = new DepthOfFieldComputeBackend();
     private final BooleanMapValue effects = group(
             "reimaginedVisualEffects",
             SETTING_EFFECTS,
@@ -180,6 +183,7 @@ public class ReimaginedVisual extends Module implements PostProcessPass {
                     this::isDepthOfFieldSettingsVisible));
     private boolean depthSamplerSupported = true;
     private boolean dofFocusResolveSupported = true;
+    private boolean dofComputeSupported = true;
 
     {
         PostProcessManager.register(this);
@@ -378,7 +382,28 @@ public class ReimaginedVisual extends Module implements PostProcessPass {
     }
 
     @Override
+    public boolean prefersStorageOutput(CombatantRhi rhi) {
+        return dofComputeSupported && isActive() && PostProcessExecutionPolicy.useCompute(rhi);
+    }
+
+    @Override
+    public boolean render(PostProcessExecutionContext execution) {
+        if (execution == null) return false;
+        return renderDepthOfField(
+                execution.context(), execution.source(), execution.destination(),
+                execution.rhi(), execution.destinationStorage());
+    }
+
+    @Override
     public boolean render(PostProcessContext context, GpuTextureView src, GpuTextureView dst) {
+        return renderDepthOfField(context, src, dst, CombatantRenderSystem.rhi(), null);
+    }
+
+    private boolean renderDepthOfField(PostProcessContext context,
+                                       GpuTextureView src,
+                                       GpuTextureView dst,
+                                       CombatantRhi rhi,
+                                       RhiStorageImage destinationStorage) {
         if (!isActive() || context == null || src == null || dst == null) {
             return false;
         }
@@ -392,32 +417,57 @@ public class ReimaginedVisual extends Module implements PostProcessPass {
         }
 
         buildProjection();
-        boolean focusTextureReady = depth.hasAnyDepth() && ensureDofFocusTarget();
-
-        DepthOfFieldUniforms.update(
-                dofProjection,
-                context.width(),
-                context.height(),
-                0.0f,
-                0.0f,
-                dofFarStart.get(),
-                dofFarTransition.get(),
-                dofStrength.get(),
-                dofMaxRadius.get(),
-                dofQuality.get().taps(),
-                0.85f,
-                dofDebugCoc.get(),
-                focusTextureReady,
-                depth.hasMain(),
-                depth.hasTranslucent(),
-                depth.hasItemEntity(),
-                depth.hasParticles(),
-                depth.hasWeather(),
-                depth.hasClouds()
-        );
+        boolean focusTextureReady;
 
         try {
             FullScreenRenderer.ensureInit();
+
+            if (dofComputeSupported && dofComputeBackend.supported(rhi, destinationStorage)) {
+                try (TracyGpuProfiler.Scope ignoredGpu = TracyGpuProfiler.beginZone("3d:dof:compute")) {
+                    dofComputeBackend.render(
+                            rhi, destinationStorage, src,
+                            depth.mainOr(src), depth.translucentOr(src), depth.itemEntityOr(src),
+                            depth.particlesOr(src), depth.weatherOr(src), depth.cloudsOr(src),
+                            PostProcessManager.getSampler(), dofProjection,
+                            context.width(), context.height(),
+                            0.0f, 0.0f, dofFarStart.get(), dofFarTransition.get(),
+                            dofStrength.get(), dofMaxRadius.get(), dofQuality.get().taps(), 0.85f,
+                            dofDebugCoc.get(),
+                            depth.hasMain(), depth.hasTranslucent(), depth.hasItemEntity(),
+                            depth.hasParticles(), depth.hasWeather(), depth.hasClouds());
+                    PostProcessExecutionPolicy.logComputeActive("depth-of-field", "Depth of Field");
+                    return true;
+                } catch (Throwable t) {
+                    dofComputeSupported = false;
+                    PostProcessExecutionPolicy.warnRuntimeFallback("depth-of-field", "Depth of Field", t);
+                    dofComputeBackend.close();
+                }
+            }
+
+            // Raster autofocus is only needed by the compatibility path. Compute resolves the
+            // same single frame-invariant focus texel with a tiny dispatch.
+            focusTextureReady = depth.hasAnyDepth() && ensureDofFocusTarget();
+            DepthOfFieldUniforms.update(
+                    dofProjection,
+                    context.width(),
+                    context.height(),
+                    0.0f,
+                    0.0f,
+                    dofFarStart.get(),
+                    dofFarTransition.get(),
+                    dofStrength.get(),
+                    dofMaxRadius.get(),
+                    dofQuality.get().taps(),
+                    0.85f,
+                    dofDebugCoc.get(),
+                    focusTextureReady,
+                    depth.hasMain(),
+                    depth.hasTranslucent(),
+                    depth.hasItemEntity(),
+                    depth.hasParticles(),
+                    depth.hasWeather(),
+                    depth.hasClouds()
+            );
             if (focusTextureReady) {
                 try (TracyGpuProfiler.Scope ignoredGpu = TracyGpuProfiler.beginZone("3d:dof:focus")) {
                     FullScreenRenderer.begin("Combatant DepthOfField Focus")
@@ -451,7 +501,10 @@ public class ReimaginedVisual extends Module implements PostProcessPass {
             }
         } catch (Throwable t) {
             depthSamplerSupported = false;
-            DebugLog.warn("[Combatant] DepthOfField depth sampler path failed; disabling DoF depth sampling for this session: " + t);
+            DebugLog.warnOnce(
+                    "depth-of-field-depth-sampler-fallback",
+                    "Depth of Field depth sampler path failed; disabling depth sampling for this session",
+                    t);
             return false;
         }
 
@@ -468,7 +521,10 @@ public class ReimaginedVisual extends Module implements PostProcessPass {
         } catch (Throwable t) {
             dofFocusResolveSupported = false;
             closeDofFocusTarget();
-            DebugLog.warn("[Combatant] DepthOfField focus resolve failed; using the fragment fallback for this session: " + t);
+            DebugLog.warnOnce(
+                    "depth-of-field-focus-fragment-fallback",
+                    "Depth of Field focus resolve failed; using fragment fallback for this session",
+                    t);
             return false;
         }
     }
@@ -496,13 +552,23 @@ public class ReimaginedVisual extends Module implements PostProcessPass {
     public void onEnable() {
         depthSamplerSupported = true;
         dofFocusResolveSupported = true;
+        dofComputeSupported = true;
         refreshWavyVegetationTerrainState();
     }
 
     @Override
     public void onDisable() {
         closeDofFocusTarget();
+        dofComputeBackend.close();
         refreshWavyVegetationTerrainState(false);
+    }
+
+    @Override
+    public void releaseBackendResources(CombatantRhi owner) {
+        dofComputeBackend.release(owner);
+        closeDofFocusTarget();
+        dofComputeSupported = true;
+        dofFocusResolveSupported = true;
     }
 
     private void refreshWavyVegetationTerrainState() {

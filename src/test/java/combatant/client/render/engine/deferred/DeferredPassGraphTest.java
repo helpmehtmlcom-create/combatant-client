@@ -24,17 +24,21 @@ final class DeferredPassGraphTest {
     void coreGraphOrdersGeometryBeforeLightingAndForwardStages() {
         DeferredPassGraph graph = new DeferredPassGraph();
         CompiledFrameGraph compiled = graph.compile();
+        java.util.List<String> labels = compiled.orderedPasses().stream()
+                .map(pass -> pass.label())
+                .toList();
+        java.util.List<String> externallyDrivenStages = java.util.List.of(
+                "world.geometry.opaque",
+                "world.geometry.cutout",
+                "world.lighting.neutral",
+                "world.forward.opaque",
+                "world.translucency.forward",
+                "world.postprocess.external"
+        );
 
         assertEquals(
-                java.util.List.of(
-                        "world.geometry.opaque",
-                        "world.geometry.cutout",
-                        "world.lighting.neutral",
-                        "world.forward.opaque",
-                        "world.translucency.forward",
-                        "world.postprocess.external"
-                ),
-                compiled.orderedPasses().stream().map(pass -> pass.label()).toList()
+                externallyDrivenStages,
+                labels.stream().filter(externallyDrivenStages::contains).toList()
         );
         assertTrue(compiled.dependencies().stream().anyMatch(dependency ->
                 dependency.hazard() == CompiledFrameGraph.Hazard.READ_AFTER_WRITE

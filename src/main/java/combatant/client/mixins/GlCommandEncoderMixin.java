@@ -10,6 +10,7 @@ package combatant.client.mixins;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import combatant.client.util.logging.DebugLog;
+import combatant.client.render.engine.rhi.backend.gl.GlNativeStateTracker;
 import net.minecraft.resources.Identifier;
 import org.slf4j.Logger;
 import org.spongepowered.asm.mixin.Mixin;
@@ -21,6 +22,18 @@ import org.spongepowered.asm.mixin.injection.At;
  */
 @Mixin(targets = "com.mojang.blaze3d.opengl.GlCommandEncoder")
 public abstract class GlCommandEncoderMixin {
+    @WrapOperation(
+            method = "trySetup",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lcom/mojang/blaze3d/opengl/GlStateManager;_glUseProgram(I)V"
+            )
+    )
+    private void combatant$trackBlaze3dProgram(int program, Operation<Void> original) {
+        original.call(program);
+        GlNativeStateTracker.recordBlaze3dProgram(program);
+    }
+
     @WrapOperation(
             method = "trySetup",
             at = @At(

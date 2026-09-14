@@ -18,6 +18,20 @@ public interface PostProcessPass {
         return render(src, dst, context != null ? context.tickDelta() : 0.0f);
     }
 
+    /** Modern graph entry point. Legacy effects automatically fall back to the texture-view API. */
+    default boolean render(PostProcessExecutionContext execution) {
+        if (execution == null) return false;
+        return render(execution.context(), execution.source(), execution.destination());
+    }
+
+    /**
+     * Whether this pass can profit from a storage-capable graph destination on the active backend.
+     * This is a preference, not a requirement: graph allocation or compute failure must fall back to raster.
+     */
+    default boolean prefersStorageOutput(combatant.client.render.engine.rhi.CombatantRhi rhi) {
+        return false;
+    }
+
     default int getPriority() {
         return 0;
     }

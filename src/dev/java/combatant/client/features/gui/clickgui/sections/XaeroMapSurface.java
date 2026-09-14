@@ -8,6 +8,9 @@
 package combatant.client.features.gui.clickgui.sections;
 
 import combatant.client.config.subsystem.MapUiConfig;
+import combatant.client.config.subsystem.MapTriangulationConfig;
+import combatant.client.features.map.location.PlayerLocationService;
+import combatant.client.features.map.location.PlayerLocationSnapshot;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.gui.clickgui.layout.screen.settings.SettingsGuiPalette;
 import combatant.client.features.theme.Theme;
@@ -31,12 +34,14 @@ import combatant.client.render.map.MapTileResidencyKey;
 import combatant.client.render.map.MapTileUvRect;
 import combatant.client.render.map.MapViewport;
 import combatant.client.render.map.MapVisibleTileSelector;
+import combatant.client.render.helpers.SystemCursor;
 import combatant.client.util.logging.DebugLog;
 import combatant.client.util.text.LegacyTextUtil;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.AbstractTexture;
 import net.minecraft.client.resources.language.I18n;
+import net.fabricmc.loader.api.FabricLoader;
 import org.lwjgl.glfw.GLFW;
 import xaero.lib.client.graphics.GpuTextureAndView;
 import xaero.lib.client.config.ClientConfigManager;
@@ -68,6 +73,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 final class XaeroMapSurface {
     private static final int TILE_RESOLUTION = 64;
@@ -99,6 +105,7 @@ final class XaeroMapSurface {
     private final ArrayList<UiButton> uiButtons = new ArrayList<>();
     private final ArrayList<MenuEntry> contextEntries = new ArrayList<>();
     private final ArrayList<ElementHit> drawerHits = new ArrayList<>();
+    private final ArrayList<TargetHit> targetHits = new ArrayList<>();
 
     private double centerX;
     private double centerZ;
@@ -161,14 +168,17 @@ final class XaeroMapSurface {
         areaWidth = width;
         areaHeight = height;
         hoveredElement = null;
+        if (contains(mouseX, mouseY)) {
+            SystemCursor.set(rightSelecting ? SystemCursor.CursorType.CROSSHAIR : SystemCursor.CursorType.MOVE);
+        }
 
         WorldMapSession session = WorldMapSession.getCurrentSession();
-        if (session == null || !session.isUsable()) return Frame.waiting("Preparing World Map...");
+        if (session == null || !session.isUsable()) return Frame.waiting(tr("gui.combatant.map.loading", "Preparing World Map..."));
         MapProcessor processor = session.getMapProcessor();
-        if (processor == null || !processor.isMapWorldUsable()) return Frame.waiting("Preparing World Map...");
+        if (processor == null || !processor.isMapWorldUsable()) return Frame.waiting(tr("gui.combatant.map.loading", "Preparing World Map..."));
         MapWorld world = processor.getMapWorld();
         MapDimension dimension = world == null ? null : world.getCurrentDimension();
-        if (dimension == null) return Frame.waiting("Preparing World Map...");
+        if (dimension == null) return Frame.waiting(tr("gui.combatant.map.loading", "Preparing World Map..."));
         activeProcessor = processor;
         activeDimension = dimension;
 
@@ -193,7 +203,7 @@ final class XaeroMapSurface {
                 || processor.isWaitingForWorldUpdate()
                 || !processor.getMapSaveLoad().isRegionDetectionComplete()) {
             drawMapUi(processor, dimension, mouseX, mouseY);
-            return Frame.waiting("Preparing World Map...");
+            return Frame.waiting(tr("gui.combatant.map.loading", "Preparing World Map..."));
         }
 
         int lod = selectXaeroLod();
@@ -201,7 +211,7 @@ final class XaeroMapSurface {
         synchronized (processor.renderThreadPauseSync) {
             if (processor.isRenderingPaused()) {
                 drawMapUi(processor, dimension, mouseX, mouseY);
-                return Frame.waiting("Preparing World Map...");
+                return Frame.waiting(tr("gui.combatant.map.loading", "Preparing World Map..."));
             }
             processor.updateCaveStart();
             processor.getMapSaveLoad().mainTextureLevel = lod;
@@ -235,11 +245,12 @@ final class XaeroMapSurface {
         hoveredElement = elements.render(elementSnapshot, viewport,
                 elementPointerActive ? mouseX : Float.NaN,
                 elementPointerActive ? mouseY : Float.NaN);
+        if (hoveredElement != null) SystemCursor.set(SystemCursor.CursorType.HAND);
         drawPlayerArrow(processor, dimension, viewport);
         elements.renderHover(viewport);
         drawMapUi(processor, dimension, mouseX, mouseY);
         return result.terrainTilesDrawn() == 0
-                ? Frame.waiting("Preparing World Map...")
+                ? Frame.waiting(tr("gui.combatant.map.loading", "Preparing World Map..."))
                 : new Frame(true, "", result.terrainTilesDrawn());
     }
 
@@ -850,13 +861,17 @@ final class XaeroMapSurface {
 
     private void drawMapUi(MapProcessor processor, MapDimension dimension, float mouseX, float mouseY) {
         SettingsGuiPalette palette = SettingsGuiPalette.current();
+        // SupportMods reflects Xaero's live integration state and can still be false while the
+        // installed minimap session is coming up. Installation is the correct UX capability test;
+        // runtime collection itself continues to guard on SupportMods.minimap().
+        boolean radarAvailable = FabricLoader.getInstance().isModLoaded("xaerominimap");
         XaeroMapUiRenderer.layoutButtons(uiButtons, areaX, areaY, areaWidth, areaHeight,
                 new XaeroMapUiRenderer.ChromeState(
                         settings != null && settings.isOpen(),
                         dimension.getCaveModeType() != 0,
                         processor.getMapWorld().isUsingCustomDimension(),
                         SupportMods.minimap() && effective(WorldMapProfiledConfigOptions.WAYPOINTS),
-                        SupportMods.minimap(),
+                        radarAvailable,
                         SupportMods.minimap() && effective(WorldMapProfiledConfigOptions.MINIMAP_RADAR),
                         SupportMods.pac(),
                         SupportMods.pac() && effective(WorldMapProfiledConfigOptions.OPAC_CLAIMS),
@@ -864,15 +879,19 @@ final class XaeroMapSurface {
                         drawer,
                         helpOpen,
                         tr("gui.xaero_box_open_settings", "Settings"),
-                        "Recenter",
+                        tr("gui.combatant.map.chrome.recenter", "Recenter"),
                         tr("gui.xaero_box_cave_mode", "Cave mode"),
                         tr("gui.xaero_dimension_toggle_button", "Switch dimension"),
                         tr("gui.xaero_box_open_waypoints", "Waypoints"),
-                        tr("gui.xaero_box_open_players", "Players"),
-                        tr("gui.xaero_box_minimap_radar", "Minimap radar"),
+                        tr("gui.combatant.map.chrome.targets", "Targeted players"),
+                        radarAvailable
+                                ? tr("gui.combatant.map.chrome.radar", "Entity radar")
+                                : tr("gui.combatant.map.chrome.radar_unavailable", "Entity radar · Xaero Minimap required"),
                         tr("gui.xaero_box_pac_displaying_claims", "Claims"),
-                        tr("gui.xaero_box_export", "Export"),
-                        "",
+                        radarAvailable
+                                ? tr("gui.combatant.map.chrome.radar_list", "Radar list")
+                                : tr("gui.combatant.map.chrome.radar_list_unavailable", "Radar list · Xaero Minimap required"),
+                        tr("gui.combatant.map.chrome.controls", "Controls"),
                         tr("gui.xaero_box_zoom_out", "Zoom out"),
                         tr("gui.xaero_box_zoom_in", "Zoom in")
                 ));
@@ -886,8 +905,8 @@ final class XaeroMapSurface {
         drawCoordinates(palette, dimension);
         XaeroMapUiRenderer.drawZoom(areaX, areaY, areaWidth, areaHeight, destinationScale, palette);
         withMapGlassSource(() -> XaeroMapUiRenderer.drawDrawer(areaX, areaY, areaWidth, mouseX, mouseY,
-                drawer, elementSnapshot, drawerHits,
-                tr("gui.xaero_box_open_waypoints", "Waypoints"), palette, chromeMotion));
+                drawer, elementSnapshot, targetedRows(), drawerHits, targetHits,
+                palette, chromeMotion));
         final XaeroMapUiRenderer.HelpBounds[] helpHolder = new XaeroMapUiRenderer.HelpBounds[1];
         withMapGlassSource(() -> helpHolder[0] = XaeroMapUiRenderer.drawHelp(
                 areaX, areaY, areaWidth, areaHeight, uiButtons, helpOpen, palette, chromeMotion));
@@ -973,11 +992,17 @@ final class XaeroMapSurface {
                     "navigation", true, ContextAction.TELEPORT_ELEMENT));
             contextEntries.add(new MenuEntry(tr("gui.xaero_right_click_waypoint_share", "Share"),
                     "share-2", true, ContextAction.SHARE_ELEMENT));
-            contextEntries.add(new MenuEntry(waypoint.isDisabled() ? "Enable" : "Disable",
+            contextEntries.add(new MenuEntry(waypoint.isDisabled()
+                    ? tr("gui.combatant.map.action.enable", "Enable")
+                    : tr("gui.combatant.map.action.disable", "Disable"),
                     "eye", true, ContextAction.TOGGLE_DISABLED));
-            contextEntries.add(new MenuEntry(waypoint.isTemporary() ? "Make permanent" : "Make temporary",
+            contextEntries.add(new MenuEntry(waypoint.isTemporary()
+                    ? tr("gui.combatant.map.action.make_permanent", "Make permanent")
+                    : tr("gui.combatant.map.action.make_temporary", "Make temporary"),
                     "clock-3", true, ContextAction.TOGGLE_TEMPORARY));
-            contextEntries.add(new MenuEntry(deleteArmed ? "Click again to delete" : "Delete",
+            contextEntries.add(new MenuEntry(deleteArmed
+                    ? tr("gui.combatant.map.action.confirm_delete", "Click again to delete")
+                    : tr("gui.combatant.map.action.delete", "Delete"),
                     "trash-2", true, ContextAction.DELETE));
         } else if (element != null && element.handle() instanceof PlayerTrackerMapElement<?>) {
             contextEntries.add(new MenuEntry(element.plainName(), "users-round", false, ContextAction.NONE));
@@ -986,8 +1011,8 @@ final class XaeroMapSurface {
         } else {
             boolean coordinates = effective(WorldMapProfiledConfigOptions.COORDINATES);
             String chunk = selectionStartX == selectionEndX && selectionStartZ == selectionEndZ
-                    ? "Chunk " + selectionStartX + ", " + selectionStartZ
-                    : "Chunks " + Math.min(selectionStartX, selectionEndX) + ", "
+                    ? tr("gui.combatant.map.selection.chunk", "Chunk") + " " + selectionStartX + ", " + selectionStartZ
+                    : tr("gui.combatant.map.selection.chunks", "Chunks") + " " + Math.min(selectionStartX, selectionEndX) + ", "
                     + Math.min(selectionStartZ, selectionEndZ) + " → "
                     + Math.max(selectionStartX, selectionEndX) + ", " + Math.max(selectionStartZ, selectionEndZ);
             contextEntries.add(new MenuEntry(chunk, "land-plot", false, ContextAction.NONE));
@@ -1015,8 +1040,6 @@ final class XaeroMapSurface {
                         "map-pinned", true, ContextAction.WAYPOINTS));
             }
         }
-        contextEntries.add(new MenuEntry(tr("gui.xaero_right_click_box_map_export", "Export selection"),
-                "map", true, ContextAction.EXPORT));
         contextEntries.add(new MenuEntry(tr("gui.xaero_right_click_box_map_settings", "Settings"),
                 "settings-2", true, ContextAction.SETTINGS));
     }
@@ -1025,6 +1048,7 @@ final class XaeroMapSurface {
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return false;
         for (UiButton uiButton : uiButtons) {
             if (!uiButton.contains(mouseX, mouseY)) continue;
+            if (!uiButton.enabled()) return true;
             pressedUiAction = uiButton.action();
             runUiAction(uiButton.action());
             return true;
@@ -1041,9 +1065,9 @@ final class XaeroMapSurface {
             case DIMENSION -> toggleDimension();
             case WAYPOINTS -> drawer = drawer == Drawer.WAYPOINTS ? Drawer.NONE : Drawer.WAYPOINTS;
             case PLAYERS -> drawer = drawer == Drawer.PLAYERS ? Drawer.NONE : Drawer.PLAYERS;
+            case RADAR_LIST -> drawer = drawer == Drawer.RADAR ? Drawer.NONE : Drawer.RADAR;
             case RADAR -> toggle(WorldMapProfiledConfigOptions.MINIMAP_RADAR);
             case CLAIMS -> toggle(WorldMapProfiledConfigOptions.OPAC_CLAIMS);
-            case EXPORT -> exportSelection();
             case CONTROLS -> {
                 helpOpen = !helpOpen;
                 if (helpOpen) {
@@ -1060,6 +1084,20 @@ final class XaeroMapSurface {
     }
 
     private boolean clickDrawer(float mouseX, float mouseY, int button) {
+        for (TargetHit hit : targetHits) {
+            if (!hit.contains(mouseX, mouseY)) continue;
+            PlayerLocationSnapshot location = hit.target().location();
+            if (location == null || !location.hasPosition()) return true;
+            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && hit.teleportable()) {
+                if (teleportTarget(location)) return true;
+            }
+            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT || button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+                centerX = location.x();
+                centerZ = location.z();
+                centered = true;
+            }
+            return true;
+        }
         for (ElementHit hit : drawerHits) {
             if (!hit.contains(mouseX, mouseY)) continue;
             if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
@@ -1126,7 +1164,6 @@ final class XaeroMapSurface {
                     contextBlockX, contextBlockY == Short.MAX_VALUE ? Short.MAX_VALUE : contextBlockY + 1,
                     contextBlockZ);
             case WAYPOINTS -> drawer = Drawer.WAYPOINTS;
-            case EXPORT -> exportSelection();
             case SETTINGS -> toggleSettings();
             case NONE -> {
             }
@@ -1214,12 +1251,76 @@ final class XaeroMapSurface {
                 && (!minecraft.gameMode.canHurtPlayer() || contextBlockY != Short.MAX_VALUE);
     }
 
-    private void exportSelection() {
-        int startX = rightSelecting || contextOpen ? selectionStartX : pointerBlockX >> 4;
-        int startZ = rightSelecting || contextOpen ? selectionStartZ : pointerBlockZ >> 4;
-        int endX = rightSelecting || contextOpen ? selectionEndX : startX;
-        int endZ = rightSelecting || contextOpen ? selectionEndZ : startZ;
-        XaeroMapActions.export(activeProcessor, startX, startZ, endX, endZ);
+    private List<TargetRow> targetedRows() {
+        MapTriangulationConfig config = MapTriangulationConfig.get();
+        Map<UUID, PlayerLocationSnapshot> locations = PlayerLocationService.get().snapshot().bestByPlayer();
+        LinkedHashMap<UUID, TargetRow> rows = new LinkedHashMap<>();
+
+        locations.forEach((id, location) -> {
+            if (config.isTargeted(id, location.playerName())) {
+                String name = location.playerName().isBlank() ? config.nameForTarget(id) : location.playerName();
+                rows.put(id, new TargetRow(id, targetName(name, id), location,
+                        targetTeleportable(location)));
+            }
+        });
+        Set<String> ids = config.targetedPlayersValue().get();
+        if (ids != null) {
+            for (String raw : ids) {
+                try {
+                    UUID id = UUID.fromString(raw == null ? "" : raw.trim());
+                    PlayerLocationSnapshot location = locations.get(id);
+                    rows.putIfAbsent(id, new TargetRow(id,
+                            targetName(config.nameForTarget(id), id), location,
+                            targetTeleportable(location)));
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        }
+        Set<String> names = config.targetedPlayerNamesValue().get();
+        if (names != null) {
+            for (String raw : names) {
+                if (raw == null || raw.isBlank()) continue;
+                String name = raw.trim();
+                TargetRow resolved = rows.values().stream()
+                        .filter(row -> row.name().equalsIgnoreCase(name))
+                        .findFirst().orElse(null);
+                if (resolved == null) {
+                    UUID id = MapTriangulationConfig.offlineTargetUuid(name);
+                    PlayerLocationSnapshot location = locations.get(id);
+                    rows.putIfAbsent(id, new TargetRow(id, name, location,
+                            targetTeleportable(location)));
+                }
+            }
+        }
+        return rows.values().stream()
+                .sorted(Comparator
+                        .comparing((TargetRow row) -> row.location() == null)
+                        .thenComparing(row -> row.location() == null || !row.location().exact())
+                        .thenComparing(TargetRow::name, String.CASE_INSENSITIVE_ORDER))
+                .limit(32)
+                .toList();
+    }
+
+    private static String targetName(String name, UUID id) {
+        if (name != null && !name.isBlank()) return name.trim();
+        String value = id == null ? "?" : id.toString();
+        return value.length() > 8 ? value.substring(0, 8) : value;
+    }
+
+    private boolean targetTeleportable(PlayerLocationSnapshot location) {
+        if (location == null || !location.exact() || activeDimension == null
+                || !effective(WorldMapProfiledConfigOptions.MAP_TELEPORT_ALLOWED)) return false;
+        String targetDimension = location.worldIdentity().dimensionKey();
+        return targetDimension.isBlank()
+                || targetDimension.equals(activeDimension.getDimId().identifier().toString());
+    }
+
+    private boolean teleportTarget(PlayerLocationSnapshot location) {
+        if (!targetTeleportable(location)) return false;
+        int y = Double.isFinite(location.y()) ? (int) Math.floor(location.y()) : Short.MAX_VALUE;
+        XaeroMapActions.teleportMap(activeProcessor,
+                (int) Math.floor(location.x()), y, (int) Math.floor(location.z()), null);
+        return true;
     }
     private void toggleDimension() {
         if (activeProcessor == null || activeProcessor.getMapWorld() == null) return;
@@ -1457,9 +1558,9 @@ final class XaeroMapSurface {
         DIMENSION,
         WAYPOINTS,
         PLAYERS,
+        RADAR_LIST,
         RADAR,
         CLAIMS,
-        EXPORT,
         CONTROLS,
         ZOOM_IN,
         ZOOM_OUT
@@ -1478,18 +1579,18 @@ final class XaeroMapSurface {
         TELEPORT_MAP,
         SHARE_LOCATION,
         WAYPOINTS,
-        EXPORT,
         SETTINGS
     }
 
     enum Drawer {
         NONE,
         WAYPOINTS,
-        PLAYERS
+        PLAYERS,
+        RADAR
     }
 
     record UiButton(Action action, String icon, float x, float y, float size,
-                            String tooltip, boolean active) {
+                    String tooltip, boolean active, boolean enabled) {
         boolean contains(float mouseX, float mouseY) {
             return inside(mouseX, mouseY, x, y, size, size);
         }
@@ -1500,6 +1601,17 @@ final class XaeroMapSurface {
 
     record ElementHit(XaeroMapElements.Element element, float x, float y,
                               float width, float height) {
+        boolean contains(float mouseX, float mouseY) {
+            return inside(mouseX, mouseY, x, y, width, height);
+        }
+    }
+
+    record TargetRow(UUID playerUuid, String name, PlayerLocationSnapshot location,
+                     boolean teleportable) {
+    }
+
+    record TargetHit(TargetRow target, float x, float y, float width, float height,
+                     boolean teleportable) {
         boolean contains(float mouseX, float mouseY) {
             return inside(mouseX, mouseY, x, y, width, height);
         }

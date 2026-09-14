@@ -97,7 +97,7 @@ public abstract class VulkanDeviceMixin implements IVulkanBackendInfo {
                     physicalDevice.computeQueueFamilyAndIndex() != null,
                     features.tessellationShader(),
                     features.geometryShader(),
-                    limits.maxStorageBufferRange() > 0
+                    Integer.toUnsignedLong(limits.maxStorageBufferRange()) > 0L
             );
             int textureUsage = GpuTexture.USAGE_COPY_DST
                     | GpuTexture.USAGE_COPY_SRC

@@ -127,6 +127,10 @@ public enum PostProcessManager {
         }
     }
 
+    public static void releaseBackendResources(combatant.client.render.engine.rhi.CombatantRhi owner) {
+        GRAPH.releaseBackendResources(owner);
+    }
+
     public static void shutdownForRuntime() {
         GRAPH.close();
         sampler = null;

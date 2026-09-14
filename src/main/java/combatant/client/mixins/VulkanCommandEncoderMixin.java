@@ -54,6 +54,10 @@ public abstract class VulkanCommandEncoderMixin implements IVulkanCommandEncoder
     @Accessor("currentSubmitIndex")
     public abstract long combatant$currentSubmitIndex();
 
+    @Override
+    @Accessor("completedSubmitIndex")
+    public abstract long combatant$completedSubmitIndex();
+
     @Inject(method = "createRenderPass", at = @At("HEAD"))
     private void combatant$beginVulkanRenderPassState(RenderPassDescriptor descriptor, CallbackInfoReturnable<RenderPassBackend> cir) {
         VulkanMsaaResolveBridge.beginRenderPass();

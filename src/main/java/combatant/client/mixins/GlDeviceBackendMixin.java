@@ -21,6 +21,7 @@ import org.slf4j.Logger;
 import org.lwjgl.opengl.GLCapabilities;
 import org.lwjgl.opengl.GL11C;
 import combatant.client.render.engine.profiler.ProfilerPhase;
+import combatant.client.render.engine.rhi.backend.gl.GlNativeStateTracker;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -68,6 +69,7 @@ public abstract class GlDeviceBackendMixin implements IGlBackendInfo {
     )
     private GLCapabilities combatant$captureMojangGlCapabilities(Operation<GLCapabilities> original) {
         GLCapabilities caps = original.call();
+        GlNativeStateTracker.resetBlaze3dProgram();
         combatant$computeShaders = caps.OpenGL43 || caps.GL_ARB_compute_shader;
         combatant$tessellationShaders = caps.OpenGL40 || caps.GL_ARB_tessellation_shader;
         combatant$geometryShaders = caps.OpenGL32 || caps.GL_ARB_geometry_shader4;

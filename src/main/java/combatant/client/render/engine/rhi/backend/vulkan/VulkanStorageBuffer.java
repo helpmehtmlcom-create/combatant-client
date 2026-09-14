@@ -9,7 +9,9 @@ package combatant.client.render.engine.rhi.backend.vulkan;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanDevice;
+import com.mojang.blaze3d.vulkan.VulkanCommandEncoder;
 import combatant.client.mixininterface.IVulkanBackendInfo;
+import combatant.client.mixininterface.IVulkanCommandEncoderAccess;
 import combatant.client.render.engine.rhi.RhiStats;
 import combatant.client.render.engine.rhi.shader.RhiStorageBuffer;
 import combatant.client.render.engine.rhi.shader.StorageBufferDescriptor;
@@ -22,6 +24,7 @@ import org.lwjgl.vulkan.VkBufferCreateInfo;
 
 import java.nio.ByteBuffer;
 import java.nio.LongBuffer;
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.lwjgl.util.vma.Vma.*;
@@ -34,6 +37,10 @@ import static org.lwjgl.vulkan.VK10.*;
  * first native-storage layer only; descriptor/pipeline/dispatch ownership remains separate.</p>
  */
 final class VulkanStorageBuffer implements RhiStorageBuffer {
+    // Match Mojang's own in-flight submission limit. The extra slot means a submit-local
+    // snapshot is never reused until the encoder reports its previous owner as completed.
+    private static final int SUBMIT_RING_SIZE = VulkanCommandEncoder.MAX_SUBMITS_IN_FLIGHT + 1;
+    private static final int MAX_UPLOADS_PER_SUBMIT = 64;
     private final StorageBufferDescriptor descriptor;
     private final RhiStats stats;
     private final VulkanDevice ownerDevice;
@@ -41,6 +48,13 @@ final class VulkanStorageBuffer implements RhiStorageBuffer {
     private final long buffer;
     private final long allocation;
     private final long mappedAddress;
+    private final long logicalSize;
+    private final long uploadStride;
+    private long activeSubmitIndex = Long.MIN_VALUE;
+    private int activeSubmitSlot = -1;
+    private final long[] submitRingOwners = new long[SUBMIT_RING_SIZE];
+    private int uploadCursor;
+    private long currentUploadBase;
     private final AtomicBoolean closed = new AtomicBoolean();
 
     VulkanStorageBuffer(IVulkanBackendInfo backend,
@@ -55,11 +69,16 @@ final class VulkanStorageBuffer implements RhiStorageBuffer {
         }
         this.descriptor = descriptor;
         this.stats = stats;
+        Arrays.fill(this.submitRingOwners, Long.MIN_VALUE);
         this.ownerDevice = device;
         this.allocator = backend.combatant$vma();
 
-        long size = descriptor.byteSize();
-        if (size <= 0L) throw new IllegalArgumentException("Storage buffer size must be positive");
+        this.logicalSize = descriptor.byteSize();
+        if (logicalSize <= 0L) throw new IllegalArgumentException("Storage buffer size must be positive");
+        long alignment = Math.max(1L,
+                backend.combatant$physicalDevice().vkPhysicalDeviceProperties().limits().minStorageBufferOffsetAlignment());
+        this.uploadStride = align(logicalSize, alignment);
+        long physicalSize = Math.multiplyExact(uploadStride, (long) SUBMIT_RING_SIZE * MAX_UPLOADS_PER_SUBMIT);
 
         try (MemoryStack stack = MemoryStack.stackPush()) {
             int usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
@@ -69,7 +88,7 @@ final class VulkanStorageBuffer implements RhiStorageBuffer {
 
             VkBufferCreateInfo bufferInfo = VkBufferCreateInfo.calloc(stack)
                     .sType$Default()
-                    .size(size)
+                    .size(physicalSize)
                     .usage(usage)
                     .sharingMode(VK_SHARING_MODE_EXCLUSIVE);
 
@@ -119,6 +138,14 @@ final class VulkanStorageBuffer implements RhiStorageBuffer {
         return allocation;
     }
 
+    long bindingOffset(long logicalOffset) {
+        ensureOpen();
+        if (logicalOffset < 0L || logicalOffset > logicalSize) {
+            throw new IndexOutOfBoundsException("Storage binding offset outside logical buffer: " + logicalOffset);
+        }
+        return Math.addExact(currentUploadBase, logicalOffset);
+    }
+
     @Override
     public StorageBufferDescriptor descriptor() {
         return descriptor;
@@ -134,15 +161,59 @@ final class VulkanStorageBuffer implements RhiStorageBuffer {
         long bytes = src.remaining();
         if (bytes == 0L) return;
         long end = Math.addExact(destinationOffset, bytes);
-        if (end > descriptor.byteSize()) {
+        if (end > logicalSize) {
             throw new IndexOutOfBoundsException("Storage upload exceeds buffer: end=" + end
-                    + " capacity=" + descriptor.byteSize() + " label=" + descriptor.label());
+                    + " capacity=" + logicalSize + " label=" + descriptor.label());
         }
 
-        ByteBuffer destination = MemoryUtil.memByteBuffer(mappedAddress + destinationOffset, (int) bytes);
+        // offset==0 starts a new logical snapshot. This is the normal Combatant compute path and
+        // guarantees that descriptors recorded earlier in the same Vulkan submission keep seeing
+        // the bytes that belonged to their dispatch instead of a later CPU overwrite.
+        if (destinationOffset == 0L || activeSubmitIndex == Long.MIN_VALUE) {
+            beginUploadSnapshot();
+        }
+        long physicalOffset = Math.addExact(currentUploadBase, destinationOffset);
+        ByteBuffer destination = MemoryUtil.memByteBuffer(mappedAddress + physicalOffset, (int) bytes);
         destination.put(src);
-        vmaFlushAllocation(allocator, allocation, destinationOffset, bytes);
+        vmaFlushAllocation(allocator, allocation, physicalOffset, bytes);
         if (stats != null) stats.storageBufferUpload(bytes);
+    }
+
+    private void beginUploadSnapshot() {
+        VulkanCommandEncoder encoder = ownerDevice.createCommandEncoder();
+        if (!(encoder instanceof IVulkanCommandEncoderAccess access)) {
+            throw new IllegalStateException("Vulkan command encoder bridge is unavailable for storage upload");
+        }
+        long submitIndex = access.combatant$currentSubmitIndex();
+        if (submitIndex != activeSubmitIndex) {
+            int submitSlot = Math.floorMod(submitIndex, SUBMIT_RING_SIZE);
+            long previousOwner = submitRingOwners[submitSlot];
+            long completedSubmitIndex = access.combatant$completedSubmitIndex();
+            if (previousOwner != Long.MIN_VALUE && previousOwner > completedSubmitIndex) {
+                throw new IllegalStateException("Storage buffer submit ring would overwrite in-flight data: label="
+                        + descriptor.label() + " slot=" + submitSlot + " owner=" + previousOwner
+                        + " completed=" + completedSubmitIndex + " current=" + submitIndex);
+            }
+            submitRingOwners[submitSlot] = submitIndex;
+            activeSubmitIndex = submitIndex;
+            activeSubmitSlot = submitSlot;
+            uploadCursor = 0;
+        }
+        if (uploadCursor >= MAX_UPLOADS_PER_SUBMIT) {
+            throw new IllegalStateException("Storage buffer upload ring exhausted in one submission: label="
+                    + descriptor.label() + " max=" + MAX_UPLOADS_PER_SUBMIT);
+        }
+        if (activeSubmitSlot < 0) {
+            throw new IllegalStateException("Storage buffer submit slot is unavailable: " + descriptor.label());
+        }
+        long slot = (long) activeSubmitSlot * MAX_UPLOADS_PER_SUBMIT + uploadCursor++;
+        currentUploadBase = Math.multiplyExact(slot, uploadStride);
+    }
+
+    private static long align(long value, long alignment) {
+        if (alignment <= 1L) return value;
+        long remainder = value % alignment;
+        return remainder == 0L ? value : Math.addExact(value, alignment - remainder);
     }
 
     private void ensureOpen() {

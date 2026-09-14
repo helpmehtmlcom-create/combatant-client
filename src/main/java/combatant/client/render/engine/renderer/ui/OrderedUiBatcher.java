@@ -1238,10 +1238,25 @@ public final class OrderedUiBatcher {
                 return 0;
             }
 
-            GpuTextureView currentView = sourceView;
-            GpuSampler currentSampler = sourceSampler;
             int sourceW = Math.max(1, Math.round(screenW));
             int sourceH = Math.max(1, Math.round(screenH));
+
+            UiComputeBlurBackend.Result computeResult = UiBlurResources.tryComputeBlur(
+                    sourceView, sourceSampler, sourceW, sourceH, iterations, passOffset);
+            if (computeResult != null && computeResult.view() != null && computeResult.sampler() != null) {
+                sharedBlurSourceView = sourceView;
+                sharedBlurSourceSampler = sourceSampler;
+                sharedBlurredView = computeResult.view();
+                sharedBlurredSampler = computeResult.sampler();
+                sharedBlurQuality = quality;
+                sharedBlurOffsetPx = passOffset;
+                UiBlurResources.remember(frameId, phase, sourceView, sourceSampler, sharedBlurredView, sharedBlurredSampler,
+                        screenW, screenH, uiScale, quality, passOffset);
+                return 0;
+            }
+
+            GpuTextureView currentView = sourceView;
+            GpuSampler currentSampler = sourceSampler;
             int drawCalls = 0;
 
             for (int level = 0; level < iterations; level++) {

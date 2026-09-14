@@ -1,0 +1,24 @@
+#version 430 core
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(binding = 0) uniform sampler2D u_Mask;
+layout(binding = 1, rgba8) writeonly uniform image2D u_Output;
+layout(std430, binding = 2) readonly buffer Params { vec4 u_Params; };
+const int MAX_CELL_RADIUS = 5;
+void main() {
+    ivec2 center = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(u_Output);
+    if (any(greaterThanEqual(center, size))) return;
+    float edgeWidth = max(u_Params.x, 1.0);
+    float cellSize = max(u_Params.y, 1.0);
+    int radius = clamp(int(ceil(edgeWidth / cellSize)), 1, MAX_CELL_RADIUS);
+    float occupied = 0.0;
+    for (int y = -MAX_CELL_RADIUS; y <= MAX_CELL_RADIUS; ++y) {
+        if (abs(y) > radius) continue;
+        for (int x = -MAX_CELL_RADIUS; x <= MAX_CELL_RADIUS; ++x) {
+            if (abs(x) > radius) continue;
+            ivec2 p = clamp(center + ivec2(x, y), ivec2(0), size - ivec2(1));
+            occupied = max(occupied, texelFetch(u_Mask, p, 0).r);
+        }
+    }
+    imageStore(u_Output, center, vec4(occupied, 0.0, 0.0, 1.0));
+}

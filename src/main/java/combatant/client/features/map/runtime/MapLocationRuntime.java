@@ -235,6 +235,7 @@ public final class MapLocationRuntime {
 
         for (PlayerLocationSnapshot snapshot : captured.locations) {
             if (snapshot.source() != PlayerLocationSource.LOCAL_ENTITY_EXACT) continue;
+            if (!finite3(snapshot.x(), snapshot.y(), snapshot.z())) continue;
             history.offer(server, new MapExactPointFrame(snapshot.playerUuid(), snapshot.playerName(),
                     snapshot.worldKey(), MapHistorySource.LOCAL_ENTITY_EXACT, "local_entity",
                     snapshot.observedAtMs(), snapshot.sourceRevision(),
@@ -247,6 +248,7 @@ public final class MapLocationRuntime {
                 if (id == null || !observation.worldMapped()) continue;
                 MapLinkProfileState state = captured.mapLink.profileStates().get(observation.profileId());
                 if (state == null || state.status() != MapLinkProfileStatus.LIVE) continue;
+                if (!finite3(observation.x(), observation.y(), observation.z())) continue;
                 long effective = observation.providerTimestamp() > 0L
                         ? observation.providerTimestamp() : observation.fetchTimestamp();
                 history.offer(server, new MapExactPointFrame(id, observation.rawPlayerName(),
@@ -264,19 +266,23 @@ public final class MapLocationRuntime {
                 String name = !clean(observation.targetName()).isBlank()
                         ? clean(observation.targetName()) : captured.names.getOrDefault(id, "");
                 switch (observation.type()) {
-                    case EXACT_POSITION, CHUNK_POSITION -> history.offer(server,
-                            new MapExactPointFrame(id, name, currentWorld,
+                    case EXACT_POSITION, CHUNK_POSITION -> {
+                        if (!finite3(observation.x(), observation.y(), observation.z())) continue;
+                        history.offer(server, new MapExactPointFrame(id, name, currentWorld,
                                     observation.type() == LocatorObservationType.EXACT_POSITION
                                             ? MapHistorySource.LOCATOR_EXACT
                                             : MapHistorySource.LOCATOR_APPROXIMATE,
                                     "locator", observation.observedAtMs(), observation.sourceRevision(),
                                     observation.x(), observation.y(), observation.z(),
                                     Math.max(0.0, observation.uncertaintyRadius())));
-                    case BEARING_ONLY -> history.offer(server,
-                            new MapBearingFrame(id, name, currentWorld, MapHistorySource.LOCATOR_BEARING,
+                    }
+                    case BEARING_ONLY -> {
+                        if (!finite3(observation.observerX(), observation.bearingRadians(), observation.observerZ())) continue;
+                        history.offer(server, new MapBearingFrame(id, name, currentWorld, MapHistorySource.LOCATOR_BEARING,
                                     "locator", observation.observedAtMs(), observation.sourceRevision(),
                                     observation.observerX(), observation.observerZ(),
                                     observation.bearingRadians(), 1.0));
+                    }
                     default -> {
                     }
                 }
@@ -286,6 +292,7 @@ public final class MapLocationRuntime {
         if (heuristic != null) {
             for (HeuristicEstimate estimate : heuristic.values()) {
                 if (estimate == null || estimate.targetUuid() == null) continue;
+                if (!Double.isFinite(estimate.x()) || !Double.isFinite(estimate.z())) continue;
                 history.offer(server, new MapEstimateFrame(estimate.targetUuid(),
                         captured.names.getOrDefault(estimate.targetUuid(), ""), currentWorld,
                         MapHistorySource.HEURISTIC_TRIANGULATED, "single_client",
@@ -299,6 +306,7 @@ public final class MapLocationRuntime {
         if (duplexEstimates != null) {
             for (DuplexEstimate estimate : duplexEstimates.values()) {
                 if (estimate == null || estimate.targetUuid() == null) continue;
+                if (!Double.isFinite(estimate.x()) || !Double.isFinite(estimate.z())) continue;
                 history.offer(server, new MapEstimateFrame(estimate.targetUuid(),
                         captured.names.getOrDefault(estimate.targetUuid(), ""), currentWorld,
                         MapHistorySource.DUPLEX_TRIANGULATED, "duplex",
@@ -307,6 +315,10 @@ public final class MapLocationRuntime {
                         0.0, 0.0, estimate.confidence(), 2, 2, estimate.sourceRevision()));
             }
         }
+    }
+
+    private static boolean finite3(double a, double b, double c) {
+        return Double.isFinite(a) && Double.isFinite(b) && Double.isFinite(c);
     }
 
     private void forwardDuplexBearings(List<LocatorObservation> observations, Set<UUID> exactTargets) {

@@ -11,8 +11,10 @@ import combatant.client.compat.xaero.XaeroIntegration;
 import combatant.client.compat.xaero.XaeroMinimapIntegration;
 import combatant.client.compat.xaero.XaeroWaypointSnapshot;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
+import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest;
+import combatant.client.render.engine.renderer.ui.draw.UiLiquidGlassMaterial;
 import combatant.client.render.engine.svg.SvgRenderOptions;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.map.MapScreenPoint;
@@ -63,7 +65,11 @@ import xaero.map.world.MapWorld;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /** Map-content HUD layer: waypoints, radar entities/loot, tracked players and hover cards only. */
@@ -74,6 +80,7 @@ final class XaeroMapElements {
     private static final float XAERO_RADAR_DOT_HIT_HALF_SIZE = 6.0f;
     private static final float MARKER_LABEL_GAP = 2.5f;
     private final List<Element> visible = new ArrayList<>();
+    private final Map<String, Float> waypointHoverAnims = new LinkedHashMap<>();
     private final MapElementGraphics xaeroGraphics = new MapElementGraphics(new PoseStack());
     private Element hovered;
     private float hoveredTopExtent;
@@ -128,7 +135,7 @@ final class XaeroMapElements {
             double dy = mouseY - point.y();
             double distance = dx * dx + dy * dy;
             double hitRadius = element.kind() == Kind.WAYPOINT
-                    ? 21.0
+                    ? 29.0
                     : (element.kind() == Kind.ENTITY ? entityHitRadius(element) : 18.0);
             if (element.interactive() && distance <= hitRadius * hitRadius && distance < bestDistance) {
                 hovered = element;
@@ -138,6 +145,7 @@ final class XaeroMapElements {
 
         // Geometry first. Labels are intentionally emitted in later passes so a tooltip can never
         // end up underneath a subsequently batched entity/item icon.
+        updateWaypointHoverAnimations(snapshot);
         java.util.IdentityHashMap<Element, Float> topExtents = new java.util.IdentityHashMap<>();
         for (Element element : snapshot.elements()) {
             MapScreenPoint point = viewport.project(element.worldX(), element.worldZ());
@@ -145,7 +153,8 @@ final class XaeroMapElements {
             float topExtent = switch (element.kind()) {
                 case PLAYER -> drawPlayer(point, element, element == hovered);
                 case ENTITY -> drawEntity(point, element, element == hovered);
-                case WAYPOINT -> drawWaypoint(point, element, element == hovered);
+                case WAYPOINT -> drawWaypoint(point, element,
+                        waypointHoverAnims.getOrDefault(element.id(), element == hovered ? 1.0f : 0.0f));
             };
             topExtents.put(element, topExtent);
             if (element == hovered) hoveredTopExtent = topExtent;
@@ -164,6 +173,23 @@ final class XaeroMapElements {
         }
 
         return hovered;
+    }
+
+    private void updateWaypointHoverAnimations(Snapshot snapshot) {
+        float dt = AnimationUtility.deltaTime();
+        if (!Float.isFinite(dt) || dt < 0.0f) dt = 1.0f / 60.0f;
+        dt = Math.min(dt, 1.0f / 20.0f);
+        float blend = 1.0f - (float) Math.exp(-13.0f * dt);
+        Set<String> alive = new LinkedHashSet<>();
+        for (Element element : snapshot.elements()) {
+            if (element.kind() != Kind.WAYPOINT) continue;
+            alive.add(element.id());
+            float target = element == hovered ? 1.0f : 0.0f;
+            float current = waypointHoverAnims.getOrDefault(element.id(), target);
+            float next = current + (target - current) * blend;
+            waypointHoverAnims.put(element.id(), Math.abs(target - next) < 0.001f ? target : next);
+        }
+        waypointHoverAnims.keySet().retainAll(alive);
     }
 
     void renderHover(MapViewport viewport) {
@@ -421,52 +447,54 @@ final class XaeroMapElements {
     }
 
     @SuppressWarnings("unchecked")
-    private float drawWaypoint(MapScreenPoint point, Element element, boolean highlighted) {
+    private float drawWaypoint(MapScreenPoint point, Element element, float hoverProgress) {
         ClientConfigManager config = WorldMap.INSTANCE.getConfigs().getClientConfigManager();
         double configuredScale = (Double) config.getEffective(
                 (ConfigOption<Double>) WorldMapProfiledConfigOptions.WAYPOINT_SCALE);
-        float scale = (float) Math.max(0.82, Math.min(1.30, configuredScale));
+        float scale = (float) Math.max(0.90, Math.min(1.45, configuredScale));
         float alpha = element.disabled() ? 0.38f : 1.0f;
         int accent = withAlpha(element.color(), alpha);
+        float highlight = Math.max(0.0f, Math.min(1.0f, hoverProgress));
 
-        float badgeWidth = (highlighted ? 24.0f : 22.0f) * scale;
-        float badgeHeight = (highlighted ? 21.5f : 20.0f) * scale;
-        float radius = Math.min(7.0f * scale, badgeHeight * 0.38f);
+        float badgeWidth = (32.0f + 6.0f * highlight) * scale;
+        float badgeHeight = (28.0f + 5.0f * highlight) * scale;
+        float radius = Math.min(10.0f * scale, badgeHeight * 0.38f);
         float cx = (float) point.x();
         float anchorY = (float) point.y();
         // The marker still points at the exact map coordinate, but its glass body overlaps the
         // anchor slightly instead of floating a full icon-height above it.
-        float badgeBottom = anchorY + 2.5f * scale;
+        float badgeBottom = anchorY + 3.5f * scale;
         float x = cx - badgeWidth * 0.5f;
         float y = badgeBottom - badgeHeight;
 
         Renderer2D renderer = Renderer2D.COLOR;
-        float glassAlpha = alpha * (highlighted ? 0.92f : 0.78f);
-        float blurAlpha = alpha * (highlighted ? 0.82f : 0.68f);
+        float glassAlpha = alpha * (0.80f + 0.12f * highlight);
+        float blurAlpha = alpha * (0.70f + 0.12f * highlight);
         withMapGlassSource(() -> {
-            renderer.liquidGlassRect(
+            UiLiquidGlassMaterial material = UiLiquidGlassMaterial.DEFAULT.withInnerGlow(
+                    0.16f + 0.10f * highlight,
+                    4.8f + 1.2f * highlight,
+                    withAlpha(element.color(), alpha * (0.72f + 0.23f * highlight))
+            );
+            renderer.withLiquidGlassMaterial(material, () -> renderer.liquidGlassRect(
                     x, y, badgeWidth, badgeHeight, radius,
-                    0xFFFFFFFF,
+                    withAlpha(element.color(), 0.10f + 0.08f * highlight),
                     glassAlpha,
                     blurAlpha,
                     Renderer2D.LiquidGlassPreset.BALANCED,
                     0.72f,
                     0.0f
-            );
+            ));
             renderer.roundedRect(
                     x, y, badgeWidth, badgeHeight, radius,
-                    withAlpha(0x0A1017, alpha * (highlighted ? 0.24f : 0.17f))
+                    withAlpha(0x0A1017, alpha * (0.18f + 0.07f * highlight))
             );
         });
-        renderer.roundedRectStroke(
-                x, y, badgeWidth, badgeHeight, radius, 0.75f,
-                withAlpha(highlighted ? element.color() : 0xFFFFFFFF, alpha * (highlighted ? 0.72f : 0.15f))
-        );
 
         String symbol = element.symbol();
         if (symbol != null && !symbol.isBlank()) {
             symbol = symbol.substring(0, Math.min(2, symbol.length())).toUpperCase(java.util.Locale.ROOT);
-            float symbolSize = (symbol.length() > 1 ? 8.2f : 9.4f) * scale;
+            float symbolSize = (symbol.length() > 1 ? 11.4f : 13.2f) * scale;
             float symbolWidth = ClickGuiRenderer.textWidth(ClickGuiRenderer.getOnestBold(), symbol, symbolSize);
             ClickGuiRenderer.drawText(
                     ClickGuiRenderer.getOnestBold(),
@@ -478,7 +506,7 @@ final class XaeroMapElements {
                     false
             );
         } else {
-            float iconSize = 11.5f * scale;
+            float iconSize = 16.5f * scale;
             renderer.svg(
                     "map-pin",
                     cx - iconSize * 0.5f,
@@ -490,7 +518,7 @@ final class XaeroMapElements {
         }
 
         // A tiny accent point keeps the exact anchor legible without the old tall stem/tail.
-        renderer.circle(cx, anchorY + 1.0f * scale, Math.max(1.15f, 1.35f * scale), accent);
+        renderer.circle(cx, anchorY + 1.25f * scale, Math.max(1.6f, 1.85f * scale), accent);
         return anchorY - y;
     }
 
@@ -665,24 +693,25 @@ final class XaeroMapElements {
         float glassAlpha = hover ? 0.90f : 0.67f;
         float blurAlpha = hover ? 0.80f : 0.56f;
         withMapGlassSource(() -> {
-            Renderer2D.COLOR.liquidGlassRect(
+            UiLiquidGlassMaterial material = UiLiquidGlassMaterial.DEFAULT.withInnerGlow(
+                    hover ? 0.19f : 0.095f,
+                    hover ? 5.0f : 4.0f,
+                    withAlpha(accent, hover ? 0.82f : 0.48f)
+            );
+            Renderer2D.COLOR.withLiquidGlassMaterial(material, () -> Renderer2D.COLOR.liquidGlassRect(
                     boxX, boxY, boxWidth, boxHeight, radius,
-                    0xFFFFFFFF,
+                    withAlpha(accent, hover ? 0.13f : 0.055f),
                     glassAlpha,
                     blurAlpha,
                     Renderer2D.LiquidGlassPreset.BALANCED,
                     hover ? 0.78f : 0.68f,
                     0.0f
-            );
+            ));
             Renderer2D.COLOR.roundedRect(
                     boxX, boxY, boxWidth, boxHeight, radius,
                     hover ? 0x31080D14 : 0x24080D14
             );
         });
-        Renderer2D.COLOR.roundedRectStroke(
-                boxX, boxY, boxWidth, boxHeight, radius, 0.75f,
-                hover ? withAlpha(accent, 0.58f) : 0x22FFFFFF
-        );
         drawStyled(parts, textX, textY, size);
     }
 

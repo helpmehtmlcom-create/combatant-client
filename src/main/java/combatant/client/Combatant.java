@@ -470,7 +470,10 @@ public class Combatant implements ClientModInitializer {
 
 
     private static boolean hasXaeroWaypointHudWork(HudPhase phase) {
-        if (phase != HudPhase.AFTER_MISC_OVERLAYS) return false;
+        // Keep projected Xaero labels in their own deferred HUD stratum. NameTags lives in
+        // AFTER_MISC_OVERLAYS and DropESP in FIRST; sharing either batch lets a later text flush
+        // composite over an already emitted marker plate.
+        if (phase != HudPhase.AFTER_BOSS_BAR) return false;
         if (!FabricLoader.getInstance().isModLoaded("xaerominimap")) return false;
         return XaeroWaypointHudOverlay.hasHudWork();
     }
@@ -536,8 +539,8 @@ public class Combatant implements ClientModInitializer {
         Events.BUS.register(PvpTracker.INSTANCE);
         Events.BUS.register(PvpTargetTracker.INSTANCE);
         Events.BUS.register(SessionStatisticsTracker.INSTANCE);
-        Events.BUS.register(MapLinkRuntime.get());
-        Events.BUS.register(MapLocationRuntime.get());
+        Events.BUS.registerIsolated(MapLinkRuntime.get());
+        Events.BUS.registerIsolated(MapLocationRuntime.get());
         Events.BUS.register(SelfBedTracker.INSTANCE);
         Events.BUS.register(BoatSimulationCache.INSTANCE);
         Events.BUS.register(PlayerSimulationCache.INSTANCE);

@@ -34,6 +34,7 @@ public final class UiBlurResources {
     private static final FrameBlurCacheEntry SURFACE_FRAME_CACHE = new FrameBlurCacheEntry();
     private static final FrameBlurCacheEntry CAPTURED_WORLD_FRAME_CACHE = new FrameBlurCacheEntry();
     private static final FrameBlurCacheEntry UI_UNDERLAY_FRAME_CACHE = new FrameBlurCacheEntry();
+    private static final UiComputeBlurBackend COMPUTE_BLUR = new UiComputeBlurBackend();
     private static final EnumSet<Renderer2D.Deferred2DLayer> UI_UNDERLAY_REQUESTED =
             EnumSet.noneOf(Renderer2D.Deferred2DLayer.class);
 
@@ -477,6 +478,33 @@ public final class UiBlurResources {
         return sourceView != null
                 && currentTargetSnapshot != null
                 && sourceView == currentTargetSnapshot.getColorTextureView();
+    }
+
+    static String blurSourceDomain(@Nullable GpuTextureView sourceView) {
+        if (isUiUnderlaySource(sourceView)) return "ui-underlay";
+        if (isCurrentTargetSnapshotSource(sourceView)) return "current-target";
+        if (isCapturedWorldSource(sourceView)) return "captured-world";
+        return "surface";
+    }
+
+    static @Nullable UiComputeBlurBackend.Result tryComputeBlur(
+            @Nullable GpuTextureView sourceView,
+            @Nullable GpuSampler sourceSampler,
+            int screenWidth,
+            int screenHeight,
+            int iterations,
+            float offsetPx) {
+        if (sourceView == null || sourceSampler == null) return null;
+        return COMPUTE_BLUR.tryBlur(
+                CombatantRenderSystem.rhi(),
+                blurSourceDomain(sourceView),
+                sourceView, sourceSampler,
+                Math.max(1, screenWidth), Math.max(1, screenHeight),
+                Math.max(1, iterations), offsetPx);
+    }
+
+    public static void shutdownComputeBlur() {
+        COMPUTE_BLUR.close();
     }
 
     private static FrameBlurCacheEntry cacheForSource(@Nullable GpuTextureView sourceView) {

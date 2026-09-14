@@ -10,6 +10,7 @@ package combatant.client.render.engine.postprocess.graph;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import combatant.client.render.engine.core.RenderFrameContext;
 import combatant.client.render.engine.postprocess.PostProcessPass;
+import combatant.client.render.engine.postprocess.PostProcessBackendResourceOwner;
 import combatant.client.render.engine.profiler.RenderCostProfiler;
 import combatant.client.render.engine.profiler.TracyGpuProfiler;
 import combatant.client.render.engine.rhi.CombatantRhi;
@@ -78,7 +79,14 @@ public final class PostProcessGraph implements AutoCloseable {
                 : "3d:post_graph:post_hand";
         try (RenderCostProfiler.Scope ignoredGraph = RenderCostProfiler.postPass("graph:" + phase);
              TracyGpuProfiler.Scope ignoredGpuGraph = TracyGpuProfiler.beginZone(gpuGraphLabel)) {
-            if (!resources.prepare(phase, tickDelta)) return false;
+            boolean preferStorageTargets = false;
+            for (PostProcessGraphPass pass : activePasses) {
+                if (pass.prefersStorageOutput(rhi)) {
+                    preferStorageTargets = true;
+                    break;
+                }
+            }
+            if (!resources.prepare(phase, tickDelta, rhi, preferStorageTargets)) return false;
 
             GpuTextureView mainColor = resources.mainColor();
             GpuTextureView source = resources.currentSource();
@@ -121,6 +129,16 @@ public final class PostProcessGraph implements AutoCloseable {
 
     public PostProcessGraphResources resources() {
         return resources;
+    }
+
+    public void releaseBackendResources(CombatantRhi owner) {
+        resources.releaseBackendResources(owner);
+        for (PostProcessGraphPass pass : passes) {
+            if (pass instanceof LegacyPostProcessGraphPass legacy
+                    && legacy.delegate() instanceof PostProcessBackendResourceOwner resourceOwner) {
+                resourceOwner.releaseBackendResources(owner);
+            }
+        }
     }
 
     @Override

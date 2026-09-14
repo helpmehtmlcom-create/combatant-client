@@ -34,7 +34,8 @@ public enum WorldMarkerHudRenderer {
     private static final float META_GAP = 5.0f;
     private static final float ANCHOR_Y_BIAS = -1.5f;
     private static final float MIN_HEIGHT = 20.0f;
-    private static final float MAX_RADIUS = 7.0f;
+    private static final float MATTE_RADIUS = 3.6f;
+    private static final int MATTE_BACKDROP_ALPHA = 148;
 
     public static List<Layout> layout(List<Marker> markers, TextRenderer fallback) {
         if (markers == null || markers.isEmpty() || fallback == null) return List.of();
@@ -97,39 +98,17 @@ public enum WorldMarkerHudRenderer {
         for (Layout layout : layouts) {
             Marker marker = layout.marker();
             float opacity = clamp01(marker.opacity());
-            float radius = Math.min(MAX_RADIUS, layout.plateHeight() * 0.38f);
 
-            // Deliberately no drop shadow: the optical edge of the glass is enough separation from
-            // the world and keeps dense marker groups readable.
-            renderer.liquidGlassRect(
-                    layout.plateX(),
-                    layout.plateY(),
-                    layout.plateWidth(),
-                    layout.plateHeight(),
-                    radius,
-                    0xFFFFFFFF,
-                    0.82f * opacity,
-                    0.72f * opacity,
-                    Renderer2D.LiquidGlassPreset.BALANCED,
-                    0.78f,
-                    0.0f
-            );
+            // Match DropESP's matte labels: one calm translucent backdrop, no optical rim or
+            // second overlay. The accent remains on the icon where it cannot fight the text.
             renderer.roundedRect(
                     layout.plateX(),
                     layout.plateY(),
                     layout.plateWidth(),
                     layout.plateHeight(),
-                    radius,
-                    withAlpha(0x0B1017, Math.round(48.0f * opacity))
-            );
-            renderer.roundedRectStroke(
-                    layout.plateX(),
-                    layout.plateY(),
-                    layout.plateWidth(),
-                    layout.plateHeight(),
-                    radius,
-                    0.75f,
-                    withAlpha(marker.accent(), Math.round(52.0f * opacity))
+                    MATTE_RADIUS,
+                    0.0f,
+                    withAlpha(0x000000, Math.round(MATTE_BACKDROP_ALPHA * opacity))
             );
 
             renderer.svg(

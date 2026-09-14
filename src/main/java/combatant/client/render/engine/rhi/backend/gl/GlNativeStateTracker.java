@@ -9,6 +9,7 @@ package combatant.client.render.engine.rhi.backend.gl;
 
 import org.lwjgl.opengl.GL11C;
 import org.lwjgl.opengl.GL13C;
+import com.mojang.blaze3d.opengl.GlStateManager;
 
 /**
  * Differential tracker for GL state that Combatant owns outside Blaze3D's {@code GlStateManager}.
@@ -20,6 +21,12 @@ import org.lwjgl.opengl.GL13C;
  */
 public final class GlNativeStateTracker {
     private static int generation = 1;
+    /**
+     * Program id last bound by Mojang's GlCommandEncoder. Native Combatant compute/patch
+     * submissions must restore this exact program instead of binding program 0, otherwise
+     * GlCommandEncoder.lastProgram remains logically valid while the actual GL program differs.
+     */
+    private static int blaze3dProgram;
 
     private static boolean stencilEnableKnown;
     private static boolean stencilEnabled;
@@ -47,6 +54,18 @@ public final class GlNativeStateTracker {
 
     public static int generation() {
         return generation;
+    }
+
+    public static void recordBlaze3dProgram(int program) {
+        blaze3dProgram = Math.max(0, program);
+    }
+
+    public static void restoreBlaze3dProgram() {
+        GlStateManager._glUseProgram(blaze3dProgram);
+    }
+
+    public static void resetBlaze3dProgram() {
+        blaze3dProgram = 0;
     }
 
     /**
