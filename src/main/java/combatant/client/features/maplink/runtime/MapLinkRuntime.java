@@ -345,7 +345,7 @@ public final class MapLinkRuntime {
 
         private ProfileRuntime(MapLinkProfile profile) {
             this.profile = profile;
-            this.state = new MapLinkProfileState(profile.id(), profile.enabled() ? MapLinkProfileStatus.IDLE : MapLinkProfileStatus.DISABLED,
+            this.state = new MapLinkProfileState(profile.id(), MapLinkProfileStatus.IDLE,
                     0L, 0L, "", 0, Set.of(), 0L, 0);
         }
     }

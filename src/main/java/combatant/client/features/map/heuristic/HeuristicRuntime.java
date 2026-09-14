@@ -81,13 +81,41 @@ public final class HeuristicRuntime {
                 segmentResets.get(), states.size(), queued);
     }
 
+    /**
+     * Per-target live telemetry for the map diagnostics UI. Unlike {@link #snapshot()}, this exposes
+     * observations before a stable estimate exists, so the UI can visualize collection immediately.
+     */
+    public Map<UUID, HeuristicTargetMetrics> telemetry() {
+        MapTriangulationMode mode = modeConfig.mode();
+        if (mode == MapTriangulationMode.OFF || states.isEmpty()) return Map.of();
+        long now = System.currentTimeMillis();
+        Map<UUID, HeuristicTargetMetrics> out = new LinkedHashMap<>();
+        for (Map.Entry<UUID, TargetState> entry : states.entrySet()) {
+            UUID id = entry.getKey();
+            TargetState state = entry.getValue();
+            synchronized (state) {
+                prune(state, now);
+                String name = "";
+                for (HeuristicObservation observation : state.samples) {
+                    if (observation != null && !observation.targetName().isBlank()) name = observation.targetName();
+                }
+                if (name.isBlank()) name = modeConfig.nameForTarget(id);
+                if (mode == MapTriangulationMode.TARGETED && !modeConfig.isTargeted(id, name)) continue;
+                if (state.samples.isEmpty() && state.estimate == null) continue;
+                out.put(id, new HeuristicTargetMetrics(id, name, List.copyOf(state.samples), state.estimate,
+                        state.queued.get(), state.lastSolvedAt, state.segmentId));
+            }
+        }
+        return out.isEmpty() ? Map.of() : Map.copyOf(out);
+    }
+
     public boolean offer(HeuristicObservation observation) {
         if (observation == null || observation.targetUuid() == null || !config.enabled()) {
             rejectedMode.incrementAndGet();
             return false;
         }
         UUID target = observation.targetUuid();
-        if (!modeConfig.accepts(target) || suppressedTargets.contains(target)) {
+        if (!modeConfig.accepts(target, observation.targetName()) || suppressedTargets.contains(target)) {
             rejectedMode.incrementAndGet();
             return false;
         }

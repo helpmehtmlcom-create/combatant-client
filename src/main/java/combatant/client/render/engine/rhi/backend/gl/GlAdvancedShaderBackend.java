@@ -15,6 +15,7 @@ import com.mojang.blaze3d.opengl.GlStateManager;
 import com.mojang.blaze3d.opengl.GlSampler;
 import com.mojang.blaze3d.opengl.GlConst;
 import com.mojang.blaze3d.opengl.GlTextureView;
+import combatant.client.mixininterface.IMsaaTexture;
 import combatant.client.mixininterface.IGlBackendInfo;
 import combatant.client.render.engine.rhi.GpuMeshHandle;
 import combatant.client.render.engine.rhi.RhiCapabilities;
@@ -371,7 +372,11 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
                 throw new IllegalArgumentException("Sampler does not belong to the active OpenGL backend");
             }
             GlStateManager._activeTexture(GlConst.GL_TEXTURE0 + binding.binding());
-            GlStateManager._bindTexture(texture.glId());
+            if (isMultisampled(binding)) {
+                GL32C.glBindTexture(GL32C.GL_TEXTURE_2D_MULTISAMPLE, texture.glId());
+            } else {
+                GlStateManager._bindTexture(texture.glId());
+            }
             GL33C.glBindSampler(binding.binding(), sampler.getId());
         }
     }
@@ -380,9 +385,17 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
         for (SampledTextureBinding binding : bindings) {
             GL33C.glBindSampler(binding.binding(), 0);
             GlStateManager._activeTexture(GlConst.GL_TEXTURE0 + binding.binding());
-            GlStateManager._bindTexture(0);
+            if (isMultisampled(binding)) {
+                GL32C.glBindTexture(GL32C.GL_TEXTURE_2D_MULTISAMPLE, 0);
+            } else {
+                GlStateManager._bindTexture(0);
+            }
         }
         if (!bindings.isEmpty()) GlStateManager._activeTexture(GlConst.GL_TEXTURE0);
+    }
+
+    private static boolean isMultisampled(SampledTextureBinding binding) {
+        return binding.texture().texture() instanceof IMsaaTexture msaa && msaa.combatant$getSamples() > 1;
     }
 
     private static void bindStorageImages(List<StorageImageBinding> bindings) {
@@ -391,7 +404,9 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
                 throw new IllegalArgumentException("Storage image does not belong to the active OpenGL backend");
             }
             int format = GlConst.toGlInternalId(binding.image().descriptor().format());
-            GL42C.glBindImageTexture(binding.binding(), texture.glId(), binding.mipLevel(), false, 0,
+            // storageView(mip) is already a one-mip texture view. Image level is relative to that
+            // view, therefore it must always be zero here.
+            GL42C.glBindImageTexture(binding.binding(), texture.glId(), 0, false, 0,
                     glImageAccess(binding.access()), format);
         }
     }

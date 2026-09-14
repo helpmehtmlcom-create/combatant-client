@@ -1,0 +1,27 @@
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, r32f) readonly uniform image2D u_SourceMip;
+layout(binding = 1, r32f) writeonly uniform image2D u_DestinationMip;
+
+float loadDepth(ivec2 pixel, ivec2 sourceSize) {
+    return imageLoad(u_SourceMip, clamp(pixel, ivec2(0), sourceSize - ivec2(1))).r;
+}
+
+void main() {
+    ivec2 destination = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 destinationSize = imageSize(u_DestinationMip);
+    if (any(greaterThanEqual(destination, destinationSize))) return;
+
+    ivec2 sourceSize = imageSize(u_SourceMip);
+    ivec2 source = destination * 2;
+    float d0 = loadDepth(source + ivec2(0, 0), sourceSize);
+    float d1 = loadDepth(source + ivec2(1, 0), sourceSize);
+    float d2 = loadDepth(source + ivec2(0, 1), sourceSize);
+    float d3 = loadDepth(source + ivec2(1, 1), sourceSize);
+
+    // Reversed-Z conservative nearest-depth hierarchy.
+    float nearestDepth = max(max(d0, d1), max(d2, d3));
+    imageStore(u_DestinationMip, destination, vec4(nearestDepth, 0.0, 0.0, 0.0));
+}

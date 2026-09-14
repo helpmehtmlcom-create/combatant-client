@@ -118,7 +118,11 @@ void main() {
 
     gl_Position = u_ProjectionMatrix * viewPosition;
 
+#ifdef COMBATANT_SHADOW_PASS
+    v_Color = _vert_color;
+#else
     v_Color = _vert_color * texture(u_LightTex, _vert_tex_light_coord);
+#endif
     v_TexCoord = (_vert_tex_diffuse_coord_bias * u_TexCoordShrink) + _vert_tex_diffuse_coord;
     v_ViewDistance = length(viewPosition.xyz);
     v_CombatantSurfaceFlags = a_CombatantSurfaceFlags;

@@ -1,0 +1,19 @@
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0) uniform sampler2D u_SceneColor;
+layout(binding = 1) uniform sampler2D u_MainDepth;
+layout(binding = 2, rgba16f) writeonly uniform image2D u_HistoryColor;
+layout(binding = 3, r32f) writeonly uniform image2D u_HistoryDepth;
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(u_HistoryColor);
+    if (any(greaterThanEqual(pixel, size))) return;
+
+    vec4 color = texelFetch(u_SceneColor, pixel, 0);
+    float depth = texelFetch(u_MainDepth, pixel, 0).r;
+    imageStore(u_HistoryColor, pixel, color);
+    imageStore(u_HistoryDepth, pixel, vec4(depth, 0.0, 0.0, 0.0));
+}

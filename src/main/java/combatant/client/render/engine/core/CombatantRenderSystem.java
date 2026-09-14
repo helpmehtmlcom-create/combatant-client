@@ -136,6 +136,7 @@ public enum CombatantRenderSystem {
         backendKind = desired;
         try {
             DEFERRED_WORLD.releasePhysicalResources();
+            DEFERRED_GRAPH.releaseBackendResources(previous);
             previous.close();
         } catch (Throwable t) {
             DebugLog.warnOnChange(
@@ -155,6 +156,7 @@ public enum CombatantRenderSystem {
                 previousKind,
                 backendKind
         );
+        DEFERRED_WORLD.onBackendChanged();
         logCapabilities();
     }
 
@@ -266,6 +268,9 @@ public enum CombatantRenderSystem {
         CombatantRhi activeRhi = rhi();
         SodiumFrameContext sodiumFrame;
         if (!frameOpen) {
+            // Commit optional renderer families only at a clean frame boundary. This is deliberately
+            // before any producer pipeline lookup so forward/deferred attachment layouts cannot mix.
+            DEFERRED_WORLD.serviceRuntimeLifecycle();
             frameId++;
             UiPipelineTelemetry.beginFrame(frameId);
             activeRhi.stats().setDetailedPipelineStats(TracyProfiler.isEnabled());
@@ -427,7 +432,8 @@ public enum CombatantRenderSystem {
         if (!initialized) return;
         try {
             UiMsaaClipLayer.shutdown();
-            DEFERRED_WORLD.releasePhysicalResources();
+            DEFERRED_WORLD.shutdownRuntime();
+            DEFERRED_GRAPH.releaseBackendResources(rhi);
             UNIFORMS.close();
             rhi.close();
         } finally {

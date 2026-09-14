@@ -1163,24 +1163,6 @@ public enum CombatantRenderPipelines {
             .withCull(false)
             .build()
     );
-    /** Neutral deferred resolve. Artistic lighting is layered on this contract later. */
-    public static final RenderPipeline DEFERRED_TERRAIN_LIGHTING = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
-            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/deferred_terrain_lighting"))
-            .withDomain(PipelineDomain.FULLSCREEN)
-            .withVertexFormat(CombatantVertexFormats.POS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
-            .withVertexShader(SHADER_DAMAGE_TINT_VERT)
-            .withFragmentShader(SHADER_DEFERRED_TERRAIN_LIGHTING_FRAG)
-            .withSampler("u_GbufferSurface")
-            .withSampler("u_GbufferGeometry")
-            .withSampler("u_GbufferAuxiliary")
-            .withSampler("u_LightTex")
-            .withUniform("DeferredLighting", UniformType.UNIFORM_BUFFER)
-            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
-            .withDepthWrite(false)
-            .withoutBlend()
-            .withCull(false)
-            .build()
-    );
     /** Full-screen cover-fit texture used by the rewritten main menu. */
     public static final RenderPipeline MAIN_MENU_TEXTURE_BACKGROUND = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS, UI_BATCH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/main_menu_texture_background"))

@@ -16,11 +16,14 @@ import net.caffeinemc.mods.sodium.client.render.chunk.terrain.TerrainRenderPass;
 import net.caffeinemc.mods.sodium.client.util.FogParameters;
 
 import java.util.concurrent.CopyOnWriteArrayList;
+import org.jetbrains.annotations.Nullable;
 
 /** Central terrain submission boundary between Sodium and the Combatant world renderer. */
 public final class SodiumTerrainInterop {
     private final SodiumRenderBridge bridge;
     private final CopyOnWriteArrayList<SodiumTerrainObserver> observers = new CopyOnWriteArrayList<>();
+
+    private @Nullable SodiumTerrainSubmission currentSubmission;
 
     private long terrainUpdatesScheduled;
     private long rebuildsScheduled;
@@ -35,6 +38,7 @@ public final class SodiumTerrainInterop {
     }
 
     public void beginFrame() {
+        currentSubmission = null;
         terrainUpdatesScheduled = 0L;
         rebuildsScheduled = 0L;
         observedOpaqueDraws = 0L;
@@ -60,6 +64,7 @@ public final class SodiumTerrainInterop {
                                   GpuSampler sampler) {
         try {
             SodiumTerrainSubmission submission = submission(matrices, pass, cameraX, cameraY, cameraZ, fog, sampler);
+            currentSubmission = submission;
             recordObserved(submission.drawClass());
             for (SodiumTerrainObserver observer : observers) {
                 try {
@@ -80,19 +85,27 @@ public final class SodiumTerrainInterop {
                                  double cameraZ,
                                  FogParameters fog,
                                  GpuSampler sampler) {
-        if (observers.isEmpty()) return;
         try {
-            SodiumTerrainSubmission submission = submission(matrices, pass, cameraX, cameraY, cameraZ, fog, sampler);
-            for (SodiumTerrainObserver observer : observers) {
-                try {
-                    observer.afterTerrainDraw(submission);
-                } catch (Throwable ignored) {
-                    interopErrors++;
+            if (!observers.isEmpty()) {
+                SodiumTerrainSubmission submission = submission(matrices, pass, cameraX, cameraY, cameraZ, fog, sampler);
+                for (SodiumTerrainObserver observer : observers) {
+                    try {
+                        observer.afterTerrainDraw(submission);
+                    } catch (Throwable ignored) {
+                        interopErrors++;
+                    }
                 }
             }
         } catch (Throwable ignored) {
             interopErrors++;
+        } finally {
+            currentSubmission = null;
         }
+    }
+
+    /** Primary-camera terrain submission currently executing on the render thread. */
+    public @Nullable SodiumTerrainSubmission currentSubmission() {
+        return currentSubmission;
     }
 
     public void scheduleTerrainUpdate() {

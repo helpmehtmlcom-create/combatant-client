@@ -40,6 +40,7 @@ import combatant.client.features.module.modules.visuals.ReimaginedVisual;
 import combatant.client.features.module.modules.visuals.WorldTweaks;
 import combatant.client.mixins.accessors.GameRendererAccessor;
 import combatant.client.mixins.accessors.LevelRendererAccessor;
+import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.core.CombatantWorldMatrices;
 import combatant.client.render.engine.depth.PreTranslucentDepth;
 import combatant.client.render.engine.depth.WorldSceneDepth;
@@ -129,16 +130,34 @@ public abstract class LevelRendererMixin {
                             ? cameraRenderState.pos
                             : null
             );
-            return;
-        }
-
-        if (cameraRenderState != null && cameraRenderState.projectionMatrix != null) {
+        } else if (cameraRenderState != null && cameraRenderState.projectionMatrix != null) {
             CombatantWorldMatrices.capture(
                     positionMatrix,
                     cameraRenderState.projectionMatrix,
                     cameraRenderState.projectionMatrix,
                     cameraRenderState.pos
             );
+        }
+
+        // Refine the early GameRenderer capture with LevelRenderer's exact position matrix. The
+        // primary source treats a second capture for the same frame as an update, so temporal
+        // history advances exactly once and never depends on late HUD/world callbacks.
+        var frame = CombatantRenderSystem.currentContext();
+        if (frame != null && cameraRenderState != null && cameraRenderState.pos != null) {
+            org.joml.Matrix4f projection = CombatantWorldMatrices.renderProjectionMatrix();
+            if (projection == null) projection = cameraRenderState.projectionMatrix;
+            if (projection != null) {
+                CombatantRenderSystem.deferredWorld().capturePrimaryView(
+                        frame.frameId(), positionMatrix, projection, cameraRenderState.pos, cameraRenderState.depthFar
+                );
+            }
+
+            LevelRenderState levelState = ((LevelRendererAccessor) (Object) this).combatant$getWorldRenderState();
+            if (levelState != null && levelState.skyRenderState != null) {
+                CombatantRenderSystem.deferredWorld().captureSunAngle(
+                        frame.frameId(), levelState.skyRenderState.sunAngle
+                );
+            }
         }
     }
 

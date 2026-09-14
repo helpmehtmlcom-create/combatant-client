@@ -1,0 +1,92 @@
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0) uniform sampler2D u_ResolvedDepth;
+layout(binding = 1) uniform sampler2D u_ShadowDepth;
+layout(binding = 2, r8) writeonly uniform image2D u_ShadowVisibility;
+
+struct ShadowCascade {
+    mat4 viewProjection;
+    vec4 atlasScaleBias;
+    vec4 splitRange;
+};
+
+layout(std430, binding = 3) readonly buffer ShadowCascadeData {
+    ShadowCascade cascades[];
+} u_Shadow;
+
+layout(std430, binding = 4) readonly buffer ShadowResolveCamera {
+    mat4 inverseProjection;
+    mat4 inverseView;
+    vec4 depthTransform;
+    vec4 viewportAndFar;
+} u_Camera;
+
+vec3 reconstructCameraRelativeWorld(vec2 uv, float depth) {
+    vec2 ndcXY = uv * 2.0 - 1.0;
+    float ndcZ = depth * u_Camera.depthTransform.x + u_Camera.depthTransform.y;
+    vec4 viewH = u_Camera.inverseProjection * vec4(ndcXY, ndcZ, 1.0);
+    if (abs(viewH.w) < 1e-7) return vec3(0.0);
+    vec3 viewPosition = viewH.xyz / viewH.w;
+    return (u_Camera.inverseView * vec4(viewPosition, 0.0)).xyz;
+}
+
+float viewDistance(vec2 uv, float depth) {
+    vec2 ndcXY = uv * 2.0 - 1.0;
+    float ndcZ = depth * u_Camera.depthTransform.x + u_Camera.depthTransform.y;
+    vec4 viewH = u_Camera.inverseProjection * vec4(ndcXY, ndcZ, 1.0);
+    if (abs(viewH.w) < 1e-7) return u_Camera.viewportAndFar.z;
+    return max(0.0, -(viewH.z / viewH.w));
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(u_ShadowVisibility);
+    if (any(greaterThanEqual(pixel, size))) return;
+
+    vec2 uv = (vec2(pixel) + vec2(0.5)) / vec2(size);
+    float depth = textureLod(u_ResolvedDepth, uv, 0.0).r;
+    if (depth <= 0.0) {
+        imageStore(u_ShadowVisibility, pixel, vec4(1.0));
+        return;
+    }
+
+    float distanceValue = viewDistance(uv, depth);
+    int cascadeCount = max(0, int(u_Shadow.cascades[0].splitRange.w + 0.5));
+    int cascadeIndex = -1;
+    for (int i = 0; i < min(cascadeCount, 8); ++i) {
+        vec2 split = u_Shadow.cascades[i].splitRange.xy;
+        if (distanceValue >= split.x && distanceValue <= split.y) {
+            cascadeIndex = i;
+            break;
+        }
+    }
+    if (cascadeIndex < 0) {
+        imageStore(u_ShadowVisibility, pixel, vec4(1.0));
+        return;
+    }
+
+    vec3 worldRelative = reconstructCameraRelativeWorld(uv, depth);
+    ShadowCascade cascade = u_Shadow.cascades[cascadeIndex];
+    vec4 shadowClip = cascade.viewProjection * vec4(worldRelative, 1.0);
+    if (abs(shadowClip.w) < 1e-7) {
+        imageStore(u_ShadowVisibility, pixel, vec4(1.0));
+        return;
+    }
+
+    vec3 shadowNdc = shadowClip.xyz / shadowClip.w;
+    vec2 localUv = shadowNdc.xy * 0.5 + 0.5;
+    if (any(lessThan(localUv, vec2(0.0))) || any(greaterThan(localUv, vec2(1.0)))) {
+        imageStore(u_ShadowVisibility, pixel, vec4(1.0));
+        return;
+    }
+
+    vec2 atlasUv = localUv * cascade.atlasScaleBias.xy + cascade.atlasScaleBias.zw;
+    float receiverDepth = shadowNdc.z * u_Camera.depthTransform.z + u_Camera.depthTransform.w;
+    float blockerDepth = textureLod(u_ShadowDepth, atlasUv, 0.0).r;
+
+    // Reversed-Z. A larger stored value is a nearer caster.
+    float visibility = (blockerDepth <= 0.0 || receiverDepth + 1e-5 >= blockerDepth) ? 1.0 : 0.0;
+    imageStore(u_ShadowVisibility, pixel, vec4(visibility));
+}

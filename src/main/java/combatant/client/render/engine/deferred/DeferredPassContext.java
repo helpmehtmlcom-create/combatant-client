@@ -15,8 +15,15 @@ public record DeferredPassContext(
         DeferredStage stage,
         RenderFrameContext frame,
         CombatantRhi rhi,
-        DeferredResourceBindings resources
+        DeferredResourceBindings resources,
+        DeferredSecondaryViewRegistry secondaryViews,
+        DeferredPrimaryViewSource primaryView,
+        DeferredRuntimeConfig.Snapshot settings
 ) {
+    public DeferredPassContext {
+        if (settings == null) settings = DeferredRuntimeConfig.current();
+    }
+
     public AdvancedShaderBackend advancedShaders() {
         return rhi.advancedShaders();
     }

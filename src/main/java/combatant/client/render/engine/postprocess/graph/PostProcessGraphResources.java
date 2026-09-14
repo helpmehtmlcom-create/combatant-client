@@ -15,6 +15,7 @@ import org.jetbrains.annotations.Nullable;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.visuals.ReimaginedVisual;
 import combatant.client.render.engine.core.CombatantRenderSystem;
+import combatant.client.render.engine.deferred.DeferredResource;
 import combatant.client.render.engine.depth.PreTranslucentDepth;
 import combatant.client.render.engine.depth.WorldSceneDepth;
 import combatant.client.render.engine.postprocess.PostProcessContext;
@@ -71,6 +72,21 @@ public final class PostProcessGraphResources implements AutoCloseable {
             put(PostProcessResource.GBUFFER_GEOMETRY, gbuffer.geometry());
             put(PostProcessResource.GBUFFER_AUXILIARY, gbuffer.auxiliary());
         }
+        bindDeferred(PostProcessResource.VELOCITY, DeferredResource.VELOCITY);
+        bindDeferred(PostProcessResource.RESOLVED_DEPTH, DeferredResource.RESOLVED_DEPTH);
+        bindDeferred(PostProcessResource.DEPTH_PYRAMID, DeferredResource.DEPTH_PYRAMID);
+        bindDeferred(PostProcessResource.SHADOW_DEPTH, DeferredResource.SHADOW_DEPTH);
+        bindDeferred(PostProcessResource.SHADOW_COLOR, DeferredResource.SHADOW_COLOR);
+        bindDeferred(PostProcessResource.AMBIENT_OCCLUSION, DeferredResource.AMBIENT_OCCLUSION);
+        bindDeferred(PostProcessResource.INDIRECT_LIGHT, DeferredResource.INDIRECT_LIGHT);
+        bindDeferred(PostProcessResource.LIGHTING_COLOR, DeferredResource.LIGHTING_COLOR);
+        bindDeferred(PostProcessResource.REFLECTION_COLOR, DeferredResource.REFLECTION_COLOR);
+        bindDeferred(PostProcessResource.REFLECTION_CONFIDENCE, DeferredResource.REFLECTION_CONFIDENCE);
+        bindDeferred(PostProcessResource.TRANSLUCENT_COLOR, DeferredResource.TRANSLUCENT_COLOR);
+        bindDeferred(PostProcessResource.TRANSLUCENT_DEPTH, DeferredResource.TRANSLUCENT_DEPTH);
+        bindDeferred(PostProcessResource.HISTORY_COLOR, DeferredResource.HISTORY_COLOR);
+        bindDeferred(PostProcessResource.HISTORY_DEPTH, DeferredResource.HISTORY_DEPTH);
+        bindDeferred(PostProcessResource.HISTORY_REFLECTION, DeferredResource.HISTORY_REFLECTION);
         put(PostProcessResource.GRAPH_SOURCE_COLOR, pingView);
         put(PostProcessResource.GRAPH_DEST_COLOR, pongView);
         this.legacyContext = new PostProcessContext(
@@ -142,6 +158,12 @@ public final class PostProcessGraphResources implements AutoCloseable {
         mainFramebuffer = null;
         legacyContext = null;
         prepared = false;
+    }
+
+    private void bindDeferred(PostProcessResource target, DeferredResource source) {
+        var bindings = CombatantRenderSystem.deferredWorld().resourceBindings();
+        if (!bindings.isValid(source)) return;
+        put(target, bindings.texture(source));
     }
 
     private void ensurePingPong(int w, int h) {

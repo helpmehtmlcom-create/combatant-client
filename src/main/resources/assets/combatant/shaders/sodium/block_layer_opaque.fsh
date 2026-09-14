@@ -108,6 +108,17 @@ float combatant_encode_distance(float distanceValue) {
 #endif
 
 void main() {
+#ifdef COMBATANT_SHADOW_PASS
+#ifdef ALPHA_CUTOUT
+    vec4 shadowTexel = texture(u_BlockTex, v_TexCoord) * v_Color;
+    if (shadowTexel.a < ALPHA_CUTOUT) {
+        discard;
+    }
+#endif
+    fragColor = vec4(0.0);
+    return;
+#endif
+
     vec4 texel = u_UseRGSS ? sampleRGSS(u_BlockTex, v_TexCoord, u_TexelSize) : sampleNearest(u_BlockTex, v_TexCoord, u_TexelSize);
     vec4 color = texel * v_Color;
 

@@ -9,6 +9,7 @@ package combatant.client.render.engine.rhi.shader;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import org.joml.Matrix4fc;
 
 /** Bounds-checked writer for arrays of a declared std430 struct. */
 public final class Std430Writer {
@@ -72,6 +73,29 @@ public final class Std430Writer {
     public Std430Writer putVec4(int element, String member, float x, float y, float z, float w) {
         int offset = offset(element, member, 0);
         buffer.putFloat(offset, x).putFloat(offset + 4, y).putFloat(offset + 8, z).putFloat(offset + 12, w);
+        return this;
+    }
+
+    /** Writes one column-major GLSL mat4 into a std430 MAT4 member. */
+    public Std430Writer putMat4(int element, String member, Matrix4fc value) {
+        if (value == null) throw new IllegalArgumentException("value");
+        int offset = offset(element, member, 0);
+        buffer.putFloat(offset, value.m00());
+        buffer.putFloat(offset + 4, value.m01());
+        buffer.putFloat(offset + 8, value.m02());
+        buffer.putFloat(offset + 12, value.m03());
+        buffer.putFloat(offset + 16, value.m10());
+        buffer.putFloat(offset + 20, value.m11());
+        buffer.putFloat(offset + 24, value.m12());
+        buffer.putFloat(offset + 28, value.m13());
+        buffer.putFloat(offset + 32, value.m20());
+        buffer.putFloat(offset + 36, value.m21());
+        buffer.putFloat(offset + 40, value.m22());
+        buffer.putFloat(offset + 44, value.m23());
+        buffer.putFloat(offset + 48, value.m30());
+        buffer.putFloat(offset + 52, value.m31());
+        buffer.putFloat(offset + 56, value.m32());
+        buffer.putFloat(offset + 60, value.m33());
         return this;
     }
 

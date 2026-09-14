@@ -1,0 +1,143 @@
+/*
+ * This file is part of the Combatant Client distribution.
+ * Copyright (c) 2026 pivosos2007.
+ *
+ * Licensed under the GNU General Public License v3.0.
+ */
+
+package combatant.client.render.engine.deferred;
+
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.shaders.UniformType;
+import com.mojang.blaze3d.systems.GpuDevice;
+import com.mojang.blaze3d.systems.RenderSystem;
+import combatant.client.render.engine.core.CombatantRenderSystem;
+import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.DepthTestFunction;
+import combatant.client.render.engine.pipeline.ExtendedRenderPipelineBuilder;
+import combatant.client.render.engine.rhi.pipeline.PipelineDomain;
+import combatant.client.render.engine.rhi.pipeline.RenderPipelineRegistry;
+import combatant.client.render.engine.shader.CombatantShaderSources;
+import combatant.client.render.engine.shader.ShaderCostRegistry;
+import combatant.client.render.engine.vertex.CombatantVertexFormats;
+import combatant.client.util.logging.DebugLog;
+import combatant.client.util.resources.asset.AssetAutoLoader;
+import combatant.client.util.resources.asset.AssetLoad;
+import combatant.client.util.resources.asset.AssetLoadPhase;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.packs.resources.ResourceManager;
+
+/**
+ * Runtime-owned assets for the optional deferred world path.
+ *
+ * <p>Nothing in this class is touched by boot-time pipeline precompile while the scope is inactive.
+ * Native compute stages are compiled by {@link DeferredPassGraph#prepareBackendResources()} only
+ * after activation, and the ordinary full-screen lighting pipeline is also created/precompiled here.</p>
+ */
+public enum DeferredRuntimeAssets {
+    ;
+
+    public static final String SCOPE = "render.deferred";
+    public static final Identifier TERRAIN_LIGHTING_FRAGMENT =
+            Identifier.fromNamespaceAndPath("combatant", "shaders/deferred_terrain_lighting.frag");
+
+    private static RenderPipeline terrainLighting;
+    private static long preparedResourceGeneration = Long.MIN_VALUE;
+
+    public static boolean active() {
+        return AssetAutoLoader.isScopeActive(SCOPE);
+    }
+
+    /** ShaderManager must not eagerly read deferred-only graphics sources while the scope is off. */
+    public static boolean shouldPublishExtendedShader(Identifier resourceId) {
+        if (resourceId == null) return true;
+        if (!"combatant".equals(resourceId.getNamespace())) return true;
+        String path = resourceId.getPath();
+        boolean deferredOnly = path.equals(TERRAIN_LIGHTING_FRAGMENT.getPath())
+                || path.startsWith("shaders/deferred/");
+        return !deferredOnly || active();
+    }
+
+    public static RenderPipeline terrainLighting() {
+        if (!active() || terrainLighting == null) {
+            throw new IllegalStateException("Deferred terrain lighting assets are not active");
+        }
+        return terrainLighting;
+    }
+
+    @AssetLoad(value = AssetLoadPhase.ACTIVATE, scope = SCOPE, order = 100)
+    public static void activate(ResourceManager resources) {
+        prepare(resources, false);
+    }
+
+    @AssetLoad(value = AssetLoadPhase.POST_RELOAD, scope = SCOPE, order = 100)
+    public static void reload(ResourceManager resources) {
+        prepare(resources, true);
+    }
+
+    /** Device/backend switches happen outside the ordinary resource-reload hook sequence. */
+    public static void reprepareAfterBackendSwitch(ResourceManager resources) {
+        prepare(resources, false);
+    }
+
+    private static void prepare(ResourceManager resources, boolean rebuildNativePrograms) {
+        if (resources == null) throw new IllegalArgumentException("resources");
+        RenderSystem.assertOnRenderThread();
+
+        if (terrainLighting == null) {
+            terrainLighting = new ExtendedRenderPipelineBuilder(CombatantRenderPipelines.meshUniforms())
+                    .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/deferred_terrain_lighting"))
+                    .withDomain(PipelineDomain.FULLSCREEN)
+                    .withVertexFormat(CombatantVertexFormats.POS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+                    .withVertexShader(CombatantRenderPipelines.SHADER_DAMAGE_TINT_VERT)
+                    .withFragmentShader(TERRAIN_LIGHTING_FRAGMENT)
+                    .withSampler("u_GbufferSurface")
+                    .withSampler("u_GbufferGeometry")
+                    .withSampler("u_GbufferAuxiliary")
+                    .withSampler("u_LightTex")
+                    .withUniform("DeferredLighting", UniformType.UNIFORM_BUFFER)
+                    .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+                    .withDepthWrite(false)
+                    .withoutBlend()
+                    .withCull(false)
+                    .build();
+            RenderPipelineRegistry.global().registerNative(terrainLighting);
+        }
+
+        final GpuDevice device = RenderSystem.getDevice();
+        device.precompilePipeline(terrainLighting, (identifier, shaderType) -> {
+            String source = CombatantShaderSources.load(resources, identifier, shaderType);
+            ShaderCostRegistry.analyze(identifier, shaderType, source);
+            return source;
+        });
+
+        // Native .comp programs are Combatant-owned rather than ShaderManager-owned. Resource
+        // reload must therefore explicitly discard/recompile them while the scope is active.
+        if (rebuildNativePrograms) {
+            CombatantRenderSystem.deferredGraph().releaseBackendResources(CombatantRenderSystem.rhi());
+        }
+        CombatantRenderSystem.deferredGraph().prepareBackendResources();
+        preparedResourceGeneration = combatant.client.util.resources.RenderResourceReadiness.generation();
+        DebugLog.renderThreadOnChange(
+                "combatant.deferred.assets",
+                "ready|" + preparedResourceGeneration,
+                "[Deferred] runtime assets prepared (resource generation=%d)",
+                preparedResourceGeneration
+        );
+    }
+
+    @AssetLoad(value = AssetLoadPhase.DEACTIVATE, scope = SCOPE, order = 100)
+    public static void release(ResourceManager resources) {
+        RenderSystem.assertOnRenderThread();
+        CombatantRenderSystem.deferredGraph().releaseBackendResources(CombatantRenderSystem.rhi());
+        preparedResourceGeneration = Long.MIN_VALUE;
+        // The immutable RenderPipeline descriptor can stay registered. Combatant-owned native
+        // programs are released here; Mojang may retain its graphics pipeline cache until the next
+        // device/resource cache invalidation, but no deferred source is loaded at cold startup.
+        DebugLog.renderThreadOnChange(
+                "combatant.deferred.assets",
+                "inactive",
+                "[Deferred] runtime assets released"
+        );
+    }
+}

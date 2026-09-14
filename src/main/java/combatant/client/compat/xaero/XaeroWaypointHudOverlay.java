@@ -7,13 +7,10 @@
 
 package combatant.client.compat.xaero;
 
-import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.core.ViewportContext;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.svg.SvgRenderOptions;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
+import combatant.client.render.marker.WorldMarkerHudRenderer;
 import combatant.client.render.helpers.ScreenProjection;
 import combatant.client.runtime.RuntimeGate;
 import combatant.client.util.logging.DebugLog;
@@ -44,17 +41,12 @@ import java.util.Locale;
 public enum XaeroWaypointHudOverlay {
     ;
 
-    private static final float BASE_ICON_SIZE = 13.0f;
-    private static final float BASE_NAME_SIZE = 11.5f;
-    private static final float BASE_DISTANCE_SIZE = 9.25f;
-    private static final float PLATE_PAD_X = 4.0f;
-    private static final float PLATE_PAD_Y = 2.75f;
-    private static final float ICON_TEXT_GAP = 3.0f;
-    private static final float LINE_GAP = 0.5f;
-    private static final float ANCHOR_GAP = 5.0f;
+    private static final float BASE_ICON_SIZE = 12.0f;
+    private static final float BASE_NAME_SIZE = 10.5f;
+    private static final float BASE_DISTANCE_SIZE = 8.75f;
     private static final float SCREEN_MARGIN = 6.0f;
 
-    private static List<FrameEntry> frameEntries = List.of();
+    private static List<WorldMarkerHudRenderer.Layout> frameEntries = List.of();
     private static boolean failed;
     private static long retryAfterNanos;
 
@@ -72,7 +64,10 @@ public enum XaeroWaypointHudOverlay {
     }
 
     public static boolean shouldSuppressNativeXaeroWaypoints() {
-        if (failed || RuntimeGate.isPanic()) return false;
+        // Suppression must follow the exact same availability gate as our replacement renderer.
+        // During a temporary retry window (or whenever HUD rendering is gated off) Xaero remains
+        // the fallback instead of making the waypoint disappear altogether.
+        if (failed || System.nanoTime() < retryAfterNanos || !RuntimeGate.canRunHud()) return false;
         try {
             return overlayEnabled();
         } catch (RuntimeException error) {
@@ -102,38 +97,8 @@ public enum XaeroWaypointHudOverlay {
             return;
         }
         try {
-            frameEntries = captureFrame(fallback, tickDelta);
-            for (FrameEntry entry : frameEntries) {
-                float radius = Math.min(4.5f, entry.plateHeight() * 0.38f);
-                renderer.roundedRectSoftShadow(
-                        entry.plateX() - 1.0f,
-                        entry.plateY() - 1.0f,
-                        entry.plateWidth() + 2.0f,
-                        entry.plateHeight() + 2.0f,
-                        radius + 0.75f,
-                        4.0f,
-                        0.045f,
-                        withAlpha(0x000000, Math.round(96.0f * entry.opacity()))
-                );
-                renderer.roundedRect(
-                        entry.plateX(), entry.plateY(), entry.plateWidth(), entry.plateHeight(),
-                        radius,
-                        withAlpha(0x091017, Math.round(166.0f * entry.opacity()))
-                );
-                renderer.roundedRectStroke(
-                        entry.plateX(), entry.plateY(), entry.plateWidth(), entry.plateHeight(),
-                        radius, 0.75f,
-                        withAlpha(0xFFF8FBFD, Math.round(20.0f * entry.opacity()))
-                );
-                renderer.svg(
-                        "map-pin",
-                        entry.iconX(),
-                        entry.iconY(),
-                        entry.iconSize(),
-                        entry.iconSize(),
-                        SvgRenderOptions.overrideColor(withAlpha(entry.accent(), Math.round(242.0f * entry.opacity())))
-                );
-            }
+            frameEntries = WorldMarkerHudRenderer.layout(captureFrame(tickDelta), fallback);
+            WorldMarkerHudRenderer.renderBackground(renderer, frameEntries);
         } catch (RuntimeException error) {
             frameEntries = List.of();
             recover(error);
@@ -148,50 +113,13 @@ public enum XaeroWaypointHudOverlay {
             frameEntries = List.of();
             return;
         }
-        boolean ownDecorationBatch = false;
         try {
-            TextRenderer nameFont = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, fallback);
-            TextRenderer nameBold = Fonts.renderer("OnestBold", FontInfo.Type.Regular, nameFont);
-            TextRenderer distanceFont = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, nameFont);
-            boolean hasDecorations = frameEntries.stream()
-                    .flatMap(entry -> entry.nameParts().stream())
-                    .anyMatch(part -> part.underline() || part.strikethrough());
-            if (hasDecorations && !Renderer2D.isBatching()) {
-                Renderer2D.COLOR.begin();
-                ownDecorationBatch = true;
-            }
-            for (FrameEntry entry : frameEntries) {
-                if (!entry.nameParts().isEmpty()) {
-                    renderStyledName(nameFont, nameBold, entry.nameParts(), entry.textX(), entry.nameY(),
-                            entry.nameSize(), entry.opacity());
-                }
-            }
-
-            float distanceSize = frameEntries.getFirst().distanceSize();
-            distanceFont.begin(distanceSize / 18.0f, false, false);
-            try {
-                for (FrameEntry entry : frameEntries) {
-                    if (!entry.distance().isEmpty()) {
-                        distanceFont.render(
-                                entry.distance(),
-                                entry.textX(),
-                                entry.distanceY(),
-                                new RenderColor(withAlpha(0xFFC7D0DB, Math.round(212.0f * entry.opacity()))),
-                                false
-                        );
-                    }
-                }
-            } finally {
-                distanceFont.end();
-            }
+            WorldMarkerHudRenderer.renderForeground(fallback, frameEntries);
         } catch (RuntimeException error) {
             recover(error);
         } catch (LinkageError error) {
             disable(error);
         } finally {
-            if (ownDecorationBatch) {
-                Renderer2D.COLOR.render();
-            }
             frameEntries = List.of();
         }
     }
@@ -200,7 +128,7 @@ public enum XaeroWaypointHudOverlay {
         frameEntries = List.of();
     }
 
-    private static List<FrameEntry> captureFrame(TextRenderer fallback, float tickDelta) {
+    private static List<WorldMarkerHudRenderer.Marker> captureFrame(float tickDelta) {
         Minecraft minecraft = Minecraft.getInstance();
         MinimapSession session = (MinimapSession) BuiltInHudModules.MINIMAP.getCurrentSession();
         if (minecraft == null || minecraft.player == null || session == null || session.getWaypointSession() == null) {
@@ -240,8 +168,6 @@ public enum XaeroWaypointHudOverlay {
         float nameSize = BASE_NAME_SIZE * nameFactor;
         float distanceSize = BASE_DISTANCE_SIZE * distanceFactor;
 
-        TextRenderer nameFont = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, fallback);
-        TextRenderer distanceFont = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, nameFont);
         ViewportContext viewport = ViewportContext.current();
         double viewportWidth = viewport != null ? viewport.width() : minecraft.getWindow().getWidth();
         double viewportHeight = viewport != null ? viewport.height() : minecraft.getWindow().getHeight();
@@ -256,7 +182,7 @@ public enum XaeroWaypointHudOverlay {
                 ? 1.0
                 : backgroundCoordinateScale / waypointDimensionScale;
 
-        List<FrameEntry> entries = new ArrayList<>(waypoints.size());
+        List<WorldMarkerHudRenderer.Marker> entries = new ArrayList<>(waypoints.size());
         for (Waypoint waypoint : waypoints) {
             if (waypoint == null || waypoint.isDisabled()) continue;
 
@@ -289,34 +215,18 @@ public enum XaeroWaypointHudOverlay {
                     minecraft, anchor, distanceMode, horizontalPointingAngle, verticalPointingAngle);
             String distanceText = distanceVisible ? formatDistance(distance, kmThreshold, precision) : "";
 
-            float nameWidth = nameParts.isEmpty() ? 0.0f : measureStyledWidth(nameFont, nameParts, nameSize);
-            float distanceWidth = distanceText.isEmpty() ? 0.0f : measureWidth(distanceFont, distanceText, distanceSize);
-            float nameHeight = nameParts.isEmpty() ? 0.0f : measureHeight(nameFont, nameSize);
-            float distanceHeight = distanceText.isEmpty() ? 0.0f : measureHeight(distanceFont, distanceSize);
-            float textWidth = Math.max(nameWidth, distanceWidth);
-            boolean hasText = textWidth > 0.0f;
-            float textHeight = 0.0f;
-            if (!nameParts.isEmpty()) textHeight += nameHeight;
-            if (!distanceText.isEmpty()) textHeight += (textHeight > 0.0f ? LINE_GAP : 0.0f) + distanceHeight;
-            float plateWidth = PLATE_PAD_X * 2.0f + iconSize + (hasText ? ICON_TEXT_GAP + textWidth : 0.0f);
-            float contentHeight = Math.max(iconSize, textHeight <= 0.0f ? iconSize : textHeight);
-            float plateHeight = PLATE_PAD_Y * 2.0f + contentHeight;
-            float plateX = (float) projected.x - plateWidth * 0.5f;
-            float plateY = (float) projected.y - plateHeight - ANCHOR_GAP;
-            float iconX = plateX + PLATE_PAD_X;
-            float iconY = plateY + (plateHeight - iconSize) * 0.5f;
-            float textX = iconX + iconSize + ICON_TEXT_GAP;
-            float textTop = plateY + (plateHeight - textHeight) * 0.5f;
-            float nameY = textTop;
-            float distanceY = nameParts.isEmpty() ? textTop : textTop + nameHeight + (distanceText.isEmpty() ? 0.0f : LINE_GAP);
             int accent = 0xFF000000 | waypoint.getWaypointColor().getHex();
-
-            entries.add(new FrameEntry(
-                    plateX, plateY, plateWidth, plateHeight,
-                    iconX, iconY, iconSize,
-                    textX, nameY, distanceY,
-                    nameSize, distanceSize,
-                    nameParts, distanceText, accent, opacity
+            entries.add(new WorldMarkerHudRenderer.Marker(
+                    (float) projected.x,
+                    (float) projected.y,
+                    "map-pin",
+                    iconSize,
+                    nameParts,
+                    nameSize,
+                    distanceText,
+                    distanceSize,
+                    accent,
+                    opacity
             ));
         }
         return List.copyOf(entries);
@@ -337,46 +247,6 @@ public enum XaeroWaypointHudOverlay {
         if (name == null || name.isBlank()) return List.of();
         Component component = LegacyTextUtil.convertLegacyCodesRobust(Component.literal(name.trim()));
         return TextRenderUtil.flattenStyled(component, 0xFFF5F8FC);
-    }
-
-    private static float measureStyledWidth(TextRenderer fallback, List<TextRenderUtil.Part> parts, float size) {
-        TextRenderer bold = Fonts.renderer("OnestBold", FontInfo.Type.Regular, fallback);
-        float width = 0.0f;
-        for (TextRenderUtil.Part part : parts) {
-            width += measureWidth(part.bold() ? bold : fallback, part.text(), size);
-        }
-        return width;
-    }
-
-    private static void renderStyledName(TextRenderer regular,
-                                         TextRenderer bold,
-                                         List<TextRenderUtil.Part> parts,
-                                         float x,
-                                         float y,
-                                         float size,
-                                         float opacity) {
-        float cursor = x;
-        for (TextRenderUtil.Part part : parts) {
-            TextRenderer font = part.bold() ? bold : regular;
-            font.begin(size / 18.0f, false, false);
-            float width;
-            try {
-                font.render(part.text(), cursor, y,
-                        new RenderColor(withAlpha(part.color(), Math.round(255.0f * opacity))), false);
-                width = (float) font.getWidth(part.text(), false);
-            } finally {
-                font.end();
-            }
-            if (part.underline()) {
-                Renderer2D.COLOR.quad(cursor, y + size + 0.3f, width, 0.75f,
-                        withAlpha(part.color(), Math.round(255.0f * opacity)));
-            }
-            if (part.strikethrough()) {
-                Renderer2D.COLOR.quad(cursor, y + size * 0.55f, width, 0.75f,
-                        withAlpha(part.color(), Math.round(255.0f * opacity)));
-            }
-            cursor += width;
-        }
     }
 
     private static String formatDistance(double distance, int kmThreshold, int precision) {
@@ -425,24 +295,6 @@ public enum XaeroWaypointHudOverlay {
                 && (verticalAngle >= 90 || pitchDelta <= verticalAngle);
     }
 
-    private static float measureWidth(TextRenderer renderer, String text, float size) {
-        renderer.begin(size / 18.0f, true, false);
-        try {
-            return (float) renderer.getWidth(text, false);
-        } finally {
-            renderer.end();
-        }
-    }
-
-    private static float measureHeight(TextRenderer renderer, float size) {
-        renderer.begin(size / 18.0f, true, false);
-        try {
-            return (float) renderer.getHeight(false);
-        } finally {
-            renderer.end();
-        }
-    }
-
     @SuppressWarnings("unchecked")
     private static boolean effectiveBoolean(ClientConfigManager config, ConfigOption<?> option) {
         return (Boolean) config.getEffective((ConfigOption<Boolean>) option);
@@ -478,10 +330,6 @@ public enum XaeroWaypointHudOverlay {
         );
     }
 
-    private static int withAlpha(int argb, int alpha) {
-        return (argb & 0x00FFFFFF) | ((Math.max(0, Math.min(255, alpha)) & 0xFF) << 24);
-    }
-
     private static float clamp01(float value) {
         return clamp(value, 0.0f, 1.0f);
     }
@@ -490,23 +338,4 @@ public enum XaeroWaypointHudOverlay {
         return Math.max(min, Math.min(max, value));
     }
 
-    private record FrameEntry(
-            float plateX,
-            float plateY,
-            float plateWidth,
-            float plateHeight,
-            float iconX,
-            float iconY,
-            float iconSize,
-            float textX,
-            float nameY,
-            float distanceY,
-            float nameSize,
-            float distanceSize,
-            List<TextRenderUtil.Part> nameParts,
-            String distance,
-            int accent,
-            float opacity
-    ) {
-    }
 }

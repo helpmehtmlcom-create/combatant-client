@@ -7,6 +7,7 @@
 
 package combatant.client.features.map.locator;
 
+import combatant.client.config.subsystem.MapTriangulationConfig;
 import combatant.client.features.map.heuristic.HeuristicObservation;
 import combatant.client.features.map.heuristic.HeuristicRuntime;
 import net.minecraft.client.Minecraft;
@@ -49,6 +50,9 @@ public final class LocatorRuntime {
             UUID uuid=wp.id().left().orElse(null);
             String name=wp.id().right().orElse("");
             if (uuid == null && !name.isBlank()) uuid = onlineByName.get(name.toLowerCase(Locale.ROOT));
+            if (uuid == null && !name.isBlank() && MapTriangulationConfig.get().isTargetedName(name)) {
+                uuid = MapTriangulationConfig.offlineTargetUuid(name);
+            }
             if(uuid!=null && uuid.equals(mc.player.getUUID())) return;
             LocatorWaypointExtractor.Extracted e=LocatorWaypointExtractor.extract(wp);
             if(e.type()==LocatorObservationType.UNUSABLE)return;
@@ -62,7 +66,7 @@ public final class LocatorRuntime {
                     e.x(),e.y(),e.z(),e.bearingRadians(),e.uncertaintyRadius(),now,rev);
             out.add(o);
             if(uuid!=null && e.type()==LocatorObservationType.BEARING_ONLY) {
-                HeuristicRuntime.get().offer(new HeuristicObservation(uuid,ox,oz,e.bearingRadians(),now,rev,1.0));
+                HeuristicRuntime.get().offer(new HeuristicObservation(uuid,name,ox,oz,e.bearingRadians(),now,rev,1.0));
             }
         });
 

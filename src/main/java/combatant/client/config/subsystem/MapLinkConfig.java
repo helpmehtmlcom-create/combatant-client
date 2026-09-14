@@ -58,9 +58,15 @@ public final class MapLinkConfig extends SubsystemConfig {
 
     public List<MapLinkProfile> profiles() {
         return profiles.get().stream()
-                .filter(MapLinkProfile::enabled)
+                .filter(MapLinkConfig::isConfiguredProfile)
                 .sorted(Comparator.comparingInt(MapLinkProfile::sourcePriority).reversed())
                 .toList();
+    }
+
+    public static boolean isConfiguredProfile(MapLinkProfile profile) {
+        return profile != null
+                && profile.serverMatcher() != null && !profile.serverMatcher().isBlank()
+                && profile.baseUrl() != null && !profile.baseUrl().isBlank();
     }
 
     public List<MapLinkProfile> allProfiles() {

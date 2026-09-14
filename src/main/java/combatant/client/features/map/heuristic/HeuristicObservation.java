@@ -11,6 +11,7 @@ import java.util.UUID;
 
 public record HeuristicObservation(
         UUID targetUuid,
+        String targetName,
         double observerX,
         double observerZ,
         double bearingRadians,
@@ -20,10 +21,21 @@ public record HeuristicObservation(
 ) {
     public HeuristicObservation {
         if (targetUuid == null) throw new IllegalArgumentException("targetUuid");
+        targetName = targetName == null ? "" : targetName.trim();
         if (!Double.isFinite(observerX) || !Double.isFinite(observerZ) || !Double.isFinite(bearingRadians)) {
             throw new IllegalArgumentException("Non-finite observation");
         }
         if (!(weight > 0.0) || !Double.isFinite(weight)) weight = 1.0;
+    }
+
+    public HeuristicObservation(UUID targetUuid,
+                                double observerX,
+                                double observerZ,
+                                double bearingRadians,
+                                long observedAtMs,
+                                long sourceRevision,
+                                double weight) {
+        this(targetUuid, "", observerX, observerZ, bearingRadians, observedAtMs, sourceRevision, weight);
     }
 
     public double dirX() { return -Math.sin(bearingRadians); }

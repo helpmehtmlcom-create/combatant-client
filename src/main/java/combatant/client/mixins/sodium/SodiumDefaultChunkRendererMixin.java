@@ -7,6 +7,7 @@
 
 package combatant.client.mixins.sodium;
 
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
@@ -14,8 +15,10 @@ import com.mojang.blaze3d.systems.CommandEncoder;
 import com.mojang.blaze3d.systems.RenderPass;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import combatant.client.render.engine.core.CombatantRenderSystem;
+import combatant.client.render.sodium.SodiumSecondaryTerrainContext;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.TerrainRenderPass;
 import org.joml.Vector4fc;
+import org.objectweb.asm.Opcodes;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
@@ -45,6 +48,10 @@ public abstract class SodiumDefaultChunkRendererMixin {
             Operation<RenderPass> original,
             @Local(argsOnly = true) TerrainRenderPass terrainPass
     ) {
+        SodiumSecondaryTerrainContext.State secondary = SodiumSecondaryTerrainContext.current();
+        if (secondary != null) {
+            return secondary.openPass(encoder, label);
+        }
         if (terrainPass.isTranslucent() || !CombatantRenderSystem.deferredWorld().enabled()) {
             return original.call(encoder, label, color, clearColor, depth, clearDepth);
         }
@@ -52,4 +59,15 @@ public abstract class SodiumDefaultChunkRendererMixin {
                 encoder, label, color, clearColor, depth, clearDepth
         );
     }
+    @ModifyExpressionValue(
+            method = "render",
+            at = @At(
+                    value = "FIELD",
+                    target = "Lnet/caffeinemc/mods/sodium/client/gui/SodiumOptions$PerformanceSettings;useBlockFaceCulling:Z",
+                    opcode = Opcodes.GETFIELD)
+    )
+    private boolean combatant$disablePrimaryCameraFaceCullingForSecondaryView(boolean original) {
+        return SodiumSecondaryTerrainContext.active() ? false : original;
+    }
+
 }
