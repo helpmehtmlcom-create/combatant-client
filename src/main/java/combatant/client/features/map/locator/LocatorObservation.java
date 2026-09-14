@@ -21,5 +21,6 @@ public record LocatorObservation(
         double bearingRadians,
         double uncertaintyRadius,
         long observedAtMs,
-        long sourceRevision
+        long sourceRevision,
+        long sourceGeneration
 ) {}

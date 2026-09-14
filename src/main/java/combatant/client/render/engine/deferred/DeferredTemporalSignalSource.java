@@ -91,7 +91,7 @@ final class DeferredTemporalSignalSource implements AutoCloseable {
         installSignal(passes,
                 "world.reflection.temporal", DeferredStage.REFLECTION_TEMPORAL,
                 DeferredResource.REFLECTION_RESOLVED_COLOR, DeferredResource.REFLECTION_RESOLVED_CONFIDENCE,
-                DeferredResource.REFLECTION_COLOR, DeferredResource.REFLECTION_CONFIDENCE,
+                DeferredResource.REFLECTION_TEMPORAL_COLOR, DeferredResource.REFLECTION_TEMPORAL_CONFIDENCE,
                 DeferredResource.HISTORY_REFLECTION, DeferredResource.HISTORY_REFLECTION_CONFIDENCE,
                 false);
         installHistoryStore(passes,

@@ -92,6 +92,7 @@ final class DeferredBackendPasses implements AutoCloseable {
     private final DeferredReflectionCascadeSource reflectionCascades = new DeferredReflectionCascadeSource();
     private final DeferredReflectionSource reflections = new DeferredReflectionSource();
     private final DeferredTemporalSignalSource temporalSignals = new DeferredTemporalSignalSource();
+    private final DeferredReflectionDenoiseSource reflectionDenoise = new DeferredReflectionDenoiseSource();
     private final DeferredTemporalHistorySource temporalHistory = new DeferredTemporalHistorySource();
 
     void install(ArrayList<DeferredPassSpec> passes) {
@@ -162,6 +163,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         reflectionCascades.install(passes);
         reflections.install(passes);
         temporalSignals.install(passes);
+        reflectionDenoise.install(passes);
         temporalHistory.install(passes);
     }
 
@@ -180,6 +182,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         indirectLight.prepare(rhi);
         reflections.prepare(rhi);
         temporalSignals.prepare(rhi);
+        reflectionDenoise.prepare(rhi);
         temporalHistory.prepare(rhi);
     }
 
@@ -196,6 +199,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         reflectionCascades.release(releaseOwner);
         reflections.release(releaseOwner);
         temporalSignals.release(releaseOwner);
+        reflectionDenoise.release(releaseOwner);
         temporalHistory.release(releaseOwner);
         owner = null;
     }
@@ -317,6 +321,8 @@ final class DeferredBackendPasses implements AutoCloseable {
             indirectLight.release(previous);
             reflectionCascades.release(previous);
             reflections.release(previous);
+            temporalSignals.release(previous);
+            reflectionDenoise.release(previous);
             temporalHistory.release(previous);
         }
         owner = rhi;
@@ -401,8 +407,12 @@ final class DeferredBackendPasses implements AutoCloseable {
         shadowResolve.close();
         contactShadows.close();
         ambientOcclusion.close();
+        sceneRadiance.close();
+        indirectLight.close();
         reflectionCascades.close();
         reflections.close();
+        temporalSignals.close();
+        reflectionDenoise.close();
         temporalHistory.close();
         owner = null;
     }

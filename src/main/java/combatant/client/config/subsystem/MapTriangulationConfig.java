@@ -215,6 +215,19 @@ public final class MapTriangulationConfig extends SubsystemConfig {
         return UUID.nameUUIDFromBytes(("CombatantTarget:" + normalized).getBytes(StandardCharsets.UTF_8));
     }
 
+    /** Runtime-only identity used before a name can be resolved to an authoritative UUID. */
+    public static boolean isOfflineTargetUuid(UUID uuid, String name) {
+        if (uuid == null) return false;
+        String clean = cleanDisplayName(name);
+        return !clean.isEmpty() && offlineTargetUuid(clean).equals(uuid);
+    }
+
+    public boolean isOfflineTargetUuid(UUID uuid) {
+        if (uuid == null) return false;
+        String known = nameForTarget(uuid);
+        return !known.isBlank() && isOfflineTargetUuid(uuid, known);
+    }
+
     private boolean containsUuid(UUID uuid) {
         String canonical = uuid.toString().toLowerCase(Locale.ROOT);
         Set<String> values = targetedPlayers.get();

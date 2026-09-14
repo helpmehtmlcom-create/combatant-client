@@ -8,7 +8,7 @@ package combatant.client.features.map.storage;
 
 import java.util.UUID;
 
-public record MapBearingFrame(
+public record MapHistoryEventFrame(
         UUID targetUuid,
         String targetName,
         String worldKey,
@@ -16,25 +16,22 @@ public record MapBearingFrame(
         String sourceKey,
         long observedAtMs,
         long sourceRevision,
-        double observerX,
-        double observerZ,
-        double bearingRadians,
-        double weight
+        MapHistoryEventKind eventKind,
+        long generation,
+        long segmentId
 ) implements MapHistoryRecord {
-    public MapBearingFrame {
+    public MapHistoryEventFrame {
         if (targetUuid == null) throw new IllegalArgumentException("targetUuid");
+        if (source == null) throw new IllegalArgumentException("source");
+        if (eventKind == null) throw new IllegalArgumentException("eventKind");
         targetName = clean(targetName);
         worldKey = clean(worldKey);
         sourceKey = clean(sourceKey);
-        if (source != MapHistorySource.LOCATOR_BEARING) throw new IllegalArgumentException("bearing source");
         if (worldKey.isBlank()) throw new IllegalArgumentException("worldKey");
-        if (observedAtMs <= 0L) throw new IllegalArgumentException("observedAtMs");
-        if (!Double.isFinite(observerX) || !Double.isFinite(observerZ) || !Double.isFinite(bearingRadians)) {
-            throw new IllegalArgumentException("bearing");
-        }
-        if (!(weight > 0.0) || !Double.isFinite(weight)) weight = 1.0;
+        generation = Math.max(0L, generation);
+        segmentId = Math.max(0L, segmentId);
     }
 
-    @Override public MapHistoryRecordType type() { return MapHistoryRecordType.BEARING; }
+    @Override public MapHistoryRecordType type() { return MapHistoryRecordType.EVENT; }
     private static String clean(String value) { return value == null ? "" : value.trim(); }
 }

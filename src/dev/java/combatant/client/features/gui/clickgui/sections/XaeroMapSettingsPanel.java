@@ -32,6 +32,8 @@ import combatant.client.features.gui.clickgui.settings.SettingRenderSurface;
 import combatant.client.features.gui.clickgui.settings.SliderSetting;
 import combatant.client.features.gui.clickgui.settings.TextSetting;
 import combatant.client.features.gui.hud.script.HudScriptLayouts;
+import combatant.client.features.map.location.PlayerLocationEvent;
+import combatant.client.features.map.location.PlayerLocationEventType;
 import combatant.client.features.map.location.PlayerLocationService;
 import combatant.client.features.map.location.PlayerLocationSnapshot;
 import combatant.client.features.map.location.PlayerLocationSource;
@@ -2086,18 +2088,36 @@ final class XaeroMapSettingsPanel {
         }
 
         private String targetMeta(TargetRow row, long now) {
+            var service = PlayerLocationService.get();
+            var view = service.snapshot();
             PlayerLocationSnapshot snapshot = row.snapshot();
-            if (snapshot == null) return row.online()
-                    ? tr("gui.combatant.map.targets.meta.waiting", "Online · waiting for coordinates")
-                    : tr("gui.combatant.map.targets.meta.unseen", "Saved");
+            PlayerLocationSnapshot locator = view.locatorSource(row.id());
+            String locatorState;
+            if (locator != null) {
+                locatorState = switch (locator.source()) {
+                    case LOCATOR_EXACT -> tr("gui.combatant.map.locator.present_exact", "Locator exact");
+                    case LOCATOR_APPROXIMATE -> tr("gui.combatant.map.locator.present_chunk", "Locator chunk");
+                    case LOCATOR_BEARING -> tr("gui.combatant.map.locator.present_bearing", "Locator bearing");
+                    default -> tr("gui.combatant.map.locator.present", "Locator visible");
+                };
+            } else {
+                PlayerLocationEvent lost = service.latestLocatorEvent(row.id(), PlayerLocationEventType.SOURCE_LOST);
+                if (lost != null) {
+                    long lostAge = Math.max(0L, now - lost.timestampMs());
+                    locatorState = tr("gui.combatant.map.locator.lost", "Locator lost") + " " + (lostAge / 1000L) + "s";
+                } else {
+                    locatorState = tr("gui.combatant.map.locator.absent", "Locator not visible");
+                }
+            }
+            if (snapshot == null) return locatorState + " · " + (row.online()
+                    ? tr("gui.combatant.map.targets.meta.waiting", "waiting for coordinates")
+                    : tr("gui.combatant.map.targets.meta.unseen", "saved"));
             long age = snapshot.ageMs(now);
             String ageText = age < 1000L ? tr("gui.combatant.map.common.now", "now") : (age / 1000L) + "s";
             String source = playerLocationSourceLabel(snapshot.source());
-            if (!snapshot.hasPosition()) {
-                return source + "  ·  " + tr("gui.combatant.map.targets.bearing", "bearing") + "  ·  " + Math.round(snapshot.confidence() * 100.0) + "%  ·  " + ageText;
-            }
-            return source + "  ·  " + Math.round(snapshot.x()) + ", " + Math.round(snapshot.z())
-                    + "  ·  " + Math.round(snapshot.confidence() * 100.0) + "%  ·  " + ageText;
+            if (!snapshot.hasPosition()) return locatorState + " · " + ageText;
+            return locatorState + " · " + source + " · " + Math.round(snapshot.x()) + ", " + Math.round(snapshot.z())
+                    + " · " + Math.round(snapshot.confidence() * 100.0) + "% · " + ageText;
         }
 
         private void renderTargetHead(TargetRow row, float x, float y, float size, SettingsGuiPalette palette) {

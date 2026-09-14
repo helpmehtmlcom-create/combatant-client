@@ -116,7 +116,11 @@ public final class DeferredRuntimeConfig {
             float indirectTemporalDepthThreshold,
             boolean reflectionTemporalEnabled,
             float reflectionTemporalHistoryWeight,
-            float reflectionTemporalDepthThreshold
+            float reflectionTemporalDepthThreshold,
+            boolean reflectionDenoiseEnabled,
+            int reflectionDenoiseRadius,
+            float reflectionDenoiseDepthThreshold,
+            float reflectionDenoiseNormalThreshold
     ) {
         public static Snapshot defaults() {
             return new Snapshot(
@@ -175,7 +179,11 @@ public final class DeferredRuntimeConfig {
                     0.01f,
                     true,
                     0.9f,
-                    0.01f
+                    0.01f,
+                    true,
+                    2,
+                    0.02f,
+                    0.85f
             );
         }
 
@@ -237,7 +245,11 @@ public final class DeferredRuntimeConfig {
                     floatProperty("combatant.render.deferred.indirectTemporalDepthThreshold", d.indirectTemporalDepthThreshold),
                     booleanProperty("combatant.render.deferred.reflectionTemporal", d.reflectionTemporalEnabled),
                     floatProperty("combatant.render.deferred.reflectionTemporalHistoryWeight", d.reflectionTemporalHistoryWeight),
-                    floatProperty("combatant.render.deferred.reflectionTemporalDepthThreshold", d.reflectionTemporalDepthThreshold)
+                    floatProperty("combatant.render.deferred.reflectionTemporalDepthThreshold", d.reflectionTemporalDepthThreshold),
+                    booleanProperty("combatant.render.deferred.reflectionDenoise", d.reflectionDenoiseEnabled),
+                    intProperty("combatant.render.deferred.reflectionDenoiseRadius", d.reflectionDenoiseRadius),
+                    floatProperty("combatant.render.deferred.reflectionDenoiseDepthThreshold", d.reflectionDenoiseDepthThreshold),
+                    floatProperty("combatant.render.deferred.reflectionDenoiseNormalThreshold", d.reflectionDenoiseNormalThreshold)
             ).validated();
         }
 
@@ -298,7 +310,11 @@ public final class DeferredRuntimeConfig {
                     clamp(indirectTemporalDepthThreshold, 0.00001f, 0.25f),
                     reflectionTemporalEnabled,
                     clamp(reflectionTemporalHistoryWeight, 0.0f, 0.99f),
-                    clamp(reflectionTemporalDepthThreshold, 0.00001f, 0.25f)
+                    clamp(reflectionTemporalDepthThreshold, 0.00001f, 0.25f),
+                    reflectionDenoiseEnabled,
+                    clamp(reflectionDenoiseRadius, 0, 4),
+                    clamp(reflectionDenoiseDepthThreshold, 0.00001f, 0.25f),
+                    clamp(reflectionDenoiseNormalThreshold, 0.0f, 1.0f)
             );
         }
 
@@ -394,6 +410,10 @@ public final class DeferredRuntimeConfig {
         private boolean reflectionTemporalEnabled;
         private float reflectionTemporalHistoryWeight;
         private float reflectionTemporalDepthThreshold;
+        private boolean reflectionDenoiseEnabled;
+        private int reflectionDenoiseRadius;
+        private float reflectionDenoiseDepthThreshold;
+        private float reflectionDenoiseNormalThreshold;
 
         private Builder(Snapshot s) {
             if (s == null) s = Snapshot.defaults();
@@ -453,6 +473,10 @@ public final class DeferredRuntimeConfig {
             reflectionTemporalEnabled = s.reflectionTemporalEnabled();
             reflectionTemporalHistoryWeight = s.reflectionTemporalHistoryWeight();
             reflectionTemporalDepthThreshold = s.reflectionTemporalDepthThreshold();
+            reflectionDenoiseEnabled = s.reflectionDenoiseEnabled();
+            reflectionDenoiseRadius = s.reflectionDenoiseRadius();
+            reflectionDenoiseDepthThreshold = s.reflectionDenoiseDepthThreshold();
+            reflectionDenoiseNormalThreshold = s.reflectionDenoiseNormalThreshold();
         }
 
         public Builder ambientOcclusionEnabled(boolean value) { ambientOcclusionEnabled = value; return this; }
@@ -511,6 +535,10 @@ public final class DeferredRuntimeConfig {
         public Builder reflectionTemporalEnabled(boolean value) { reflectionTemporalEnabled = value; return this; }
         public Builder reflectionTemporalHistoryWeight(float value) { reflectionTemporalHistoryWeight = value; return this; }
         public Builder reflectionTemporalDepthThreshold(float value) { reflectionTemporalDepthThreshold = value; return this; }
+        public Builder reflectionDenoiseEnabled(boolean value) { reflectionDenoiseEnabled = value; return this; }
+        public Builder reflectionDenoiseRadius(int value) { reflectionDenoiseRadius = value; return this; }
+        public Builder reflectionDenoiseDepthThreshold(float value) { reflectionDenoiseDepthThreshold = value; return this; }
+        public Builder reflectionDenoiseNormalThreshold(float value) { reflectionDenoiseNormalThreshold = value; return this; }
 
         public Snapshot build() {
             return new Snapshot(
@@ -569,7 +597,11 @@ public final class DeferredRuntimeConfig {
                     indirectTemporalDepthThreshold,
                     reflectionTemporalEnabled,
                     reflectionTemporalHistoryWeight,
-                    reflectionTemporalDepthThreshold
+                    reflectionTemporalDepthThreshold,
+                    reflectionDenoiseEnabled,
+                    reflectionDenoiseRadius,
+                    reflectionDenoiseDepthThreshold,
+                    reflectionDenoiseNormalThreshold
             ).validated();
         }
     }

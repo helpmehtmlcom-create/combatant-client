@@ -123,6 +123,30 @@ public final class CbpDatFile implements Closeable {
         }
     }
 
+    /** Full payload/CRC verification for catalog rebuild and repair tooling. */
+    public static List<MapHistoryChunkMeta> inspectVerified(Path path) throws IOException {
+        if (path == null || !Files.isRegularFile(path)) return List.of();
+        try (RandomAccessFile raf = new RandomAccessFile(path.toFile(), "r")) {
+            if (raf.length() < HEADER_SIZE) return List.of();
+            List<MapHistoryChunkMeta> candidates;
+            Header header = readHeader(raf);
+            if (header != null && header.indexOffset >= HEADER_SIZE && header.indexOffset < raf.length()) {
+                try {
+                    candidates = readTableChainStatic(raf, header.indexOffset, header.chunkCount);
+                } catch (IOException brokenTable) {
+                    candidates = scanChunksStatic(raf);
+                }
+            } else {
+                candidates = scanChunksStatic(raf);
+            }
+            List<MapHistoryChunkMeta> verified = new ArrayList<>(candidates.size());
+            for (MapHistoryChunkMeta meta : candidates) {
+                if (validateChunkPayload(raf, meta)) verified.add(meta);
+            }
+            return List.copyOf(verified);
+        }
+    }
+
     public Path path() {
         return path;
     }
@@ -165,7 +189,11 @@ public final class CbpDatFile implements Closeable {
         List<MapHistoryRecord> out = new ArrayList<>();
         for (MapHistoryChunkMeta meta : chunks) {
             if (!query.matches(meta)) continue;
-            out.addAll(readChunk(meta));
+            try {
+                out.addAll(readChunk(meta));
+            } catch (IOException corruptChunk) {
+                // One damaged chunk must not hide healthy history from the same container.
+            }
         }
         out.removeIf(record -> record.observedAtMs() < query.fromMs() || record.observedAtMs() > query.toMs());
         out.sort(Comparator.comparingLong(MapHistoryRecord::observedAtMs));
@@ -236,16 +264,21 @@ public final class CbpDatFile implements Closeable {
         long tableOffset = raf.length();
         raf.seek(tableOffset);
         writeTableBlock(previous, appended);
+        // Durable two-phase commit: make chunk/table data stable before publishing its pointer.
+        raf.getFD().sync();
         indexOffset = tableOffset;
         writeHeader();
+        raf.getFD().sync();
     }
 
     private void rewriteFullTableAndHeader() throws IOException {
         long tableOffset = raf.length();
         raf.seek(tableOffset);
         writeTableBlock(0L, chunks);
+        raf.getFD().sync();
         indexOffset = tableOffset;
         writeHeader();
+        raf.getFD().sync();
     }
 
     private void writeTableBlock(long previousTableOffset, List<MapHistoryChunkMeta> metas) throws IOException {
@@ -368,6 +401,11 @@ public final class CbpDatFile implements Closeable {
                     pos++;
                     continue;
                 }
+                // Recovery validates the actual compressed payload and CRC, not only metadata.
+                if (!validateChunkPayload(raf, parsed.meta)) {
+                    pos = blockEnd;
+                    continue;
+                }
                 out.add(parsed.meta);
                 pos = blockEnd;
                 continue;
@@ -384,6 +422,28 @@ public final class CbpDatFile implements Closeable {
         }
         out.sort(Comparator.comparingLong(MapHistoryChunkMeta::offset));
         return out;
+    }
+
+    private static boolean validateChunkPayload(RandomAccessFile raf, MapHistoryChunkMeta meta) {
+        if (meta == null) return false;
+        try {
+            if (meta.offset() < HEADER_SIZE || meta.compressedLength() < 0 || meta.compressedLength() > MAX_CHUNK_BYTES
+                    || meta.offset() + meta.blockLength() > raf.length()) return false;
+            raf.seek(meta.offset());
+            if (raf.readInt() != CHUNK_MAGIC) return false;
+            int headerLength = raf.readInt();
+            if (headerLength < 0 || headerLength > MAX_STRING_BYTES * 4 + 256) return false;
+            byte[] header = new byte[headerLength];
+            raf.readFully(header);
+            ParsedChunk parsed = parseChunkHeader(meta.offset(), headerLength, header);
+            if (!sameIdentity(meta, parsed.meta)) return false;
+            byte[] compressed = new byte[parsed.meta.compressedLength()];
+            raf.readFully(compressed);
+            CbpDatCodec.decode(parsed.meta, compressed);
+            return true;
+        } catch (IOException | RuntimeException corruptPayload) {
+            return false;
+        }
     }
 
     private static ParsedChunk parseChunkHeader(long offset, int headerLength, byte[] header) throws IOException {

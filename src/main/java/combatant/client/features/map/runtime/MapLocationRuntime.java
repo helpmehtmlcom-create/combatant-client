@@ -7,13 +7,19 @@
 package combatant.client.features.map.runtime;
 
 import combatant.client.config.subsystem.DuplexLocalConfig;
+import combatant.client.config.subsystem.MapTriangulationConfig;
 import combatant.client.events.EventHandler;
 import combatant.client.events.impl.GameTickEvent;
 import combatant.client.features.map.duplex.DuplexBearingSample;
 import combatant.client.features.map.duplex.DuplexEstimate;
 import combatant.client.features.map.duplex.DuplexRuntime;
 import combatant.client.features.map.heuristic.HeuristicEstimate;
+import combatant.client.features.map.heuristic.HeuristicLifecycleEvent;
+import combatant.client.features.map.heuristic.HeuristicLifecycleEventType;
 import combatant.client.features.map.heuristic.HeuristicRuntime;
+import combatant.client.features.map.location.LocationSessionKey;
+import combatant.client.features.map.location.PlayerLocationEvent;
+import combatant.client.features.map.location.PlayerLocationEventType;
 import combatant.client.features.map.location.PlayerLocationService;
 import combatant.client.features.map.location.PlayerLocationSnapshot;
 import combatant.client.features.map.location.PlayerLocationSource;
@@ -26,6 +32,8 @@ import combatant.client.features.map.storage.MapBearingFrame;
 import combatant.client.features.map.storage.MapEstimateFrame;
 import combatant.client.features.map.storage.MapExactPointFrame;
 import combatant.client.features.map.storage.MapHistorySource;
+import combatant.client.features.map.storage.MapHistoryEventFrame;
+import combatant.client.features.map.storage.MapHistoryEventKind;
 import combatant.client.features.map.storage.MapHistoryStore;
 import combatant.client.features.maplink.model.MapLinkObservation;
 import combatant.client.features.maplink.model.MapLinkProfileState;
@@ -63,6 +71,9 @@ public final class MapLocationRuntime {
     private String activeServerFingerprint = "";
     private String activeWorldFingerprint = "";
     private int activeDuplexConfigFingerprint;
+    private long locationSessionGeneration;
+    private LocationSessionKey activeLocationSession;
+    private Object activeConnectionIdentity;
 
     private MapLocationRuntime() {
     }
@@ -85,6 +96,7 @@ public final class MapLocationRuntime {
 
         String server = serverFingerprint(mc);
         String world = mc.level.dimension().identifier().toString();
+        LocationSessionKey session = reconcileLocationSession(server, world, mc.getConnection());
         reconcileDuplex(server, world);
 
         MapLinkSnapshot mapLink = MapLinkRuntime.get().snapshot();
@@ -92,7 +104,7 @@ public final class MapLocationRuntime {
         exactTargets.addAll(localExactTargets(mc));
         HeuristicRuntime.get().setSuppressedTargets(Set.copyOf(exactTargets));
 
-        LocatorRuntime.get().capture(mc);
+        LocatorRuntime.get().capture(mc, session);
         List<LocatorObservation> locator = LocatorRuntime.get().snapshot();
         for (LocatorObservation observation : locator) {
             if (observation.targetUuid() != null && observation.type() == LocatorObservationType.EXACT_POSITION) {
@@ -108,8 +120,10 @@ public final class MapLocationRuntime {
         Map<UUID, DuplexEstimate> duplexEstimates = duplex.estimates();
 
         Captured captured = captureLocations(mc, server, world, mapLink, locator, heuristic, duplexEstimates);
-        PlayerLocationService.get().publish(captured.locations);
+        List<PlayerLocationEvent> locationEvents = PlayerLocationService.get().publish(captured.locations);
         persist(server, world, captured, heuristic, duplexEstimates);
+        persistLocationEvents(server, locationEvents);
+        persistHeuristicEvents(HeuristicRuntime.get().drainLifecycleEvents());
     }
 
     public void shutdown() {
@@ -181,7 +195,8 @@ public final class MapLocationRuntime {
                             Math.max(0.0, observation.uncertaintyRadius()),
                             Math.max(0.0, observation.uncertaintyRadius()), 0.0,
                             exact ? 1.0 : 0.75, "locator", observation.sourceRevision(),
-                            Map.of("type", observation.type().name())));
+                            Map.of("type", observation.type().name(),
+                                    "sourceGeneration", Long.toString(observation.sourceGeneration()))));
                 } else if (observation.type() == LocatorObservationType.BEARING_ONLY) {
                     locations.add(new PlayerLocationSnapshot(id, name, serverIdentity, currentWorldIdentity,
                             PlayerLocationSource.LOCATOR_BEARING,
@@ -190,7 +205,8 @@ public final class MapLocationRuntime {
                             0.0, 0.0, 0.0, 0.25, "locator", observation.sourceRevision(),
                             Map.of("type", observation.type().name(),
                                     "observerX", Double.toString(observation.observerX()),
-                                    "observerZ", Double.toString(observation.observerZ()))));
+                                    "observerZ", Double.toString(observation.observerZ()),
+                                    "sourceGeneration", Long.toString(observation.sourceGeneration()))));
                 }
             }
         }
@@ -237,6 +253,7 @@ public final class MapLocationRuntime {
 
         for (PlayerLocationSnapshot snapshot : captured.locations) {
             if (snapshot.source() != PlayerLocationSource.LOCAL_ENTITY_EXACT) continue;
+            if (!persistableIdentity(snapshot.playerUuid(), snapshot.playerName())) continue;
             if (!finite3(snapshot.x(), snapshot.y(), snapshot.z())) continue;
             history.offer(server, new MapExactPointFrame(snapshot.playerUuid(), snapshot.playerName(),
                     snapshot.worldKey(), MapHistorySource.LOCAL_ENTITY_EXACT, "local_entity",
@@ -248,6 +265,7 @@ public final class MapLocationRuntime {
             for (MapLinkObservation observation : captured.mapLink.observations()) {
                 UUID id = observation.resolvedUuid();
                 if (id == null || !observation.worldMapped()) continue;
+                if (!persistableIdentity(id, observation.rawPlayerName())) continue;
                 MapLinkProfileState state = captured.mapLink.profileStates().get(observation.profileId());
                 if (state == null || state.status() != MapLinkProfileStatus.LIVE) continue;
                 if (!finite3(observation.x(), observation.y(), observation.z())) continue;
@@ -267,6 +285,7 @@ public final class MapLocationRuntime {
                 if (id == null) continue;
                 String name = !clean(observation.targetName()).isBlank()
                         ? clean(observation.targetName()) : captured.names.getOrDefault(id, "");
+                if (!persistableIdentity(id, name)) continue;
                 switch (observation.type()) {
                     case EXACT_POSITION, CHUNK_POSITION -> {
                         if (!finite3(observation.x(), observation.y(), observation.z())) continue;
@@ -294,9 +313,11 @@ public final class MapLocationRuntime {
         if (heuristic != null) {
             for (HeuristicEstimate estimate : heuristic.values()) {
                 if (estimate == null || estimate.targetUuid() == null) continue;
+                String estimateName = captured.names.getOrDefault(estimate.targetUuid(), "");
+                if (!persistableIdentity(estimate.targetUuid(), estimateName)) continue;
                 if (!Double.isFinite(estimate.x()) || !Double.isFinite(estimate.z())) continue;
                 history.offer(server, new MapEstimateFrame(estimate.targetUuid(),
-                        captured.names.getOrDefault(estimate.targetUuid(), ""), currentWorld,
+                        estimateName, currentWorld,
                         MapHistorySource.HEURISTIC_TRIANGULATED, "single_client",
                         estimate.updatedAtMs(), estimate.updatedAtMs(),
                         estimate.x(), estimate.z(), estimate.uncertaintyMajor(), estimate.uncertaintyMinor(),
@@ -308,9 +329,11 @@ public final class MapLocationRuntime {
         if (duplexEstimates != null) {
             for (DuplexEstimate estimate : duplexEstimates.values()) {
                 if (estimate == null || estimate.targetUuid() == null) continue;
+                String estimateName = captured.names.getOrDefault(estimate.targetUuid(), "");
+                if (!persistableIdentity(estimate.targetUuid(), estimateName)) continue;
                 if (!Double.isFinite(estimate.x()) || !Double.isFinite(estimate.z())) continue;
                 history.offer(server, new MapEstimateFrame(estimate.targetUuid(),
-                        captured.names.getOrDefault(estimate.targetUuid(), ""), currentWorld,
+                        estimateName, currentWorld,
                         MapHistorySource.DUPLEX_TRIANGULATED, "duplex",
                         estimate.observedAtMs(), estimate.sourceRevision(),
                         estimate.x(), estimate.z(), estimate.uncertaintyRadius(), estimate.uncertaintyRadius(),
@@ -374,6 +397,96 @@ public final class MapLocationRuntime {
         return Set.copyOf(result);
     }
 
+    private LocationSessionKey reconcileLocationSession(String server, String world, Object connectionIdentity) {
+        if (activeLocationSession != null
+                && activeLocationSession.serverKey().equals(server)
+                && activeLocationSession.worldKey().equals(world)
+                && activeConnectionIdentity == connectionIdentity) {
+            return activeLocationSession;
+        }
+        closeLocationSession();
+        LocationSessionKey next = new LocationSessionKey(server, world, ++locationSessionGeneration);
+        activeLocationSession = next;
+        activeConnectionIdentity = connectionIdentity;
+        HeuristicRuntime.get().beginSession(next);
+        return next;
+    }
+
+    private void closeLocationSession() {
+        LocationSessionKey previous = activeLocationSession;
+        if (previous == null) return;
+        List<PlayerLocationEvent> events = PlayerLocationService.get().clear();
+        persistLocationEvents(previous.serverKey(), events);
+        HeuristicRuntime.get().endSession();
+        persistHeuristicEvents(HeuristicRuntime.get().drainLifecycleEvents());
+        LocatorRuntime.get().clear();
+        activeLocationSession = null;
+        activeConnectionIdentity = null;
+    }
+
+    private void persistLocationEvents(String server, List<PlayerLocationEvent> events) {
+        if (server == null || server.isBlank() || events == null || events.isEmpty()) return;
+        MapHistoryStore history = MapHistoryStore.get();
+        for (PlayerLocationEvent event : events) {
+            if (event == null || event.playerUuid() == null) continue;
+            if (event.type() != PlayerLocationEventType.SOURCE_APPEARED
+                    && event.type() != PlayerLocationEventType.SOURCE_LOST) continue;
+            PlayerLocationSnapshot snapshot = event.type() == PlayerLocationEventType.SOURCE_APPEARED
+                    ? event.current() : event.previous();
+            if (snapshot == null || !persistableIdentity(event.playerUuid(), event.playerName())) continue;
+            MapHistorySource source = historySource(snapshot.source());
+            if (source == null) continue;
+            MapHistoryEventKind kind = event.type() == PlayerLocationEventType.SOURCE_APPEARED
+                    ? MapHistoryEventKind.SOURCE_APPEARED : MapHistoryEventKind.SOURCE_LOST;
+            history.offer(server, new MapHistoryEventFrame(event.playerUuid(), event.playerName(),
+                    snapshot.worldKey(), source, snapshot.sourceKey(), event.timestampMs(),
+                    snapshot.sourceRevision(), kind, event.generation(), parseLong(snapshot.metadata().get("segment"))));
+        }
+    }
+
+    private void persistHeuristicEvents(List<HeuristicLifecycleEvent> events) {
+        if (events == null || events.isEmpty()) return;
+        MapHistoryStore history = MapHistoryStore.get();
+        for (HeuristicLifecycleEvent event : events) {
+            if (event == null || event.targetUuid() == null || event.session() == null) continue;
+            if (!persistableIdentity(event.targetUuid(), event.targetName())) continue;
+            MapHistoryEventKind kind = switch (event.type()) {
+                case TELEPORT_SEGMENT_BREAK -> MapHistoryEventKind.TELEPORT_SEGMENT_BREAK;
+                case EXACT_SOURCE_ACQUIRED -> MapHistoryEventKind.EXACT_SOURCE_ACQUIRED;
+                case SESSION_ENDED -> MapHistoryEventKind.SESSION_ENDED;
+            };
+            history.offer(event.session().serverKey(), new MapHistoryEventFrame(event.targetUuid(),
+                    event.targetName(), event.session().worldKey(), MapHistorySource.HEURISTIC_TRIANGULATED,
+                    "single_client", event.timestampMs(), event.timestampMs(), kind,
+                    event.session().generation(), event.segmentId()));
+        }
+    }
+
+    private static MapHistorySource historySource(PlayerLocationSource source) {
+        if (source == null || source == PlayerLocationSource.HISTORICAL) return null;
+        return switch (source) {
+            case LOCAL_ENTITY_EXACT -> MapHistorySource.LOCAL_ENTITY_EXACT;
+            case MAPLINK_EXACT -> MapHistorySource.MAPLINK_EXACT;
+            case LOCATOR_EXACT -> MapHistorySource.LOCATOR_EXACT;
+            case LOCATOR_APPROXIMATE -> MapHistorySource.LOCATOR_APPROXIMATE;
+            case LOCATOR_BEARING -> MapHistorySource.LOCATOR_BEARING;
+            case TRIANGULATED -> MapHistorySource.HEURISTIC_TRIANGULATED;
+            case DUPLEX_TRIANGULATED -> MapHistorySource.DUPLEX_TRIANGULATED;
+            case HISTORICAL -> null;
+        };
+    }
+
+    private static boolean persistableIdentity(UUID id, String name) {
+        if (id == null) return false;
+        if (MapTriangulationConfig.isOfflineTargetUuid(id, name)) return false;
+        return !MapTriangulationConfig.get().isOfflineTargetUuid(id);
+    }
+
+    private static long parseLong(String value) {
+        if (value == null || value.isBlank()) return 0L;
+        try { return Long.parseLong(value); } catch (NumberFormatException ignored) { return 0L; }
+    }
+
     private void reconcileDuplex(String server, String world) {
         if (!duplexConfig.enabled()) {
             if (!activeServerFingerprint.isEmpty() || !activeWorldFingerprint.isEmpty()) duplex.close();
@@ -394,9 +507,8 @@ public final class MapLocationRuntime {
     }
 
     private void reset() {
-        LocatorRuntime.get().clear();
+        closeLocationSession();
         HeuristicRuntime.get().setSuppressedTargets(Set.of());
-        PlayerLocationService.get().clear();
         duplex.close();
         activeServerFingerprint = "";
         activeWorldFingerprint = "";

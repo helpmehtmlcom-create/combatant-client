@@ -35,12 +35,16 @@ public record MapEstimateFrame(
         if (source != MapHistorySource.HEURISTIC_TRIANGULATED && source != MapHistorySource.DUPLEX_TRIANGULATED) {
             throw new IllegalArgumentException("Estimate source must be triangulated: " + source);
         }
+        if (worldKey.isBlank()) throw new IllegalArgumentException("worldKey");
+        if (observedAtMs <= 0L) throw new IllegalArgumentException("observedAtMs");
         if (!Double.isFinite(x) || !Double.isFinite(z)) throw new IllegalArgumentException("position");
-        uncertaintyMajor = finiteNonNegative(uncertaintyMajor);
-        uncertaintyMinor = finiteNonNegative(uncertaintyMinor);
-        uncertaintyAngleRadians = finite(uncertaintyAngleRadians);
-        residualRms = finiteNonNegative(residualRms);
-        confidence = clamp01(confidence);
+        if (!Double.isFinite(uncertaintyMajor) || uncertaintyMajor < 0.0
+                || !Double.isFinite(uncertaintyMinor) || uncertaintyMinor < 0.0
+                || !Double.isFinite(uncertaintyAngleRadians)
+                || !Double.isFinite(residualRms) || residualRms < 0.0
+                || !Double.isFinite(confidence) || confidence < 0.0 || confidence > 1.0) {
+            throw new IllegalArgumentException("invalid estimate quality");
+        }
         sampleCount = Math.max(0, sampleCount);
         inlierCount = Math.max(0, Math.min(sampleCount, inlierCount));
     }
@@ -48,7 +52,4 @@ public record MapEstimateFrame(
     @Override public MapHistoryRecordType type() { return MapHistoryRecordType.ESTIMATE; }
 
     private static String clean(String value) { return value == null ? "" : value.trim(); }
-    private static double finite(double value) { return Double.isFinite(value) ? value : 0.0; }
-    private static double finiteNonNegative(double value) { return Math.max(0.0, finite(value)); }
-    private static double clamp01(double value) { return Math.max(0.0, Math.min(1.0, finite(value))); }
 }

@@ -54,6 +54,7 @@ final class CbpDatCodec {
                 case ESTIMATE -> writeEstimates(out, ordered);
                 case EXACT_POINT -> writeExact(out, ordered);
                 case BEARING -> writeBearings(out, ordered);
+                case EVENT -> writeEvents(out, ordered);
             }
             out.flush();
             plain = bytes.toByteArray();
@@ -112,6 +113,7 @@ final class CbpDatCodec {
                 case ESTIMATE -> readEstimates(in, meta, count, baseTime);
                 case EXACT_POINT -> readExact(in, meta, count, baseTime);
                 case BEARING -> readBearings(in, meta, count, baseTime);
+                case EVENT -> readEvents(in, meta, count, baseTime);
             };
         }
     }
@@ -224,6 +226,39 @@ final class CbpDatCodec {
             revision += readSignedVarLong(in);
             out.add(new MapBearingFrame(meta.targetUuid(), meta.targetName(), meta.worldKey(), meta.source(),
                     meta.sourceKey(), time, revision, dequantize(x), dequantize(z), bearing, weight));
+        }
+        return List.copyOf(out);
+    }
+
+
+    private static void writeEvents(DataOutputStream out, List<MapHistoryRecord> records) throws IOException {
+        long previousTime = records.getFirst().observedAtMs();
+        long previousRevision = 0L, previousGeneration = 0L, previousSegment = 0L;
+        for (MapHistoryRecord raw : records) {
+            MapHistoryEventFrame frame = (MapHistoryEventFrame) raw;
+            writeUnsignedVarLong(out, Math.max(0L, frame.observedAtMs() - previousTime));
+            previousTime = frame.observedAtMs();
+            out.writeInt(frame.eventKind().ordinal());
+            writeSignedVarLong(out, frame.sourceRevision() - previousRevision); previousRevision = frame.sourceRevision();
+            writeSignedVarLong(out, frame.generation() - previousGeneration); previousGeneration = frame.generation();
+            writeSignedVarLong(out, frame.segmentId() - previousSegment); previousSegment = frame.segmentId();
+        }
+    }
+
+    private static List<MapHistoryRecord> readEvents(DataInputStream in, MapHistoryChunkMeta meta,
+                                                      int count, long baseTime) throws IOException {
+        List<MapHistoryRecord> out = new ArrayList<>(count);
+        long time = baseTime, revision = 0L, generation = 0L, segment = 0L;
+        for (int i = 0; i < count; i++) {
+            time += readUnsignedVarLong(in);
+            int kindOrdinal = in.readInt();
+            MapHistoryEventKind[] kinds = MapHistoryEventKind.values();
+            if (kindOrdinal < 0 || kindOrdinal >= kinds.length) throw new IOException("CBPD event kind");
+            revision += readSignedVarLong(in);
+            generation += readSignedVarLong(in);
+            segment += readSignedVarLong(in);
+            out.add(new MapHistoryEventFrame(meta.targetUuid(), meta.targetName(), meta.worldKey(), meta.source(),
+                    meta.sourceKey(), time, revision, kinds[kindOrdinal], generation, segment));
         }
         return List.copyOf(out);
     }

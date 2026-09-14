@@ -9,6 +9,11 @@ package combatant.client.features.gui.clickgui.sections;
 
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.gui.clickgui.layout.screen.settings.SettingsGuiPalette;
+import combatant.client.features.map.location.PlayerLocationEvent;
+import combatant.client.features.map.location.PlayerLocationEventType;
+import combatant.client.features.map.location.PlayerLocationService;
+import combatant.client.features.map.location.PlayerLocationSnapshot;
+import combatant.client.features.map.location.PlayerLocationSource;
 import combatant.client.features.theme.Themes;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.renderer.Renderer2D;
@@ -848,12 +853,39 @@ final class XaeroMapUiRenderer {
     }
 
     private static String targetMeta(XaeroMapSurface.TargetRow target) {
-        var location = target.location();
-        if (location == null) return tr("gui.combatant.map.drawer.target_waiting", "Waiting for coordinates");
-        if (!location.hasPosition()) {
-            return tr("gui.combatant.map.drawer.target_bearing", "Bearing only");
+        var service = PlayerLocationService.get();
+        var view = service.snapshot();
+        PlayerLocationSnapshot location = target.location();
+        PlayerLocationSnapshot locator = view.locatorSource(target.playerUuid());
+        String locatorState;
+        if (locator != null) {
+            locatorState = switch (locator.source()) {
+                case LOCATOR_EXACT -> tr("gui.combatant.map.locator.present_exact", "locator exact");
+                case LOCATOR_APPROXIMATE -> tr("gui.combatant.map.locator.present_chunk", "locator chunk");
+                case LOCATOR_BEARING -> tr("gui.combatant.map.locator.present_bearing", "locator bearing");
+                default -> tr("gui.combatant.map.locator.present", "locator visible");
+            };
+        } else {
+            PlayerLocationEvent lost = service.latestLocatorEvent(target.playerUuid(), PlayerLocationEventType.SOURCE_LOST);
+            if (lost != null) {
+                long age = Math.max(0L, System.currentTimeMillis() - lost.timestampMs());
+                locatorState = tr("gui.combatant.map.locator.lost", "locator lost") + " " + Math.max(0L, age / 1000L) + "s";
+            } else {
+                locatorState = tr("gui.combatant.map.locator.absent", "locator not visible");
+            }
         }
-        String source = switch (location.source()) {
+        if (location == null) return locatorState + " · "
+                + tr("gui.combatant.map.drawer.target_waiting", "waiting for coordinates");
+        if (!location.hasPosition()) return locatorState;
+        String source = sourceLabel(location.source());
+        String prefix = location.exact() ? "" : "≈ ";
+        String coordinates = prefix + "X " + (int) Math.floor(location.x()) + "  Z " + (int) Math.floor(location.z());
+        return locator != null && locator == location ? coordinates + " · " + locatorState
+                : locatorState + " · " + coordinates + " · " + source;
+    }
+
+    private static String sourceLabel(PlayerLocationSource source) {
+        return switch (source) {
             case LOCAL_ENTITY_EXACT -> tr("gui.combatant.map.source.local", "local");
             case MAPLINK_EXACT -> tr("gui.combatant.map.source.maplink", "MapLink");
             case LOCATOR_EXACT -> tr("gui.combatant.map.source.locator_exact", "locator exact");
@@ -863,9 +895,6 @@ final class XaeroMapUiRenderer {
             case LOCATOR_APPROXIMATE -> tr("gui.combatant.map.source.locator_approx", "locator approximate");
             case HISTORICAL -> tr("gui.combatant.map.source.history", "history");
         };
-        String prefix = location.exact() ? "" : "≈ ";
-        return prefix + "X " + (int) Math.floor(location.x()) + "  Z "
-                + (int) Math.floor(location.z()) + "  ·  " + source;
     }
 
     static HelpBounds drawHelp(float areaX, float areaY, float areaWidth, float areaHeight,

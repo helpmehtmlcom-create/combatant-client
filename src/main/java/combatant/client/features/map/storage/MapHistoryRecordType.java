@@ -10,5 +10,6 @@ package combatant.client.features.map.storage;
 public enum MapHistoryRecordType {
     ESTIMATE,
     EXACT_POINT,
-    BEARING
+    BEARING,
+    EVENT
 }

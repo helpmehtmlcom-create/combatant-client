@@ -153,7 +153,9 @@ public final class MapHistoryStore {
             // The worker keeps draining while the queue is non-empty even after running=false, so
             // blocking here preserves already accepted history instead of clearing a saturated queue.
             queue.put(new ShutdownCommand(latch));
-            latch.await(2500, TimeUnit.MILLISECONDS);
+            if (!latch.await(15000, TimeUnit.MILLISECONDS)) {
+                DebugLog.warn("Timed out draining map history during shutdown; {} commands remain", queue.size());
+            }
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
         } finally {
@@ -252,7 +254,10 @@ public final class MapHistoryStore {
             case MapEstimateFrame next when previous instanceof MapEstimateFrame old -> estimateChanged(old, next);
             case MapExactPointFrame next when previous instanceof MapExactPointFrame old -> exactChanged(old, next);
             case MapBearingFrame next when previous instanceof MapBearingFrame old ->
-                    next.sourceRevision() != old.sourceRevision() || next.observedAtMs() > old.observedAtMs();
+                    next.sourceRevision() != old.sourceRevision();
+            case MapHistoryEventFrame next when previous instanceof MapHistoryEventFrame old ->
+                    next.eventKind() != old.eventKind() || next.sourceRevision() != old.sourceRevision()
+                            || next.generation() != old.generation() || next.segmentId() != old.segmentId();
             default -> true;
         };
         if (persist) lastMaterial.put(key, record);
@@ -315,7 +320,18 @@ public final class MapHistoryStore {
         try (CbpDatFile data = CbpDatFile.open(file, serverKey)) {
             appended = data.appendChunks(serverKey, List.of(chunk));
         }
-        catalog.add(file, appended);
+        try {
+            catalog.add(file, appended);
+        } catch (IOException catalogError) {
+            // Data append is already durable. Rebuild the disposable catalog instead of retrying
+            // the same chunk and creating a physical duplicate.
+            DebugLog.error("Failed to update map history catalog; rebuilding", catalogError);
+            try {
+                catalog.rebuild();
+            } catch (IOException rebuildError) {
+                DebugLog.error("Failed to rebuild map history catalog after committed chunk", rebuildError);
+            }
+        }
         writtenChunks.addAndGet(appended.size());
         writtenRecords.addAndGet(chunk.size());
     }
