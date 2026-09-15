@@ -33,4 +33,9 @@ public enum LightmapState {
     public static float getOverrideAmbient() {
         return ambient > baseAmbient + 1.0e-4f ? ambient : -1.0f;
     }
+
+    public static void reset() {
+        baseAmbient = 0.0f;
+        ambient = 0.0f;
+    }
 }

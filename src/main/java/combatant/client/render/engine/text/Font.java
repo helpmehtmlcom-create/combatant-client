@@ -28,6 +28,35 @@ import java.nio.IntBuffer;
 
 public class Font implements GlyphFont {
     private static final int SIZE = 4096;
+    private static final int[][] RANGES = {
+        {32, 95},      // 32..126
+        {160, 96},     // 160..255
+        {256, 128},    // 256..383
+        {880, 144},    // 880..1023
+        {1024, 256},   // 1024..1279
+        {8734, 1},     // infinity
+        {0xEA00, 64},  // icons
+        {0x2000, 112}, // 0x2000..0x206F
+        {0x2070, 48},  // 0x2070..0x209F
+        {0x20A0, 48},  // 0x20A0..0x20CF
+        {0x2100, 80},  // 0x2100..0x214F
+        {0x2150, 64},  // 0x2150..0x218F
+        {0x2190, 112}, // 0x2190..0x21FF
+        {0x2200, 256}, // 0x2200..0x22FF
+        {0x2300, 256}, // 0x2300..0x23FF
+        {0x2460, 160}, // 0x2460..0x24FF
+        {0x2500, 128}, // 0x2500..0x257F
+        {0x2580, 32},  // 0x2580..0x259F
+        {0x25A0, 96},  // 0x25A0..0x25FF
+        {0x2600, 256}, // 0x2600..0x26FF
+        {0x2700, 192}, // 0x2700..0x27BF
+        {0x2900, 128}, // 0x2900..0x297F
+        {0x2B00, 256}, // 0x2B00..0x2BFF
+        {0x1F300, 256}, // 0x1F300..0x1F3FF
+        {0x1F500, 256}, // 0x1F500..0x1F5FF
+        {0x1F600, 256}, // 0x1F600..0x1F6FF
+        {0x1FA00, 256}  // 0x1FA00..0x1FAFF
+    };
     public final Texture texture;
     private final int height;
     private final float scale;
@@ -37,122 +66,127 @@ public class Font implements GlyphFont {
     public Font(ByteBuffer buffer, int height) {
         this.height = height;
 
-        STBTTFontinfo fontInfo = STBTTFontinfo.create();
-        STBTruetype.stbtt_InitFont(fontInfo, buffer);
+        STBTTFontinfo fontInfo = null;
+        ByteBuffer bitmap = null;
+        STBTTPackedchar.Buffer[] cdata = null;
+        STBTTPackRange.Buffer packRange = null;
+        STBTTPackContext packContext = null;
+        Texture createdTexture = null;
 
-        ByteBuffer bitmap = MemoryUtil.memAlloc(SIZE * SIZE);
         try {
-        STBTTPackedchar.Buffer[] cdata = {
-                STBTTPackedchar.create(95),    // 32..126
-                STBTTPackedchar.create(96),    // 160..255
-                STBTTPackedchar.create(128),   // 256..383
-                STBTTPackedchar.create(144),   // 880..1023
-                STBTTPackedchar.create(256),   // 1024..1279
-                STBTTPackedchar.create(1),     // infinity
-                STBTTPackedchar.create(64),    // icons
-
-                STBTTPackedchar.create(112),   // 0x2000..0x206F
-                STBTTPackedchar.create(48),    // 0x2070..0x209F
-                STBTTPackedchar.create(48),    // 0x20A0..0x20CF
-                STBTTPackedchar.create(80),    // 0x2100..0x214F
-                STBTTPackedchar.create(64),    // 0x2150..0x218F
-                STBTTPackedchar.create(112),   // 0x2190..0x21FF
-                STBTTPackedchar.create(256),   // 0x2200..0x22FF
-                STBTTPackedchar.create(256),   // 0x2300..0x23FF
-                STBTTPackedchar.create(160),   // 0x2460..0x24FF
-                STBTTPackedchar.create(128),   // 0x2500..0x257F
-                STBTTPackedchar.create(32),    // 0x2580..0x259F
-                STBTTPackedchar.create(96),    // 0x25A0..0x25FF
-                STBTTPackedchar.create(256),   // 0x2600..0x26FF
-                STBTTPackedchar.create(192),   // 0x2700..0x27BF
-                STBTTPackedchar.create(128),   // 0x2900..0x297F
-                STBTTPackedchar.create(256),   // 0x2B00..0x2BFF
-                STBTTPackedchar.create(256),   // 0x1F300..0x1F3FF
-                STBTTPackedchar.create(256),   // 0x1F500..0x1F5FF
-                STBTTPackedchar.create(256),   // 0x1F600..0x1F6FF
-                STBTTPackedchar.create(256)    // 0x1FA00..0x1FAFF
-        };
-
-        STBTTPackContext packContext = STBTTPackContext.create();
-        STBTruetype.stbtt_PackBegin(packContext, bitmap, SIZE, SIZE, 0, 1);
-
-        STBTTPackRange.Buffer packRange = STBTTPackRange.create(cdata.length);
-        packRange.put(STBTTPackRange.create().set(height, 32, null, 95, cdata[0], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 160, null, 96, cdata[1], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 256, null, 128, cdata[2], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 880, null, 144, cdata[3], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 1024, null, 256, cdata[4], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 8734, null, 1, cdata[5], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0xEA00, null, 64, cdata[6], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0x2000, null, 112, cdata[7], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0x2070, null, 48, cdata[8], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0x20A0, null, 48, cdata[9], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0x2100, null, 80, cdata[10], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0x2150, null, 64, cdata[11], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0x2190, null, 112, cdata[12], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0x2200, null, 256, cdata[13], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0x2300, null, 256, cdata[14], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0x2460, null, 160, cdata[15], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0x2500, null, 128, cdata[16], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0x2580, null, 32, cdata[17], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0x25A0, null, 96, cdata[18], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0x2600, null, 256, cdata[19], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0x2700, null, 192, cdata[20], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0x2900, null, 128, cdata[21], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0x2B00, null, 256, cdata[22], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0x1F300, null, 256, cdata[23], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0x1F500, null, 256, cdata[24], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0x1F600, null, 256, cdata[25], (byte) 2, (byte) 2));
-        packRange.put(STBTTPackRange.create().set(height, 0x1FA00, null, 256, cdata[26], (byte) 2, (byte) 2));
-        packRange.flip();
-
-        STBTruetype.stbtt_PackFontRanges(packContext, buffer, 0, packRange);
-        STBTruetype.stbtt_PackEnd(packContext);
-
-        texture = new Texture(SIZE, SIZE, GpuFormat.R8_UNORM, FilterMode.LINEAR, FilterMode.LINEAR);
-        texture.upload(bitmap);
-        TextRenderSystem.glyphAtlases().registerPage("bitmap:" + height, texture, SIZE, SIZE, false);
-        FontDebugStats.noteBitmapAtlasPage();
-        scale = STBTruetype.stbtt_ScaleForPixelHeight(fontInfo, height);
-
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            IntBuffer ascent = stack.mallocInt(1);
-            STBTruetype.stbtt_GetFontVMetrics(fontInfo, ascent, null, null);
-            this.ascent = ascent.get(0);
-        }
-
-        int registeredGlyphs = 0;
-        for (int i = 0; i < cdata.length; i++) {
-            STBTTPackedchar.Buffer cbuf = cdata[i];
-            int offset = packRange.get(i).first_unicode_codepoint_in_range();
-
-            for (int j = 0; j < cbuf.capacity(); j++) {
-                STBTTPackedchar packedChar = cbuf.get(j);
-
-                float ipw = 1f / SIZE;
-                float iph = 1f / SIZE;
-
-                if (packedChar.x0() == packedChar.x1() || packedChar.y0() == packedChar.y1()) {
-                    continue;
-                }
-
-                registeredGlyphs++;
-                charMap.put(j + offset, new CharData(
-                        packedChar.xoff(),
-                        packedChar.yoff(),
-                        packedChar.xoff2(),
-                        packedChar.yoff2(),
-                        packedChar.x0() * ipw,
-                        packedChar.y0() * iph,
-                        packedChar.x1() * ipw,
-                        packedChar.y1() * iph,
-                        packedChar.xadvance()
-                ));
+            fontInfo = STBTTFontinfo.create();
+            if (!STBTruetype.stbtt_InitFont(fontInfo, buffer)) {
+                throw new IllegalArgumentException("Failed to initialize TTF font info");
             }
-        }
-        TextRenderSystem.glyphAtlases().onDirtyRectUpload(registeredGlyphs, SIZE * SIZE);
+
+            bitmap = MemoryUtil.memAlloc(SIZE * SIZE);
+
+            cdata = new STBTTPackedchar.Buffer[RANGES.length];
+            for (int i = 0; i < RANGES.length; i++) {
+                cdata[i] = STBTTPackedchar.create(RANGES[i][1]);
+            }
+
+            packContext = STBTTPackContext.create();
+            if (!STBTruetype.stbtt_PackBegin(packContext, bitmap, SIZE, SIZE, 0, 1)) {
+                throw new IllegalStateException("Failed to begin font packing");
+            }
+
+            packRange = STBTTPackRange.create(RANGES.length);
+            for (int i = 0; i < RANGES.length; i++) {
+                packRange.get(i).set(height, RANGES[i][0], null, RANGES[i][1], cdata[i], (byte) 2, (byte) 2);
+            }
+
+            STBTruetype.stbtt_PackFontRanges(packContext, buffer, 0, packRange);
+            STBTruetype.stbtt_PackEnd(packContext);
+
+            createdTexture = new Texture(SIZE, SIZE, GpuFormat.R8_UNORM, FilterMode.LINEAR, FilterMode.LINEAR);
+            createdTexture.upload(bitmap);
+            TextRenderSystem.glyphAtlases().registerPage("bitmap:" + height, createdTexture, SIZE, SIZE, false);
+            FontDebugStats.noteBitmapAtlasPage();
+            scale = STBTruetype.stbtt_ScaleForPixelHeight(fontInfo, height);
+
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                IntBuffer ascentBuf = stack.mallocInt(1);
+                STBTruetype.stbtt_GetFontVMetrics(fontInfo, ascentBuf, null, null);
+                this.ascent = ascentBuf.get(0);
+            }
+
+            int registeredGlyphs = 0;
+            for (int i = 0; i < cdata.length; i++) {
+                STBTTPackedchar.Buffer cbuf = cdata[i];
+                int offset = packRange.get(i).first_unicode_codepoint_in_range();
+
+                for (int j = 0; j < cbuf.capacity(); j++) {
+                    STBTTPackedchar packedChar = cbuf.get(j);
+
+                    float ipw = 1f / SIZE;
+                    float iph = 1f / SIZE;
+
+                    if (packedChar.x0() == packedChar.x1() || packedChar.y0() == packedChar.y1()) {
+                        continue;
+                    }
+
+                    registeredGlyphs++;
+                    charMap.put(j + offset, new CharData(
+                            packedChar.xoff(),
+                            packedChar.yoff(),
+                            packedChar.xoff2(),
+                            packedChar.yoff2(),
+                            packedChar.x0() * ipw,
+                            packedChar.y0() * iph,
+                            packedChar.x1() * ipw,
+                            packedChar.y1() * iph,
+                            packedChar.xadvance()
+                    ));
+                }
+            }
+            TextRenderSystem.glyphAtlases().onDirtyRectUpload(registeredGlyphs, SIZE * SIZE);
+
+            this.texture = createdTexture;
+            createdTexture = null;
+        } catch (Throwable t) {
+            if (createdTexture != null) {
+                try {
+                    createdTexture.close();
+                } catch (Throwable ignored) {
+                }
+            }
+            throw t;
         } finally {
-            MemoryUtil.memFree(bitmap);
+            if (cdata != null) {
+                for (STBTTPackedchar.Buffer cbuf : cdata) {
+                    if (cbuf != null) {
+                        try {
+                            cbuf.free();
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                }
+            }
+            if (packRange != null) {
+                try {
+                    packRange.free();
+                } catch (Throwable ignored) {
+                }
+            }
+            if (packContext != null) {
+                try {
+                    packContext.free();
+                } catch (Throwable ignored) {
+                }
+            }
+            if (fontInfo != null) {
+                try {
+                    fontInfo.free();
+                } catch (Throwable ignored) {
+                }
+            }
+            if (bitmap != null) {
+                try {
+                    MemoryUtil.memFree(bitmap);
+                } catch (Throwable ignored) {
+                }
+            }
         }
     }
 
@@ -350,6 +384,7 @@ public class Font implements GlyphFont {
     @Override
     public void close() {
         if (texture != null) texture.close();
+        charMap.clear();
     }
 
     @FunctionalInterface

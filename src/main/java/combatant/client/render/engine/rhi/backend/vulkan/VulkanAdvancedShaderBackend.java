@@ -22,6 +22,7 @@ import combatant.client.mixininterface.IVulkanCommandEncoderAccess;
 import combatant.client.render.engine.rhi.GpuMeshHandle;
 import combatant.client.render.engine.rhi.RhiCapabilities;
 import combatant.client.render.engine.rhi.RhiStats;
+import combatant.client.render.engine.rhi.scissor.GlobalScissorState;
 import combatant.client.render.engine.rhi.shader.*;
 import combatant.client.render.engine.shader.CombatantShaderSources;
 import net.minecraft.client.Minecraft;
@@ -438,9 +439,11 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
                     .imageLayout(VK_IMAGE_LAYOUT_GENERAL)
                     .loadOp(VK_ATTACHMENT_LOAD_OP_LOAD)
                     .storeOp(VK_ATTACHMENT_STORE_OP_STORE);
+            int width = Math.max(1, color.getWidth(0));
+            int height = Math.max(1, color.getHeight(0));
             VkRenderingInfo rendering = VkRenderingInfo.calloc(stack).sType$Default();
             rendering.renderArea().offset().set(0, 0);
-            rendering.renderArea().extent().set(color.getWidth(0), color.getHeight(0));
+            rendering.renderArea().extent().set(width, height);
             rendering.layerCount(1).pColorAttachments(colorAttachment);
 
             VkRenderingAttachmentInfo depthAttachment = null;
@@ -458,12 +461,24 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
             try {
                 VkViewport.Buffer viewport = VkViewport.calloc(1, stack);
                 viewport.get(0).x(0.0f).y(0.0f)
-                        .width(color.getWidth(0)).height(color.getHeight(0))
+                        .width(width).height(height)
                         .minDepth(0.0f).maxDepth(1.0f);
                 vkCmdSetViewport(commandBuffer, 0, viewport);
                 VkRect2D.Buffer scissor = VkRect2D.calloc(1, stack);
-                scissor.get(0).offset().set(0, 0);
-                scissor.get(0).extent().set(color.getWidth(0), color.getHeight(0));
+                GlobalScissorState.Snapshot snap = GlobalScissorState.snapshot();
+                if (snap != null) {
+                    int sx1 = Math.max(0, snap.x());
+                    int sy1 = Math.max(0, snap.y());
+                    int sx2 = Math.min(width, snap.x() + Math.max(0, snap.width()));
+                    int sy2 = Math.min(height, snap.y() + Math.max(0, snap.height()));
+                    int sw = Math.max(0, sx2 - sx1);
+                    int sh = Math.max(0, sy2 - sy1);
+                    scissor.get(0).offset().set(sx1, sy1);
+                    scissor.get(0).extent().set(sw, sh);
+                } else {
+                    scissor.get(0).offset().set(0, 0);
+                    scissor.get(0).extent().set(width, height);
+                }
                 vkCmdSetScissor(commandBuffer, 0, scissor);
 
                 vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipeline);

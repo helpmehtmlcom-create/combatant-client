@@ -533,6 +533,7 @@ public final class Renderer2D {
         if (textured && texturedTriangles.isBuilding()) {
             texturedTriangles.end();
         }
+        RenderWarpStack.reset();
     }
 
     public void render() {

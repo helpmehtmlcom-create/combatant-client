@@ -1086,6 +1086,7 @@ public enum DraggableHudElementRegistry {
     }
 
     private static void moveDraggedWidget(DraggableHudElement w, float mx, float my, int screenW, int screenH) {
+        if (screenW <= 0 || screenH <= 0 || !Float.isFinite(mx) || !Float.isFinite(my)) return;
         float newX = mx - dragOffsetX;
         float newY = my - dragOffsetY;
         Bounds groupBounds = collectLinkedBounds(w, screenW, screenH);
@@ -1390,6 +1391,7 @@ public enum DraggableHudElementRegistry {
     }
 
     private static float clamp(float value, float min, float max) {
+        if (!Float.isFinite(value)) return min;
         if (max < min) return min;
         return Math.max(min, Math.min(value, max));
     }

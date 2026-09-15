@@ -92,15 +92,28 @@ public class CustomTextRenderer implements TextRenderer {
         }
 
         byte[] bytes = FontUtils.readBytes(fontFace.toStream());
+        if (bytes == null || bytes.length == 0) {
+            throw new IllegalStateException("Failed to read font bytes for " + fontFace.info);
+        }
         ByteBuffer buffer = MemoryUtil.memAlloc(bytes.length);
+        GlyphFont[] result = new GlyphFont[5];
         try {
             buffer.put(bytes).flip();
 
-            GlyphFont[] result = new GlyphFont[5];
             for (int i = 0; i < result.length; i++) {
                 result[i] = new Font(buffer, (int) Math.round(27 * ((i * 0.5) + 1)));
             }
             return result;
+        } catch (Throwable t) {
+            for (GlyphFont f : result) {
+                if (f != null) {
+                    try {
+                        f.close();
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }
+            throw t;
         } finally {
             MemoryUtil.memFree(buffer);
         }

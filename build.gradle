@@ -218,6 +218,10 @@ tasks.register("validateIrisPatches", JavaExec) {
     }
 }
 
+tasks.named("compileSvgMsdfToolJava") {
+    dependsOn tasks.named("compileJava")
+}
+
 tasks.register("generateSvgMsdf", Exec) {
     group = "render assets"
     description = "Generates MTSDF texture assets for tintable SVG icons."

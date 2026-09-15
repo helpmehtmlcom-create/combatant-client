@@ -17,6 +17,10 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
 import combatant.client.config.common.CommonSettingSchemas;
 import combatant.client.config.common.impl.TargetFilters;
 import combatant.client.events.EventHandler;
@@ -28,6 +32,7 @@ import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.movement.TargetStrafe;
 import combatant.client.util.aiming.RotationManager;
+import combatant.client.util.player.inventory.InventorySwap;
 import combatant.client.util.aiming.RotationTarget;
 import combatant.client.util.aiming.data.Rotation;
 import combatant.client.util.aiming.data.RotationWithVector;
@@ -115,10 +120,25 @@ public class KillAura extends Module {
             "killauraAttackMode",
             "attack_mode",
             CommonSettingSchemas.COMBAT_ATTACK_MODE,
-            CombatRotationModeUtil.MODE_ROTATIONS,
+            CombatRotationModeUtil.MODE_SILENT,
+            CombatRotationModeUtil.MODE_SILENT,
             CombatRotationModeUtil.MODE_ROTATIONS,
             CombatRotationModeUtil.MODE_NO_ROTATIONS
     );
+    public enum SwitchMode {
+        SILENT,
+        CLIENT,
+        NONE
+    }
+
+    private final EnumValue<SwitchMode> swordSwitchMode =
+            enumSetting("killauraSwordSwitchMode", "sword_switch_mode", SwitchMode.SILENT, SwitchMode.values());
+    private final BooleanValue silentSwordSwitch =
+            bool("killauraSilentSwordSwitch", "silent_sword_switch", true);
+    private final BooleanValue swordOnly =
+            bool("killauraSwordOnly", "sword_only", true);
+    private final BooleanValue switchBack =
+            bool("killauraSwitchBack", "switch_back", true);
     private final NumberValue<Double> acquireRangeIncrement =
             visibleWhen(numCommon(
                     "killauraAcquireRangeIncrement",
@@ -546,12 +566,13 @@ public class KillAura extends Module {
         clearRotationState(false);
         lastAttackExecutionAge = -1;
         SprintController.INSTANCE.clearSprintBlock();
+        InventorySwap.INSTANCE.releaseHotbar(this);
     }
 
     @EventHandler(priority = 10)
     public void onRotationUpdate(RotationUpdateEvent event) {
         if (!isEnabled()) return;
-        if (mc.player == null || mc.level == null) {
+        if (mc.player == null || mc.level == null || mc.player.isDeadOrDying()) {
             clearTargetImmediate();
             return;
         }
@@ -645,6 +666,23 @@ public class KillAura extends Module {
 
         CombatStrikeController.SprintResetMode resetMode = resolveStrikeResetMode();
 
+        SwitchMode switchMode = swordSwitchMode.get();
+        boolean shouldSwitch = silentSwordSwitch.get() && switchMode != SwitchMode.NONE;
+        int targetSlot = shouldSwitch ? findBestWeaponSlot(swordOnly.get()) : -1;
+        int originalSlot = InventorySwap.INSTANCE.clientSelectedSlot();
+        boolean needSwitch = shouldSwitch && targetSlot >= 0 && targetSlot != originalSlot;
+
+        if (needSwitch) {
+            if (switchMode == SwitchMode.SILENT) {
+                if (mc.getConnection() != null) {
+                    mc.getConnection().send(new ServerboundSetCarriedItemPacket(targetSlot));
+                }
+                InventorySwap.INSTANCE.leaseHotbar(this, targetSlot, 1);
+            } else if (switchMode == SwitchMode.CLIENT) {
+                InventorySwap.INSTANCE.selectHotbar(targetSlot);
+            }
+        }
+
         boolean attacked = CombatStrikeController.INSTANCE.tryAttack(
                 mc,
                 target,
@@ -654,6 +692,17 @@ public class KillAura extends Module {
                 true,
                 () -> criticalHitAllowed(target)
         );
+
+        if (needSwitch) {
+            if (switchMode == SwitchMode.SILENT) {
+                if (switchBack.get() && mc.getConnection() != null && originalSlot >= 0 && originalSlot < 9) {
+                    mc.getConnection().send(new ServerboundSetCarriedItemPacket(originalSlot));
+                }
+                InventorySwap.INSTANCE.releaseHotbar(this);
+            } else if (switchMode == SwitchMode.CLIENT && switchBack.get() && originalSlot >= 0 && originalSlot < 9) {
+                InventorySwap.INSTANCE.selectHotbar(originalSlot);
+            }
+        }
 
         if (!attacked) {
             return;
@@ -735,6 +784,7 @@ public class KillAura extends Module {
         TargetManager.setModuleTarget(null);
         AttributeSwap.clearAuraControlIfActive();
         SprintController.INSTANCE.clearSprintBlock();
+        InventorySwap.INSTANCE.releaseHotbar(this);
         clearRotationState(false);
         lastAttackExecutionAge = -1;
     }
@@ -906,7 +956,9 @@ public class KillAura extends Module {
             }
         }
 
-        return rotation != null ? rotation.normalize() : null;
+        return rotation != null && Float.isFinite(rotation.yaw()) && Float.isFinite(rotation.pitch())
+                ? rotation.normalize()
+                : null;
     }
 
     private boolean processTarget(LivingEntity target) {
@@ -920,6 +972,10 @@ public class KillAura extends Module {
 
         RotationTarget plan = buildRotationTarget(rotation.rotation(), target);
         RotationManager.INSTANCE.setRotationTarget(plan, 10, this);
+        if (CombatRotationModeUtil.isVisualRotations(attackMode) && mc.player != null) {
+            mc.player.setYRot(rotation.rotation().yaw());
+            mc.player.setXRot(rotation.rotation().pitch());
+        }
         return true;
     }
 
@@ -957,8 +1013,7 @@ public class KillAura extends Module {
 
         RaycastMode mode = raycast.get();
         if (mode == RaycastMode.NONE) return true;
-
-        if (mc.player == null || target == null) {
+        if (mc.player == null || target == null || !Float.isFinite(yaw) || !Float.isFinite(pitch)) {
             return false;
         }
 
@@ -1046,11 +1101,13 @@ public class KillAura extends Module {
             );
         }
 
-        if (rot == null) {
-            Rotation fallback = Rotation.lookingAt(point.pos(), eyes).normalize();
-            rot = new RotationWithVector(fallback, point.pos());
+        if (rot == null && point != null && point.pos() != null) {
+            Vec3 pointPos = point.pos();
+            if (Double.isFinite(pointPos.x) && Double.isFinite(pointPos.y) && Double.isFinite(pointPos.z)) {
+                Rotation fallback = Rotation.lookingAt(pointPos, eyes).normalize();
+                rot = new RotationWithVector(fallback, pointPos);
+            }
         }
-
         if (rot != null) {
             lastAimPoint = rot.vec();
             lastAimEntityId = target.getId();
@@ -1229,6 +1286,44 @@ public class KillAura extends Module {
         LEGIT,
         PACKET,
         NONE
+    }
+
+    private int findBestWeaponSlot(boolean onlySwords) {
+        if (mc.player == null) return -1;
+        int bestSlot = -1;
+        int bestTier = -1;
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = mc.player.getInventory().getItem(i);
+            if (stack == null || stack.isEmpty()) continue;
+            int tier = getWeaponTier(stack, onlySwords);
+            if (tier > bestTier) {
+                bestTier = tier;
+                bestSlot = i;
+            }
+        }
+        return bestSlot;
+    }
+
+    private int getWeaponTier(ItemStack stack, boolean onlySwords) {
+        if (stack == null || stack.isEmpty()) return -1;
+        Item item = stack.getItem();
+        if (item == Items.NETHERITE_SWORD) return 100;
+        if (item == Items.DIAMOND_SWORD) return 90;
+        if (item == Items.IRON_SWORD) return 80;
+        if (item == Items.STONE_SWORD) return 70;
+        if (item == Items.GOLDEN_SWORD) return 60;
+        if (item == Items.WOODEN_SWORD) return 50;
+        if (stack.is(net.minecraft.tags.ItemTags.SWORDS)) return 40;
+
+        if (!onlySwords) {
+            if (item instanceof net.minecraft.world.item.MaceItem) return 95;
+            if (item == Items.NETHERITE_AXE) return 85;
+            if (item == Items.DIAMOND_AXE) return 75;
+            if (item == Items.IRON_AXE) return 65;
+            if (stack.is(net.minecraft.tags.ItemTags.AXES)) return 35;
+        }
+
+        return -1;
     }
 
     public enum CorrectionType {

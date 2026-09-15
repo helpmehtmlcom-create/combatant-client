@@ -56,6 +56,7 @@ public final class BacktrackController {
     }
 
     private static boolean shouldAlwaysPass(Packet<?> packet) {
+        if (packet == null) return false;
         return packet instanceof ServerboundChatPacket
                 || packet instanceof ServerboundChatCommandPacket
                 || packet instanceof ClientboundPingPacket
@@ -65,15 +66,26 @@ public final class BacktrackController {
     }
 
     private static boolean isPlayerHurtSound(Packet<?> packet) {
-        return packet instanceof ClientboundSoundPacket sound && sound.getSound().value() == SoundEvents.PLAYER_HURT
-                || packet instanceof ClientboundSoundEntityPacket entitySound
-                && entitySound.getSound().value() == SoundEvents.PLAYER_HURT;
+        if (packet == null) return false;
+        try {
+            return packet instanceof ClientboundSoundPacket sound && sound.getSound() != null && sound.getSound().value() == SoundEvents.PLAYER_HURT
+                    || packet instanceof ClientboundSoundEntityPacket entitySound
+                    && entitySound.getSound() != null
+                    && entitySound.getSound().value() == SoundEvents.PLAYER_HURT;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private static boolean shouldClearOnSafetyPacket(Packet<?> packet) {
-        return packet instanceof ClientboundPlayerPositionPacket
-                || packet instanceof ClientboundDisconnectPacket
-                || packet instanceof ClientboundSetHealthPacket health && health.getHealth() <= 0.0f;
+        if (packet == null) return false;
+        try {
+            return packet instanceof ClientboundPlayerPositionPacket
+                    || packet instanceof ClientboundDisconnectPacket
+                    || packet instanceof ClientboundSetHealthPacket health && health.getHealth() <= 0.0f;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private static boolean isTargetEntityPacket(ClientboundMoveEntityPacket packet, Entity target, Minecraft mc) {
@@ -212,6 +224,10 @@ public final class BacktrackController {
         if (mc == null || mc.level == null || mc.player == null) {
             clear(true);
             return;
+        }
+
+        if (target != null && (target.isRemoved() || !target.isAlive() || target.level() != mc.level)) {
+            clear(true);
         }
 
         if (config.targetMode() == TargetMode.RANGE) {
@@ -372,30 +388,45 @@ public final class BacktrackController {
             return null;
         }
 
-        if (packet instanceof ClientboundMoveEntityPacket entityPacket && isTargetEntityPacket(entityPacket, target, mc) && entityPacket.hasPosition()) {
+        if (packet instanceof ClientboundMoveEntityPacket entityPacket && isTargetEntityPacket(entityPacket, target, mc)) {
             Vec3 pos = delayedPosition.decode(
                     entityPacket.getXa(),
                     entityPacket.getYa(),
                     entityPacket.getZa()
             );
-            delayedPosition.setBase(pos);
-            return pos;
+            if (pos != null && Double.isFinite(pos.x) && Double.isFinite(pos.y) && Double.isFinite(pos.z)) {
+                delayedPosition.setBase(pos);
+                return pos;
+            }
+            return null;
         }
         if (packet instanceof ClientboundTeleportEntityPacket positionPacket && positionPacket.id() == target.getId()) {
+            Vec3 currentBase = delayedPosition.getBase();
+            if (currentBase == null || !Double.isFinite(currentBase.x) || !Double.isFinite(currentBase.y) || !Double.isFinite(currentBase.z)) {
+                currentBase = target.position();
+            }
             PositionMoveRotation current = new PositionMoveRotation(
-                    delayedPosition.getBase(),
+                    currentBase,
                     target.getDeltaMovement(),
                     target.getYRot(),
                     target.getXRot()
             );
             Vec3 pos = PositionMoveRotation.calculateAbsolute(current, positionPacket.change(), positionPacket.relatives()).position();
-            delayedPosition.setBase(pos);
-            return pos;
+            if (pos != null && Double.isFinite(pos.x) && Double.isFinite(pos.y) && Double.isFinite(pos.z)) {
+                delayedPosition.setBase(pos);
+                return pos;
+            }
+            return null;
         }
         if (packet instanceof ClientboundEntityPositionSyncPacket syncPacket && syncPacket.id() == target.getId()) {
-            Vec3 pos = syncPacket.values().position();
-            delayedPosition.setBase(pos);
-            return pos;
+            if (syncPacket.values() != null) {
+                Vec3 pos = syncPacket.values().position();
+                if (pos != null && Double.isFinite(pos.x) && Double.isFinite(pos.y) && Double.isFinite(pos.z)) {
+                    delayedPosition.setBase(pos);
+                    return pos;
+                }
+            }
+            return null;
         }
         return null;
     }

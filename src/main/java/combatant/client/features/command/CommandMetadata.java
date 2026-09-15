@@ -102,7 +102,9 @@ public final class CommandMetadata {
     private static String normalizeId(String id) {
         if (id == null || id.isBlank()) throw new IllegalArgumentException("Command id cannot be blank");
         String normalized = id.trim().toLowerCase(Locale.ROOT);
-        if (normalized.charAt(0) == '@') normalized = normalized.substring(1);
+        if (normalized.startsWith(CommandManager.PREFIX)) {
+            normalized = normalized.substring(CommandManager.PREFIX.length());
+        }
         if (normalized.isBlank() || normalized.chars().anyMatch(Character::isWhitespace)) {
             throw new IllegalArgumentException("Invalid command id: " + id);
         }
@@ -115,7 +117,9 @@ public final class CommandMetadata {
         for (String alias : aliases) {
             if (alias == null || alias.isBlank()) continue;
             String value = alias.trim().toLowerCase(Locale.ROOT);
-            if (value.charAt(0) == '@') value = value.substring(1);
+            if (value.startsWith(CommandManager.PREFIX)) {
+                value = value.substring(CommandManager.PREFIX.length());
+            }
             if (value.isBlank() || value.chars().anyMatch(Character::isWhitespace) || value.equals(id)) continue;
             if (!normalized.contains(value)) normalized.add(value);
         }

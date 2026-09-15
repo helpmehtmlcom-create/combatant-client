@@ -12,6 +12,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
@@ -20,6 +21,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -35,6 +37,7 @@ import combatant.client.features.module.modules.combat.Criticals;
 import combatant.client.features.module.modules.combat.Hitbox;
 import combatant.client.features.module.modules.combat.PvpCooldowns;
 import combatant.client.features.module.modules.misc.HitSounds;
+import combatant.client.features.module.modules.player.SpeedMine;
 import combatant.client.features.module.modules.visuals.Freecam;
 import combatant.client.features.module.modules.visuals.HitEffect;
 import combatant.client.mixins.accessors.WorldAccessor;
@@ -44,10 +47,18 @@ import combatant.client.util.target.TargetManager;
 @Mixin(MultiPlayerGameMode.class)
 public class MultiPlayerGameModeMixin {
 
+    @Shadow
+    private int destroyDelay;
+
     @Inject(method = "tick", at = @At("HEAD"), cancellable = true)
     private void combatant$skipTickWithoutPlayer(CallbackInfo ci) {
         if (Minecraft.getInstance().player == null) {
             ci.cancel();
+            return;
+        }
+        SpeedMine speedMine = Modules.get(SpeedMine.class);
+        if (speedMine != null && speedMine.shouldResetDelay()) {
+            this.destroyDelay = 0;
         }
     }
 
@@ -67,6 +78,30 @@ public class MultiPlayerGameModeMixin {
     )
     private int combatant$hookSilentSelectedSlot(int original) {
         return InventorySwap.INSTANCE.effectiveSelectedSlot();
+    }
+
+    @Inject(method = "startDestroyBlock", at = @At("HEAD"), cancellable = true)
+    private void combatant$speedMineStart(BlockPos pos, Direction direction, CallbackInfoReturnable<Boolean> cir) {
+        SpeedMine speedMine = Modules.get(SpeedMine.class);
+        if (speedMine != null && speedMine.onStartDestroyBlock(pos, direction)) {
+            cir.setReturnValue(true);
+            cir.cancel();
+        }
+    }
+
+    @ModifyExpressionValue(
+            method = "continueDestroyBlock",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/world/level/block/state/BlockState;getDestroyProgress(Lnet/minecraft/world/entity/player/Player;Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/core/BlockPos;)F"
+            )
+    )
+    private float combatant$speedMineMultiplier(float original) {
+        SpeedMine speedMine = Modules.get(SpeedMine.class);
+        if (speedMine != null && speedMine.isEnabled()) {
+            return original * speedMine.getDamageMultiplier();
+        }
+        return original;
     }
 
     @Inject(method = "destroyBlock", at = @At("RETURN"))

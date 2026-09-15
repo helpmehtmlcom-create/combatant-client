@@ -22,10 +22,17 @@ import net.minecraft.world.phys.Vec3;
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.EnumValue;
 import combatant.client.events.EventHandler;
+import combatant.client.events.impl.EventSync;
 import combatant.client.events.impl.GameTickEvent;
 import combatant.client.events.impl.PacketEvent;
 import combatant.client.events.impl.PlayerJumpEvent;
+import combatant.client.events.impl.PlayerVelocityStrafe;
 import combatant.client.events.impl.SprintControlEvent;
+import combatant.client.mixins.accessors.EntityInvoker;
+import combatant.client.util.aiming.RotationManager;
+import combatant.client.util.aiming.RotationTarget;
+import combatant.client.util.aiming.RotationUtil;
+import combatant.client.util.aiming.features.MovementCorrection;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
@@ -55,10 +62,16 @@ public final class Sprint extends Module {
             enumMode("default_reset_mode", ResetMode.LEGIT, ResetMode.values());
     private final BooleanValue omniDirectional =
             bool("omni_directional", false);
+    private final BooleanValue strafe =
+            bool("strafe", false);
+    private final EnumValue<StrafeMode> strafeMode =
+            visibleWhen(enumMode("strafe_mode", StrafeMode.NCP, StrafeMode.values()), strafe::get);
     private final BooleanValue vulcanBypass =
-            visibleWhen(bool("omni_directional_vulcan_bypass", true), omniDirectional::get);
+            visibleWhen(bool("omni_directional_vulcan_bypass", true), this::isOmniOrStrafe);
     private final BooleanValue avoidSwimStartForce =
             bool("avoid_swim_start_force", true);
+    private final BooleanValue autoResume =
+            bool("auto_resume", true);
     private final Minecraft mc = Minecraft.getInstance();
     private int vulcanSprintSuppressTicks;
     private int vulcanSprintDirectionTicks;
@@ -86,12 +99,24 @@ public final class Sprint extends Module {
 
         updateVulcanExternalSprintSuppress(player);
         updateVulcanSprintAGuard(player);
+
+        if (autoResume.get() && canOperate(player) && hasMovementInput(player)) {
+            if (!shouldHardSuppressSprint() && !shouldSuppressExternalVulcanSprint(player)) {
+                if (!shouldAvoidForceSprintForSwimStart(player)) {
+                    if (player.getFoodData().getFoodLevel() > 6.0f || player.getAbilities().mayfly) {
+                        if (!player.isSprinting()) {
+                            player.setSprinting(true);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     @EventHandler
     private void onPacketReceive(PacketEvent.Receive event) {
         LocalPlayer player = mc.player;
-        if (!isEnabled() || !omniDirectional.get() || !vulcanBypass.get() || player == null || mc.level == null) {
+        if (!isEnabled() || !isOmniOrStrafe() || !vulcanBypass.get() || player == null || mc.level == null) {
             return;
         }
 
@@ -129,7 +154,7 @@ public final class Sprint extends Module {
             return;
         }
 
-        if (!event.isMoving() || !shouldUseOmniDirectional(player)) {
+        if (!event.isMoving() || (!shouldUseOmniDirectional(player) && !autoResume.get())) {
             return;
         }
 
@@ -138,6 +163,77 @@ public final class Sprint extends Module {
         }
 
         event.setSprint(true);
+    }
+    @EventHandler(priority = 50)
+    private void onVelocityStrafe(PlayerVelocityStrafe event) {
+        if (!isEnabled() || !strafe.get()) {
+            return;
+        }
+
+        LocalPlayer player = mc.player;
+        if (!canOperate(player) || !player.isSprinting() || !hasMovementInput(player)) {
+            return;
+        }
+
+        if (shouldHardSuppressSprint() || shouldSuppressExternalVulcanSprint(player)) {
+            return;
+        }
+
+        RotationTarget active = RotationManager.INSTANCE.getActiveRotationTarget();
+        if (active != null && active.movementCorrection != MovementCorrection.OFF) {
+            return;
+        }
+
+        float moveYaw = getMovementYaw(player, player.getYRot());
+        Vec3 forwardInput = new Vec3(0.0, 0.0, 1.0);
+        Vec3 velocity = EntityInvoker.combatant$movementInputToVelocity(
+                forwardInput,
+                event.getSpeed(),
+                moveYaw
+        );
+        event.setVelocity(velocity);
+    }
+
+    @EventHandler(priority = -50)
+    private void onSync(EventSync event) {
+        if (!isEnabled() || !strafe.get() || strafeMode.get() != StrafeMode.NCP) {
+            return;
+        }
+
+        LocalPlayer player = mc.player;
+        if (!canOperate(player) || !player.isSprinting() || !hasMovementInput(player)) {
+            return;
+        }
+
+        if (shouldHardSuppressSprint() || shouldSuppressExternalVulcanSprint(player)) {
+            return;
+        }
+
+        if ((player.isInWater() && !player.isSwimming()) || player.isInLava()) {
+            return;
+        }
+
+        if (RotationManager.INSTANCE.getActiveRotationTarget() != null) {
+            return;
+        }
+
+        if (isAttacking(player)) {
+            return;
+        }
+
+        float moveYaw = getMovementYaw(player, player.getYRot());
+        float diff = Math.abs(RotationUtil.angleDifference(player.getYRot(), moveYaw));
+        if (diff > 15.0f) {
+            event.setRotation(moveYaw, player.getXRot(), true);
+        }
+    }
+
+    private boolean isAttacking(LocalPlayer player) {
+        return player.attackAnim > 0 || player.swinging;
+    }
+
+    public boolean isOmniOrStrafe() {
+        return omniDirectional.get() || strafe.get();
     }
 
     public CombatStrikeController.SprintResetMode resolveCombatResetMode() {
@@ -173,7 +269,7 @@ public final class Sprint extends Module {
 
     private boolean shouldUseOmniDirectional(LocalPlayer player) {
         return isEnabled()
-                && omniDirectional.get()
+                && isOmniOrStrafe()
                 && canOperate(player)
                 && !shouldSuppressOmniDirectionalSprint(player)
                 && hasMovementInput(player);
@@ -181,12 +277,11 @@ public final class Sprint extends Module {
 
     private boolean shouldHardSuppressSprint() {
         return isEnabled()
-                && omniDirectional.get()
+                && isOmniOrStrafe()
                 && vulcanBypass.get()
                 && (shouldSuppressScaffoldDirectionalSprint()
                 || vulcanSprintSuppressTicks > 0);
     }
-
     private boolean shouldSuppressOmniDirectionalSprint(LocalPlayer player) {
         return shouldHardSuppressSprint() || shouldSuppressExternalVulcanSprint(player);
     }
@@ -197,7 +292,7 @@ public final class Sprint extends Module {
     }
 
     private void updateVulcanSprintAGuard(LocalPlayer player) {
-        if (!isEnabled() || !omniDirectional.get() || !vulcanBypass.get() || !canOperate(player)) {
+        if (!isEnabled() || !isOmniOrStrafe() || !vulcanBypass.get() || !canOperate(player)) {
             resetVulcanSprintAGuard();
             return;
         }
@@ -236,7 +331,7 @@ public final class Sprint extends Module {
     }
 
     private void updateVulcanExternalSprintSuppress(LocalPlayer player) {
-        if (!isEnabled() || !omniDirectional.get() || !vulcanBypass.get() || !canOperate(player)) {
+        if (!isEnabled() || !isOmniOrStrafe() || !vulcanBypass.get() || !canOperate(player)) {
             vulcanExternalSprintSuppressTicks = 0;
             return;
         }
@@ -305,7 +400,7 @@ public final class Sprint extends Module {
     }
 
     private void markVulcanSprintAJumpWindow() {
-        if (!isEnabled() || !omniDirectional.get() || !vulcanBypass.get()) {
+        if (!isEnabled() || !isOmniOrStrafe() || !vulcanBypass.get()) {
             return;
         }
 
@@ -392,5 +487,20 @@ public final class Sprint extends Module {
         LEGIT,
         PACKET,
         FORCE
+    }
+    public enum StrafeMode implements EnumValue.IdProvider {
+        NCP("ncp"),
+        VANILLA("vanilla");
+
+        private final String id;
+
+        StrafeMode(String id) {
+            this.id = id;
+        }
+
+        @Override
+        public String id() {
+            return id;
+        }
     }
 }

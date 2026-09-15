@@ -19,7 +19,7 @@ import java.util.List;
 
 @CommandInfo(
         id = "runtime",
-        aliases = {"panic", "jarreplace"},
+        aliases = {"panic", "jarreplace", "resume"},
         usage = "@runtime [status|panic|resume|jar|source]",
         descriptionKey = "command.runtime.description"
 )
@@ -27,6 +27,15 @@ public final class RuntimeCommand implements ClientCommand {
     @Override
     public boolean execute(CommandContext ctx) {
         String action = ctx.arg(0);
+        if (action == null) {
+            if ("panic".equalsIgnoreCase(ctx.name())) {
+                action = "panic";
+            } else if ("resume".equalsIgnoreCase(ctx.name())) {
+                action = "resume";
+            } else if ("jarreplace".equalsIgnoreCase(ctx.name())) {
+                action = "jar";
+            }
+        }
         if (action == null || action.equalsIgnoreCase("status")) {
             sendStatus();
             return true;

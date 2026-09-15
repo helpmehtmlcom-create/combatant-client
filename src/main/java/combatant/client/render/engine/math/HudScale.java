@@ -17,15 +17,18 @@ public enum HudScale {
         if (screenW <= 0 || screenH <= 0) return 1f;
         float sx = screenW / BASE_WIDTH;
         float sy = screenH / BASE_HEIGHT;
-        return Math.min(sx, sy);
+        float s = Math.min(sx, sy);
+        if (s <= 1e-6f || !Float.isFinite(s)) return 1f;
+        return s;
     }
 
     /**
      * Logical (virtual) width in UI units for given framebuffer size.
      */
     public static float virtualWidth(int screenW, int screenH) {
+        if (screenW <= 0) return 0f;
         float scale = scale(screenW, screenH);
-        if (scale <= 0f) return screenW;
+        if (scale <= 1e-6f || !Float.isFinite(scale)) return screenW;
         return screenW / scale;
     }
 
@@ -33,8 +36,9 @@ public enum HudScale {
      * Logical (virtual) height in UI units for given framebuffer size.
      */
     public static float virtualHeight(int screenW, int screenH) {
+        if (screenH <= 0) return 0f;
         float scale = scale(screenW, screenH);
-        if (scale <= 0f) return screenH;
+        if (scale <= 1e-6f || !Float.isFinite(scale)) return screenH;
         return screenH / scale;
     }
 
@@ -42,7 +46,8 @@ public enum HudScale {
      * Convert framebuffer-space value to logical UI units.
      */
     public static float toVirtual(float value, float scale) {
-        if (scale <= 0f) return value;
+        if (!Float.isFinite(value)) return 0f;
+        if (scale <= 1e-6f || !Float.isFinite(scale)) return value;
         return value / scale;
     }
 
@@ -50,11 +55,13 @@ public enum HudScale {
      * Convert logical UI units to framebuffer-space value.
      */
     public static float toFramebuffer(float value, float scale) {
-        if (scale <= 0f) return value;
+        if (!Float.isFinite(value)) return 0f;
+        if (scale <= 1e-6f || !Float.isFinite(scale)) return value;
         return value * scale;
     }
 
     public static float s(float value, float scale) {
+        if (!Float.isFinite(value) || !Float.isFinite(scale)) return 0f;
         return value * scale;
     }
 

@@ -67,6 +67,7 @@ public final class OrderedUiBatcher {
     final ObjectArrayList<ItemBatch> itemPool = new ObjectArrayList<>(32);
     final ObjectArrayList<TextBatch> textPool = new ObjectArrayList<>(32);
     final ObjectArrayList<ItemBatch> itemPreparationScratch = new ObjectArrayList<>(16);
+    final ObjectArrayList<RhiDrawCommand> pendingDrawsScratch = new ObjectArrayList<>(128);
     // Text must remain in the exact draw order. Chat, nametags, layered HUD widgets and
     // marquee/clip stacks rely on text being interleaved with shapes/items. Only adjacent
     // compatible text runs are merged; text is never moved across another draw entry.
@@ -328,7 +329,8 @@ public final class OrderedUiBatcher {
     void executeCompiled(boolean finish) {
         if (!active) return;
         flushing = true;
-        List<RhiDrawCommand> pendingDraws = new ArrayList<>(order.size());
+        pendingDrawsScratch.clear();
+        List<RhiDrawCommand> pendingDraws = pendingDrawsScratch;
         try {
             if (order.isEmpty()) {
                 Renderer2D.BATCH_STATS.noteEmpty(active, poolTotal());
@@ -754,7 +756,8 @@ public final class OrderedUiBatcher {
         if (!active) return;
 
         flushing = true;
-        List<RhiDrawCommand> pendingDraws = new ArrayList<>(order.size());
+        pendingDrawsScratch.clear();
+        List<RhiDrawCommand> pendingDraws = pendingDrawsScratch;
         try {
             Minecraft mc = Minecraft.getInstance();
             if (mc == null || mc.gameRenderer == null) {

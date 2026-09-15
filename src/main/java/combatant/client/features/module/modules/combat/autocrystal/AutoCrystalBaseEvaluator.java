@@ -48,7 +48,8 @@ public final class AutoCrystalBaseEvaluator {
         }
 
         Vec3 crystalVec = AutoCrystalInteractionUtil.crystalVec(pos);
-        if (context.resolvePredictedPosition(currentTarget, context.predictTicks()).distanceToSqr(crystalVec) > CRYSTAL_MAX_DISTANCE_SQ) {
+        Vec3 predicted = context.resolvePredictedPosition(currentTarget, context.predictTicks());
+        if (predicted == null || predicted.distanceToSqr(crystalVec) > CRYSTAL_MAX_DISTANCE_SQ) {
             return null;
         }
 
@@ -57,8 +58,11 @@ public final class AutoCrystalBaseEvaluator {
             return null;
         }
 
-        float damage = ExplosionDamageUtil.getCrystalDamage(currentTarget, crystalVec, context.predictTicks(), context.ignoreTerrain(), pos);
-        float selfDamage = ExplosionDamageUtil.getCrystalDamage(player, crystalVec, context.selfPredictTicks(), context.ignoreTerrain(), pos);
+        float damage = ExplosionDamageUtil.getCrystalDamage(currentTarget, crystalVec, context.predictTicks(), context.ignoreTerrain());
+        float selfDamage = ExplosionDamageUtil.getCrystalDamage(player, crystalVec, context.selfPredictTicks(), context.ignoreTerrain());
+        if (Float.isNaN(damage) || Float.isNaN(selfDamage) || Float.isInfinite(damage) || Float.isInfinite(selfDamage)) {
+            return null;
+        }
         boolean overrideDamage = context.shouldOverrideMaxSelfDamage(damage, selfDamage);
         if (damage < BASE_MIN_DAMAGE) {
             return null;

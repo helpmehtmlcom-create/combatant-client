@@ -36,6 +36,9 @@ public final class ThemeComponent {
     private final Map<String, Float> swatchHoverByKey = new HashMap<>();
     private final Map<String, Float> selectedAnimByTheme = new HashMap<>();
     private final Set<String> liveThemeIds = new HashSet<>();
+    private final Themes.GradientSpec[] swatchGradients = new Themes.GradientSpec[12];
+    private final int[] swatchColorA = new int[12];
+    private final int[] swatchColorB = new int[12];
     private float scroll;
     private float smoothedScroll;
     private boolean scrollbarVisible;
@@ -89,9 +92,12 @@ public final class ThemeComponent {
         scroll = 0f;
         smoothedScroll = 0f;
         draggingScrollbar = false;
+        hits.clear();
+        swatchHoverByKey.clear();
     }
 
     public void scroll(float mx, float my, float menuX, float menuY, float menuW, float menuH, double amount, float scale) {
+        if (!Double.isFinite(amount) || !Float.isFinite(scale) || scale <= 0f) return;
         float x = menuX + 31f * scale;
         float y = menuY + 33f * scale;
         float w = menuW - 42f * scale;
@@ -223,6 +229,10 @@ public final class ThemeComponent {
         }
 
         selectedAnimByTheme.keySet().removeIf(id -> !liveThemeIds.contains(id));
+        swatchHoverByKey.keySet().removeIf(k -> {
+            int sep = k.indexOf('#');
+            return sep < 0 || !liveThemeIds.contains(k.substring(0, sep));
+        });
     }
 
     private float selectedAnim(String themeId) {
@@ -336,50 +346,37 @@ public final class ThemeComponent {
         float chipsBottom = y + h - 5f * scale;
         float chipsH = Math.max(2f * scale, chipsBottom - chipsY);
 
-        Themes.GradientSpec[] gradients = new Themes.GradientSpec[]{
-                entry.windowGradient(),
-                entry.cardGradient(),
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null
-        };
-        int[] colorA = new int[]{
-                t.windowBg(),
-                t.cardEnabled(),
-                t.windowHeader(),
-                t.surface(),
-                t.surfaceHover(),
-                t.accent(),
-                t.accentSoft(),
-                t.windowStroke(),
-                t.strokeSoft(),
-                t.textPrimary(),
-                t.textMuted(),
-                t.windowBg()
-        };
-        int[] colorB = new int[]{
-                t.windowHeader(),
-                t.accentSoft(),
-                t.windowStroke(),
-                t.surfaceHover(),
-                t.windowHeader(),
-                t.accentSoft(),
-                t.strokeSoft(),
-                t.strokeSoft(),
-                t.textMuted(),
-                t.textMuted(),
-                t.surface(),
-                t.accentSoft()
-        };
+        swatchGradients[0] = entry.windowGradient();
+        swatchGradients[1] = entry.cardGradient();
+        for (int i = 2; i < 12; i++) swatchGradients[i] = null;
 
-        int columns = colorA.length;
+        swatchColorA[0] = t.windowBg();
+        swatchColorA[1] = t.cardEnabled();
+        swatchColorA[2] = t.windowHeader();
+        swatchColorA[3] = t.surface();
+        swatchColorA[4] = t.surfaceHover();
+        swatchColorA[5] = t.accent();
+        swatchColorA[6] = t.accentSoft();
+        swatchColorA[7] = t.windowStroke();
+        swatchColorA[8] = t.strokeSoft();
+        swatchColorA[9] = t.textPrimary();
+        swatchColorA[10] = t.textMuted();
+        swatchColorA[11] = t.windowBg();
+
+        swatchColorB[0] = t.windowHeader();
+        swatchColorB[1] = t.accentSoft();
+        swatchColorB[2] = t.windowStroke();
+        swatchColorB[3] = t.surfaceHover();
+        swatchColorB[4] = t.windowHeader();
+        swatchColorB[5] = t.accentSoft();
+        swatchColorB[6] = t.strokeSoft();
+        swatchColorB[7] = t.strokeSoft();
+        swatchColorB[8] = t.textMuted();
+        swatchColorB[9] = t.textMuted();
+        swatchColorB[10] = t.surface();
+        swatchColorB[11] = t.accentSoft();
+
+        int columns = swatchColorA.length;
         float chipSize = Math.min(10.2f * scale, chipsH);
         float minGap = scale;
         if (columns > 1) {
@@ -391,7 +388,7 @@ public final class ThemeComponent {
         float hoverBoost = 0.75f * scale;
         float yCenterOffset = (chipsH - chipSize) * 0.5f;
 
-        for (int i = 0; i < colorA.length; i++) {
+        for (int i = 0; i < swatchColorA.length; i++) {
             int col = i % columns;
             int row = i / columns;
             float cx = chipsX + col * (chipSize + chipGap);
@@ -413,9 +410,9 @@ public final class ThemeComponent {
                     size,
                     size,
                     2.3f * scale,
-                    gradients[i],
-                    colorA[i],
-                    colorB[i]
+                    swatchGradients[i],
+                    swatchColorA[i],
+                    swatchColorB[i]
             );
 
             // TODO: Show swatch tooltip on hover (name/value), once UX spec is provided.
@@ -547,8 +544,9 @@ public final class ThemeComponent {
         scrollbarW = 4f * scale;
         scrollbarX = menuX + 400f * scale - 35f * scale - scrollbarW + 50f * scale;
         scrollbarY = menuY + 33f * scale;
-        scrollbarH = menuH - 58f * scale;
-        scrollbarThumbH = Math.max(20f * scale, scrollbarH * (areaH / contentH));
+        scrollbarH = Math.max(1f, menuH - 58f * scale);
+        scrollbarThumbH = Math.max(20f * scale, scrollbarH * (contentH > 0f ? (areaH / contentH) : 1f));
+        scrollbarThumbH = Math.min(scrollbarH, scrollbarThumbH);
         float ratio = scrollbarMaxScroll <= 0f ? 0f : (-smoothedScroll / scrollbarMaxScroll);
         scrollbarThumbY = scrollbarY + (scrollbarH - scrollbarThumbH) * AnimationUtility.clamp(ratio, 0f, 1f);
     }

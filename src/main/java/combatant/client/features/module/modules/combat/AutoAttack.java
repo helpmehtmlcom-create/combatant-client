@@ -409,7 +409,7 @@ public class AutoAttack extends Module {
 
     @EventHandler
     public void onPacketSend(PacketEvent.Send event) {
-        if (!isEnabled()) return;
+        if (!isEnabled() || event == null) return;
         if (!delayOnBroken.get()) return;
         if (event.getPacket() instanceof ServerboundPlayerActionPacket pkt
                 && pkt.getAction() == ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK) {

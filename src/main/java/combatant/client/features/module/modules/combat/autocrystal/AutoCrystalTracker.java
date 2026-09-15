@@ -91,6 +91,9 @@ public final class AutoCrystalTracker {
     public void setDeadCrystal(int id) {
         deadCrystals.putIfAbsent(id, System.currentTimeMillis());
     }
+    public void addDeadCrystal(int id) {
+        setDeadCrystal(id);
+    }
 
     public void markNearbyCrystalsDead(ClientLevel level, EndCrystal sourceCrystal) {
         if (level == null || sourceCrystal == null) {

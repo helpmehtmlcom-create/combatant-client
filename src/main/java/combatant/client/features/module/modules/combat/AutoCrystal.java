@@ -14,6 +14,8 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
+import net.minecraft.network.protocol.game.ServerboundAttackPacket;
+import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
@@ -124,6 +126,23 @@ public class AutoCrystal extends Module {
                     0,
                     1000
             ), breakEnabled::get);
+
+    public enum ExecutionOrder {
+        BREAK_PLACE,
+        PLACE_BREAK,
+        BREAK_ONLY,
+        PLACE_ONLY
+    }
+
+    private final EnumValue<ExecutionOrder> executionOrder =
+            enumSetting("autocrystalExecutionOrder", "execution_order", ExecutionOrder.BREAK_PLACE, ExecutionOrder.values());
+    private final BooleanValue instantSpawnBreak = bool("autocrystalInstantSpawnBreak", "instant_spawn_break", true);
+    private final BooleanValue fastPlace = bool("autocrystalFastPlace", "fast_place", true);
+    private final BooleanValue multiBreak = bool("autocrystalMultiBreak", "multi_break", true);
+    private final NumberValue<Integer> maxBreaks = visibleWhen(
+            num("autocrystalMaxBreaks", "max_breaks", 2, 1, 5),
+            multiBreak::get
+    );
     private final NumberValue<Float> placeRange =
             numCommon(
                     "autocrystalPlaceRange",
@@ -376,8 +395,22 @@ public class AutoCrystal extends Module {
         }
 
         if (event.getPacket() instanceof ClientboundAddEntityPacket spawn) {
-            if (spawn.getType() != net.minecraft.world.entity.EntityTypes.END_CRYSTAL) {
+            if (spawn.getType() != EntityTypes.END_CRYSTAL) {
                 return;
+            }
+
+            if (breakEnabled.get() && instantSpawnBreak.get() && mc.player != null && mc.getConnection() != null) {
+                Vec3 spawnPos = new Vec3(spawn.getX(), spawn.getY(), spawn.getZ());
+                double dist = mc.player.getEyePosition().distanceTo(spawnPos);
+                if (dist <= breakRange.get()) {
+                    mc.getConnection().send(new ServerboundAttackPacket(spawn.getId()));
+                    mc.player.swing(InteractionHand.MAIN_HAND);
+                    lastBreakMs = System.currentTimeMillis();
+                    crystalTracker.setDeadCrystal(spawn.getId());
+                    if (fastPlace.get() && placeEnabled.get() && bestCandidate != null) {
+                        tryPlaceCrystal(bestCandidate.pos());
+                    }
+                }
             }
 
             var entity = mc.level.getEntity(spawn.getId());
@@ -407,15 +440,36 @@ public class AutoCrystal extends Module {
         updateBestBasePosition();
         debugState();
 
-        if (tryBreakCrystal()) {
-            return;
+        ExecutionOrder order = executionOrder.get();
+        if (order == ExecutionOrder.BREAK_PLACE || order == ExecutionOrder.BREAK_ONLY) {
+            tryBreakCrystal();
+            if (multiBreak.get()) {
+                for (int i = 1; i < maxBreaks.get(); i++) {
+                    updateBestCrystal();
+                    if (!tryBreakCrystal()) break;
+                }
+            }
+            tryPlaceBase();
+            if (order == ExecutionOrder.BREAK_PLACE) {
+                executePlacement();
+            }
+        } else {
+            tryPlaceBase();
+            executePlacement();
+            if (order == ExecutionOrder.PLACE_BREAK) {
+                tryBreakCrystal();
+                if (multiBreak.get()) {
+                    for (int i = 1; i < maxBreaks.get(); i++) {
+                        updateBestCrystal();
+                        if (!tryBreakCrystal()) break;
+                    }
+                }
+            }
         }
+    }
 
-        if (tryPlaceBase()) {
-            return;
-        }
-
-        if (!placeEnabled.get()) {
+    private void executePlacement() {
+        if (!placeEnabled.get() || mc.player == null) {
             RotationManager.INSTANCE.clear(this);
             return;
         }
@@ -1053,6 +1107,9 @@ public class AutoCrystal extends Module {
         lastBreakMs = System.currentTimeMillis();
         crystalTracker.onCrystalAttack(mc, crystal);
         crystalTracker.markNearbyCrystalsDead(mc.level, crystal);
+        if (fastPlace.get() && placeEnabled.get() && bestCandidate != null) {
+            tryPlaceCrystal(bestCandidate.pos());
+        }
     }
 
     private boolean isCrystalBlocked(int id) {

@@ -94,16 +94,29 @@ public class Freecam extends Module {
     public void onDisable() {
         Minecraft mc = Minecraft.getInstance();
         if (prevPerspective != null) {
-            mc.options.setCameraType(prevPerspective);
+            if (mc.options != null) {
+                mc.options.setCameraType(prevPerspective);
+            }
+            prevPerspective = null;
         }
-        if (mc.player != null && mc.getCameraEntity() == camEntity) {
+        if (mc.getCameraEntity() == camEntity) {
             mc.setCameraEntity(mc.player);
         }
         camEntity = null;
+        camPos = Vec3.ZERO;
+        camPosPrev = Vec3.ZERO;
+        cameraInput = true;
     }
 
     @EventHandler
     private void onGameTick(GameTickEvent event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null || mc.player.isDeadOrDying()) {
+            if (isEnabled()) {
+                toggle();
+            }
+            return;
+        }
         if (isActionPressedOnce(SETTING_TOGGLE_INPUT)) {
             cameraInput = !cameraInput;
             notifyInputMode(cameraInput);

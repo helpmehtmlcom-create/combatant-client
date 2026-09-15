@@ -26,6 +26,9 @@ import net.minecraft.resources.Identifier;
  * Single-line relation entry used by the simplified Relations screen.
  */
 public final class RelationPlayerCardComponent {
+    private final RenderColor headColor = new RenderColor(255, 255, 255, 255);
+    private final RenderColor headOutlineColor = new RenderColor(255, 255, 255, 38);
+
 
     public CardHit renderRow(String name,
                              int relationColor,
@@ -126,6 +129,8 @@ public final class RelationPlayerCardComponent {
         GuiGraphicsExtractor ctx = ViewportContext.getCurrentContext();
         if (skin != null && ctx != null) {
             int alpha = Math.round(255f * AnimationUtility.clamp01(opacity));
+            headColor.setAlpha(alpha);
+            headOutlineColor.setAlpha(Math.round(38f * AnimationUtility.clamp01(opacity)));
             PlayerHeadRenderer.drawRounded(
                     ctx,
                     x,
@@ -133,9 +138,9 @@ public final class RelationPlayerCardComponent {
                     size,
                     radius,
                     skin,
-                    new RenderColor(255, 255, 255, alpha),
+                    headColor,
                     true,
-                    new RenderColor(255, 255, 255, Math.round(38f * AnimationUtility.clamp01(opacity))),
+                    headOutlineColor,
                     0.65f * scale,
                     false
             );

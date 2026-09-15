@@ -35,6 +35,7 @@ import combatant.client.events.impl.BlinkPacketEvent;
 import combatant.client.events.impl.GameTickEvent;
 import combatant.client.events.impl.PacketEvent;
 
+import combatant.client.util.logging.DebugLog;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -69,21 +70,31 @@ public final class BlinkManager {
     }
 
     private static void sendPacketSilently(Packet<?> packet) {
-        Connection connection = connection();
-        if (connection != null && connection.isConnected()) {
-            connection.send(packet);
+        if (packet == null) return;
+        try {
+            Connection connection = connection();
+            if (connection != null && connection.isConnected()) {
+                connection.send(packet);
+            }
+        } catch (Throwable t) {
+            DebugLog.error("Error silently sending packet: %s", t, packet.getClass().getSimpleName());
         }
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
     private static void handlePacketSilently(Packet<?> packet) {
-        Connection connection = connection();
-        PacketListener listener = connection != null ? connection.getPacketListener() : null;
-        if (listener == null) {
-            return;
-        }
+        if (packet == null) return;
+        try {
+            Connection connection = connection();
+            PacketListener listener = connection != null ? connection.getPacketListener() : null;
+            if (listener == null) {
+                return;
+            }
 
-        ((Packet) packet).handle(listener);
+            ((Packet) packet).handle(listener);
+        } catch (Throwable t) {
+            DebugLog.error("Error silently handling packet: %s", t, packet.getClass().getSimpleName());
+        }
     }
 
     private static Connection connection() {
@@ -98,6 +109,7 @@ public final class BlinkManager {
     }
 
     private static boolean shouldAlwaysPass(Packet<?> packet) {
+        if (packet == null) return true;
         return packet instanceof ClientIntentionPacket
                 || packet instanceof ServerboundStatusRequestPacket
                 || packet instanceof ServerboundPingRequestPacket
@@ -115,20 +127,30 @@ public final class BlinkManager {
     }
 
     private static boolean isPlayerHurtSound(Packet<?> packet) {
-        return packet instanceof ClientboundSoundPacket sound && sound.getSound().value() == SoundEvents.PLAYER_HURT
-                || packet instanceof ClientboundSoundEntityPacket entitySound
-                && entitySound.getSound().value() == SoundEvents.PLAYER_HURT;
+        if (packet == null) return false;
+        try {
+            return packet instanceof ClientboundSoundPacket sound && sound.getSound() != null && sound.getSound().value() == SoundEvents.PLAYER_HURT
+                    || packet instanceof ClientboundSoundEntityPacket entitySound && entitySound.getSound() != null
+                    && entitySound.getSound().value() == SoundEvents.PLAYER_HURT;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private static boolean shouldFlushAndPass(Packet<?> packet, TransferOrigin origin) {
-        if (packet instanceof ClientboundPlayerPositionPacket
-                || packet instanceof ClientboundDisconnectPacket
-                || packet instanceof ClientboundLoginDisconnectPacket) {
-            return true;
+        if (packet == null) return false;
+        try {
+            if (packet instanceof ClientboundPlayerPositionPacket
+                    || packet instanceof ClientboundDisconnectPacket
+                    || packet instanceof ClientboundLoginDisconnectPacket) {
+                return true;
+            }
+            return origin == TransferOrigin.INCOMING
+                    && packet instanceof ClientboundSetHealthPacket health
+                    && health.getHealth() <= 0.0f;
+        } catch (Throwable ignored) {
+            return false;
         }
-        return origin == TransferOrigin.INCOMING
-                && packet instanceof ClientboundSetHealthPacket health
-                && health.getHealth() <= 0.0f;
     }
 
     public ConcurrentLinkedQueue<PacketSnapshot> getPacketQueue() {
@@ -147,6 +169,7 @@ public final class BlinkManager {
         double currentZ = mc != null && mc.player != null ? mc.player.getZ() : 0.0;
 
         for (PacketSnapshot snapshot : packetQueue) {
+            if (snapshot == null || snapshot.packet() == null) continue;
             if (snapshot.packet() instanceof ServerboundMovePlayerPacket move && move.hasPosition()) {
                 currentX = move.getX(currentX);
                 currentY = move.getY(currentY);
@@ -156,19 +179,22 @@ public final class BlinkManager {
         }
         return out;
     }
-
     @EventHandler(priority = -10000)
     public void onTick(GameTickEvent event) {
-        if (!hasOpenConnection()) {
-            packetQueue.clear();
-            return;
-        }
+        try {
+            if (!hasOpenConnection()) {
+                packetQueue.clear();
+                return;
+            }
 
-        if (fireEvent(null, TransferOrigin.OUTGOING) == Action.FLUSH) {
-            flush(TransferOrigin.OUTGOING);
-        }
-        if (fireEvent(null, TransferOrigin.INCOMING) == Action.FLUSH) {
-            flush(TransferOrigin.INCOMING);
+            if (fireEvent(null, TransferOrigin.OUTGOING) == Action.FLUSH) {
+                flush(TransferOrigin.OUTGOING);
+            }
+            if (fireEvent(null, TransferOrigin.INCOMING) == Action.FLUSH) {
+                flush(TransferOrigin.INCOMING);
+            }
+        } catch (Throwable t) {
+            DebugLog.error("Error in BlinkManager onTick", t);
         }
     }
 
@@ -184,21 +210,29 @@ public final class BlinkManager {
         }
 
         Packet<?> packet = event.getPacket();
-        Action action = fireEvent(packet, origin);
-        if (action == Action.FLUSH) {
-            flush(origin);
-            return;
-        }
-        if (action == Action.PASS || shouldAlwaysPass(packet)) {
-            return;
-        }
-        if (shouldFlushAndPass(packet, origin)) {
-            flush(origin);
+        if (packet == null) {
             return;
         }
 
-        event.cancel();
-        packetQueue.add(new PacketSnapshot(packet, origin, System.currentTimeMillis()));
+        try {
+            Action action = fireEvent(packet, origin);
+            if (action == Action.FLUSH) {
+                flush(origin);
+                return;
+            }
+            if (action == Action.PASS || shouldAlwaysPass(packet)) {
+                return;
+            }
+            if (shouldFlushAndPass(packet, origin)) {
+                flush(origin);
+                return;
+            }
+
+            event.cancel();
+            packetQueue.add(new PacketSnapshot(packet, origin, System.currentTimeMillis()));
+        } catch (Throwable t) {
+            DebugLog.error("Error in BlinkManager onPacket: %s", t, packet.getClass().getSimpleName());
+        }
     }
 
     public void flush(TransferOrigin origin) {
@@ -254,12 +288,12 @@ public final class BlinkManager {
         }
 
         for (PacketSnapshot snapshot : packetQueue) {
+            if (snapshot == null || snapshot.packet() == null) continue;
             if (snapshot.origin() == TransferOrigin.OUTGOING && snapshot.packet() instanceof ServerboundMovePlayerPacket) {
                 continue;
             }
             flushSnapshot(snapshot);
         }
-        packetQueue.clear();
     }
 
     public boolean isAboveTime(long delayMs) {
@@ -272,12 +306,15 @@ public final class BlinkManager {
             return;
         }
         for (PacketSnapshot snapshot : packetQueue) {
-            if (packetClass.isInstance(snapshot.packet())) {
-                action.accept(packetClass.cast(snapshot.packet()));
+            if (snapshot != null && snapshot.packet() != null && packetClass.isInstance(snapshot.packet())) {
+                try {
+                    action.accept(packetClass.cast(snapshot.packet()));
+                } catch (Throwable t) {
+                    DebugLog.error("Error rewriting packet %s", t, packetClass.getSimpleName());
+                }
             }
         }
     }
-
     private Action fireEvent(Packet<?> packet, TransferOrigin origin) {
         BlinkPacketEvent event = new BlinkPacketEvent(packet, origin);
         Events.BUS.post(event);
@@ -289,10 +326,14 @@ public final class BlinkManager {
             return;
         }
         runSilently(() -> {
-            if (snapshot.origin() == TransferOrigin.OUTGOING) {
-                sendPacketSilently(snapshot.packet());
-            } else {
-                handlePacketSilently(snapshot.packet());
+            try {
+                if (snapshot.origin() == TransferOrigin.OUTGOING) {
+                    sendPacketSilently(snapshot.packet());
+                } else {
+                    handlePacketSilently(snapshot.packet());
+                }
+            } catch (Throwable t) {
+                DebugLog.error("Error in BlinkManager flushSnapshot: %s", t, snapshot.packet().getClass().getSimpleName());
             }
         });
     }

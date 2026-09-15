@@ -143,6 +143,7 @@ public abstract class DraggableHudElement extends BaseHudElement {
     }
 
     public void moveTo(float x, float y) {
+        if (!Float.isFinite(x) || !Float.isFinite(y)) return;
         this.x = x;
         this.y = y;
     }
@@ -150,8 +151,8 @@ public abstract class DraggableHudElement extends BaseHudElement {
     public void setAnchors(HudAnchorX anchorX, HudAnchorY anchorY, float offsetX, float offsetY) {
         this.anchorX = anchorX != null ? anchorX : HudAnchorX.FREE;
         this.anchorY = anchorY != null ? anchorY : HudAnchorY.FREE;
-        this.anchorOffsetX = offsetX;
-        this.anchorOffsetY = offsetY;
+        this.anchorOffsetX = Float.isFinite(offsetX) ? offsetX : 0f;
+        this.anchorOffsetY = Float.isFinite(offsetY) ? offsetY : 0f;
     }
 
     public void setParentAnchor(String parentId,
@@ -160,8 +161,8 @@ public abstract class DraggableHudElement extends BaseHudElement {
                                 float offsetY) {
         this.parentId = parentId;
         this.parentSide = side != null ? side : WidgetAnchorSide.NONE;
-        this.parentOffsetX = offsetX;
-        this.parentOffsetY = offsetY;
+        this.parentOffsetX = Float.isFinite(offsetX) ? offsetX : 0f;
+        this.parentOffsetY = Float.isFinite(offsetY) ? offsetY : 0f;
     }
 
     public void clearParentAnchor() {

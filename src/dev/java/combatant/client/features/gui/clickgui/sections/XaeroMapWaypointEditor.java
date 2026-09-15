@@ -324,8 +324,9 @@ final class XaeroMapWaypointEditor {
 
         for (int i = 0; i < 16; i++) {
             float cx = colorStartX + i * COLOR_STEP + COLOR_RADIUS;
+            float cy = colorY + COLOR_RADIUS;
             int color = xaero.hud.minimap.waypoint.WaypointColor.fromIndex(i).getHex() | 0xFF000000;
-            renderer.circle(cx, colorY + COLOR_RADIUS, COLOR_RADIUS,
+            renderer.circle(cx, cy, COLOR_RADIUS,
                     SettingsGuiPalette.withAlpha(color, Math.round(235.0f * reveal)));
         }
 

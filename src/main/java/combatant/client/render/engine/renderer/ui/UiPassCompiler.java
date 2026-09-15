@@ -140,7 +140,13 @@ public final class UiPassCompiler {
         OrderedUiBatcher batcher = submission.batcher();
         boolean finish = submission.finish();
         int orderedBatchCount = batcher.pendingBatchCount();
-
+        if (orderedBatchCount == 0) {
+            return new UiBatchPlan.Pass(
+                    "Renderer2D.EmptyOrderedPass",
+                    0,
+                    (frame, rhi) -> {}
+            );
+        }
         if (batcher.isPureItemBatchOrder()) {
             UiPipelineTelemetry.recordItemPass();
             return new UiBatchPlan.Pass(

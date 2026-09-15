@@ -17,13 +17,20 @@ public enum AutoCrystalDamageRules {
     ;
 
     public static boolean shouldOverrideMinDamage(LivingEntity target, float damage, float faceplaceHealth) {
-        if (target == null) {
+        if (target == null || !target.isAlive() || target.isRemoved()) {
+            return false;
+        }
+        if (Float.isNaN(damage) || Float.isInfinite(damage)) {
             return false;
         }
 
         float targetHealth = target.getHealth();
         if (target instanceof Player playerTarget) {
             targetHealth += playerTarget.getAbsorptionAmount();
+        }
+
+        if (targetHealth <= 0.0f) {
+            return false;
         }
 
         if (targetHealth - damage <= 0.0f) {
@@ -40,10 +47,12 @@ public enum AutoCrystalDamageRules {
             float selfDamage,
             float maxSelfDamage
     ) {
-        if (target == null || player == null) {
+        if (target == null || player == null || !target.isAlive() || target.isRemoved() || !player.isAlive() || player.isRemoved()) {
             return false;
         }
-
+        if (Float.isNaN(damage) || Float.isNaN(selfDamage) || Float.isNaN(maxSelfDamage)) {
+            return false;
+        }
         float targetHealth = target.getHealth();
         boolean targetHasTotem = false;
         if (target instanceof Player playerTarget) {

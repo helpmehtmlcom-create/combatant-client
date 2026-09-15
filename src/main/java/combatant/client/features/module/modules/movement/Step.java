@@ -196,6 +196,9 @@ public final class Step extends Module {
     @EventHandler
     private void onPlayerStep(PlayerStepEvent event) {
         if (!isEnabled() || mode.get() != Mode.INSTANT || ticksWait > 0) return;
+        if (mc.player == null) return;
+        if (!mc.player.onGround() || mc.player.isShiftKeyDown() || mc.player.isSpectator()) return;
+        if (mc.player.isInWater() || mc.player.isInLava() || mc.player.onClimbable() || mc.player.isPassenger()) return;
         event.setHeight(height.get());
     }
 

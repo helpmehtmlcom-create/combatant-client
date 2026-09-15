@@ -225,9 +225,28 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
                 List.<FrameBufferAttachment>of(color),
                 depth);
 
+        int prevDrawFbo = GlStateManager.getFrameBuffer(GlConst.GL_DRAW_FRAMEBUFFER);
+        int prevReadFbo = GlStateManager.getFrameBuffer(GlConst.GL_READ_FRAMEBUFFER);
+        int[] prevViewport = new int[4];
+        GL11C.glGetIntegerv(GL11C.GL_VIEWPORT, prevViewport);
+        boolean prevDepthTest = GL11C.glIsEnabled(GL11C.GL_DEPTH_TEST);
+        boolean prevDepthMask = GL11C.glGetBoolean(GL11C.GL_DEPTH_WRITEMASK);
+        int prevDepthFunc = GL11C.glGetInteger(GL11C.GL_DEPTH_FUNC);
+        boolean prevBlend = GL11C.glIsEnabled(GL11C.GL_BLEND);
+        int prevBlendSrcRgb = GL11C.glGetInteger(GL14C.GL_BLEND_SRC_RGB);
+        int prevBlendDstRgb = GL11C.glGetInteger(GL14C.GL_BLEND_DST_RGB);
+        int prevBlendSrcAlpha = GL11C.glGetInteger(GL14C.GL_BLEND_SRC_ALPHA);
+        int prevBlendDstAlpha = GL11C.glGetInteger(GL14C.GL_BLEND_DST_ALPHA);
+        boolean prevCull = GL11C.glIsEnabled(GL11C.GL_CULL_FACE);
+        int prevCullFace = GL11C.glGetInteger(GL11C.GL_CULL_FACE_MODE);
+        int prevProgram = GL11C.glGetInteger(GL20C.GL_CURRENT_PROGRAM);
+        int prevEbo = GL11C.glGetInteger(GL15C.GL_ELEMENT_ARRAY_BUFFER_BINDING);
+
         try {
             GlStateManager._glBindFramebuffer(GL30C.GL_FRAMEBUFFER, fbo);
-            GlStateManager._viewport(0, 0, color.getWidth(0), color.getHeight(0));
+            int vpWidth = Math.max(1, color.getWidth(0));
+            int vpHeight = Math.max(1, color.getHeight(0));
+            GlStateManager._viewport(0, 0, vpWidth, vpHeight);
             applyRasterState(pipeline.descriptor);
             GlStateManager._glUseProgram(pipeline.program);
             bindStorage(command.storageBindings());
@@ -254,7 +273,38 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
             unbindStorage(command.storageBindings());
             unbindSampledTextures(command.sampledTextures());
             unbindStorageImages(command.storageImages());
-            GlStateManager._glUseProgram(0);
+            GlStateManager._glUseProgram(prevProgram);
+            GlStateManager._glBindBuffer(GL15C.GL_ELEMENT_ARRAY_BUFFER, prevEbo);
+
+            if (prevDepthTest) {
+                GlStateManager._enableDepthTest();
+            } else {
+                GlStateManager._disableDepthTest();
+            }
+            GlStateManager._depthMask(prevDepthMask);
+            GL11C.glDepthFunc(prevDepthFunc);
+
+            if (prevBlend) {
+                GlStateManager._enableBlend(0);
+            } else {
+                GlStateManager._disableBlend(0);
+            }
+            GlStateManager._blendFuncSeparate(prevBlendSrcRgb, prevBlendDstRgb, prevBlendSrcAlpha, prevBlendDstAlpha);
+
+            if (prevCull) {
+                GlStateManager._enableCull();
+            } else {
+                GlStateManager._disableCull();
+            }
+            GL11C.glCullFace(prevCullFace);
+
+            GlStateManager._viewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+            if (prevDrawFbo == prevReadFbo) {
+                GlStateManager._glBindFramebuffer(GlConst.GL_FRAMEBUFFER, prevDrawFbo);
+            } else {
+                GlStateManager._glBindFramebuffer(GlConst.GL_DRAW_FRAMEBUFFER, prevDrawFbo);
+                GlStateManager._glBindFramebuffer(GlConst.GL_READ_FRAMEBUFFER, prevReadFbo);
+            }
         }
     }
 

@@ -533,6 +533,7 @@ public final class MsdfFont implements GlyphFont {
             image.getRGB(0, 0, w, h, pixels, 0, w);
 
             ByteBuffer buffer = MemoryUtil.memAlloc(w * h * 4);
+            Texture texture = null;
             try {
                 for (int argb : pixels) {
                     buffer.put((byte) ((argb >> 16) & 0xFF));
@@ -542,10 +543,18 @@ public final class MsdfFont implements GlyphFont {
                 }
                 buffer.flip();
 
-                Texture texture = new Texture(w, h, GpuFormat.RGBA8_UNORM, FilterMode.LINEAR, FilterMode.LINEAR);
+                texture = new Texture(w, h, GpuFormat.RGBA8_UNORM, FilterMode.LINEAR, FilterMode.LINEAR);
                 texture.upload(buffer);
-                return texture;
+                Texture result = texture;
+                texture = null;
+                return result;
             } catch (Exception ignored) {
+                if (texture != null) {
+                    try {
+                        texture.close();
+                    } catch (Throwable ignored2) {
+                    }
+                }
                 return null;
             } finally {
                 MemoryUtil.memFree(buffer);

@@ -110,7 +110,7 @@ public class Tracers extends Module {
     }
 
     private static float radiusFactorForDistance(double distance) {
-        if (distance <= ARROW_DISTANCE_NEAR) return ARROW_RADIUS_MIN_FACTOR;
+        if (!Double.isFinite(distance) || distance <= ARROW_DISTANCE_NEAR) return ARROW_RADIUS_MIN_FACTOR;
         if (distance >= ARROW_DISTANCE_FAR) return ARROW_RADIUS_MAX_FACTOR;
         float t = (float) ((distance - ARROW_DISTANCE_NEAR) / (ARROW_DISTANCE_FAR - ARROW_DISTANCE_NEAR));
         t = Mth.clamp(t, 0.0f, 1.0f);
@@ -177,6 +177,13 @@ public class Tracers extends Module {
     public HudPhase getHudPhase() {
         return HudPhase.BEFORE_HOTBAR;
     }
+    @Override
+    public void onDisable() {
+        animationStep = 0.0f;
+        animatedYaw = 0.0f;
+        animatedPitch = 0.0f;
+        yaw = 0.0f;
+    }
 
     @Override
     public void onRenderWorldEngine(Renderer3D renderer, Renderer3D depthRenderer, float tickDelta) {
@@ -184,9 +191,10 @@ public class Tracers extends Module {
         if (!isLinesMode()) return;
 
         Vec3 camPos = getActiveCameraPos(tickDelta);
+        if (camPos == null) return;
         Vec3 look = getActiveCameraLook(tickDelta);
+        if (look == null) return;
         Vec3 start = camPos.add(look.scale(10.0));
-
         for (Player p : mc.level.players()) {
             if (p == mc.player) continue;
             if (!traceFriendsValue.get() && CategoryService.isFriend(p)) continue;
@@ -241,8 +249,10 @@ public class Tracers extends Module {
             if (!traceFriendsValue.get() && CategoryService.isFriend(player)) continue;
 
             Vec3 targetWorld = obtainEntityLerpedPos(player, tickDelta);
+            if (targetWorld == null || camPos == null) continue;
             double relX = targetWorld.x - camPos.x;
             double relZ = targetWorld.z - camPos.z;
+            if (!Double.isFinite(relX) || !Double.isFinite(relZ)) continue;
 
             double yawRad = Math.toRadians(yaw);
             double cos = Math.cos(yawRad);
@@ -256,6 +266,7 @@ public class Tracers extends Module {
             double radius = animationStep * radiusFactor;
             double x2 = radius * Mth.cos((float) Math.toRadians(angleDeg)) + centerX + animatedYaw;
             double y2 = radius * Mth.sin((float) Math.toRadians(angleDeg)) + centerY + animatedPitch;
+            if (!Double.isFinite(x2) || !Double.isFinite(y2)) continue;
 
             int color = withAlpha(resolveColor(player), ARROW_ALPHA);
             float rotRad = (float) Math.toRadians(angleDeg + ARROW_ROTATION_OFFSET_DEG);
@@ -281,13 +292,20 @@ public class Tracers extends Module {
             float yaw = (float) Math.toRadians(fc.camYaw);
             float pitch = (float) Math.toRadians(fc.camPitch);
 
-            return new Vec3(
+            Vec3 look = new Vec3(
                     -Math.sin(yaw) * Math.cos(pitch),
                     -Math.sin(pitch),
                     Math.cos(yaw) * Math.cos(pitch)
-            ).normalize();
+            );
+            return look.lengthSqr() > 1.0e-6 ? look.normalize() : new Vec3(0, 0, 1);
         }
-        return mc.player.getViewVector(tickDelta).normalize();
+        if (mc.player != null) {
+            Vec3 view = mc.player.getViewVector(tickDelta);
+            if (view != null && view.lengthSqr() > 1.0e-6) {
+                return view.normalize();
+            }
+        }
+        return new Vec3(0, 0, 1);
     }
 
     private float getActiveCameraYaw() {

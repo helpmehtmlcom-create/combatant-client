@@ -32,6 +32,9 @@ import java.util.List;
 public final class UiDirectTexturedRenderer {
     private UiDirectTexturedRenderer() {
     }
+    private static final ThreadLocal<ArrayList<RhiDrawCommand>> SCRATCH_COMMANDS =
+            ThreadLocal.withInitial(() -> new ArrayList<>(8));
+
 
     public static void submit(
             MeshBuilder mesh,
@@ -128,10 +131,11 @@ public final class UiDirectTexturedRenderer {
             draw.uniform("UIClip", UiClipUniforms.write(resolvedClip));
         }
 
-        List<RhiDrawCommand> commands = new ArrayList<>(2);
-        draw.endTo(commands);
-        appendUiUnderlayReplay(commands, minecraft, layer, resolvedClip);
+        ArrayList<RhiDrawCommand> commands = SCRATCH_COMMANDS.get();
+        commands.clear();
         try {
+            draw.endTo(commands);
+            appendUiUnderlayReplay(commands, minecraft, layer, resolvedClip);
             if (!commands.isEmpty()) rhi.drawMeshes(commands);
         } finally {
             // Mirrors OrderedUiBatcher's exceptional-range cleanup. Backends normally release
@@ -139,6 +143,7 @@ public final class UiDirectTexturedRenderer {
             for (RhiDrawCommand command : commands) {
                 if (command != null && command.mesh != null) command.mesh.close();
             }
+            commands.clear();
         }
     }
 

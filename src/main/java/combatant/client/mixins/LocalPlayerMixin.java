@@ -298,6 +298,28 @@ public abstract class LocalPlayerMixin implements ILocalPlayer {
             }
         }
     }
+    @Inject(method = "isSlowDueToUsingItem", at = @At("HEAD"), cancellable = true)
+    private void combatant$noSlow$isSlowDueToUsingItem(CallbackInfoReturnable<Boolean> cir) {
+        NoSlow noSlow = Modules.get(NoSlow.class);
+        if (noSlow != null && noSlow.shouldCancelItemSlowdown()) {
+            cir.setReturnValue(false);
+        }
+    }
+
+    @Inject(method = "modifyInput", at = @At("RETURN"), cancellable = true)
+    private void combatant$noSlow$modifyInput(Vec2 input, CallbackInfoReturnable<Vec2> cir) {
+        NoSlow noSlow = Modules.get(NoSlow.class);
+        if (noSlow == null || !noSlow.shouldCancelItemSlowdown()) return;
+
+        LocalPlayer player = (LocalPlayer) (Object) this;
+        if (player.isUsingItem() && !player.isPassenger()) {
+            Vec2 scaled = noSlow.modifyItemInput(input);
+            if (player.isMovingSlowly()) {
+                scaled = scaled.scale((float) player.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.SNEAKING_SPEED));
+            }
+            cir.setReturnValue(scaled);
+        }
+    }
 
     @Inject(method = "aiStep", at = @At("HEAD"))
     private void combatant$elytraFlyVanilla(CallbackInfo ci) {

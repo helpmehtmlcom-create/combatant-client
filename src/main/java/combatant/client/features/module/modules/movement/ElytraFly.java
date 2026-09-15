@@ -132,6 +132,24 @@ public class ElytraFly extends Module {
             visibleWhen(enumMode("elytrafly_packet_sub_mode", PacketSubMode.MOTION, PacketSubMode.values()), () -> mode.get() == Mode.PACKET);
     private final BooleanValue packetCancelCorrections =
             visibleWhen(bool("elytrafly_packet_cancel_corrections", true), () -> mode.get() == Mode.PACKET);
+    private final NumberValue<Float> bounceSpeedLimit =
+            visibleWhen(num("elytrafly_bounce_speed_limit", 2.4f, 0.5f, 6.0f), () -> mode.get() == Mode.BOUNCE);
+    private final NumberValue<Float> bounceSpeed =
+            visibleWhen(num("elytrafly_bounce_speed", 1.8f, 0.2f, 5.0f), () -> mode.get() == Mode.BOUNCE);
+    private final NumberValue<Float> bouncePitch =
+            visibleWhen(num("elytrafly_bounce_pitch", 40.0f, 0.0f, 90.0f), () -> mode.get() == Mode.BOUNCE);
+    private final BooleanValue bounceLockPitch =
+            visibleWhen(bool("elytrafly_bounce_lock_pitch", true), () -> mode.get() == Mode.BOUNCE);
+    private final BooleanValue bounceSilentPitch =
+            visibleWhen(bool("elytrafly_bounce_silent_pitch", true), () -> mode.get() == Mode.BOUNCE && bounceLockPitch.get());
+    private final BooleanValue bounceAutoJump =
+            visibleWhen(bool("elytrafly_bounce_auto_jump", true), () -> mode.get() == Mode.BOUNCE);
+    private final NumberValue<Float> bounceJumpMotion =
+            visibleWhen(num("elytrafly_bounce_jump_motion", 0.42f, 0.1f, 1.0f), () -> mode.get() == Mode.BOUNCE && bounceAutoJump.get());
+    private final NumberValue<Float> bounceGroundDistance =
+            visibleWhen(num("elytrafly_bounce_ground_distance", 0.25f, 0.05f, 1.0f), () -> mode.get() == Mode.BOUNCE);
+    private final BooleanValue bounceAutoForward =
+            visibleWhen(bool("elytrafly_bounce_auto_forward", false), () -> mode.get() == Mode.BOUNCE);
     private boolean needsToRestart;
     private Mode lastMode = mode.get();
     private float currentAcceleration;
@@ -194,6 +212,9 @@ public class ElytraFly extends Module {
             }
         } else if (shouldStartOperating(player)) {
             suppressJumpInput(player);
+            if (player.onGround() && mode.get() == Mode.BOUNCE && bounceAutoJump.get()) {
+                player.jumpFromGround();
+            }
             player.startFallFlying();
             sendStartGlidingPacket(player);
         }
@@ -209,6 +230,7 @@ public class ElytraFly extends Module {
         switch (mode.get()) {
             case STATIC -> applyStaticMove(event, player);
             case BOOST -> applyBoostMove(event, player);
+            case BOUNCE -> applyBounceMove(event, player);
             default -> {
             }
         }
@@ -234,16 +256,27 @@ public class ElytraFly extends Module {
             queueSilentRotation(player, fireworkPitch.get(), FIREWORK_ROTATION_PRIORITY, 3);
             return;
         }
+        if (mode.get() == Mode.BOUNCE && bounceLockPitch.get() && player.isFallFlying()) {
+            float pitch = bouncePitch.get();
+            if (bounceSilentPitch.get()) {
+                queueSilentRotation(player, pitch, 10, 2);
+                return;
+            } else {
+                player.setXRot(Mth.clamp(pitch, -90.0f, 90.0f));
+            }
+        }
 
         RotationManager.INSTANCE.clear(this);
     }
 
     private void queueSilentRotation(LocalPlayer player, float pitch, int priority, int resetTicks) {
+        if (player == null) return;
         float yaw = player.getYRot();
+        if (!Float.isFinite(yaw) || !Float.isFinite(pitch)) return;
         Rotation rotation = new Rotation(yaw, Mth.clamp(pitch, -90.0f, 90.0f), false);
         RotationTarget plan = new RotationTarget(
                 rotation,
-                null,
+                player,
                 List.of(),
                 Math.max(2, resetTicks),
                 0.5f,
@@ -319,12 +352,15 @@ public class ElytraFly extends Module {
 
     private boolean shouldStartOperating(LocalPlayer player) {
         if (player == null) return false;
+        if (mode.get() == Mode.BOUNCE && bounceAutoJump.get() && (player.onGround() || MovementUtil.isMoving())) {
+            return true;
+        }
         return (instantStart.get() && mc.options.keyJump.isDown() && player.getDeltaMovement().y != 0.0)
                 || needsToRestart;
     }
 
     private boolean shouldRunDurabilityExploit() {
-        if (mode.get() == Mode.VANILLA) return false;
+        if (mode.get() == Mode.VANILLA || mode.get() == Mode.BOUNCE) return false;
         if (mode.get() != Mode.STATIC) return true;
         return !staticDurabilityExploitNotWhileNoMove.get() || !MovementUtil.isMoving();
     }
@@ -335,6 +371,7 @@ public class ElytraFly extends Module {
             }
             case BOOST -> applyBoostTick(player);
             case FIREWORK -> applyFireworkTick(player);
+            case BOUNCE -> applyBounceTick(player);
             default -> {
             }
         }
@@ -405,6 +442,86 @@ public class ElytraFly extends Module {
 
         double newY = calculateBoostVerticalMovement(movement, divePullUpBoost);
         event.setMovement(new Vec3(movement.x, newY, movement.z));
+    }
+    private void applyBounceTick(LocalPlayer player) {
+        if (player == null || mc.level == null) return;
+
+        boolean onGround = player.onGround();
+        boolean nearGround = isNearBounceGround(player);
+
+        if (onGround || nearGround) {
+            if (bounceAutoJump.get() && player.getDeltaMovement().y <= 0.05) {
+                double jumpY = bounceJumpMotion.get();
+                Vec3 vel = player.getDeltaMovement();
+                player.setDeltaMovement(new Vec3(vel.x, jumpY, vel.z));
+            }
+            sendStartGlidingPacket(player);
+            player.startFallFlying();
+        } else if (!player.isFallFlying()) {
+            if (player.getDeltaMovement().y < 0.0 || player.fallDistance > 0.0f) {
+                sendStartGlidingPacket(player);
+                player.startFallFlying();
+            }
+        }
+    }
+
+    private void applyBounceMove(PlayerMoveEvent event, LocalPlayer player) {
+        Vec3 movement = event.getMovement();
+        if (movement == null) return;
+
+        boolean moving = MovementUtil.isMoving() || bounceAutoForward.get();
+        boolean onGround = player.onGround();
+        boolean nearGround = isNearBounceGround(player);
+
+        double newY = movement.y;
+        if ((onGround || nearGround) && bounceAutoJump.get() && movement.y <= 0.05) {
+            newY = bounceJumpMotion.get();
+        }
+
+        double newX = movement.x;
+        double newZ = movement.z;
+
+        if (moving) {
+            float yaw = resolveMovementYaw(player);
+            double targetSpeed = bounceSpeed.get();
+            double currentHoriz = Math.hypot(newX, newZ);
+
+            if (currentHoriz < targetSpeed) {
+                if (MovementUtil.isMoving()) {
+                    Vec3 strafed = applyStrafe(new Vec3(newX, newY, newZ), player, targetSpeed, 0.6);
+                    newX = strafed.x;
+                    newZ = strafed.z;
+                } else if (bounceAutoForward.get()) {
+                    double rad = Math.toRadians(yaw);
+                    newX = -Math.sin(rad) * targetSpeed;
+                    newZ = Math.cos(rad) * targetSpeed;
+                }
+            }
+        }
+
+        double maxSpeed = bounceSpeedLimit.get();
+        if (maxSpeed > 0.0) {
+            double horizSpeed = Math.hypot(newX, newZ);
+            if (horizSpeed > maxSpeed) {
+                double ratio = maxSpeed / horizSpeed;
+                newX *= ratio;
+                newZ *= ratio;
+            }
+        }
+
+        Vec3 finalMovement = new Vec3(newX, newY, newZ);
+        event.setMovement(finalMovement);
+        player.setDeltaMovement(finalMovement);
+    }
+
+    private boolean isNearBounceGround(LocalPlayer player) {
+        if (player == null || mc.level == null) return false;
+        float dist = bounceGroundDistance.get();
+        if (dist <= 0.0f) return false;
+        return mc.level.getBlockCollisions(
+                player,
+                player.getBoundingBox().move(0.0, -dist, 0.0)
+        ).iterator().hasNext();
     }
 
     private void applyFireworkTick(LocalPlayer player) {
@@ -505,15 +622,16 @@ public class ElytraFly extends Module {
 
     @EventHandler
     private void onPacketReceive(PacketEvent.Receive event) {
-        if (!isEnabled() || mode.get() != Mode.PACKET || !packetCancelCorrections.get()) return;
+        if (!isEnabled() || event == null || mode.get() != Mode.PACKET || !packetCancelCorrections.get()) return;
 
         LocalPlayer player = mc.player;
-        if (player == null) return;
+        if (player == null || event.getPacket() == null) return;
 
         if (event.getPacket() instanceof ClientboundSetEntityDataPacket(
                 int id, List<net.minecraft.network.syncher.SynchedEntityData.DataValue<?>> packedItems
         )
                 && id == player.getId()
+                && packedItems != null
                 && !packedItems.isEmpty()) {
             event.cancel();
         }
@@ -521,7 +639,7 @@ public class ElytraFly extends Module {
 
     @EventHandler
     private void onFirework(FireworkEvent event) {
-        if (!isEnabled() || mode.get() != Mode.FIREWORK || !fireworkVelocityControl.get()) return;
+        if (!isEnabled() || event == null || mode.get() != Mode.FIREWORK || !fireworkVelocityControl.get()) return;
 
         LocalPlayer player = mc.player;
         if (player == null || !player.isFallFlying()) return;
@@ -532,16 +650,25 @@ public class ElytraFly extends Module {
         }
 
         Vec3 currentVelocity = event.getVector();
+        if (currentVelocity == null) {
+            currentVelocity = player.getDeltaMovement();
+        }
         Rotation moveRotation = RotationManager.INSTANCE.getMovementRotation();
+        if (moveRotation == null) {
+            moveRotation = new Rotation(player.getYRot(), player.getXRot(), false);
+        }
         Vec3 lookVector = moveRotation.directionVector();
+        if (lookVector == null) return;
         Vec3 wantedFireworkVelocity = lookVector.scale(1.5);
         double factor = fireworkVelocityFactor.get();
+        if (!Double.isFinite(factor)) factor = 1.0;
 
-        event.setVector(currentVelocity.add(
-                lookVector.x * factor + (wantedFireworkVelocity.x - currentVelocity.x) * 0.5,
-                lookVector.y * factor + (wantedFireworkVelocity.y - currentVelocity.y) * 0.5,
-                lookVector.z * factor + (wantedFireworkVelocity.z - currentVelocity.z) * 0.5
-        ));
+        double vx = currentVelocity.x + lookVector.x * factor + (wantedFireworkVelocity.x - currentVelocity.x) * 0.5;
+        double vy = currentVelocity.y + lookVector.y * factor + (wantedFireworkVelocity.y - currentVelocity.y) * 0.5;
+        double vz = currentVelocity.z + lookVector.z * factor + (wantedFireworkVelocity.z - currentVelocity.z) * 0.5;
+        if (Double.isFinite(vx) && Double.isFinite(vy) && Double.isFinite(vz)) {
+            event.setVector(new Vec3(vx, vy, vz));
+        }
     }
 
     private void suppressJumpInput(LocalPlayer player) {
@@ -740,6 +867,9 @@ public class ElytraFly extends Module {
             fireworkSkipTicks = 0;
             queuedFireworkUse = false;
         }
+        if (currentMode == Mode.BOUNCE) {
+            RotationManager.INSTANCE.clear(this);
+        }
     }
 
     private void resetBoostState() {
@@ -754,7 +884,8 @@ public class ElytraFly extends Module {
         VANILLA,
         BOOST,
         FIREWORK,
-        PACKET
+        PACKET,
+        BOUNCE
     }
 
     public enum PacketSubMode {

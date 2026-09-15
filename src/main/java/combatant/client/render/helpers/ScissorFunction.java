@@ -198,10 +198,7 @@ public enum ScissorFunction {
             appliedScissor = null;
         }
 
-        if (next == null) return;
-        if (next.rect.isEmpty()) {
-            throw new IllegalStateException("Attempted to apply empty scissor: " + next);
-        }
+        if (next == null || next.rect.isEmpty()) return;
 
         ((IGpuDevice) RenderSystem.getDevice()).combatant$pushScissor(
                 next.rect.x, next.rect.y, next.rect.w, next.rect.h

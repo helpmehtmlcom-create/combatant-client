@@ -50,8 +50,8 @@ public final class ClickGuiPickerState {
     private static final float MARQUEE_GAP = 10f * SCALE;
     private static final float MARQUEE_PAUSE_SEC = 0.55f;
     private static final Comparator<PickerEntryData> ENTRY_ORDER = Comparator
-            .comparing(PickerEntryData::label, String.CASE_INSENSITIVE_ORDER)
-            .thenComparing(PickerEntryData::id, String.CASE_INSENSITIVE_ORDER);
+            .comparing((PickerEntryData e) -> e == null || e.label() == null ? "" : e.label(), String.CASE_INSENSITIVE_ORDER)
+            .thenComparing((PickerEntryData e) -> e == null || e.id() == null ? "" : e.id(), String.CASE_INSENSITIVE_ORDER);
     private final TextListSetting owner;
     private final TextListSetting.PickerMode mode;
     private final PickerCatalog catalog;
@@ -147,6 +147,19 @@ public final class ClickGuiPickerState {
     public void stopListening() {
         listening = false;
     }
+    public void close() {
+        listening = false;
+        draggingScrollbar = false;
+        if (catalogFuture != null && !catalogFuture.isDone()) {
+            catalogFuture.cancel(true);
+        }
+        cardHits.clear();
+        PickerDetailOwner detailOwner = detailOwner();
+        if (detailOwner != null) {
+            detailOwner.onPickerFocusChanged(null);
+        }
+    }
+
 
     public void insertChar(char c) {
         if (Character.isISOControl(c)) return;
@@ -511,7 +524,8 @@ public final class ClickGuiPickerState {
 
     private void drawGrid(float mx, float my, SettingsGuiPalette palette, Themes.Theme theme) {
         List<PickerEntryData> visible = visibleEntries();
-        Set<String> selected = owner.getValueSet();
+        Set<String> rawSelected = owner != null ? owner.getValueSet() : null;
+        Set<String> selected = rawSelected != null ? rawSelected : Collections.emptySet();
         int columns = columns();
 
         cardHits.clear();
@@ -816,16 +830,19 @@ public final class ClickGuiPickerState {
         visibleAll.sort(ENTRY_ORDER);
 
         visibleSelected.clear();
-        for (String id : owner.getValueSet()) {
-            PickerEntryData entry = byId.get(id);
-            if (entry == null) {
-                entry = new PickerEntryData(id, id, ItemStack.EMPTY);
+        Set<String> rawSelected = owner != null ? owner.getValueSet() : null;
+        if (rawSelected != null) {
+            for (String id : rawSelected) {
+                if (id == null) continue;
+                PickerEntryData entry = byId.get(id);
+                if (entry == null) {
+                    entry = new PickerEntryData(id, id, ItemStack.EMPTY);
+                }
+                if (!matches(entry, needle)) continue;
+                visibleSelected.add(entry);
             }
-            if (!matches(entry, needle)) continue;
-            visibleSelected.add(entry);
         }
         visibleSelected.sort(ENTRY_ORDER);
-
         if (resetScroll) {
             scroll = 0f;
             smoothScroll = 0f;
@@ -840,17 +857,20 @@ public final class ClickGuiPickerState {
     }
 
     private void toggleSelection(String id) {
-        Set<String> next = owner.getValueSet();
+        if (owner == null || id == null) return;
+        Set<String> raw = owner.getValueSet();
+        Set<String> next = raw != null ? new LinkedHashSet<>(raw) : new LinkedHashSet<>();
         if (next.contains(id)) {
             next.remove(id);
         } else {
-            next.add(owner.normalizeEntry(id));
+            String norm = owner.normalizeEntry(id);
+            next.add(norm != null ? norm : id);
         }
         owner.setValueSet(next);
-        if (!next.contains(focusedId)) {
+        if (focusedId == null || !next.contains(focusedId)) {
             focusedId = next.isEmpty() ? null : next.iterator().next();
             PickerDetailOwner detailOwner = detailOwner();
-            if (detailOwner != null && focusedId != null) detailOwner.onPickerFocusChanged(focusedId);
+            if (detailOwner != null) detailOwner.onPickerFocusChanged(focusedId);
         }
         refreshFiltered(false);
     }

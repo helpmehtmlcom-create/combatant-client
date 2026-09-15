@@ -207,10 +207,12 @@ public final class HoleESP extends Module {
     }
 
     private int colorForDistance(AABB box, int argb, int alpha) {
+        if (box == null || mc.player == null) return argb;
         Vec3 center = box.getCenter();
         double dx = center.x - mc.player.getX();
         double dz = center.z - mc.player.getZ();
         double distSqr = dx * dx + dz * dz;
+        if (!Double.isFinite(distSqr) || distSqr < 0.0) return argb;
         double maxSqr = Math.max(1.0, (double) rangeXZ.get() * rangeXZ.get());
         float factor = (float) (distSqr / maxSqr);
         factor = 1.0f - easeOutExpo(factor);

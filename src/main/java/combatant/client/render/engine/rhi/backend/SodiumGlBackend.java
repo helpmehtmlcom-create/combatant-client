@@ -336,20 +336,22 @@ public final class SodiumGlBackend implements CombatantRhi {
     private BindingCounts bindDrawState(RenderPass pass, RhiDrawCommand command, boolean bindPipeline, PassBindingCache bindings) {
         GpuBufferSlice meshData = null;
         if (requiresMeshData(command.pipelineSpec)) {
+            int width = Math.max(1, command.colorAttachment.getWidth(0));
+            int height = Math.max(1, command.colorAttachment.getHeight(0));
             MeshUniforms.update(
                     MeshRenderer.copyProjection(projectionScratch),
                     meshModelView(command),
-                    command.colorAttachment.getWidth(0),
-                    command.colorAttachment.getHeight(0)
+                    width,
+                    height
             );
             meshData = MeshUniforms.get();
         }
         GpuBufferSlice uiBatch = null;
         if (requiresUiBatch(command.pipelineSpec) && !command.hasUniform("UIBatch")) {
             ViewportContext viewport = ViewportContext.current();
-            UIBatchUniforms.update(
-                    viewport != null ? viewport.framebufferWidth() : command.colorAttachment.getWidth(0),
-                    viewport != null ? viewport.framebufferHeight() : command.colorAttachment.getHeight(0));
+            int width = viewport != null ? Math.max(1, viewport.framebufferWidth()) : Math.max(1, command.colorAttachment.getWidth(0));
+            int height = viewport != null ? Math.max(1, viewport.framebufferHeight()) : Math.max(1, command.colorAttachment.getHeight(0));
+            UIBatchUniforms.update(width, height);
             uiBatch = UIBatchUniforms.get();
         }
 
@@ -471,18 +473,20 @@ public final class SodiumGlBackend implements CombatantRhi {
             fullscreen.ensureInitialized();
 
             /* Fullscreen vertex shaders using MeshData require a fresh projection UBO before draw. */
+            int width = Math.max(1, command.colorAttachment != null ? command.colorAttachment.getWidth(0) : 1);
+            int height = Math.max(1, command.colorAttachment != null ? command.colorAttachment.getHeight(0) : 1);
             MeshUniforms.update(
                     MeshRenderer.copyProjection(projectionScratch),
                     fullscreenModelView(),
-                    command.colorAttachment != null ? command.colorAttachment.getWidth(0) : 1.0f,
-                    command.colorAttachment != null ? command.colorAttachment.getHeight(0) : 1.0f
+                    width,
+                    height
             );
             GpuBufferSlice meshData = MeshUniforms.get();
 
             RenderPassDescriptor descriptor = RenderPassDescriptor.create(() -> command.label)
                     .withColorAttachment(command.colorAttachment, clearColor(command.clearColor))
                     .withRenderArea(new RenderPass.RenderArea(
-                            0, 0, command.colorAttachment.getWidth(0), command.colorAttachment.getHeight(0)
+                            0, 0, width, height
                     ));
             if (command.depthAttachment != null) {
                 descriptor.withDepthAttachment(command.depthAttachment, command.clearDepth);

@@ -58,11 +58,17 @@ public final class ConfigProfileService {
     }
 
     public ConfigProfileSnapshot read(ConfigProfileType type, String idOrName) throws IOException {
+        if (type == null) throw new IllegalArgumentException("profile type is null");
+        if (idOrName == null || idOrName.isBlank()) throw new IllegalArgumentException("profile id is blank");
         return storage.read(type, idOrName);
     }
 
     public ConfigProfileApplier.ApplyResult apply(ConfigProfileType type, String idOrName) throws IOException {
-        return applier.apply(storage.read(type, idOrName));
+        if (type == null) throw new IllegalArgumentException("profile type is null");
+        if (idOrName == null || idOrName.isBlank()) throw new IllegalArgumentException("profile id is blank");
+        ConfigProfileSnapshot snapshot = storage.read(type, idOrName);
+        if (snapshot == null) throw new IOException("Profile snapshot is null for " + idOrName);
+        return applier.apply(snapshot);
     }
 
     public ConfigProfileDiff diffWithCurrent(ConfigProfileType type, String idOrName) throws IOException {

@@ -68,10 +68,12 @@ public final class AutoCrystalPlacementPlanner {
         Vec3 crystalPos = crystal.position();
         float damage = ExplosionDamageUtil.getCrystalDamage(currentTarget, crystalPos, context.predictTicks(), context.ignoreTerrain());
         float selfDamage = ExplosionDamageUtil.getCrystalDamage(player, crystalPos, context.selfPredictTicks(), context.ignoreTerrain());
+        if (Float.isNaN(damage) || Float.isNaN(selfDamage) || Float.isInfinite(damage) || Float.isInfinite(selfDamage)) {
+            return null;
+        }
         boolean overrideDamage = context.shouldOverrideMaxSelfDamage(damage, selfDamage);
         return new AutoCrystalCrystalData(crystal, damage, selfDamage, overrideDamage);
     }
-
     public boolean canAttackCrystal(Context context, LivingEntity currentTarget, EndCrystal crystal) {
         LocalPlayer player = context.player();
         if (player == null || crystal == null || !crystal.isAlive() || crystal.isRemoved() || currentTarget == null) {
@@ -210,9 +212,11 @@ public final class AutoCrystalPlacementPlanner {
 
         float damage = ExplosionDamageUtil.getCrystalDamage(currentTarget, crystalVec, context.predictTicks(), context.ignoreTerrain());
         float selfDamage = ExplosionDamageUtil.getCrystalDamage(player, crystalVec, context.selfPredictTicks(), context.ignoreTerrain());
+        if (Float.isNaN(damage) || Float.isNaN(selfDamage) || Float.isInfinite(damage) || Float.isInfinite(selfDamage)) {
+            debug.recordDamageReject();
+            return null;
+        }
         if (debug.recordRawDamage(pos, damage, selfDamage)) {
-            // The detailed exposure trace repeats the expensive ray sampling. It is useful
-            // only for the highest raw-damage candidate shown in diagnostics, not for every
             // valid block in the scan cube.
             debug.recordRawDamageDebug(ExplosionDamageUtil.debugCrystalDamage(
                     currentTarget,

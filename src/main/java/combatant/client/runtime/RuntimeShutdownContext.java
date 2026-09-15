@@ -30,15 +30,19 @@ public final class RuntimeShutdownContext {
         return targetState == ClientRuntimeState.JAR_REPLACEMENT_PANIC;
     }
 
-    public void increment(String key, int amount) {
+    public boolean isShutdown() {
+        return targetState == ClientRuntimeState.SHUTDOWN_PENDING || targetState == ClientRuntimeState.DEAD;
+    }
+
+    public synchronized void increment(String key, int amount) {
         report.increment(key, amount);
     }
 
-    public void stopped(String subsystem) {
+    public synchronized void stopped(String subsystem) {
         report.stopped(subsystem);
     }
 
-    public void failed(String subsystem, Throwable error) {
+    public synchronized void failed(String subsystem, Throwable error) {
         report.failed(subsystem, error);
     }
 }

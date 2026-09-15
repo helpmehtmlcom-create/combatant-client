@@ -36,7 +36,7 @@ public abstract class ClientLevelMixin {
             at = @At("HEAD"),
             cancellable = true
     )
-    private void combatant$noRenderEatParticles(
+    private void combatant$noRenderParticles(
             ParticleOptions effect,
             boolean force,
             boolean canSpawnOnMinimal,
@@ -51,6 +51,7 @@ public abstract class ClientLevelMixin {
         if (nr.off("eat_particles")
                 && effect instanceof ItemParticleOption) {
             ci.cancel();
+            return;
         }
 
         if (nr.off("hit_particles")) {
@@ -59,6 +60,7 @@ public abstract class ClientLevelMixin {
                     || type == ParticleTypes.CRIT
                     || type == ParticleTypes.ENCHANTED_HIT) {
                 ci.cancel();
+                return;
             }
         }
 
@@ -66,11 +68,17 @@ public abstract class ClientLevelMixin {
             var type = effect.getType();
             if (type == ParticleTypes.SWEEP_ATTACK) {
                 ci.cancel();
+                return;
             }
+        }
+
+        if ((nr.offParticle("all_particles") || nr.offParticle("rain_splash_particles"))
+                && effect.getType() == ParticleTypes.RAIN) {
+            ci.cancel();
         }
     }
 
-@Inject(method = "addDestroyBlockEffect", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "addDestroyBlockEffect", at = @At("HEAD"), cancellable = true)
     private void combatant$noRenderBlockBreakParticles(BlockPos pos, BlockState state, CallbackInfo ci) {
         NoRender noRender = Modules.get(NoRender.class);
         if (noRender != null
@@ -88,24 +96,4 @@ public abstract class ClientLevelMixin {
         }
     }
 
-    @org.spongepowered.asm.mixin.injection.Redirect(
-            method = "tickWeatherEffects",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/client/multiplayer/ClientLevel;addParticle(Lnet/minecraft/core/particles/ParticleOptions;DDDDDD)V"
-            )
-    )
-    private void combatant$noRenderRainSplash(
-            ClientLevel level,
-            ParticleOptions effect,
-            double x, double y, double z,
-            double vx, double vy, double vz
-    ) {
-        NoRender noRender = Modules.get(NoRender.class);
-        if (noRender != null
-                && (noRender.offParticle("all_particles") || noRender.offParticle("rain_splash_particles"))) {
-            return;
-        }
-        level.addParticle(effect, x, y, z, vx, vy, vz);
-    }
 }

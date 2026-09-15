@@ -33,6 +33,7 @@ import combatant.client.addon.AddonManager;
 import combatant.client.addon.AddonRenderPipelineManager;
 import combatant.client.api.v0.render.CombatantRenderStage;
 import combatant.client.config.MainConfig;
+import combatant.client.config.ConfigSerializer;
 import combatant.client.events.Events;
 import combatant.client.features.account.AccountConfig;
 import combatant.client.features.command.CommandManager;
@@ -506,6 +507,7 @@ public class Combatant implements ClientModInitializer {
             // Stop all Combatant callbacks before native-backed subsystems begin one-way shutdown.
             // Minecraft can still extract one final GUI frame while disconnecting.
             ClientRuntime.beginShutdown("client stopping");
+            ConfigSerializer.flushAllPending();
             // Restore process-level security state before subsystem shutdown.
             NativeMemoryGuard.shutdown();
             MediaSessionService.get().shutdown();
@@ -513,6 +515,7 @@ public class Combatant implements ClientModInitializer {
             MapLocationRuntime.get().shutdown();
             HeuristicRuntime.get().shutdown();
             MapLinkRuntime.get().shutdown();
+            combatant.client.util.session.microsoft.MicrosoftAuthService.shutdown();
         });
 
         // -------- CONFIG + BINDS ----------

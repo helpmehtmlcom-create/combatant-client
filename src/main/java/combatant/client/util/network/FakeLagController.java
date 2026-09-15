@@ -51,16 +51,26 @@ public final class FakeLagController {
     }
 
     private static boolean shouldPassOnSafetyPacket(Packet<?> packet, LocalPlayer player) {
-        if (packet instanceof ClientboundPlayerPositionPacket || packet instanceof ServerboundResourcePackPacket) {
-            return true;
+        if (packet == null || player == null) {
+            return false;
         }
-        if (packet instanceof ClientboundSetEntityMotionPacket(int id, Vec3 movement)) {
-            return id == player.getId() && movement != Vec3.ZERO;
+        try {
+            if (packet instanceof ClientboundPlayerPositionPacket || packet instanceof ServerboundResourcePackPacket) {
+                return true;
+            }
+            if (packet instanceof ClientboundSetEntityMotionPacket(int id, Vec3 movement)) {
+                return id == player.getId() && movement != null && movement != Vec3.ZERO;
+            }
+            if (packet instanceof ClientboundExplodePacket explosion) {
+                return explosion.playerKnockback() != null
+                        && explosion.playerKnockback().isPresent()
+                        && explosion.playerKnockback().get() != null
+                        && explosion.playerKnockback().get() != Vec3.ZERO;
+            }
+            return packet instanceof ClientboundSetHealthPacket;
+        } catch (Throwable ignored) {
+            return false;
         }
-        if (packet instanceof ClientboundExplodePacket explosion) {
-            return explosion.playerKnockback().isPresent() && explosion.playerKnockback().get() != Vec3.ZERO;
-        }
-        return packet instanceof ClientboundSetHealthPacket;
     }
 
     private static boolean isConsumable(ItemStack stack) {

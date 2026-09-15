@@ -313,8 +313,8 @@ public enum ClickGuiRenderer {
             double fbX = x * sx;
             double fbY = y * sy;
             float uiScale = HudScale.scale((int) fbW, (int) fbH);
-            mouseX = (float) (fbX / uiScale);
-            mouseY = (float) (fbY / uiScale);
+            mouseX = HudScale.toVirtual((float) fbX, uiScale);
+            mouseY = HudScale.toVirtual((float) fbY, uiScale);
             return;
         }
         double scale = MC.getWindow().getGuiScale();
@@ -323,8 +323,8 @@ public enum ClickGuiRenderer {
         double fbX = x * scale;
         double fbY = y * scale;
         float uiScale = HudScale.scale((int) fbW, (int) fbH);
-        mouseX = (float) (fbX / uiScale);
-        mouseY = (float) (fbY / uiScale);
+        mouseX = HudScale.toVirtual((float) fbX, uiScale);
+        mouseY = HudScale.toVirtual((float) fbY, uiScale);
     }
 
     // =========================
@@ -547,12 +547,12 @@ public enum ClickGuiRenderer {
     }
 
     public static void onClose() {
-        if (!cursorShown) return;
-        long handle = MC.getWindow().handle();
-
-        GLFW.glfwSetInputMode(handle, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_DISABLED);
-        SystemCursor.invalidate();
-        cursorShown = false;
+        if (cursorShown && MC != null && MC.getWindow() != null) {
+            long handle = MC.getWindow().handle();
+            GLFW.glfwSetInputMode(handle, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_DISABLED);
+            SystemCursor.invalidate();
+            cursorShown = false;
+        }
         DraggableHudElementRegistry.setForceVisible(false);
         ClickGuiSearch.deactivate();
         closeTextEditor(false);
@@ -824,8 +824,13 @@ public enum ClickGuiRenderer {
                 break;
             }
         }
-        tabTargetX = tabX[activeIdx];
-        tabTargetW = tabW[activeIdx];
+        if (activeIdx >= 0 && activeIdx < tabX.length && activeIdx < tabW.length) {
+            tabTargetX = tabX[activeIdx];
+            tabTargetW = tabW[activeIdx];
+        } else {
+            tabTargetX = tabBarX;
+            tabTargetW = 0f;
+        }
         if (!tabAnimInit) {
             tabAnimX = tabTargetX;
             tabAnimW = tabTargetW;
@@ -940,7 +945,8 @@ public enum ClickGuiRenderer {
             drawRoundedRectGradient(innerX, innerY, innerW, innerH, innerRadius, activeLeft, activeRight, 0.0f);
             drawRoundedRectStrokeGradient(innerX, innerY, innerW, innerH, innerRadius, 1.0f, activeStrokeLeft, activeStrokeRight, 0.0f);
 
-            for (int i = 0; i < tabs.size(); i++) {
+            int tabCount = Math.min(tabs.size(), Math.min(tabX.length, tabW.length));
+            for (int i = 0; i < tabCount; i++) {
                 float x = tabX[i];
                 float w = tabW[i];
                 ClickGuiTabEntry tab = tabs.get(i);
@@ -970,7 +976,8 @@ public enum ClickGuiRenderer {
         if (mx < tabBarX || mx > tabBarX + tabBarW || my < tabBarY || my > tabBarY + tabBarH) return false;
         List<ClickGuiTabEntry> tabs = currentTabs();
         ensureActiveTab(tabs);
-        for (int i = 0; i < tabs.size(); i++) {
+        int tabCount = Math.min(tabs.size(), Math.min(tabX.length, tabW.length));
+        for (int i = 0; i < tabCount; i++) {
             float x = tabX[i];
             float w = tabW[i];
             if (mx >= x && mx <= x + w && my >= tabBarY && my <= tabBarY + tabBarH) {

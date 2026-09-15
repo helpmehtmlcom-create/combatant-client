@@ -25,6 +25,7 @@ import combatant.client.mixins.accessors.CyclingButtonWidgetAccessor;
 public abstract class CycleButtonMixin<T> {
 
     @Inject(method = "extractContents(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V", at = @At("HEAD"), cancellable = true)
+    @SuppressWarnings("unchecked")
     private void combatant$drawIcon(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         BetterButtons buttons = BetterButtons.get();
         if (buttons == null || !buttons.useUiButtons()) return;

@@ -22,11 +22,21 @@ import combatant.client.util.target.TargetingUtil;
 public enum CombatRotationModeUtil {
     ;
 
+    public static final String MODE_SILENT = "SILENT";
     public static final String MODE_ROTATIONS = "ROTATIONS";
     public static final String MODE_NO_ROTATIONS = "NO_ROTATIONS";
 
-    public static boolean usesRotations(ModeValue modeValue) {
+    public static boolean isSilent(ModeValue modeValue) {
+        return modeValue != null && MODE_SILENT.equalsIgnoreCase(modeValue.get());
+    }
+
+    public static boolean isVisualRotations(ModeValue modeValue) {
         return modeValue != null && MODE_ROTATIONS.equalsIgnoreCase(modeValue.get());
+    }
+
+    public static boolean usesRotations(ModeValue modeValue) {
+        return modeValue != null && (MODE_ROTATIONS.equalsIgnoreCase(modeValue.get())
+                || MODE_SILENT.equalsIgnoreCase(modeValue.get()));
     }
 
     public static boolean isNoRotations(ModeValue modeValue) {

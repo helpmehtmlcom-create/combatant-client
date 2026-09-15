@@ -37,13 +37,22 @@ public enum ScreenProjection {
      * @return coordinates in the currently active 2D viewport space (x, y, z), or null if behind camera
      */
     public static Vec3 worldToScreen(Vec3 worldPos, float tickDelta) {
+        if (worldPos == null || !Double.isFinite(worldPos.x) || !Double.isFinite(worldPos.y) || !Double.isFinite(worldPos.z)) {
+            return null;
+        }
+
         Minecraft mc = Minecraft.getInstance();
-        if (mc == null || mc.player == null || mc.level == null || mc.getWindow() == null) return null;
+        if (mc == null || mc.player == null || mc.level == null || mc.getWindow() == null || mc.gameRenderer == null) return null;
 
         Camera cam = mc.gameRenderer.mainCamera();
+        if (cam == null) return null;
+
         Vec3 camPos = CombatantWorldMatrices.cameraPosition();
         if (camPos == null) {
             camPos = cam.position();
+        }
+        if (camPos == null || !Double.isFinite(camPos.x) || !Double.isFinite(camPos.y) || !Double.isFinite(camPos.z)) {
+            return null;
         }
 
         Matrix4f view = CombatantWorldMatrices.positionMatrix();
@@ -56,16 +65,18 @@ public enum ScreenProjection {
         if (proj == null) {
             proj = currentRawCameraProjection(mc, cam);
         }
+        if (proj == null) return null;
 
         proj.mul(view, VP);
 
         double relX = worldPos.x - camPos.x;
         double relY = worldPos.y - camPos.y;
         double relZ = worldPos.z - camPos.z;
+        if (!Double.isFinite(relX) || !Double.isFinite(relY) || !Double.isFinite(relZ)) return null;
 
         Vector4f pos = new Vector4f((float) relX, (float) relY, (float) relZ, 1.0f);
         VP.transform(pos);
-        if (pos.w <= 0.0001f) return null;
+        if (!Float.isFinite(pos.w) || pos.w <= 0.0001f) return null;
 
         double ndcX = pos.x / pos.w;
         double ndcY = pos.y / pos.w;
@@ -77,6 +88,7 @@ public enum ScreenProjection {
         double viewportHeight = viewport != null ? viewport.height() : mc.getWindow().getHeight();
         double sx = (viewportWidth * 0.5) * (1.0 + ndcX);
         double sy = (viewportHeight * 0.5) * (1.0 - ndcY);
+        if (!Double.isFinite(sx) || !Double.isFinite(sy)) return null;
 
         return new Vec3(sx, sy, ndcZ);
     }

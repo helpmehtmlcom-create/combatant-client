@@ -51,6 +51,7 @@ import combatant.client.util.player.inventory.InventorySwap;
 @ModuleInfo(
         id = "phase",
         displayName = "Phase",
+        aliases = {"pearlphase", "wallphase", "noclip"},
         category = ModuleCategory.MOVEMENT
 )
 public class Phase extends Module {

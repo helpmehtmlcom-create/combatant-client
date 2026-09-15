@@ -520,7 +520,7 @@ public final class ElytraTarget extends Module {
 
     @EventHandler
     private void onPacketReceive(PacketEvent.Receive event) {
-        if (!isEnabled()) return;
+        if (!isEnabled() || event == null) return;
         if (!(event.getPacket() instanceof ClientboundEntityEventPacket packet)) return;
         LivingEntity currentTarget = target;
         if (currentTarget == null || mc.level == null) return;

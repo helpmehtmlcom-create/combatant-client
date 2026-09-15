@@ -41,11 +41,11 @@ public enum RenderPrewarmManager {
     private static final int ITEM_ATLAS_ITEMS_PER_TICK = Math.max(1,
             Integer.getInteger("combatant.render.prewarm.itemsPerTick", 1));
 
-    private static boolean pickerCatalogPending;
-    private static boolean gpuLifecycleReady;
-    private static boolean gpuPrewarmPending;
-    private static String pendingGpuReason = "deferred";
-    private static boolean gpuAtlasPending;
+    private static volatile boolean pickerCatalogPending;
+    private static volatile boolean gpuLifecycleReady;
+    private static volatile boolean gpuPrewarmPending;
+    private static volatile String pendingGpuReason = "deferred";
+    private static volatile boolean gpuAtlasPending;
     private static int atlasWarmModeIndex;
     private static int atlasWarmCursor;
     private static List<ItemStack> atlasWarmStacks = List.of();

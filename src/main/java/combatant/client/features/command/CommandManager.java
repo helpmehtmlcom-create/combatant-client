@@ -22,6 +22,7 @@ import java.util.List;
 
 public enum CommandManager {
     ;
+    public static final String PREFIX = "@";
     private static final List<ClientCommand> COMMANDS = new ArrayList<>();
     private static boolean initialized;
 
@@ -52,19 +53,23 @@ public enum CommandManager {
 
     public static boolean handle(String raw) {
         if (raw == null) return false;
-        String trimmed = raw.trim();
-        if (!isCommandLike(trimmed)) return false;
+        int start = firstNonWhitespace(raw);
+        if (start < 0) return false;
+        if (!isCommandLike(raw)) return false;
         if (!initialized) init();
 
-        String body = trimmed.substring(1).trim();
+        int prefixLen = PREFIX == null ? 0 : PREFIX.length();
+        int contentStart = start + prefixLen;
+        if (contentStart > raw.length()) return false;
+        String body = raw.substring(contentStart).trim();
         if (body.isEmpty()) return false;
         String[] parts = body.split("\\s+");
-        if (parts.length == 0) return false;
-        String name = parts[0].toLowerCase();
+        if (parts.length == 0 || parts[0].isEmpty()) return false;
+        String name = parts[0].toLowerCase(java.util.Locale.ROOT);
 
         ClientCommand cmd = find(name);
         if (cmd == null) {
-            CommandOutput.error("Unknown client command: @" + name + ". Use @help.");
+            CommandOutput.error("Unknown client command: " + PREFIX + name + ". Use " + PREFIX + "help.");
             return true;
         }
         if (!cmd.isAvailable()) {
@@ -80,22 +85,30 @@ public enum CommandManager {
     public static List<Suggestion> suggest(String input, int cursor) {
         if (input == null) return List.of();
         int start = firstNonWhitespace(input);
-        if (start < 0 || input.charAt(start) != '@') return List.of();
+        if (start < 0) return List.of();
+        int prefixLen = PREFIX == null ? 0 : PREFIX.length();
+        if (prefixLen > 0 && !input.startsWith(PREFIX, start)) return List.of();
         if (!initialized) init();
 
-        int cursorClamped = Math.max(start + 1, Math.min(cursor, input.length()));
-        String before = input.substring(start + 1, cursorClamped);
+        int contentStart = start + prefixLen;
+        if (cursor < contentStart) return List.of();
+        int cursorClamped = Math.clamp(cursor, contentStart, input.length());
+        if (contentStart > input.length() || contentStart > cursorClamped) return List.of();
+
+        String before = input.substring(contentStart, cursorClamped);
         String[] parts = before.split("\\s+", -1);
         if (parts.length == 0) return List.of();
 
         int argIndex = parts.length - 1;
         String token = parts[argIndex];
-        String cmdName = parts[0].toLowerCase();
+        String cmdName = parts[0].toLowerCase(java.util.Locale.ROOT);
 
         int tokenStartInBefore = before.lastIndexOf(' ');
         tokenStartInBefore = tokenStartInBefore >= 0 ? tokenStartInBefore + 1 : 0;
-        int tokenStartInInput = start + 1 + tokenStartInBefore;
+        int tokenStartInInput = contentStart + tokenStartInBefore;
         int tokenEndInInput = tokenStartInInput + token.length();
+        tokenStartInInput = Math.clamp(tokenStartInInput, 0, input.length());
+        tokenEndInInput = Math.clamp(tokenEndInInput, tokenStartInInput, input.length());
         StringRange range = StringRange.between(tokenStartInInput, tokenEndInInput);
 
         List<String> suggestions;
@@ -136,13 +149,12 @@ public enum CommandManager {
         return null;
     }
 
-    private static boolean isCommandLike(String text) {
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (Character.isWhitespace(c)) continue;
-            return c == '@';
-        }
-        return false;
+    public static boolean isCommandLike(String text) {
+        if (text == null || text.isEmpty()) return false;
+        int start = firstNonWhitespace(text);
+        if (start < 0) return false;
+        if (PREFIX == null || PREFIX.isEmpty()) return true;
+        return text.startsWith(PREFIX, start);
     }
 
     private static List<String> suggestCommandNames(String token) {

@@ -807,6 +807,9 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
 
     @Inject(method = "render(Lnet/minecraft/client/DeltaTracker;Z)V", at = @At("TAIL"))
     private void combatant$flushQueuedButtons(DeltaTracker tickCounter, boolean tick, CallbackInfo ci) {
+        if (!combatant.client.runtime.RuntimeGate.canRunRender()) {
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         if (mc != null && ClientScreen.current() != null) {
             if (BetterButtons.hasPending()) {

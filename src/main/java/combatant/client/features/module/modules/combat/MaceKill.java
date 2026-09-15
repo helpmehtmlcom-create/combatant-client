@@ -43,14 +43,25 @@ public final class MaceKill extends Module {
     private final NumberValue<Integer> fallHeight =
             num("height", 22, 1, 170);
 
+    @Override
+    public void onEnable() {
+        cancelCrit = false;
+    }
+
+    @Override
+    public void onDisable() {
+        cancelCrit = false;
+    }
+
     @EventHandler
     public void onPacketSend(PacketEvent.Send event) {
-        if (!isEnabled()) return;
+        if (event == null || !isEnabled()) return;
         if (!(event.getPacket() instanceof ServerboundInteractPacket packet)) return;
         if (!isAttack(packet)) return;
 
         Entity ent = getEntity(packet);
-        if (ent == null || cancelCrit) return;
+        if (ent == null || !ent.isAlive() || ent.isRemoved() || cancelCrit) return;
+        if (mc.player == null || mc.player.isDeadOrDying()) return;
 
         if (!isHoldingMace()) return;
 
@@ -58,7 +69,7 @@ public final class MaceKill extends Module {
     }
 
     private void doCrit() {
-        if (mc == null || mc.player == null || mc.level == null) return;
+        if (mc == null || mc.player == null || mc.level == null || mc.getConnection() == null || mc.player.isDeadOrDying()) return;
         int height = determineHeight();
         if (height <= 0) return;
 
@@ -90,6 +101,7 @@ public final class MaceKill extends Module {
 
     private void sendPosition(double x, double y, double z, boolean onGround) {
         if (mc == null || mc.player == null || mc.getConnection() == null) return;
+        if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) return;
         mc.getConnection().send(
                 new ServerboundMovePlayerPacket.Pos(
                         x, y, z, onGround, mc.player.horizontalCollision

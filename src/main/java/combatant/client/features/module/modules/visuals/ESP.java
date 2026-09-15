@@ -630,6 +630,21 @@ public class ESP extends Module {
             shaderMaskMsaa.destroyBuffers();
             shaderMaskMsaa = null;
         }
+        if (shaderMask != null) {
+            shaderMask.destroyBuffers();
+            shaderMask = null;
+        }
+        if (shaderBlurBuffer != null) {
+            shaderBlurBuffer.destroyBuffers();
+            shaderBlurBuffer = null;
+        }
+        if (shaderEffectBuffer != null) {
+            shaderEffectBuffer.destroyBuffers();
+            shaderEffectBuffer = null;
+        }
+        shaderBufferW = -1;
+        shaderBufferH = -1;
+        shaderEspCommandQueue.getSubmitsPerOrder().clear();
         closeShaderEspRenderDispatcher();
         shaderMaskSamples = 0;
     }

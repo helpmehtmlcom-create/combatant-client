@@ -164,6 +164,7 @@ public final class Criticals extends Module {
         lastJumpInputAge = -1;
         resetVulcan297State();
         resetPreparedAttack();
+        clearKillAuraOverrides();
         Timer.clearExternalTickTimer();
     }
 
@@ -389,7 +390,7 @@ public final class Criticals extends Module {
 
     @EventHandler
     private void onPacketSend(PacketEvent.Send event) {
-        if (!isEnabled()) return;
+        if (!isEnabled() || event == null) return;
 
         if (getMode() == Mode.NO_GROUND && event.getPacket() instanceof ServerboundMovePlayerPacket move) {
             ((ServerboundMovePlayerPacketAccessor) move).combatant$setOnGround(false);
@@ -684,20 +685,29 @@ public final class Criticals extends Module {
     private void sendCriticalPacket(LocalPlayer player, double yOffset, boolean onGround, PacketType type) {
         if (mc == null || mc.getConnection() == null || player == null) return;
 
+        double x = player.getX();
+        double y = player.getY() + yOffset;
+        double z = player.getZ();
+        float yaw = player.getYRot();
+        float pitch = player.getXRot();
+        if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z) || !Float.isFinite(yaw) || !Float.isFinite(pitch)) {
+            return;
+        }
+
         Packet<?> packet = switch (type) {
             case POSITION -> new ServerboundMovePlayerPacket.Pos(
-                    player.getX(),
-                    player.getY() + yOffset,
-                    player.getZ(),
+                    x,
+                    y,
+                    z,
                     onGround,
                     player.horizontalCollision
             );
             case FULL -> new ServerboundMovePlayerPacket.PosRot(
-                    player.getX(),
-                    player.getY() + yOffset,
-                    player.getZ(),
-                    player.getYRot(),
-                    player.getXRot(),
+                    x,
+                    y,
+                    z,
+                    yaw,
+                    pitch,
                     onGround,
                     player.horizontalCollision
             );
@@ -707,10 +717,12 @@ public final class Criticals extends Module {
     }
 
     private boolean isAttackAlreadyPrepared(LocalPlayer player, Entity target) {
+        if (player == null || target == null) return false;
         return player.tickCount == lastPreparedAttackAge && target.getId() == lastPreparedTargetId;
     }
 
     private void markAttackPrepared(LocalPlayer player, Entity target) {
+        if (player == null || target == null) return;
         lastPreparedAttackAge = player.tickCount;
         lastPreparedTargetId = target.getId();
     }

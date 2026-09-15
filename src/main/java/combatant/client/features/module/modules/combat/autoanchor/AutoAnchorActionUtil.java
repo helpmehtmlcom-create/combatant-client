@@ -38,6 +38,7 @@ public final class AutoAnchorActionUtil {
                                         InventorySwapVisibility visibility,
                                         boolean restore) {
         if (mc == null || owner == null || hitResult == null || mc.player == null || mc.level == null || mc.gameMode == null) return false;
+        if (!mc.level.isInWorldBounds(hitResult.getBlockPos())) return false;
 
         int charges = 0;
         var state = mc.level.getBlockState(hitResult.getBlockPos());

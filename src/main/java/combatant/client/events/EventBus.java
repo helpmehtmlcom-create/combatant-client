@@ -24,7 +24,9 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class EventBus {
@@ -172,14 +174,17 @@ public final class EventBus {
 
     private static void handleFailure(Subscriber sub, Throwable cause) {
         FailureBoundary.requireRecoverable(cause);
-        if (sub.gateModule != null) {
-            FailureIsolation.reportModule(sub.gateModule, "event " + sub.describe(), cause);
-        } else {
-            // Non-module listeners may not have reversible state. Do not quarantine
-            // an entire shared service or claim that its state has been recovered.
-            DebugLog.error("Event handler failed: %s", cause, sub.describe());
-            if (cause instanceof RuntimeException runtime) throw runtime;
-            throw new IllegalStateException("Unisolated event handler failed: " + sub.describe(), cause);
+        try {
+            if (sub.gateModule != null) {
+                FailureIsolation.reportModule(sub.gateModule, "event " + sub.describe(), cause);
+            } else {
+                // Non-module listeners may not have reversible state, so we do not quarantine
+                // the shared service, but we log the error and allow subsequent listeners to execute.
+                DebugLog.error("Event handler failed: %s", cause, sub.describe());
+            }
+        } catch (Throwable recoveryError) {
+            FailureBoundary.requireRecoverable(recoveryError);
+            DebugLog.error("Failed to isolate/report event failure for %s: %s", recoveryError, sub.describe());
         }
     }
 
@@ -199,23 +204,28 @@ public final class EventBus {
 
     private Subscriber[] scan(Object listener, Module gateModule) {
         List<Subscriber> out = new ArrayList<>();
-        Class<?> cls = listener.getClass();
+        Set<String> seenMethods = new HashSet<>();
 
-        for (Method method : cls.getDeclaredMethods()) {
-            if (!method.isAnnotationPresent(EventHandler.class)) continue;
+        for (Class<?> cls = listener.getClass(); cls != null && cls != Object.class; cls = cls.getSuperclass()) {
+            for (Method method : cls.getDeclaredMethods()) {
+                if (!method.isAnnotationPresent(EventHandler.class)) continue;
 
-            Class<?>[] params = method.getParameterTypes();
-            if (params.length != 1) continue;
-            if (!Event.class.isAssignableFrom(params[0])) continue;
+                Class<?>[] params = method.getParameterTypes();
+                if (params.length != 1) continue;
+                if (!Event.class.isAssignableFrom(params[0])) continue;
 
-            EventHandler meta = method.getAnnotation(EventHandler.class);
-            method.setAccessible(true);
+                String signature = method.getName() + "(" + params[0].getName() + ")";
+                if (!seenMethods.add(signature)) continue;
 
-            @SuppressWarnings("unchecked")
-            Class<? extends Event> eventType = (Class<? extends Event>) params[0];
+                EventHandler meta = method.getAnnotation(EventHandler.class);
+                method.setAccessible(true);
 
-            EventInvoker invoker = createInvoker(listener, method);
-            out.add(new Subscriber(listener, gateModule, method, invoker, eventType, meta.priority()));
+                @SuppressWarnings("unchecked")
+                Class<? extends Event> eventType = (Class<? extends Event>) params[0];
+
+                EventInvoker invoker = createInvoker(listener, method);
+                out.add(new Subscriber(listener, gateModule, method, invoker, eventType, meta.priority()));
+            }
         }
 
         return out.toArray(Subscriber[]::new);
@@ -224,12 +234,10 @@ public final class EventBus {
     private EventInvoker createInvoker(Object listener, Method method) {
         method.setAccessible(true);
         try {
-            MethodHandles.Lookup lookup = MethodHandles.lookup();
+            MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(method.getDeclaringClass(), MethodHandles.lookup());
             MethodHandle handle = lookup.unreflect(method).bindTo(listener);
             return handle::invoke;
         } catch (Throwable t) {
-            DebugLog.error("Failed to create MethodHandle event invoker, falling back to reflection: %s", t,
-                    listener.getClass().getName() + "#" + method.getName());
             return event -> method.invoke(listener, event);
         }
     }
@@ -252,11 +260,15 @@ public final class EventBus {
 
     private Subscriber[] buildFlattenedSubscribers(Class<?> eventType) {
         int total = 0;
+        int levelCount = 0;
 
         Class<?> type = eventType;
         while (type != null && Event.class.isAssignableFrom(type)) {
             Subscriber[] exact = exactHandlers.get(type);
-            if (exact != null) total += exact.length;
+            if (exact != null && exact.length > 0) {
+                total += exact.length;
+                levelCount++;
+            }
             type = type.getSuperclass();
         }
 
@@ -273,6 +285,10 @@ public final class EventBus {
                 offset += exact.length;
             }
             type = type.getSuperclass();
+        }
+
+        if (levelCount > 1) {
+            sortSubscribers(out);
         }
 
         return out;

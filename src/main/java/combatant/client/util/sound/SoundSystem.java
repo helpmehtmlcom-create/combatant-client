@@ -152,7 +152,21 @@ public final class SoundSystem {
     /** Called at Library.cleanup HEAD, while the old context still exists. */
     public void onLibraryClosing() {
         if (!audio.isReady()) return;
-        audio.close(this::resetNative);
+        if (audio.isAudioThread()) {
+            audio.close(this::resetNative);
+        } else {
+            try {
+                Boolean closed = audio.call(() -> {
+                    audio.close(this::resetNative);
+                    return true;
+                }, false);
+                if (!Boolean.TRUE.equals(closed)) {
+                    discardCaches();
+                }
+            } catch (Throwable ignored) {
+                discardCaches();
+            }
+        }
     }
 
     public boolean isReady() { return audio.isReady(); }
@@ -172,10 +186,7 @@ public final class SoundSystem {
         audio.execute(() -> {
             try { reapFinished(); }
             finally { reapQueued.set(false); }
-        }, e -> {
-            reapQueued.set(false);
-            report(SoundErrorEvent.Operation.CONTROL, null, e);
-        });
+        }, e -> report(SoundErrorEvent.Operation.CONTROL, null, e));
     }
 
     boolean isPlaying(long id) {

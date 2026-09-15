@@ -80,8 +80,8 @@ public class Flight extends Module {
             }
         }
 
-        if (mode.get() == Mode.VULCAN_286_113) {
-            mc.player.connection.send(new ServerboundMovePlayerPacket.Pos(
+        if (mode.get() == Mode.VULCAN_286_113 && mc.getConnection() != null) {
+            mc.getConnection().send(new ServerboundMovePlayerPacket.Pos(
                     mc.player.getX(),
                     mc.player.getY() - 0.1,
                     mc.player.getZ(),
@@ -265,15 +265,12 @@ public class Flight extends Module {
                     mc.player.horizontalCollision
             );
         }
-
-        antiKickPacket(fullPacket, mc.player.getY());
         return fullPacket;
     }
 
     public boolean onReceiveAbilities(ClientboundPlayerAbilitiesPacket packet) {
-        if (packet == null) return false;
+        if (!isEnabled() || packet == null) return false;
         if (mode.get() != Mode.ABILITIES) return false;
-
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.player == null) return false;
 

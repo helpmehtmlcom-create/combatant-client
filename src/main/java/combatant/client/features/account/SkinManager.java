@@ -7,6 +7,7 @@
 
 package combatant.client.features.account;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.authlib.GameProfile;
@@ -129,11 +130,15 @@ public enum SkinManager {
             }
 
             try (InputStreamReader reader = new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8)) {
-                JsonObject json = JsonParser.parseReader(reader).getAsJsonObject();
-                if (!json.has("id")) {
+                JsonElement parsed = JsonParser.parseReader(reader);
+                if (!(parsed instanceof JsonObject json) || !json.has("id")) {
                     return null;
                 }
-                return parseUuid(json.get("id").getAsString());
+                JsonElement idElem = json.get("id");
+                if (idElem == null || !idElem.isJsonPrimitive()) {
+                    return null;
+                }
+                return parseUuid(idElem.getAsString());
             } finally {
                 connection.disconnect();
             }

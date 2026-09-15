@@ -13,8 +13,8 @@ import combatant.client.util.logging.DebugLog;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.IntSupplier;
 
 public enum ClientRuntime {
     ;
@@ -34,7 +34,28 @@ public enum ClientRuntime {
     private static volatile IntSupplier callbackCounter = () -> 0;
     private static volatile IntSupplier moduleCounter = () -> 0;
     private static volatile IntSupplier addonCounter = () -> 0;
+    private static final Object SHUTDOWN_LOCK = new Object();
+    private static final AtomicBoolean TERMINAL_SHUTDOWN_EXECUTED = new AtomicBoolean(false);
 
+    static {
+        try {
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                handleAbnormalShutdown();
+            }, "Combatant-Runtime-ShutdownHook"));
+        } catch (SecurityException | IllegalStateException ignored) {
+        }
+    }
+
+    private static void handleAbnormalShutdown() {
+        synchronized (SHUTDOWN_LOCK) {
+            if (TERMINAL_SHUTDOWN_EXECUTED.compareAndSet(false, true)) {
+                ClientRuntimeState current = STATE.getAndSet(ClientRuntimeState.DEAD);
+                if (current != ClientRuntimeState.DEAD && current != ClientRuntimeState.SHUTDOWN_PENDING) {
+                    lastCleanupReport = runParticipants(ClientRuntimeState.DEAD, "abnormal process termination");
+                }
+            }
+        }
+    }
     public static ClientRuntimeState state() {
         return STATE.get();
     }
@@ -128,38 +149,66 @@ public enum ClientRuntime {
     }
 
     public static void beginShutdown(String reason) {
-        while (true) {
+        synchronized (SHUTDOWN_LOCK) {
             ClientRuntimeState current = STATE.get();
             if (current == ClientRuntimeState.SHUTDOWN_PENDING || current == ClientRuntimeState.DEAD) {
                 return;
             }
-            if (STATE.compareAndSet(current, ClientRuntimeState.SHUTDOWN_PENDING)) {
-                DebugLog.info("Runtime state %s -> SHUTDOWN_PENDING (%s)", current, safeReason(reason));
-                return;
+            STATE.set(ClientRuntimeState.SHUTDOWN_PENDING);
+            String safeReason = safeReason(reason);
+            DebugLog.info("Runtime state %s -> SHUTDOWN_PENDING (%s)", current, safeReason);
+            if (TERMINAL_SHUTDOWN_EXECUTED.compareAndSet(false, true)) {
+                lastCleanupReport = runParticipants(ClientRuntimeState.SHUTDOWN_PENDING, safeReason);
             }
         }
     }
 
     public static void markDead(String reason) {
-        STATE.set(ClientRuntimeState.DEAD);
-        restartRequired = true;
-        DebugLog.warn("Runtime marked DEAD (%s)", safeReason(reason));
+        synchronized (SHUTDOWN_LOCK) {
+            ClientRuntimeState prev = STATE.getAndSet(ClientRuntimeState.DEAD);
+            restartRequired = true;
+            if (prev != ClientRuntimeState.DEAD) {
+                String safeReason = safeReason(reason);
+                DebugLog.warn("Runtime marked DEAD (%s)", safeReason);
+                if (prev != ClientRuntimeState.SHUTDOWN_PENDING && TERMINAL_SHUTDOWN_EXECUTED.compareAndSet(false, true)) {
+                    lastCleanupReport = runParticipants(ClientRuntimeState.DEAD, safeReason);
+                }
+            }
+        }
     }
 
     public static void registerParticipant(RuntimeShutdownParticipant participant) {
-        if (participant == null) return;
-        for (RuntimeShutdownParticipant existing : PARTICIPANTS) {
-            if (existing.id().equals(participant.id())) return;
+        if (participant == null || participant.id() == null) return;
+        synchronized (PARTICIPANTS) {
+            for (RuntimeShutdownParticipant existing : PARTICIPANTS) {
+                if (participant.id().equals(existing.id())) return;
+            }
+            PARTICIPANTS.add(participant);
         }
-        PARTICIPANTS.add(participant);
+    }
+
+    public static void unregisterParticipant(String id) {
+        if (id == null) return;
+        synchronized (PARTICIPANTS) {
+            PARTICIPANTS.removeIf(existing -> id.equals(existing.id()));
+        }
     }
 
     public static void registerResumeParticipant(RuntimeResumeParticipant participant) {
-        if (participant == null) return;
-        for (RuntimeResumeParticipant existing : RESUME_PARTICIPANTS) {
-            if (existing.id().equals(participant.id())) return;
+        if (participant == null || participant.id() == null) return;
+        synchronized (RESUME_PARTICIPANTS) {
+            for (RuntimeResumeParticipant existing : RESUME_PARTICIPANTS) {
+                if (participant.id().equals(existing.id())) return;
+            }
+            RESUME_PARTICIPANTS.add(participant);
         }
-        RESUME_PARTICIPANTS.add(participant);
+    }
+
+    public static void unregisterResumeParticipant(String id) {
+        if (id == null) return;
+        synchronized (RESUME_PARTICIPANTS) {
+            RESUME_PARTICIPANTS.removeIf(existing -> id.equals(existing.id()));
+        }
     }
 
     public static RuntimeDiagnostics diagnostics() {
@@ -215,19 +264,21 @@ public enum ClientRuntime {
     }
 
     private static RuntimeCleanupReport runParticipants(ClientRuntimeState targetState, String reason) {
-        RuntimeCleanupReport.Builder builder = RuntimeCleanupReport.builder(targetState, reason);
-        RuntimeShutdownContext context = new RuntimeShutdownContext(targetState, reason, builder);
-        List<RuntimeShutdownParticipant> participants = new ArrayList<>(PARTICIPANTS);
-        for (RuntimeShutdownParticipant participant : participants) {
-            try {
-                participant.shutdown(context);
-                context.stopped(participant.id());
-            } catch (Throwable t) {
-                context.failed(participant.id(), t);
-                DebugLog.error("Runtime shutdown participant failed: %s", t, participant.id());
+        synchronized (SHUTDOWN_LOCK) {
+            RuntimeCleanupReport.Builder builder = RuntimeCleanupReport.builder(targetState, reason);
+            RuntimeShutdownContext context = new RuntimeShutdownContext(targetState, reason, builder);
+            List<RuntimeShutdownParticipant> participants = new ArrayList<>(PARTICIPANTS);
+            for (RuntimeShutdownParticipant participant : participants) {
+                try {
+                    participant.shutdown(context);
+                    context.stopped(participant.id());
+                } catch (Throwable t) {
+                    context.failed(participant.id(), t);
+                    DebugLog.error("Runtime shutdown participant failed: %s", t, participant.id());
+                }
             }
+            return builder.build();
         }
-        return builder.build();
     }
 
     private static void runResumeParticipants(String reason) {

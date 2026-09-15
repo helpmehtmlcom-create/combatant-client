@@ -65,13 +65,15 @@ final class JavetUiScriptEngine implements UiScriptEngine {
 
         try {
             prepare(module);
-            if (!runtime.getGlobalObject().getBoolean("__combatant_render_ready")) {
-                return UiScriptRenderResult.failed(new UiScriptRuntimeError(module.getId(), "render", "Script module does not export render(ctx).", null));
-            }
+            try (var global = runtime.getGlobalObject()) {
+                if (!global.getBoolean("__combatant_render_ready")) {
+                    return UiScriptRenderResult.failed(new UiScriptRuntimeError(module.getId(), "render", "Script module does not export render(ctx).", null));
+                }
 
-            Object raw = runtime.getGlobalObject().invokeObject("__combatant_render", contextMap(context));
-            UiNodeSpec root = converter.convert(raw);
-            return UiScriptRenderResult.ok(root);
+                Object raw = global.invokeObject("__combatant_render", contextMap(context));
+                UiNodeSpec root = converter.convert(raw);
+                return UiScriptRenderResult.ok(root);
+            }
         } catch (Throwable t) {
             return UiScriptRenderResult.failed(new UiScriptRuntimeError(module.getId(), "render", message(t), t));
         }

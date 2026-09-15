@@ -210,9 +210,10 @@ public final class Velocity extends Module {
 
     @EventHandler(priority = 2)
     private void onPacket(PacketEvent event) {
-        if (!isEnabled() || player() == null) return;
+        if (event == null || !isEnabled() || player() == null) return;
 
         Packet<?> packet = event.getPacket();
+        if (packet == null) return;
         if (event.isOriginal()) {
             if (packet instanceof ClientboundPlayerPositionPacket) {
                 pause = pauseOnFlag.get();
@@ -249,8 +250,7 @@ public final class Velocity extends Module {
 
     @EventHandler
     private void onBlinkPacket(BlinkPacketEvent event) {
-        if (!isEnabled() || player() == null) return;
-
+        if (event == null || !isEnabled() || player() == null) return;
         if (mode.get() == Mode.LAG
                 && lagShouldLag
                 && event.getOrigin() == TransferOrigin.INCOMING
@@ -369,6 +369,7 @@ public final class Velocity extends Module {
 
             Vec3 packetVelocity = velocity.movement();
             Vec3 currentVelocity = player().getDeltaMovement();
+            if (packetVelocity == null || currentVelocity == null) return;
             double x = modifyHorizontal.get() != 0.0f
                     ? packetVelocity.x * modifyHorizontal.get()
                     : currentVelocity.x * modifyMotionHorizontal.get();
@@ -378,6 +379,7 @@ public final class Velocity extends Module {
             double z = modifyHorizontal.get() != 0.0f
                     ? packetVelocity.z * modifyHorizontal.get()
                     : currentVelocity.z * modifyMotionHorizontal.get();
+            if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) return;
             ((ClientboundSetEntityMotionPacketAccessor) (Object) velocity).combatant$setVelocity(new Vec3(x, y, z));
             transactionBuffer += modifyTransactionBuffer.get();
             return;
@@ -387,11 +389,12 @@ public final class Velocity extends Module {
             if (!shouldModifyVelocity()) return;
 
             Vec3 knockback = explosion.playerKnockback().get();
-            ((ClientboundExplodePacketAccessor) (Object) explosion).combatant$setPlayerKnockback(Optional.of(new Vec3(
-                    knockback.x * modifyHorizontal.get(),
-                    knockback.y * modifyVertical.get(),
-                    knockback.z * modifyHorizontal.get()
-            )));
+            if (knockback == null) return;
+            double x = knockback.x * modifyHorizontal.get();
+            double y = knockback.y * modifyVertical.get();
+            double z = knockback.z * modifyHorizontal.get();
+            if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) return;
+            ((ClientboundExplodePacketAccessor) (Object) explosion).combatant$setPlayerKnockback(Optional.of(new Vec3(x, y, z)));
             transactionBuffer += modifyTransactionBuffer.get();
             return;
         }
@@ -544,7 +547,12 @@ public final class Velocity extends Module {
 
         Vec3 current = player().getDeltaMovement();
         Vec3 packetVelocity = velocity.movement();
-        ((ClientboundSetEntityMotionPacketAccessor) (Object) velocity).combatant$setVelocity(new Vec3(current.x, packetVelocity.y, current.z));
+        if (current == null || packetVelocity == null) return;
+        double x = current.x;
+        double y = packetVelocity.y;
+        double z = current.z;
+        if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) return;
+        ((ClientboundSetEntityMotionPacketAccessor) (Object) velocity).combatant$setVelocity(new Vec3(x, y, z));
     }
 
     private void handleBlocksMc(PacketEvent event, Packet<?> packet) {
@@ -761,10 +769,14 @@ public final class Velocity extends Module {
     }
 
     private Vec3 applyVulcan297Budget(Vec3 velocity, double horizontalFactor, double verticalFactor) {
+        if (velocity == null) return Vec3.ZERO;
+        double x = velocity.x * horizontalFactor;
+        double y = velocity.y * verticalFactor;
+        double z = velocity.z * horizontalFactor;
         return new Vec3(
-                velocity.x * horizontalFactor,
-                velocity.y * verticalFactor,
-                velocity.z * horizontalFactor
+                Double.isFinite(x) ? x : 0.0,
+                Double.isFinite(y) ? y : 0.0,
+                Double.isFinite(z) ? z : 0.0
         );
     }
 
@@ -851,7 +863,7 @@ public final class Velocity extends Module {
         int size = delayedPackets.size();
         for (int i = 0; i < size; i++) {
             DelayedPacket delayed = delayedPackets.poll();
-            if (delayed == null) continue;
+            if (delayed == null || delayed.packet == null) continue;
 
             delayed.ticks--;
             if (delayed.ticks > 0) {

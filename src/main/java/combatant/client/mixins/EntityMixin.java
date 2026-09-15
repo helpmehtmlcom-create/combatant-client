@@ -13,6 +13,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.block.Blocks;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -23,12 +24,12 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import combatant.client.events.Events;
 import combatant.client.events.impl.PlayerMoveEvent;
-import combatant.client.events.impl.PlayerStepEvent;
 import combatant.client.events.impl.PlayerStepSuccessEvent;
 import combatant.client.events.impl.PlayerVelocityStrafe;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.movement.NoPush;
 import combatant.client.features.module.modules.movement.NoStun;
+import combatant.client.features.module.modules.movement.NoSlow;
 import combatant.client.mixininterface.IEntity;
 import combatant.client.mixins.accessors.EntityAccessor;
 import combatant.client.mixins.accessors.EntityInvoker;
@@ -93,7 +94,7 @@ public abstract class EntityMixin implements IEntity {
     @Inject(method = "move", at = @At("RETURN"))
     private void combatant$onMoveReturn(MoverType type, Vec3 movement, CallbackInfo ci) {
         Entity self = (Entity) (Object) this;
-        if (!(self instanceof LocalPlayer)) return;
+        if (!(self instanceof LocalPlayer) || type != MoverType.SELF) return;
         if (!Events.BUS.hasListeners(PlayerStepSuccessEvent.class)) return;
 
         Vec3 before = combatant$stepBeforePos;
@@ -106,16 +107,6 @@ public abstract class EntityMixin implements IEntity {
         Events.BUS.post(new PlayerStepSuccessEvent(after.subtract(before)));
     }
 
-    @ModifyReturnValue(method = "maxUpStep", at = @At("RETURN"))
-    private float combatant$modifyStepHeight(float original) {
-        Entity self = (Entity) (Object) this;
-        if (!(self instanceof LocalPlayer)) return original;
-        if (!Events.BUS.hasListeners(PlayerStepEvent.class)) return original;
-
-        PlayerStepEvent event = new PlayerStepEvent(original);
-        Events.BUS.post(event);
-        return event.getHeight();
-    }
 
     @Redirect(
             method = "moveRelative",
@@ -169,6 +160,21 @@ public abstract class EntityMixin implements IEntity {
     private void nostun$cancelSlowMovement(BlockState state, Vec3 multiplier, CallbackInfo ci) {
         Entity self = (Entity) (Object) this;
         if (!(self instanceof LocalPlayer)) return;
+        NoSlow noSlow = Modules.get(NoSlow.class);
+        if (noSlow != null && noSlow.isEnabled() && state.is(Blocks.COBWEB)) {
+            NoSlow.WebMode mode = noSlow.getWebMode();
+            if (mode == NoSlow.WebMode.OFF) {
+                ci.cancel();
+                return;
+            } else if (mode == NoSlow.WebMode.FAST) {
+                if (self instanceof EntityAccessor accessor) {
+                    self.resetFallDistance();
+                    accessor.combatant$setMovementMultiplier(new Vec3(0.6, 0.25, 0.6));
+                    ci.cancel();
+                    return;
+                }
+            }
+        }
 
         NoStun ns = Modules.get(NoStun.class);
         if (ns == null || !ns.isEnabled()) return;

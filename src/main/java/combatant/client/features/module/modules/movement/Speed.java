@@ -70,6 +70,7 @@ public final class Speed extends Module {
 
     @EventHandler
     private void onMove(PlayerMoveEvent event) {
+        if (event == null || event.getMovement() == null) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.player == null) return;
         if (event.getType() != MoverType.SELF) return;
@@ -81,15 +82,17 @@ public final class Speed extends Module {
         double speedLevel = getSpeedAmplifier(player);
         double airMin = 0.2 + 0.199999999 * speedLevel;
         double useSpeed = Math.max(horizontalSpeed(player.getDeltaMovement()), airMin);
-        event.setMovement(withStrafe(event.getMovement(), player, useSpeed, 0.7));
+        if (Double.isFinite(useSpeed)) {
+            event.setMovement(withStrafe(event.getMovement(), player, useSpeed, 0.7));
+        }
     }
 
     @EventHandler
     private void onPacketSend(PacketEvent.Send event) {
-        if (!(event.getPacket() instanceof ServerboundMovePlayerPacket packet)) return;
+        if (event == null || !(event.getPacket() instanceof ServerboundMovePlayerPacket packet)) return;
 
         Minecraft mc = Minecraft.getInstance();
-        if (mc == null || mc.player == null) return;
+        if (mc == null || mc.player == null || mc.options == null || mc.level == null) return;
 
         LocalPlayer player = mc.player;
         if (!canSpeed(player)) return;
@@ -102,7 +105,10 @@ public final class Speed extends Module {
             }
             case VULCAN_GROUND_286 -> {
                 if (collidesBottomVertical(player) && !mc.options.keyJump.isDown() && MovementUtil.isMoving()) {
-                    ((ServerboundMovePlayerPacketAccessor) packet).combatant$setY(packet.getY(player.getY()) + 0.005);
+                    double newY = packet.getY(player.getY()) + 0.005;
+                    if (Double.isFinite(newY)) {
+                        ((ServerboundMovePlayerPacketAccessor) packet).combatant$setY(newY);
+                    }
                 }
             }
             default -> {
@@ -196,7 +202,11 @@ public final class Speed extends Module {
 
         if (hasSpeed && player.fallDistance > 0.0f) {
             Vec3 velocity = player.getDeltaMovement();
-            player.setDeltaMovement(velocity.x * 1.055, velocity.y, velocity.z * 1.055);
+            double vx = velocity.x * 1.055;
+            double vz = velocity.z * 1.055;
+            if (Double.isFinite(vx) && Double.isFinite(vz) && Math.abs(vx) < 10.0 && Math.abs(vz) < 10.0) {
+                player.setDeltaMovement(vx, velocity.y, vz);
+            }
         }
     }
 

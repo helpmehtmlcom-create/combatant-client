@@ -15,7 +15,7 @@ Combatant client commands start with `@` and are handled locally instead of bein
 | `@iris` | `@shaderpack` | `@iris` | Shows Iris and shader compatibility diagnostics. | Iris |
 | `@modules` | `@modulelist`, `@mods` | `@modules [all\|enabled\|combat\|movement\|player\|visuals\|misc] [page]` | Lists modules by state or category. | — |
 | `@ping` | `@latency` | `@ping` | Shows the current server latency. | Multiplayer server |
-| `@runtime` | `@panic`, `@jarreplace` | `@runtime [status\|panic\|resume\|jar\|source]` | Shows or changes the client runtime and panic state. | — |
+| `@runtime` | `@panic`, `@jarreplace`, `@resume` | `@runtime [status\|panic\|resume\|jar\|source]` | Shows or changes the client runtime state. | — |
 | `@serverinfo` | `@server`, `@sinfo` | `@serverinfo` | Shows information about the current world or server. | — |
 | `@staff` | `@staffs`, `@admin` | `@staff [list\|add\|remove\|toggle\|clear] [player]` | Manages the client staff list. | — |
 | `@toggle` | `@t` | `@toggle <module> [on\|off\|toggle]` | Enables, disables, or toggles a module. | — |

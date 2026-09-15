@@ -210,6 +210,7 @@ public enum AddonManager {
         }
 
         registration.restartRequired = !registration.disabledBuiltInModules.isEmpty();
+        AddonRenderPipelineManager.unregisterAddon(registration.descriptor.id());
         if (!registration.initialized) {
             registration.status = AddonStatus.DISABLED;
             return true;
@@ -418,6 +419,7 @@ public enum AddonManager {
     }
 
     private static void suspendRuntimeContributions(AddonRegistration registration) {
+        AddonRenderPipelineManager.unregisterAddon(registration.descriptor.id());
         registration.suspendedModules.clear();
         registration.suspendedDraggableHudElements.clear();
         registration.suspendedStaticHudElements.clear();

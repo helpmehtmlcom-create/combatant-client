@@ -46,7 +46,10 @@ public enum ScreenSpaceOverlay2D {
     }
 
     public static ScreenRect projectEntityBox(Entity entity, Vec3 lerpedPos, float tickDelta, double expandXZ, double expandTop) {
-        AABB box = entity.getBoundingBox().move(
+        if (entity == null || lerpedPos == null) return null;
+        AABB rawBox = entity.getBoundingBox();
+        if (rawBox == null) return null;
+        AABB box = rawBox.move(
                 lerpedPos.x - entity.getX(),
                 lerpedPos.y - entity.getY(),
                 lerpedPos.z - entity.getZ()
@@ -65,6 +68,7 @@ public enum ScreenSpaceOverlay2D {
     }
 
     public static ScreenRect projectBox(AABB box, float tickDelta) {
+        if (box == null) return null;
         double minX = Double.POSITIVE_INFINITY;
         double minY = Double.POSITIVE_INFINITY;
         double maxX = Double.NEGATIVE_INFINITY;
@@ -89,6 +93,7 @@ public enum ScreenSpaceOverlay2D {
         }
 
         if (!any || maxX <= minX || maxY <= minY) return null;
+        if (!Double.isFinite(minX) || !Double.isFinite(minY) || !Double.isFinite(maxX) || !Double.isFinite(maxY)) return null;
         if (PIXEL_SNAP) {
             minX = Math.floor(minX);
             minY = Math.floor(minY);
@@ -97,7 +102,6 @@ public enum ScreenSpaceOverlay2D {
         }
         return new ScreenRect(minX, minY, maxX, maxY);
     }
-
     public static LabelEntry createCenteredLabel(TextRenderer textRenderer, String text, int color, ScreenRect rect) {
         return createCenteredLabel(textRenderer, text, null, color, color, rect);
     }

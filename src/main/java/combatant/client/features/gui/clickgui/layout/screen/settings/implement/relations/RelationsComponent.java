@@ -233,21 +233,23 @@ public final class RelationsComponent {
             }
         }
 
-        for (CardEntryHit entryHit : cardHits) {
-            CardHit hit = entryHit.hit();
-            if (hit.containsDelete(mx, my)) {
-                String removed = entryHit.name();
-                if (tab.remove(removed)) {
-                    if (equalsIgnoreCase(selectedName, removed)) selectedName = null;
-                    setStatus(tr("status.removed", "Removed: %s", removed));
+        if (ClickGuiMath.insideRect(mx, my, listX, listY, listW, listH)) {
+            for (CardEntryHit entryHit : cardHits) {
+                CardHit hit = entryHit.hit();
+                if (hit.containsDelete(mx, my)) {
+                    String removed = entryHit.name();
+                    if (tab.remove(removed)) {
+                        if (equalsIgnoreCase(selectedName, removed)) selectedName = null;
+                        setStatus(tr("status.removed", "Removed: %s", removed));
+                    }
+                    return true;
                 }
-                return true;
-            }
-            if (hit.contains(mx, my)) {
-                selectedName = equalsIgnoreCase(selectedName, entryHit.name()) ? null : entryHit.name();
-                activeField = ActiveField.NONE;
-                movementInputBlocked = false;
-                return true;
+                if (hit.contains(mx, my)) {
+                    selectedName = equalsIgnoreCase(selectedName, entryHit.name()) ? null : entryHit.name();
+                    activeField = ActiveField.NONE;
+                    movementInputBlocked = false;
+                    return true;
+                }
             }
         }
 
@@ -1081,9 +1083,10 @@ public final class RelationsComponent {
 
     private void appendToField(ActiveField field, String raw) {
         if (raw == null || raw.isEmpty()) return;
-        String current = fieldText(field);
         int max = field == ActiveField.PLAYER ? 32 : 48;
-        String next = current + raw;
+        String truncated = raw.length() > max ? raw.substring(0, max) : raw;
+        String current = fieldText(field);
+        String next = current + truncated;
         if (next.length() > max) next = next.substring(0, max);
         setFieldText(field, next);
     }

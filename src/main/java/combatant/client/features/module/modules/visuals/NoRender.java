@@ -129,6 +129,7 @@ public class NoRender extends Module {
     }
 
     private static double combatant$squaredDistanceToBox(Vec3 point, AABB box) {
+        if (point == null || box == null) return Double.MAX_VALUE;
         double nearestX = Mth.clamp(point.x, box.minX, box.maxX);
         double nearestY = Mth.clamp(point.y, box.minY, box.maxY);
         double nearestZ = Mth.clamp(point.z, box.minZ, box.maxZ);
@@ -239,11 +240,12 @@ public class NoRender extends Module {
     }
 
     public boolean shouldFadeEntity(Entity entity) {
+        if (entity == null) return false;
         Minecraft client = Minecraft.getInstance();
         if (!viewObstructionFadeEnabled() || !(entity instanceof LivingEntity living) || client.player == null) {
             return false;
         }
-        if (entity == client.player || living.isInvisible()) {
+        if (entity == client.player || living.isInvisible() || !living.isAlive()) {
             return false;
         }
         if (entity instanceof Player) {
@@ -253,26 +255,37 @@ public class NoRender extends Module {
     }
 
     public float getEntityFadeAlpha(Entity entity) {
+        if (entity == null) return 1.0f;
+        AABB rawBox = entity.getBoundingBox();
+        if (rawBox == null) return 1.0f;
+
         Minecraft client = Minecraft.getInstance();
         if (client.gameRenderer == null || client.gameRenderer.mainCamera() == null) {
             return 1.0f;
         }
         Camera camera = client.gameRenderer.mainCamera();
         Vec3 cameraPos = camera.position();
-        AABB box = entity.getBoundingBox().inflate(VIEW_OBSTRUCTION_BOX_EXPAND_XZ, VIEW_OBSTRUCTION_BOX_EXPAND_Y, VIEW_OBSTRUCTION_BOX_EXPAND_XZ);
+        if (cameraPos == null || !Double.isFinite(cameraPos.x) || !Double.isFinite(cameraPos.y) || !Double.isFinite(cameraPos.z)) {
+            return 1.0f;
+        }
+
+        AABB box = rawBox.inflate(VIEW_OBSTRUCTION_BOX_EXPAND_XZ, VIEW_OBSTRUCTION_BOX_EXPAND_Y, VIEW_OBSTRUCTION_BOX_EXPAND_XZ);
         double obstructionDistance = Math.sqrt(combatant$squaredDistanceToBox(cameraPos, box));
 
-        Vec3 rayEnd = cameraPos.add(Vec3.directionFromRotation(camera.xRot(), camera.yRot()).scale(VIEW_OBSTRUCTION_FADE_DISTANCE));
-        Optional<Vec3> hit = box.clip(cameraPos, rayEnd);
-        if (hit.isPresent()) {
-            obstructionDistance = Math.min(obstructionDistance, cameraPos.distanceTo(hit.get()));
+        Vec3 direction = Vec3.directionFromRotation(camera.xRot(), camera.yRot());
+        if (direction != null) {
+            Vec3 rayEnd = cameraPos.add(direction.scale(VIEW_OBSTRUCTION_FADE_DISTANCE));
+            Optional<Vec3> hit = box.clip(cameraPos, rayEnd);
+            if (hit.isPresent()) {
+                obstructionDistance = Math.min(obstructionDistance, cameraPos.distanceTo(hit.get()));
+            }
         }
 
         if (box.contains(cameraPos)) {
             obstructionDistance = 0.0;
         }
 
-        if (obstructionDistance >= VIEW_OBSTRUCTION_FADE_DISTANCE) {
+        if (!Double.isFinite(obstructionDistance) || obstructionDistance >= VIEW_OBSTRUCTION_FADE_DISTANCE) {
             return 1.0f;
         }
         float t = Mth.clamp((float) (obstructionDistance / VIEW_OBSTRUCTION_FADE_DISTANCE), 0.0f, 1.0f);

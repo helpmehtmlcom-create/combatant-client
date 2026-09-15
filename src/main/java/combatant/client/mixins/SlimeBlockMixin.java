@@ -18,12 +18,18 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.movement.NoStun;
+import combatant.client.features.module.modules.movement.NoSlow;
 
 @Mixin(SlimeBlock.class)
 public class SlimeBlockMixin {
 
     @Inject(method = "stepOn", at = @At("HEAD"), cancellable = true)
     private void nostun$onSteppedOn(Level world, BlockPos pos, BlockState state, Entity entity, CallbackInfo ci) {
+        NoSlow noSlow = Modules.get(NoSlow.class);
+        if (noSlow != null && noSlow.shouldCancelSlime()) {
+            ci.cancel();
+            return;
+        }
         NoStun ns = Modules.get(NoStun.class);
         if (ns == null || !ns.isEnabled()) return;
         if (!ns.isFunctionEnabled(NoStun.fnEnvBlocks())) return;

@@ -64,6 +64,8 @@ final class OnlineRelationPlayerPickerComponent {
     private final List<PlayerRow> rows = new ArrayList<>();
     private final List<RowHit> rowHits = new ArrayList<>();
     private final Map<UUID, Identifier> skinCache = new HashMap<>();
+    private final RenderColor headColor = new RenderColor(255, 255, 255, 255);
+    private final RenderColor headOutlineColor = new RenderColor(255, 255, 255, 48);
 
     private boolean openTarget;
     private boolean searchOpen;
@@ -686,8 +688,10 @@ final class OnlineRelationPlayerPickerComponent {
         GuiGraphicsExtractor ctx = ViewportContext.getCurrentContext();
         if (skin != null && ctx != null) {
             int alpha = Math.round(255f * headOpacity);
-            PlayerHeadRenderer.drawRounded(ctx, x, y, size, 4.2f * scale, skin, new RenderColor(255, 255, 255, alpha), true,
-                    new RenderColor(255, 255, 255, Math.round(48f * headOpacity)), 0.95f * scale, false);
+            headColor.setAlpha(alpha);
+            headOutlineColor.setAlpha(Math.round(48f * headOpacity));
+            PlayerHeadRenderer.drawRounded(ctx, x, y, size, 4.2f * scale, skin, headColor, true,
+                    headOutlineColor, 0.95f * scale, false);
             return;
         }
         Renderer2D.COLOR.roundedRect(x, y, size, size, 4.2f * scale, 1.0f, LayoutRender2D.alpha(palette.panelMuted(), 0.22f * headOpacity));

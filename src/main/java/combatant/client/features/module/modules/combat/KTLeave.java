@@ -25,7 +25,7 @@ import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.Notifier;
 import combatant.client.features.module.Modules;
-import combatant.client.features.module.modules.player.AutoTotem;
+import combatant.client.features.module.modules.player.Offhand;
 import combatant.client.util.network.BlinkManager;
 import combatant.client.util.pvp.client.CooldownsState;
 
@@ -191,14 +191,14 @@ public final class KTLeave extends Module {
     }
 
     private boolean canAutoTotemHandleNow(LocalPlayer player) {
-        AutoTotem autoTotem = Modules.get(AutoTotem.class);
-        if (autoTotem == null || !autoTotem.isEnabled()) {
+        Offhand offhand = Modules.get(Offhand.class);
+        if (offhand == null || !offhand.isEnabled()) {
             return false;
         }
-        if (autoTotem.isTotemSwapPending()) {
+        if (offhand.isTotemSwapPending()) {
             return true;
         }
-        return autoTotem.shouldHoldTotemNow(player) && autoTotem.canProvideTotemNow(player);
+        return offhand.shouldHoldTotemNow(player) && offhand.canProvideTotemNow(player);
     }
 
     private boolean isTotemHeld(LocalPlayer player) {
