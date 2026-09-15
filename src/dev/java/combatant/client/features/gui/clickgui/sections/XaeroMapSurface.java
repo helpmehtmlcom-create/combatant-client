@@ -43,6 +43,7 @@ import combatant.client.render.map.MapVisibleTileSelector;
 import combatant.client.render.helpers.SystemCursor;
 import combatant.client.render.helpers.ClipFunction;
 import combatant.client.util.logging.DebugLog;
+import combatant.client.util.text.ClipboardUtil;
 import combatant.client.util.text.LegacyTextUtil;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
@@ -112,7 +113,11 @@ final class XaeroMapSurface {
     private final ArrayList<MenuEntry> contextEntries = new ArrayList<>();
     private final ArrayList<ElementHit> drawerHits = new ArrayList<>();
     private final ArrayList<TargetHit> targetHits = new ArrayList<>();
-    private List<MapPlayerMarker> locationPlayerMarkers = List.of();
+    private List<LocationMarkerEntry> locationPlayerMarkers = List.of();
+    private LocationMarkerEntry hoveredLocationMarker;
+    private LocationMarkerEntry rightClickLocationMarker;
+    private String transientStatus = "";
+    private long transientStatusUntilMs;
 
     private double centerX;
     private double centerZ;
@@ -175,6 +180,7 @@ final class XaeroMapSurface {
         areaWidth = width;
         areaHeight = height;
         hoveredElement = null;
+        hoveredLocationMarker = null;
         // The map itself is not a permanent "move" affordance. Keep the native cursor neutral
         // until the user is actually panning/selecting or points at an interactive overlay.
         // Otherwise the whole surface looked draggable even while simply inspecting the map.
@@ -257,9 +263,14 @@ final class XaeroMapSurface {
                 elementPointerActive ? mouseX : Float.NaN,
                 elementPointerActive ? mouseY : Float.NaN);
         if (hoveredElement != null) SystemCursor.set(SystemCursor.CursorType.HAND);
-        renderLocationPlayerMarkers(viewport);
+        renderLocationPlayerMarkers(viewport, mouseX, mouseY, elementPointerActive);
+        if (hoveredLocationMarker != null) {
+            elements.clearHover();
+            hoveredElement = null;
+            SystemCursor.set(SystemCursor.CursorType.HAND);
+        }
         drawPlayerArrow(processor, dimension, viewport);
-        elements.renderHover(viewport);
+        if (hoveredLocationMarker == null) elements.renderHover(viewport);
         drawMapUi(processor, dimension, mouseX, mouseY);
         return result.terrainTilesDrawn() == 0
                 ? Frame.waiting(tr("gui.combatant.map.loading", "Preparing World Map..."))
@@ -284,11 +295,19 @@ final class XaeroMapSurface {
         deleteArmed = false;
         if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
             rightSelecting = true;
-            rightClickElement = hoveredElement;
+            rightClickLocationMarker = hoveredLocationMarker;
+            rightClickElement = rightClickLocationMarker == null ? hoveredElement : null;
             contextBlockX = pointerBlockX;
             contextBlockY = pointerBlockY;
             contextBlockZ = pointerBlockZ;
-            if (rightClickElement != null) {
+            if (rightClickLocationMarker != null) {
+                PlayerLocationSnapshot location = rightClickLocationMarker.location();
+                contextWorldX = location.x();
+                contextWorldZ = location.z();
+                contextBlockX = floorBlock(location.x());
+                contextBlockZ = floorBlock(location.z());
+                contextBlockY = Double.isFinite(location.y()) ? floorBlock(location.y()) : Short.MAX_VALUE;
+            } else if (rightClickElement != null) {
                 contextWorldX = rightClickElement.worldX();
                 contextWorldZ = rightClickElement.worldZ();
             } else if (viewport != null) {
@@ -301,9 +320,19 @@ final class XaeroMapSurface {
             }
             selectionStartX = selectionEndX = pointerBlockX >> 4;
             selectionStartZ = selectionEndZ = pointerBlockZ >> 4;
+            if (rightClickLocationMarker != null) {
+                selectionStartX = selectionEndX = contextBlockX >> 4;
+                selectionStartZ = selectionEndZ = contextBlockZ >> 4;
+            }
             return true;
         }
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return false;
+        if (hoveredLocationMarker != null) {
+            centerX = hoveredLocationMarker.location().x();
+            centerZ = hoveredLocationMarker.location().z();
+            centered = true;
+            return true;
+        }
         dragging = true;
         dragX = mouseX;
         dragY = mouseY;
@@ -738,7 +767,7 @@ final class XaeroMapSurface {
         if (dimension == null) return MapOverlaySnapshot.EMPTY;
         String dimensionKey = dimension.getDimId().identifier().toString();
         var view = PlayerLocationService.get().snapshot();
-        List<MapPlayerMarker> players = new ArrayList<>();
+        List<LocationMarkerEntry> players = new ArrayList<>();
         List<MapUncertainty> uncertainty = new ArrayList<>();
         List<MapBearingRay> bearings = new ArrayList<>();
         Set<String> bearingKeys = new LinkedHashSet<>();
@@ -782,10 +811,11 @@ final class XaeroMapSurface {
             float alpha = location.source() == PlayerLocationSource.HISTORICAL ? 0.42f : freshnessAlpha(location, now);
             String statusLabel = location.source() == PlayerLocationSource.HISTORICAL
                     ? staleAgeLabel(location, now) : "";
-            players.add(new MapPlayerMarker(
+            MapPlayerMarker marker = new MapPlayerMarker(
                     "location-player:" + id, location.x(), location.z(), id, name, statusLabel, accent,
-                    sourceGlyph(location.source()), location.exact() ? 29.0f : 27.0f, alpha,
-                    300 + location.source().priority()));
+                    sourceGlyph(location.source()), location.exact() ? 27.0f : 25.5f, alpha,
+                    300 + location.source().priority());
+            players.add(new LocationMarkerEntry(marker, location));
 
             double major = location.uncertaintyMajor();
             double minor = location.uncertaintyMinor();
@@ -808,24 +838,48 @@ final class XaeroMapSurface {
         return new MapOverlaySnapshot(List.of(), List.of(), List.of(), uncertainty, bearings);
     }
 
-    private void renderLocationPlayerMarkers(MapViewport viewport) {
+    private void renderLocationPlayerMarkers(MapViewport viewport,
+                                             float mouseX,
+                                             float mouseY,
+                                             boolean interactive) {
         if (viewport == null || locationPlayerMarkers.isEmpty()) return;
         MapRect clip = viewport.screenBounds();
+        hoveredLocationMarker = null;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        if (interactive) {
+            for (LocationMarkerEntry entry : locationPlayerMarkers) {
+                MapPlayerMarker marker = entry.marker();
+                MapScreenPoint point = viewport.project(marker.worldX(), marker.worldZ());
+                if (!clip.contains(point.x(), point.y())) continue;
+                float hitRadius = Math.max(14.0f, marker.sizePixels() * 0.62f + 2.0f);
+                double dx = mouseX - point.x();
+                double dy = mouseY - point.y();
+                double distance = dx * dx + dy * dy;
+                if (distance <= hitRadius * hitRadius && distance < bestDistance) {
+                    hoveredLocationMarker = entry;
+                    bestDistance = distance;
+                }
+            }
+        }
         try (ClipFunction.Scope ignored = ClipFunction.rectScope(clip.x(), clip.y(), clip.width(), clip.height())) {
-            for (MapPlayerMarker marker : locationPlayerMarkers) {
+            for (LocationMarkerEntry entry : locationPlayerMarkers) {
+                MapPlayerMarker marker = entry.marker();
                 MapScreenPoint point = viewport.project(marker.worldX(), marker.worldZ());
                 float radius = marker.sizePixels() * 0.8f + 24.0f;
                 if (!clip.intersects(new MapRect(point.x() - radius, point.y() - radius, radius * 2.0f, radius * 2.0f))) continue;
                 MapPlayerMarkerRenderer.drawMarker((float) point.x(), (float) point.y(), marker.playerUuid(), marker.playerName(),
-                        marker.accentArgb(), marker.sourceGlyph(), marker.sizePixels(), marker.alpha());
+                        marker.accentArgb(), marker.sourceGlyph(), marker.sizePixels(), marker.alpha(),
+                        entry == hoveredLocationMarker);
             }
             Renderer2D.flushBatch();
-            for (MapPlayerMarker marker : locationPlayerMarkers) {
+            for (LocationMarkerEntry entry : locationPlayerMarkers) {
+                MapPlayerMarker marker = entry.marker();
                 MapScreenPoint point = viewport.project(marker.worldX(), marker.worldZ());
                 float radius = marker.sizePixels() * 0.8f + 24.0f;
                 if (!clip.intersects(new MapRect(point.x() - radius, point.y() - radius, radius * 2.0f, radius * 2.0f))) continue;
                 MapPlayerMarkerRenderer.drawLabel((float) point.x(), (float) point.y(), marker.playerUuid(), marker.playerName(),
-                        marker.statusLabel(), marker.accentArgb(), marker.sizePixels(), marker.alpha());
+                        marker.statusLabel(), marker.accentArgb(), marker.sizePixels(), marker.alpha(),
+                        entry == hoveredLocationMarker);
             }
         }
     }
@@ -1098,6 +1152,7 @@ final class XaeroMapSurface {
             withMapGlassSource(() -> settings.render(
                     areaX, areaY, areaWidth, areaHeight, mouseX, mouseY));
         }
+        drawTransientStatus();
     }
 
     private static void withMapGlassSource(Runnable draw) {
@@ -1138,7 +1193,27 @@ final class XaeroMapSurface {
     private void rebuildContextEntries() {
         contextEntries.clear();
         XaeroMapElements.Element element = rightClickElement;
-        if (element != null && element.handle() instanceof Waypoint waypoint) {
+        LocationMarkerEntry locationEntry = rightClickLocationMarker;
+        if (locationEntry != null) {
+            MapPlayerMarker marker = locationEntry.marker();
+            PlayerLocationSnapshot location = locationEntry.location();
+            String name = marker.playerName().isBlank()
+                    ? targetName(location.playerName(), location.playerUuid()) : marker.playerName();
+            contextEntries.add(new MenuEntry(name, "users-round", false, ContextAction.NONE));
+            contextEntries.add(new MenuEntry(locationSourceLabel(location),
+                    locationContextIcon(location.source()), false, ContextAction.NONE));
+            contextEntries.add(new MenuEntry(coordinateLabel(location), "clipboard", true,
+                    ContextAction.COPY_COORDINATES));
+            contextEntries.add(new MenuEntry(chunkLabel(contextBlockX >> 4, contextBlockZ >> 4), "clipboard", true,
+                    ContextAction.COPY_CHUNK));
+            contextEntries.add(new MenuEntry(tr("gui.combatant.map.action.center_player", "Center on player"),
+                    "navigation", true, ContextAction.CENTER_LOCATION));
+            boolean targeted = MapTriangulationConfig.get().isTargeted(location.playerUuid(), name);
+            contextEntries.add(new MenuEntry(targeted
+                    ? tr("gui.combatant.map.action.remove_target", "Remove target")
+                    : tr("gui.combatant.map.action.add_target", "Add target"),
+                    "crosshair", true, ContextAction.TOGGLE_TARGET));
+        } else if (element != null && element.handle() instanceof Waypoint waypoint) {
             contextEntries.add(new MenuEntry(element.plainName(), "map-pin", false, ContextAction.NONE));
             contextEntries.add(new MenuEntry(tr("gui.xaero_right_click_waypoint_edit", "Edit"),
                     "pencil", true, ContextAction.EDIT));
@@ -1169,12 +1244,12 @@ final class XaeroMapSurface {
                     : tr("gui.combatant.map.selection.chunks", "Chunks") + " " + Math.min(selectionStartX, selectionEndX) + ", "
                     + Math.min(selectionStartZ, selectionEndZ) + " → "
                     + Math.max(selectionStartX, selectionEndX) + ", " + Math.max(selectionStartZ, selectionEndZ);
-            contextEntries.add(new MenuEntry(chunk, "land-plot", false, ContextAction.NONE));
+            contextEntries.add(new MenuEntry(chunk, "clipboard", true, ContextAction.COPY_CHUNK));
             if (coordinates) {
                 String xyz = contextBlockY == Short.MAX_VALUE
                         ? "X " + contextBlockX + "  Z " + contextBlockZ
                         : "X " + contextBlockX + "  Y " + contextBlockY + "  Z " + contextBlockZ;
-                contextEntries.add(new MenuEntry(xyz, "crosshair", false, ContextAction.NONE));
+                contextEntries.add(new MenuEntry(xyz, "clipboard", true, ContextAction.COPY_COORDINATES));
             }
             if (XaeroMapActions.available() && effective(WorldMapProfiledConfigOptions.WAYPOINTS)) {
                 contextEntries.add(new MenuEntry(tr("gui.xaero_right_click_map_create_waypoint", "Create waypoint"),
@@ -1255,6 +1330,7 @@ final class XaeroMapSurface {
         for (ElementHit hit : drawerHits) {
             if (!hit.contains(mouseX, mouseY)) continue;
             if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+                rightClickLocationMarker = null;
                 rightClickElement = hit.element();
                 contextWorldX = hit.element().worldX();
                 contextWorldZ = hit.element().worldZ();
@@ -1285,6 +1361,7 @@ final class XaeroMapSurface {
             contextOpen = false;
             contextBounds = null;
             deleteArmed = false;
+            rightClickLocationMarker = null;
             return false;
         }
         int row = XaeroMapUiRenderer.contextEntryAt(bounds, mouseX, mouseY, contextEntries);
@@ -1297,6 +1374,7 @@ final class XaeroMapSurface {
 
     private void runContextAction(ContextAction action) {
         XaeroMapElements.Element element = rightClickElement;
+        LocationMarkerEntry locationEntry = rightClickLocationMarker;
         Waypoint waypoint = element != null && element.handle() instanceof Waypoint value ? value : null;
         switch (action) {
             case EDIT -> openWaypointDraft(waypoint);
@@ -1317,6 +1395,27 @@ final class XaeroMapSurface {
             case SHARE_LOCATION -> XaeroMapActions.shareLocation(elementSnapshot.waypointWorld(),
                     contextBlockX, contextBlockY == Short.MAX_VALUE ? Short.MAX_VALUE : contextBlockY + 1,
                     contextBlockZ);
+            case COPY_COORDINATES -> copyContextCoordinates();
+            case COPY_CHUNK -> copyContextChunk();
+            case CENTER_LOCATION -> {
+                if (locationEntry != null && locationEntry.location().hasPosition()) {
+                    centerX = locationEntry.location().x();
+                    centerZ = locationEntry.location().z();
+                    centered = true;
+                }
+            }
+            case TOGGLE_TARGET -> {
+                if (locationEntry != null) {
+                    PlayerLocationSnapshot location = locationEntry.location();
+                    String name = locationEntry.marker().playerName();
+                    MapTriangulationConfig config = MapTriangulationConfig.get();
+                    if (config.isTargeted(location.playerUuid(), name)) {
+                        config.removeTargetedPlayer(location.playerUuid(), name);
+                    } else {
+                        config.addTargetedPlayer(location.playerUuid(), name);
+                    }
+                }
+            }
             case WAYPOINTS -> drawer = Drawer.WAYPOINTS;
             case SETTINGS -> toggleSettings();
             case NONE -> {
@@ -1325,6 +1424,7 @@ final class XaeroMapSurface {
         contextOpen = false;
         contextBounds = null;
         deleteArmed = false;
+        rightClickLocationMarker = null;
     }
 
     private void runElementTeleport(XaeroMapElements.Element element) {
@@ -1334,6 +1434,99 @@ final class XaeroMapSurface {
         } else if (element.handle() instanceof PlayerTrackerMapElement<?> player) {
             XaeroMapActions.teleportPlayer(activeProcessor, player);
         }
+    }
+
+    private void copyContextCoordinates() {
+        String value = contextBlockY == Short.MAX_VALUE
+                ? contextBlockX + " " + contextBlockZ
+                : contextBlockX + " " + contextBlockY + " " + contextBlockZ;
+        ClipboardUtil.copy(value);
+        showTransientStatus(tr("gui.combatant.map.copied.coordinates", "Coordinates copied") + " · " + value);
+    }
+
+    private void copyContextChunk() {
+        int minX = Math.min(selectionStartX, selectionEndX);
+        int minZ = Math.min(selectionStartZ, selectionEndZ);
+        int maxX = Math.max(selectionStartX, selectionEndX);
+        int maxZ = Math.max(selectionStartZ, selectionEndZ);
+        String value = minX == maxX && minZ == maxZ
+                ? minX + " " + minZ
+                : minX + " " + minZ + " -> " + maxX + " " + maxZ;
+        ClipboardUtil.copy(value);
+        showTransientStatus(tr("gui.combatant.map.copied.chunk", "Chunk copied") + " · " + value);
+    }
+
+    private void showTransientStatus(String value) {
+        transientStatus = value == null ? "" : value.trim();
+        transientStatusUntilMs = System.currentTimeMillis() + 1_700L;
+    }
+
+    private void drawTransientStatus() {
+        if (transientStatus.isBlank()) return;
+        long now = System.currentTimeMillis();
+        long remaining = transientStatusUntilMs - now;
+        if (remaining <= 0L) {
+            transientStatus = "";
+            return;
+        }
+        float alpha = remaining < 220L ? Math.max(0.0f, remaining / 220.0f) : 1.0f;
+        float textSize = 10.8f;
+        float textW = ClickGuiRenderer.textWidth(ClickGuiRenderer.getOnestMedium(), transientStatus, textSize);
+        float width = textW + 18.0f;
+        float height = 20.0f;
+        float x = areaX + (areaWidth - width) * 0.5f;
+        float y = areaY + areaHeight - height - 18.0f;
+        Renderer2D.COLOR.roundedRect(x, y, width, height, 7.0f,
+                withAlpha(0xFF0B1016, 0.88f * alpha));
+        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), transientStatus,
+                x + 9.0f, y + 4.0f, textSize, withAlpha(0xFFF4F7FA, alpha), false);
+    }
+
+    private static int floorBlock(double value) {
+        return (int) Math.floor(value);
+    }
+
+    private static String coordinateLabel(PlayerLocationSnapshot location) {
+        int x = floorBlock(location.x());
+        int z = floorBlock(location.z());
+        return Double.isFinite(location.y())
+                ? "X " + x + "  Y " + floorBlock(location.y()) + "  Z " + z
+                : "X " + x + "  Z " + z;
+    }
+
+    private static String chunkLabel(int chunkX, int chunkZ) {
+        return tr("gui.combatant.map.selection.chunk", "Chunk") + " " + chunkX + ", " + chunkZ;
+    }
+
+    private static String locationSourceLabel(PlayerLocationSnapshot location) {
+        if (location == null || location.source() == null) {
+            return tr("gui.combatant.map.source.unknown", "unknown");
+        }
+        String source = switch (location.source()) {
+            case LOCAL_ENTITY_EXACT -> tr("gui.combatant.map.source.local", "local");
+            case MAPLINK_EXACT -> tr("gui.combatant.map.source.maplink", "MapLink");
+            case LOCATOR_EXACT -> tr("gui.combatant.map.source.locator_exact", "locator exact");
+            case LOCATOR_APPROXIMATE -> tr("gui.combatant.map.source.locator_approx", "locator approximate");
+            case LOCATOR_BEARING -> tr("gui.combatant.map.source.bearing", "locator bearing");
+            case TRIANGULATED -> tr("gui.combatant.map.source.triangulated", "triangulated");
+            case DUPLEX_TRIANGULATED -> tr("gui.combatant.map.source.duplex", "duplex");
+            case HISTORICAL -> tr("gui.combatant.map.source.history", "history");
+        };
+        if (location.source() == PlayerLocationSource.HISTORICAL) {
+            String stale = staleAgeLabel(location, System.currentTimeMillis());
+            if (!stale.isBlank()) source += " · " + stale;
+        }
+        return source;
+    }
+
+    private static String locationContextIcon(PlayerLocationSource source) {
+        if (source == null) return "crosshair";
+        return switch (source) {
+            case MAPLINK_EXACT -> "map-pinned";
+            case LOCATOR_EXACT, LOCATOR_APPROXIMATE, LOCATOR_BEARING -> "locate-fixed";
+            case LOCAL_ENTITY_EXACT -> "users-round";
+            default -> "crosshair";
+        };
     }
 
     private void createTemporaryWaypoint() {
@@ -1590,7 +1783,7 @@ final class XaeroMapSurface {
         MapPoint point = currentViewport.unproject(mouseX, mouseY);
         pointerBlockX = (int) Math.floor(point.x());
         pointerBlockZ = (int) Math.floor(point.z());
-        if (rightSelecting && rightClickElement == null) {
+        if (rightSelecting && rightClickElement == null && rightClickLocationMarker == null) {
             selectionEndX = pointerBlockX >> 4;
             selectionEndZ = pointerBlockZ >> 4;
         }
@@ -1617,7 +1810,7 @@ final class XaeroMapSurface {
     }
 
     private void drawSelection(MapViewport currentViewport) {
-        if ((!rightSelecting && !contextOpen) || rightClickElement != null) return;
+        if ((!rightSelecting && !contextOpen) || rightClickElement != null || rightClickLocationMarker != null) return;
         int left = Math.min(selectionStartX, selectionEndX) << 4;
         int right = (Math.max(selectionStartX, selectionEndX) + 1) << 4;
         int top = Math.min(selectionStartZ, selectionEndZ) << 4;
@@ -1728,6 +1921,10 @@ final class XaeroMapSurface {
         CREATE_TEMPORARY,
         TELEPORT_MAP,
         SHARE_LOCATION,
+        COPY_COORDINATES,
+        COPY_CHUNK,
+        CENTER_LOCATION,
+        TOGGLE_TARGET,
         WAYPOINTS,
         SETTINGS
     }
@@ -1764,6 +1961,9 @@ final class XaeroMapSurface {
         boolean contains(float mouseX, float mouseY) {
             return inside(mouseX, mouseY, x, y, width, height);
         }
+    }
+
+    record LocationMarkerEntry(MapPlayerMarker marker, PlayerLocationSnapshot location) {
     }
 
     record Frame(boolean ready, String status, int texturesRendered) {

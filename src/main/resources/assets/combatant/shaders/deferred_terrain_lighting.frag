@@ -13,6 +13,7 @@ out vec4 color;
 uniform sampler2D u_GbufferSurface;
 uniform sampler2D u_GbufferGeometry;
 uniform sampler2D u_GbufferAuxiliary;
+uniform sampler2D u_GbufferMaterial;
 uniform sampler2D u_LightTex;
 
 layout(std140) uniform DeferredLighting {
@@ -38,9 +39,12 @@ void main() {
 
     vec4 geometry = texture(u_GbufferGeometry, v_TexCoord);
     vec4 auxiliary = texture(u_GbufferAuxiliary, v_TexCoord);
+    vec4 material = texture(u_GbufferMaterial, v_TexCoord);
 
     vec3 lightmap = texture(u_LightTex, geometry.ba).rgb;
-    vec3 litColor = surface.rgb * lightmap;
+    float vertexAo = surface.a;
+    float emission = material.a;
+    vec3 litColor = surface.rgb * (lightmap * vertexAo + emission);
 
     float sphericalDistance = combatant_decode_distance(auxiliary.r);
     float cylindricalDistance = combatant_decode_distance(auxiliary.g);

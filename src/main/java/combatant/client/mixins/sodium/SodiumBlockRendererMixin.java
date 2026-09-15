@@ -8,10 +8,18 @@
 package combatant.client.mixins.sodium;
 
 import com.llamalad7.mixinextras.sugar.Local;
+import combatant.client.render.engine.material.MaterialDomain;
+import combatant.client.render.engine.material.MaterialRegistry;
+import combatant.client.render.engine.material.MaterialSurfaceDescriptor;
+import combatant.client.render.helpers.SodiumSurfaceFlagContext;
+import combatant.client.render.sodium.terrain.CombatantChunkVertexExtension;
+import net.caffeinemc.mods.sodium.client.render.chunk.terrain.DefaultTerrainRenderPasses;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.material.Material;
 import net.caffeinemc.mods.sodium.client.render.chunk.vertex.format.ChunkVertexEncoder;
 import net.caffeinemc.mods.sodium.client.render.model.MutableQuadViewImpl;
+import net.caffeinemc.mods.sodium.client.render.texture.SpriteFinderCache;
 import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
 import org.objectweb.asm.Opcodes;
@@ -20,8 +28,6 @@ import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import combatant.client.render.helpers.SodiumSurfaceFlagContext;
-import combatant.client.render.sodium.terrain.CombatantChunkVertexExtension;
 
 @Pseudo
 @Mixin(targets = "net.caffeinemc.mods.sodium.client.render.chunk.compile.pipeline.BlockRenderer")
@@ -46,7 +52,28 @@ public abstract class SodiumBlockRendererMixin {
                     shift = At.Shift.AFTER),
             remap = false
     )
-    private void combatant$writeSurfaceFlags(MutableQuadViewImpl quad, float[] brightness, Material material, CallbackInfo ci, @Local(ordinal = 0) ChunkVertexEncoder.Vertex vertex) {
-        ((CombatantChunkVertexExtension) vertex).combatant$setSurfaceFlags(SodiumSurfaceFlagContext.getSurfaceFlags(vertex.y));
+    private void combatant$writeSurfaceContract(MutableQuadViewImpl quad,
+                                                 float[] brightness,
+                                                 Material material,
+                                                 CallbackInfo ci,
+                                                 @Local(ordinal = 0) ChunkVertexEncoder.Vertex vertex) {
+        CombatantChunkVertexExtension extension = (CombatantChunkVertexExtension) vertex;
+        extension.combatant$setSurfaceFlags(SodiumSurfaceFlagContext.getSurfaceFlags(vertex.y));
+
+        TextureAtlasSprite sprite = quad.sprite(SpriteFinderCache.forBlockAtlas());
+        MaterialSurfaceDescriptor descriptor = MaterialRegistry.global().resolve(sprite, combatant$domain(material));
+        extension.combatant$setMaterialData(
+                descriptor.stableId(),
+                descriptor.gpuPresenceMask8(),
+                descriptor.packScalarSurface()
+        );
+    }
+
+    private static MaterialDomain combatant$domain(Material material) {
+        if (material == null || material.pass == null) return MaterialDomain.UNKNOWN;
+        if (material.pass == DefaultTerrainRenderPasses.SOLID) return MaterialDomain.OPAQUE;
+        if (material.pass == DefaultTerrainRenderPasses.CUTOUT) return MaterialDomain.CUTOUT;
+        if (material.pass == DefaultTerrainRenderPasses.TRANSLUCENT) return MaterialDomain.TRANSLUCENT;
+        return MaterialDomain.UNKNOWN;
     }
 }

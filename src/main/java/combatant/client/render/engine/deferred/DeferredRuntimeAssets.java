@@ -94,6 +94,7 @@ public enum DeferredRuntimeAssets {
                     .withSampler("u_GbufferSurface")
                     .withSampler("u_GbufferGeometry")
                     .withSampler("u_GbufferAuxiliary")
+                    .withSampler("u_GbufferMaterial")
                     .withSampler("u_LightTex")
                     .withUniform("DeferredLighting", UniformType.UNIFORM_BUFFER)
                     .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)

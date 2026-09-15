@@ -4079,5 +4079,10 @@
   "gui.combatant.map.triangulation.tracking.unknown": "learning",
   "gui.combatant.map.triangulation.tracking.simulation": "Simulation",
   "gui.combatant.map.triangulation.tracking.view": "chunk view",
-  "gui.combatant.map.triangulation.tracking.players": "player tracking"
+  "gui.combatant.map.triangulation.tracking.players": "player tracking",
+  "gui.combatant.map.action.center_player": "Center on player",
+  "gui.combatant.map.action.add_target": "Add target",
+  "gui.combatant.map.action.remove_target": "Remove target",
+  "gui.combatant.map.copied.coordinates": "Coordinates copied",
+  "gui.combatant.map.copied.chunk": "Chunk copied"
 }

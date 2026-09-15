@@ -21,6 +21,10 @@ out vec4 v_CombatantBaseColor;
 out vec2 v_CombatantLightCoord;
 out vec3 v_CombatantViewPosition;
 flat out uint v_CombatantMaterialParams;
+flat out uint v_CombatantMaterialData;
+flat out uint v_CombatantMaterialMeta;
+flat out uint v_CombatantMaterialSurface;
+out vec4 v_CombatantTangent;
 #endif
 
 #ifdef USE_FOG
@@ -45,6 +49,10 @@ uniform uint u_RegionID;
 uniform sampler2D u_LightTex;
 
 layout(location = 4) in uint a_CombatantSurfaceFlags;
+layout(location = 5) in uint a_CombatantMaterialData;
+layout(location = 6) in uint a_CombatantMaterialMeta;
+layout(location = 7) in vec4 a_CombatantTangent;
+layout(location = 8) in uint a_CombatantMaterialSurface;
 
 const uint COMBATANT_SURFACE_WAVY_VEGETATION = 1u << 1u;
 const uint COMBATANT_SURFACE_WAVY_VEGETATION_FREE = 1u << 2u;
@@ -118,10 +126,12 @@ void main() {
 
     gl_Position = u_ProjectionMatrix * viewPosition;
 
+float combatantVertexAo = float(a_CombatantMaterialMeta & 255u) / 255.0;
 #ifdef COMBATANT_SHADOW_PASS
     v_Color = _vert_color;
 #else
-    v_Color = _vert_color * texture(u_LightTex, _vert_tex_light_coord);
+    vec4 combatantLight = texture(u_LightTex, _vert_tex_light_coord);
+    v_Color = vec4(_vert_color.rgb * combatantVertexAo, _vert_color.a) * combatantLight;
 #endif
     v_TexCoord = (_vert_tex_diffuse_coord_bias * u_TexCoordShrink) + _vert_tex_diffuse_coord;
     v_ViewDistance = length(viewPosition.xyz);
@@ -132,5 +142,9 @@ void main() {
     v_CombatantLightCoord = _vert_tex_light_coord;
     v_CombatantViewPosition = viewPosition.xyz;
     v_CombatantMaterialParams = _material_params;
+    v_CombatantMaterialData = a_CombatantMaterialData;
+    v_CombatantMaterialMeta = a_CombatantMaterialMeta;
+    v_CombatantMaterialSurface = a_CombatantMaterialSurface;
+    v_CombatantTangent = vec4(normalize(mat3(u_ModelViewMatrix) * a_CombatantTangent.xyz), a_CombatantTangent.w);
 #endif
 }

@@ -170,12 +170,21 @@ final class XaeroMapElements {
         for (Element element : snapshot.elements()) {
             boolean advancedPlayerLabel = MapUiConfig.get().advancedPlayerMarkers()
                     && (element.handle() instanceof Player || element.handle() instanceof PlayerTrackerMapElement<?>);
-            if (element == hovered || (!advancedPlayerLabel && (element.kind() != Kind.ENTITY || !element.namesVisible()))) continue;
+            if (element == hovered) continue;
+            if (!advancedPlayerLabel && (element.kind() != Kind.ENTITY || !element.namesVisible())) continue;
             MapScreenPoint point = viewport.project(element.worldX(), element.worldZ());
             if (!viewport.screenBounds().contains(point.x(), point.y())) continue;
             float topExtent = topExtents.getOrDefault(element, 0.0f);
-            drawLabel(element.name(), (float) point.x(),
-                    (float) point.y() - topExtent - MARKER_LABEL_GAP, element.color(), false);
+            if (advancedPlayerLabel) {
+                UUID id = playerId(element);
+                if (id != null) {
+                    MapPlayerMarkerRenderer.drawLabel((float) point.x(), (float) point.y(), id,
+                            element.plainName(), element.color(), Math.max(25.5f, topExtent * 2.0f), 1.0f, false);
+                }
+            } else {
+                drawLabel(element.name(), (float) point.x(),
+                        (float) point.y() - topExtent - MARKER_LABEL_GAP, element.color(), false);
+            }
         }
 
         return hovered;
@@ -206,6 +215,15 @@ final class XaeroMapElements {
         // Everything in the map-content layer (icons, persistent names and the player arrow) is
         // committed before the hover card is emitted. Map chrome is rendered by the surface later.
         Renderer2D.flushBatch();
+        if (MapUiConfig.get().advancedPlayerMarkers()
+                && (hovered.handle() instanceof Player || hovered.handle() instanceof PlayerTrackerMapElement<?>)) {
+            UUID id = playerId(hovered);
+            if (id != null) {
+                MapPlayerMarkerRenderer.drawLabel((float) point.x(), (float) point.y(), id,
+                        hovered.plainName(), hovered.color(), Math.max(27.0f, hoveredTopExtent * 2.0f), 1.0f, true);
+            }
+            return;
+        }
         float panelBottomY = (float) point.y() - hoveredTopExtent - MARKER_LABEL_GAP;
         drawLabel(hoverLabel(hovered), (float) point.x(), panelBottomY, hovered.color(), true);
     }
@@ -558,10 +576,10 @@ final class XaeroMapElements {
     private float drawPlayer(MapScreenPoint point, Element element, boolean highlighted) {
         if (!(element.handle() instanceof PlayerTrackerMapElement<?> tracked)) return 0.0f;
         if (MapUiConfig.get().advancedPlayerMarkers()) {
-            float size = highlighted ? 31.0f : 28.0f;
+            float size = 27.0f;
             String name = element.plainName();
             return MapPlayerMarkerRenderer.drawMarker((float) point.x(), (float) point.y(), tracked.getPlayerId(), name,
-                    element.color(), "", size, 1.0f);
+                    element.color(), "", size, 1.0f, highlighted);
         }
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft == null || minecraft.getConnection() == null || minecraft.level == null) return 0.0f;
@@ -587,10 +605,10 @@ final class XaeroMapElements {
 
     private float drawEntity(MapScreenPoint point, Element element, boolean highlighted) {
         if (element.handle() instanceof Player player && MapUiConfig.get().advancedPlayerMarkers()) {
-            float size = highlighted ? 31.0f : 28.0f;
+            float size = 27.0f;
             String name = player.getGameProfile() == null ? element.plainName() : player.getGameProfile().name();
             return MapPlayerMarkerRenderer.drawMarker((float) point.x(), (float) point.y(), player.getUUID(), name,
-                    CategoryService.getColor(player), "", size, 1.0f);
+                    CategoryService.getColor(player), "", size, 1.0f, highlighted);
         }
         float size = drawRadarIcon(point, element, highlighted);
         if (size <= 0.0f) size = drawRadarDot(point, element, highlighted);
@@ -686,6 +704,13 @@ final class XaeroMapElements {
         int dotSize = Math.max(1, (int) element.dotSize());
         double dotScale = 1.0 + 0.5 * (dotSize - 1);
         return XAERO_RADAR_DOT_HIT_HALF_SIZE * dotScale * xaeroScreenSizeBasedScale();
+    }
+
+    private static UUID playerId(Element element) {
+        if (element == null) return null;
+        if (element.handle() instanceof Player player) return player.getUUID();
+        if (element.handle() instanceof PlayerTrackerMapElement<?> tracked) return tracked.getPlayerId();
+        return null;
     }
 
     private static float xaeroScreenSizeBasedScale() {

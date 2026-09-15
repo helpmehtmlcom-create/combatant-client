@@ -3849,5 +3849,10 @@
   "gui.combatant.map.triangulation.tracking.unknown": "обучение",
   "gui.combatant.map.triangulation.tracking.simulation": "Симуляция",
   "gui.combatant.map.triangulation.tracking.view": "чанки",
-  "gui.combatant.map.triangulation.tracking.players": "видимость игроков"
+  "gui.combatant.map.triangulation.tracking.players": "видимость игроков",
+  "gui.combatant.map.action.center_player": "Показать игрока по центру",
+  "gui.combatant.map.action.add_target": "Добавить в цели",
+  "gui.combatant.map.action.remove_target": "Убрать из целей",
+  "gui.combatant.map.copied.coordinates": "Координаты скопированы",
+  "gui.combatant.map.copied.chunk": "Чанк скопирован"
 }

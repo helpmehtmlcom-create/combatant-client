@@ -78,6 +78,7 @@ public final class PostProcessGraphResources implements AutoCloseable {
             put(PostProcessResource.GBUFFER_SURFACE, gbuffer.surface());
             put(PostProcessResource.GBUFFER_GEOMETRY, gbuffer.geometry());
             put(PostProcessResource.GBUFFER_AUXILIARY, gbuffer.auxiliary());
+            put(PostProcessResource.GBUFFER_MATERIAL, gbuffer.material());
         }
         bindDeferred(PostProcessResource.VELOCITY, DeferredResource.VELOCITY);
         bindDeferred(PostProcessResource.RESOLVED_DEPTH, DeferredResource.RESOLVED_DEPTH);

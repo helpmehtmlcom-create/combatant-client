@@ -149,13 +149,22 @@ public final class MapLocationRuntime {
         List<PlayerLocationSnapshot> locations = new ArrayList<>();
         Map<UUID, String> names = new LinkedHashMap<>();
         Map<String, UUID> idsByName = new HashMap<>();
+        Map<String, UUID> localIdsByName = new HashMap<>();
+        Set<UUID> localPlayerIds = new HashSet<>();
 
         UUID self = mc.player.getUUID();
+        String selfName = mc.player.getGameProfile() == null ? "" : clean(mc.player.getGameProfile().name());
+        rememberIdentity(names, idsByName, self, selfName);
+        if (!selfName.isBlank()) localIdsByName.put(selfName.toLowerCase(Locale.ROOT), self);
+        localPlayerIds.add(self);
         for (Player player : mc.level.players()) {
-            if (player == null || player.getUUID() == null || player.getUUID().equals(self)) continue;
+            if (player == null || player.getUUID() == null) continue;
             UUID id = player.getUUID();
             String name = player.getName() == null ? "" : player.getName().getString();
             rememberIdentity(names, idsByName, id, name);
+            if (!clean(name).isBlank()) localIdsByName.put(clean(name).toLowerCase(Locale.ROOT), id);
+            localPlayerIds.add(id);
+            if (id.equals(self)) continue;
             locations.add(new PlayerLocationSnapshot(id, name, serverIdentity, currentWorldIdentity,
                     PlayerLocationSource.LOCAL_ENTITY_EXACT, now, now,
                     player.getX(), player.getY(), player.getZ(), Double.NaN,
@@ -169,6 +178,15 @@ public final class MapLocationRuntime {
                 MapLinkProfileState state = mapLink.profileStates().get(observation.profileId());
                 if (state == null || state.status() != MapLinkProfileStatus.LIVE) continue;
                 String name = observation.rawPlayerName();
+                UUID localByName = clean(name).isBlank()
+                        ? null : localIdsByName.get(clean(name).toLowerCase(Locale.ROOT));
+                // MapLink is a remote/exact source. Never publish a second marker for ourselves or
+                // for a player the client is already receiving as a real local entity. Name-based
+                // suppression intentionally covers providers that resolved an offline/wrong UUID
+                // for a player whose authoritative UUID is already present in the current level.
+                if (localPlayerIds.contains(id) || (localByName != null && localPlayerIds.contains(localByName))) {
+                    continue;
+                }
                 rememberIdentity(names, idsByName, id, name);
                 long effective = observation.providerTimestamp() > 0L
                         ? observation.providerTimestamp() : observation.fetchTimestamp();
@@ -184,8 +202,13 @@ public final class MapLocationRuntime {
 
         if (locator != null) {
             for (LocatorObservation observation : locator) {
-                UUID id = resolve(observation.targetUuid(), observation.targetName(), idsByName);
+                String cleanTargetName = clean(observation.targetName());
+                UUID localByName = cleanTargetName.isBlank()
+                        ? null : localIdsByName.get(cleanTargetName.toLowerCase(Locale.ROOT));
+                UUID id = localByName != null
+                        ? localByName : resolve(observation.targetUuid(), observation.targetName(), idsByName);
                 if (id == null) continue;
+                if (id.equals(self)) continue;
                 String name = !clean(observation.targetName()).isBlank()
                         ? clean(observation.targetName()) : names.getOrDefault(id, "");
                 rememberIdentity(names, idsByName, id, name);
@@ -221,7 +244,11 @@ public final class MapLocationRuntime {
             for (HeuristicEstimate estimate : heuristic.values()) {
                 if (estimate == null || estimate.targetUuid() == null) continue;
                 UUID target = estimate.targetUuid();
-                String name = names.getOrDefault(target, "");
+                String name = names.getOrDefault(target, MapTriangulationConfig.get().nameForTarget(target));
+                UUID localByName = clean(name).isBlank()
+                        ? null : localIdsByName.get(clean(name).toLowerCase(Locale.ROOT));
+                UUID publishedTarget = localByName != null ? localByName : target;
+                if (publishedTarget.equals(self)) continue;
                 boolean liveInput = locatorPresent.contains(target);
                 long lastSeen = liveInput ? now : lastLocatorSeenAt.getOrDefault(target, estimate.updatedAtMs());
                 long sourceLostAge = Math.max(0L, now - lastSeen);
@@ -236,7 +263,7 @@ public final class MapLocationRuntime {
                     metadata.put("lastLocatorSeenAt", Long.toString(lastSeen));
                     metadata.put("sourceLostAgeMs", Long.toString(sourceLostAge));
                 }
-                locations.add(new PlayerLocationSnapshot(target, name, serverIdentity, currentWorldIdentity,
+                locations.add(new PlayerLocationSnapshot(publishedTarget, name, serverIdentity, currentWorldIdentity,
                         historical ? PlayerLocationSource.HISTORICAL : PlayerLocationSource.TRIANGULATED,
                         estimate.updatedAtMs(), estimate.updatedAtMs(),
                         estimate.x(), Double.NaN, estimate.z(), Double.NaN,
@@ -250,8 +277,13 @@ public final class MapLocationRuntime {
         if (duplexEstimates != null) {
             for (DuplexEstimate estimate : duplexEstimates.values()) {
                 if (estimate == null || estimate.targetUuid() == null) continue;
-                String name = names.getOrDefault(estimate.targetUuid(), "");
-                locations.add(new PlayerLocationSnapshot(estimate.targetUuid(), name, serverIdentity, currentWorldIdentity,
+                UUID target = estimate.targetUuid();
+                String name = names.getOrDefault(target, MapTriangulationConfig.get().nameForTarget(target));
+                UUID localByName = clean(name).isBlank()
+                        ? null : localIdsByName.get(clean(name).toLowerCase(Locale.ROOT));
+                UUID publishedTarget = localByName != null ? localByName : target;
+                if (publishedTarget.equals(self)) continue;
+                locations.add(new PlayerLocationSnapshot(publishedTarget, name, serverIdentity, currentWorldIdentity,
                         PlayerLocationSource.DUPLEX_TRIANGULATED,
                         estimate.observedAtMs(), estimate.observedAtMs(),
                         estimate.x(), Double.NaN, estimate.z(), Double.NaN,
@@ -261,7 +293,8 @@ public final class MapLocationRuntime {
             }
         }
 
-        return new Captured(List.copyOf(locations), Map.copyOf(names), Map.copyOf(idsByName), mapLink, locator);
+        return new Captured(List.copyOf(locations), Map.copyOf(names), Map.copyOf(idsByName),
+                Set.copyOf(localPlayerIds), mapLink, locator);
     }
 
     private void persist(String server,
@@ -285,6 +318,10 @@ public final class MapLocationRuntime {
             for (MapLinkObservation observation : captured.mapLink.observations()) {
                 UUID id = observation.resolvedUuid();
                 if (id == null || !observation.worldMapped()) continue;
+                UUID localByName = clean(observation.rawPlayerName()).isBlank()
+                        ? null : captured.idsByName.get(clean(observation.rawPlayerName()).toLowerCase(Locale.ROOT));
+                if (captured.localPlayerIds.contains(id)
+                        || (localByName != null && captured.localPlayerIds.contains(localByName))) continue;
                 if (!persistableIdentity(id, observation.rawPlayerName())) continue;
                 MapLinkProfileState state = captured.mapLink.profileStates().get(observation.profileId());
                 if (state == null || state.status() != MapLinkProfileStatus.LIVE) continue;
@@ -632,6 +669,7 @@ public final class MapLocationRuntime {
             List<PlayerLocationSnapshot> locations,
             Map<UUID, String> names,
             Map<String, UUID> idsByName,
+            Set<UUID> localPlayerIds,
             MapLinkSnapshot mapLink,
             List<LocatorObservation> locator
     ) {

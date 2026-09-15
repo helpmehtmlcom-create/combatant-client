@@ -23,6 +23,10 @@ in vec4 v_CombatantBaseColor;
 in vec2 v_CombatantLightCoord;
 in vec3 v_CombatantViewPosition;
 flat in uint v_CombatantMaterialParams;
+flat in uint v_CombatantMaterialData;
+flat in uint v_CombatantMaterialMeta;
+flat in uint v_CombatantMaterialSurface;
+in vec4 v_CombatantTangent;
 #endif
 
 uniform sampler2D u_BlockTex;
@@ -33,6 +37,7 @@ layout(location = 0) out vec4 fragColor;
 layout(location = 1) out vec4 combatantGbufferSurface;
 layout(location = 2) out vec4 combatantGbufferGeometry;
 layout(location = 3) out vec4 combatantGbufferAuxiliary;
+layout(location = 4) out vec4 combatantGbufferMaterial;
 #endif
 
 const uint COMBATANT_SURFACE_SOFT_FADE = 1u << 0u;
@@ -105,6 +110,15 @@ vec2 combatant_encode_octahedral(vec3 normal) {
 float combatant_encode_distance(float distanceValue) {
     return clamp((log2(1.0 + max(distanceValue, 0.0)) + 1.0) / 17.0, 1.0 / 255.0, 1.0);
 }
+
+vec4 combatant_unpack_unorm8x4(uint packed) {
+    return vec4(
+        float(packed & 255u),
+        float((packed >> 8u) & 255u),
+        float((packed >> 16u) & 255u),
+        float((packed >> 24u) & 255u)
+    ) / 255.0;
+}
 #endif
 
 void main() {
@@ -142,7 +156,9 @@ void main() {
     }
     vec3 albedo = texel.rgb * v_CombatantBaseColor.rgb;
     float material = float(v_CombatantMaterialParams & 255u) / 255.0;
-    combatantGbufferSurface = vec4(albedo, 1.0);
+    float vertexAo = float(v_CombatantMaterialMeta & 255u) / 255.0;
+    vec4 scalarMaterial = combatant_unpack_unorm8x4(v_CombatantMaterialSurface);
+    combatantGbufferSurface = vec4(albedo, max(vertexAo, 1.0 / 255.0));
     combatantGbufferGeometry = vec4(
         combatant_encode_octahedral(viewNormal),
         clamp(v_CombatantLightCoord, 0.0, 1.0)
@@ -153,5 +169,6 @@ void main() {
         clamp(fadeFactor, 0.0, 1.0),
         material
     );
+    combatantGbufferMaterial = scalarMaterial;
 #endif
 }

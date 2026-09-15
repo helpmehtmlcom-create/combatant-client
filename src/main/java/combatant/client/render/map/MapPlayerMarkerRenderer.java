@@ -11,7 +11,6 @@ import com.mojang.authlib.GameProfile;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.svg.SvgRenderOptions;
 import combatant.client.render.helpers.PlayerHeadRenderer;
 import combatant.client.util.player.PlayerSkinResolver;
 import net.minecraft.client.Minecraft;
@@ -32,9 +31,9 @@ public final class MapPlayerMarkerRenderer {
                              String sourceGlyph,
                              float size,
                              float alpha) {
-        float extent = drawMarker(centerX, centerY, playerUuid, playerName, accentArgb, sourceGlyph, size, alpha);
+        float extent = drawMarker(centerX, centerY, playerUuid, playerName, accentArgb, sourceGlyph, size, alpha, false);
         Renderer2D.flushBatch();
-        drawLabel(centerX, centerY, playerUuid, playerName, accentArgb, size, alpha);
+        drawLabel(centerX, centerY, playerUuid, playerName, accentArgb, size, alpha, false);
         return extent;
     }
 
@@ -47,33 +46,46 @@ public final class MapPlayerMarkerRenderer {
                                    String sourceGlyph,
                                    float size,
                                    float alpha) {
+        return drawMarker(centerX, centerY, playerUuid, playerName, accentArgb, sourceGlyph, size, alpha, false);
+    }
+
+    /**
+     * Compact production player marker. Source glyphs deliberately do not live on the head itself:
+     * source/freshness belongs to hover/context details, while the always-visible marker is only identity.
+     */
+    public static float drawMarker(float centerX,
+                                   float centerY,
+                                   UUID playerUuid,
+                                   String playerName,
+                                   int accentArgb,
+                                   String sourceGlyph,
+                                   float size,
+                                   float alpha,
+                                   boolean hovered) {
         alpha = clamp01(alpha);
         if (alpha <= 0.001f || size <= 0.0f) return 0.0f;
         String name = resolveDisplayName(playerUuid, playerName);
-        int accent = withAlpha(accentArgb, alpha);
         Identifier skin = resolveSkin(playerUuid, name);
-        float x = centerX - size * 0.5f;
-        float y = centerY - size * 0.5f;
-        float radius = Math.max(4.5f, size * 0.24f);
 
-        Renderer2D.COLOR.roundedRect(x - 1.4f, y - 1.4f, size + 2.8f, size + 2.8f,
-                radius + 1.4f, withAlpha(accentArgb, 0.23f * alpha));
-        PlayerHeadRenderer.drawRounded(null, x, y, size, radius, skin,
+        float visualSize = size + (hovered ? 2.0f : 0.0f);
+        float x = centerX - visualSize * 0.5f;
+        float y = centerY - visualSize * 0.5f;
+        float radius = Math.max(4.2f, visualSize * 0.24f);
+
+        // Relation is represented as a soft underlay rather than an outline/stroke. This keeps the
+        // head readable without turning every player into a bordered HUD card.
+        float halo = hovered ? 0.28f : 0.16f;
+        Renderer2D.COLOR.roundedRect(
+                x - 1.25f, y - 1.25f, visualSize + 2.5f, visualSize + 2.5f,
+                radius + 1.25f, withAlpha(accentArgb, halo * alpha));
+        Renderer2D.COLOR.roundedRect(
+                x, y, visualSize, visualSize, radius,
+                withAlpha(0xFF0B1016, (hovered ? 0.46f : 0.34f) * alpha));
+
+        PlayerHeadRenderer.drawRounded(null, x, y, visualSize, radius, skin,
                 new RenderColor(255, 255, 255, Math.round(255.0f * alpha)), true,
-                new RenderColor(accent), Math.max(0.85f, size * 0.045f), false);
-
-        if (sourceGlyph != null && !sourceGlyph.isBlank()) {
-            float badge = Math.max(9.0f, size * 0.33f);
-            float bx = x + size - badge * 0.72f;
-            float by = y + size - badge * 0.72f;
-            Renderer2D.COLOR.circle(bx + badge * 0.5f, by + badge * 0.5f, badge * 0.58f,
-                    withAlpha(0xFF091018, 0.92f * alpha));
-            Renderer2D.COLOR.circleStroke(bx + badge * 0.5f, by + badge * 0.5f, badge * 0.58f,
-                    0.8f, withAlpha(accentArgb, 0.9f * alpha));
-            Renderer2D.COLOR.svg(sourceGlyph, bx + 1.4f, by + 1.4f, badge - 2.8f, badge - 2.8f,
-                    SvgRenderOptions.overrideColor(withAlpha(accentArgb, alpha)));
-        }
-        return size * 0.5f;
+                null, 0.0f, false);
+        return visualSize * 0.5f;
     }
 
     /** Emits the identity plate above an already rendered marker. */
@@ -84,7 +96,18 @@ public final class MapPlayerMarkerRenderer {
                                  int accentArgb,
                                  float size,
                                  float alpha) {
-        drawLabel(centerX, centerY, playerUuid, playerName, "", accentArgb, size, alpha);
+        drawLabel(centerX, centerY, playerUuid, playerName, "", accentArgb, size, alpha, false);
+    }
+
+    public static void drawLabel(float centerX,
+                                 float centerY,
+                                 UUID playerUuid,
+                                 String playerName,
+                                 int accentArgb,
+                                 float size,
+                                 float alpha,
+                                 boolean hovered) {
+        drawLabel(centerX, centerY, playerUuid, playerName, "", accentArgb, size, alpha, hovered);
     }
 
     public static void drawLabel(float centerX,
@@ -95,27 +118,49 @@ public final class MapPlayerMarkerRenderer {
                                  int accentArgb,
                                  float size,
                                  float alpha) {
+        drawLabel(centerX, centerY, playerUuid, playerName, statusLabel, accentArgb, size, alpha, false);
+    }
+
+    /**
+     * Minimal name treatment: neutral matte pill, relation dot and the nickname only. Persistent
+     * source/stale text is intentionally omitted; it is available from the marker hover/context UI.
+     */
+    public static void drawLabel(float centerX,
+                                 float centerY,
+                                 UUID playerUuid,
+                                 String playerName,
+                                 String statusLabel,
+                                 int accentArgb,
+                                 float size,
+                                 float alpha,
+                                 boolean hovered) {
         alpha = clamp01(alpha);
         if (alpha <= 0.001f || size <= 0.0f) return;
         String name = resolveDisplayName(playerUuid, playerName);
         if (name.isBlank()) return;
-        String suffix = statusLabel == null ? "" : statusLabel.trim();
-        String label = suffix.isBlank() ? name : name + " · " + suffix;
 
-        float y = centerY - size * 0.5f;
-        float textSize = Math.max(10.5f, size * 0.39f);
-        float textW = ClickGuiRenderer.textWidth(ClickGuiRenderer.getOnestMedium(), label, textSize);
-        float padX = 5.5f;
-        float labelH = textSize + 5.0f;
-        float labelW = textW + padX * 2.0f;
+        float markerTop = centerY - (size + (hovered ? 2.0f : 0.0f)) * 0.5f;
+        float textSize = Math.max(10.0f, Math.min(11.2f, size * 0.375f));
+        float textW = ClickGuiRenderer.textWidth(ClickGuiRenderer.getOnestMedium(), name, textSize);
+        float dot = 3.0f;
+        float gap = 4.0f;
+        float padLeft = 5.0f;
+        float padRight = 5.5f;
+        float labelH = textSize + 4.6f;
+        float labelW = padLeft + dot + gap + textW + padRight;
         float labelX = centerX - labelW * 0.5f;
-        float labelY = y - labelH - 3.0f;
-        Renderer2D.COLOR.roundedRect(labelX, labelY, labelW, labelH, 5.5f,
-                withAlpha(accentArgb, 0.24f * alpha));
-        Renderer2D.COLOR.roundedRectStroke(labelX, labelY, labelW, labelH, 5.5f, 1.0f, 0.7f,
-                withAlpha(accentArgb, 0.72f * alpha));
-        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), label,
-                labelX + padX, labelY + 2.1f, textSize, withAlpha(0xFFF7FAFC, alpha), false);
+        float labelY = markerTop - labelH - 2.5f;
+
+        Renderer2D.COLOR.roundedRect(labelX, labelY, labelW, labelH, labelH * 0.36f,
+                withAlpha(0xFF0B1016, (hovered ? 0.82f : 0.68f) * alpha));
+        Renderer2D.COLOR.circle(labelX + padLeft + dot * 0.5f,
+                labelY + labelH * 0.5f, dot * 0.5f,
+                withAlpha(accentArgb, (hovered ? 1.0f : 0.88f) * alpha));
+        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), name,
+                labelX + padLeft + dot + gap,
+                labelY + 1.95f,
+                textSize,
+                withAlpha(0xFFF4F7FA, alpha), false);
     }
 
     /** Resolve the visible player identity centrally so every map source gets the same label. */
