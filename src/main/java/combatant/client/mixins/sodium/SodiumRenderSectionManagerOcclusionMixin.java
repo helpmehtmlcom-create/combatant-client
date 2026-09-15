@@ -7,8 +7,9 @@
 
 package combatant.client.mixins.sodium;
 
-import combatant.client.features.module.Modules;
-import combatant.client.features.module.modules.visuals.Freecam;
+import com.llamalad7.mixinextras.sugar.Local;
+import combatant.client.util.render.CameraOcclusionPolicy;
+import net.minecraft.client.Camera;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
@@ -16,7 +17,7 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 
 @Pseudo
 @Mixin(targets = "net.caffeinemc.mods.sodium.client.render.SodiumWorldRenderer", remap = false)
-public abstract class SodiumWorldRendererFreecamMixin {
+public abstract class SodiumRenderSectionManagerOcclusionMixin {
 
     @ModifyVariable(
             method = "setupTerrain(Lnet/minecraft/client/Camera;Lnet/caffeinemc/mods/sodium/client/render/viewport/Viewport;Lnet/caffeinemc/mods/sodium/client/util/FogParameters;ZZLorg/joml/Matrix4f;)V",
@@ -24,10 +25,11 @@ public abstract class SodiumWorldRendererFreecamMixin {
             argsOnly = true,
             ordinal = 0
     )
-    private boolean combatant$freecamDisablesSectionOcclusion(boolean useOcclusionCulling) {
+    private boolean combatant$disableInsideBlockSectionOcclusion(
+            boolean useOcclusionCulling,
+            @Local(argsOnly = true) Camera camera
+    ) {
         if (!useOcclusionCulling) return false;
-
-        Freecam freecam = Modules.get(Freecam.class);
-        return freecam == null || !freecam.isEnabled() || freecam.camEntity == null;
+        return !CameraOcclusionPolicy.shouldDisableSectionOcclusion(camera);
     }
 }

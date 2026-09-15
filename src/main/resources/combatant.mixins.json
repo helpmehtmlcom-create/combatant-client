@@ -182,6 +182,7 @@
     "sodium.SodiumDefaultChunkRendererMixin",
     "sodium.SodiumQueuedSectionStorageMixin",
     "sodium.SodiumRenderSectionManagerAccessor",
+    "sodium.SodiumRenderSectionManagerOcclusionMixin",
     "sodium.SodiumSortedRenderListsInvoker",
     "sodium.SodiumShaderChunkRendererMixin",
     "sodium.SodiumVertexConsumerTrackerMixin",
