@@ -87,6 +87,7 @@ final class DeferredBackendPasses implements AutoCloseable {
     private final DeferredShadowResolveSource shadowResolve = new DeferredShadowResolveSource();
     private final DeferredContactShadowSource contactShadows = new DeferredContactShadowSource();
     private final DeferredAmbientOcclusionSource ambientOcclusion = new DeferredAmbientOcclusionSource();
+    private final DeferredColoredBlockLightSource coloredBlockLight = new DeferredColoredBlockLightSource();
     private final DeferredEnvironmentIrradianceSource environmentIrradiance = new DeferredEnvironmentIrradianceSource();
     private final DeferredSceneRadianceSource sceneRadiance = new DeferredSceneRadianceSource();
     private final DeferredIndirectLightSource indirectLight = new DeferredIndirectLightSource();
@@ -103,7 +104,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         passes.add(DeferredPassSpec.builder("world.shadow.cascades", DeferredStage.SHADOW_PREPARE)
                 .when(context -> context.settings().shadowsEnabled()
                         && context.primaryView().current() != null
-                        && context.primaryView().current().hasSunAngle())
+                        && context.worldState().directionalLight().shadowValid())
                 .execute(shadowCascades::prepare)
                 .build());
         passes.add(DeferredPassSpec.builder("world.shadow.map", DeferredStage.SHADOW_MAP)
@@ -170,6 +171,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         shadowResolve.install(passes);
         contactShadows.install(passes);
         ambientOcclusion.install(passes);
+        coloredBlockLight.install(passes);
         environmentIrradiance.install(passes);
         sceneRadiance.install(passes);
         indirectLight.install(passes);
@@ -194,6 +196,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         shadowResolve.prepare(rhi);
         contactShadows.prepare(rhi);
         ambientOcclusion.prepare(rhi);
+        coloredBlockLight.prepare(rhi);
         environmentIrradiance.prepare(rhi);
         sceneRadiance.prepare(rhi);
         indirectLight.prepare(rhi);
@@ -214,6 +217,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         shadowResolve.release(releaseOwner);
         contactShadows.release(releaseOwner);
         ambientOcclusion.release(releaseOwner);
+        coloredBlockLight.release(releaseOwner);
         environmentIrradiance.release(releaseOwner);
         sceneRadiance.release(releaseOwner);
         indirectLight.release(releaseOwner);
@@ -356,6 +360,8 @@ final class DeferredBackendPasses implements AutoCloseable {
             shadowResolve.release(previous);
             contactShadows.release(previous);
             ambientOcclusion.release(previous);
+            coloredBlockLight.release(previous);
+            environmentIrradiance.release(previous);
             sceneRadiance.release(previous);
             indirectLight.release(previous);
             reflectionCascades.release(previous);

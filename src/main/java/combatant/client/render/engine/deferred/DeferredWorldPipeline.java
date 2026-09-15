@@ -26,6 +26,7 @@ import combatant.client.render.engine.rhi.FullscreenDrawCommand;
 import combatant.client.render.engine.rhi.resource.RenderResourceManager;
 import combatant.client.render.engine.rhi.resource.TransientTargetDescriptor;
 import combatant.client.render.engine.uniform.impl.DeferredLightingUniforms;
+import combatant.client.render.engine.world.WorldRenderState;
 import combatant.client.util.logging.DebugLog;
 import combatant.client.util.resources.asset.AssetAutoLoader;
 import org.jetbrains.annotations.Nullable;
@@ -89,6 +90,8 @@ public final class DeferredWorldPipeline {
     private final DeferredResourceBindings resourceBindings = new DeferredResourceBindings(physicalResources);
     private final DeferredSecondaryViewRegistry secondaryViews = new DeferredSecondaryViewRegistry();
     private final DeferredPrimaryViewSource primaryView = new DeferredPrimaryViewSource();
+    private final DeferredWorldRenderStateSource worldStateSource = new DeferredWorldRenderStateSource();
+    private WorldRenderState worldRenderState = WorldRenderState.unknown(0L);
 
     public boolean enabled() {
         return lifecycleState == LifecycleState.ACTIVE;
@@ -176,6 +179,8 @@ public final class DeferredWorldPipeline {
         try {
             AssetAutoLoader.activate(DeferredRuntimeAssets.SCOPE, minecraft.getResourceManager());
             primaryView.reset();
+            worldStateSource.reset();
+            worldRenderState = worldStateSource.current();
             physicalResources.reset();
             geometryPipelineGeneration++;
             lifecycleState = LifecycleState.ACTIVE;
@@ -252,6 +257,8 @@ public final class DeferredWorldPipeline {
         geometryPipelineGeneration++;
         releasePhysicalResources();
         primaryView.reset();
+        worldStateSource.reset();
+        worldRenderState = worldStateSource.current();
         try {
             if (AssetAutoLoader.isScopeActive(DeferredRuntimeAssets.SCOPE)) {
                 AssetAutoLoader.deactivate(DeferredRuntimeAssets.SCOPE, minecraft.getResourceManager());
@@ -429,7 +436,7 @@ public final class DeferredWorldPipeline {
             boolean zeroToOneDepth = CombatantRenderSystem.rhi().capabilities().backendName() != null
                     && CombatantRenderSystem.rhi().capabilities().backendName().toLowerCase(Locale.ROOT).contains("vulkan");
             DeferredLightingUniforms.update(
-                    state, primaryView.current(), zeroToOneDepth, shadowValid, ambientOcclusionValid
+                    state, worldRenderState, primaryView.current(), zeroToOneDepth, shadowValid, ambientOcclusionValid
             );
 
             // Keep direct terrain lighting in a Combatant-owned HDR target. Publishing it into the
@@ -527,6 +534,8 @@ public final class DeferredWorldPipeline {
         if (worldOwner != currentWorld) {
             physicalResources.reset();
             primaryView.beginWorld(currentWorld);
+            worldStateSource.reset();
+            worldRenderState = worldStateSource.current();
             worldOwner = currentWorld;
             frameStateId = Long.MIN_VALUE;
             targetFrameId = Long.MIN_VALUE;
@@ -547,6 +556,7 @@ public final class DeferredWorldPipeline {
         }
         frameSettings = DeferredRuntimeConfig.current();
         frameSettingsGeneration = DeferredRuntimeConfig.generation();
+        worldRenderState = worldStateSource.capture(Minecraft.getInstance().level, primaryView.current());
         if (temporalPolicyGeneration != Long.MIN_VALUE && temporalPolicyGeneration != frameSettingsGeneration) {
             primaryView.invalidateHistory(frameId, DeferredHistoryResetReason.POLICY_CHANGE);
         }
@@ -687,10 +697,17 @@ public final class DeferredWorldPipeline {
         preGeometryExecuted = false;
         postGeometryExecuted = false;
         primaryView.reset();
+        worldStateSource.reset();
+        worldRenderState = worldStateSource.current();
     }
 
     public DeferredPrimaryViewSource primaryView() {
         return primaryView;
+    }
+
+    /** Explicit semantic world contract frozen for the current deferred frame. */
+    public WorldRenderState worldRenderState() {
+        return worldRenderState;
     }
 
     /** Exact matrices are injected before LevelRenderer/Sodium world submission. */
@@ -713,7 +730,7 @@ public final class DeferredWorldPipeline {
         resourceBindings.setHistoryEpoch(primaryView.historyDescriptor().epoch());
         CombatantRenderSystem.deferredGraph().execute(
                 stage, CombatantRenderSystem.ensureFrameContext(), resourceBindings, secondaryViews, primaryView,
-                frameSettings
+                worldRenderState, frameSettings
         );
     }
 
@@ -834,10 +851,7 @@ public final class DeferredWorldPipeline {
             float environmentalFogStart,
             float environmentalFogEnd,
             float renderFogStart,
-            float renderFogEnd,
-            float directionalRed,
-            float directionalGreen,
-            float directionalBlue
+            float renderFogEnd
     ) {
     }
 }

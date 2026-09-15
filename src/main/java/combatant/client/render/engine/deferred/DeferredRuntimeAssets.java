@@ -21,6 +21,7 @@ import combatant.client.render.engine.shader.CombatantShaderSources;
 import combatant.client.render.engine.shader.ShaderCostRegistry;
 import combatant.client.render.engine.vertex.CombatantVertexFormats;
 import combatant.client.util.logging.DebugLog;
+import combatant.client.render.engine.light.BlockLightEmitterRegistry;
 import combatant.client.util.resources.asset.AssetAutoLoader;
 import combatant.client.util.resources.asset.AssetLoad;
 import combatant.client.util.resources.asset.AssetLoadPhase;
@@ -105,6 +106,7 @@ public enum DeferredRuntimeAssets {
     private static void prepare(ResourceManager resources, boolean rebuildNativePrograms) {
         if (resources == null) throw new IllegalArgumentException("resources");
         RenderSystem.assertOnRenderThread();
+        BlockLightEmitterRegistry.global().reload(resources);
 
         if (terrainLighting == null) {
             terrainLighting = new ExtendedRenderPipelineBuilder(CombatantRenderPipelines.meshUniforms())

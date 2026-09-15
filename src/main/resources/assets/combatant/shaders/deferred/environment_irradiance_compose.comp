@@ -10,7 +10,8 @@
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(binding = 0) uniform sampler2D u_SkyDiffuseIrradiance;
-layout(binding = 1, rgba16f) writeonly uniform image2D u_EnvironmentIrradiance;
+layout(binding = 1) uniform sampler2D u_BlockLightIrradiance;
+layout(binding = 2, rgba16f) writeonly uniform image2D u_EnvironmentIrradiance;
 
 void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
@@ -19,8 +20,9 @@ void main() {
 
     vec2 uv = (vec2(pixel) + vec2(0.5)) / vec2(size);
     vec3 sky = max(textureLod(u_SkyDiffuseIrradiance, uv, 0.0).rgb, vec3(0.0));
+    vec3 blockLight = max(textureLod(u_BlockLightIrradiance, uv, 0.0).rgb, vec3(0.0));
 
-    // Stable combination boundary. Future neutral producers (colored block-light volume, probes)
-    // add incoming irradiance here without changing the deferred BRDF consumer.
-    imageStore(u_EnvironmentIrradiance, pixel, vec4(sky, 1.0));
+    // Stable neutral combination boundary. Sky and Minecraft block-light are independent incoming
+    // irradiance producers; neither changes BRDF semantics or infers light from rendered color.
+    imageStore(u_EnvironmentIrradiance, pixel, vec4(sky + blockLight, 1.0));
 }

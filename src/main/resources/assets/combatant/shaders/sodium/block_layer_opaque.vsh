@@ -129,7 +129,9 @@ void main() {
 
     gl_Position = u_ProjectionMatrix * viewPosition;
 
-#ifdef COMBATANT_SHADOW_PASS
+#if defined(COMBATANT_SHADOW_PASS) || defined(COMBATANT_DEFERRED_GBUFFER)
+    // Deferred G-buffer stores material/base tint only. Vanilla lightmap is a lighting result and
+    // must not be baked into albedo before Combatant's renderer-owned lighting stage.
     v_Color = _vert_color;
 #else
     v_Color = _vert_color * texture(u_LightTex, _vert_tex_light_coord);

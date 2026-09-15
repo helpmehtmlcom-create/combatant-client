@@ -12,6 +12,7 @@ import com.mojang.blaze3d.textures.FilterMode;
 import com.mojang.blaze3d.textures.GpuSampler;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import combatant.client.render.engine.rhi.CombatantRhi;
+import combatant.client.render.engine.world.DirectionalLightDescriptor;
 import combatant.client.render.engine.rhi.shader.ComputeDispatchCommand;
 import combatant.client.render.engine.rhi.shader.ComputePipelineDescriptor;
 import combatant.client.render.engine.rhi.shader.RhiComputePipeline;
@@ -72,7 +73,7 @@ final class DeferredContactShadowSource implements AutoCloseable {
                 .when(context -> context.settings().shadowsEnabled()
                         && context.settings().contactShadowsEnabled()
                         && context.primaryView().current() != null
-                        && context.primaryView().current().hasSunAngle()
+                        && context.worldState().directionalLight().shadowValid()
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
                         && context.isValid(DeferredResource.DEPTH_PYRAMID)
                         && context.resources().texture(DeferredResource.GBUFFER_GEOMETRY) != null)
@@ -95,18 +96,15 @@ final class DeferredContactShadowSource implements AutoCloseable {
     private void trace(DeferredPassContext context) {
         ensureOwner(context.rhi());
         DeferredPrimaryViewSource.FrameView current = context.primaryView().current();
-        if (current == null || !current.hasSunAngle()) return;
+        DirectionalLightDescriptor directional = context.worldState().directionalLight();
+        if (current == null || !directional.shadowValid()) return;
 
         GpuTextureView depth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
         GpuTextureView pyramid = requireTexture(context, DeferredResource.DEPTH_PYRAMID);
         GpuTextureView geometry = requireTexture(context, DeferredResource.GBUFFER_GEOMETRY);
         RhiStorageImage output = requireImage(context, DeferredResource.CONTACT_SHADOW);
 
-        Vector3f worldLight = new Vector3f(
-                (float) -Math.sin(current.sunAngle()),
-                (float) Math.cos(current.sunAngle()),
-                0.0f
-        ).normalize();
+        Vector3f worldLight = directional.direction(new Vector3f());
         Vector3f viewLight = transformDirection(current.view(), worldLight, new Vector3f()).normalize();
         DeferredRuntimeConfig.Snapshot settings = context.settings();
         boolean zeroToOne = isVulkan(context);

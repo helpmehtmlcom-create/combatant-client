@@ -22,7 +22,6 @@ import net.caffeinemc.mods.sodium.client.render.chunk.lists.SortedRenderLists;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.DefaultTerrainRenderPasses;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.TerrainRenderPass;
 import net.caffeinemc.mods.sodium.client.util.FogParameters;
-import net.minecraft.client.Minecraft;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -66,16 +65,10 @@ public abstract class SodiumWorldRendererTerrainMixin {
                                              CallbackInfo ci) {
         if (SodiumSecondaryTerrainContext.active()) return;
         if (pass == DefaultTerrainRenderPasses.CUTOUT && CombatantRenderSystem.deferredWorld().enabled()) {
-            Minecraft minecraft = Minecraft.getInstance();
-            float directional = 0.0f;
-            if (minecraft.level != null) {
-                directional = Math.max(0.0f, Math.min(1.0f, 1.0f - minecraft.level.getSkyDarken() / 15.0f));
-            }
             DeferredWorldPipeline.LightingState lighting = new DeferredWorldPipeline.LightingState(
                     fog.red(), fog.green(), fog.blue(), fog.alpha(),
                     fog.environmentalStart(), fog.environmentalEnd(),
-                    fog.renderStart(), fog.renderEnd(),
-                    directional, directional, directional
+                    fog.renderStart(), fog.renderEnd()
             );
             CombatantRenderSystem.deferredWorld().resolveLighting(
                     pass.getTarget().getColorTextureView(),

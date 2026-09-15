@@ -34,12 +34,12 @@ import java.util.List;
  * <p>The current sky fallback deliberately emits zero irradiance instead of reconstructing ambient
  * light from Minecraft's lightmap. A future atmosphere/sky producer can write
  * {@link DeferredResource#SKY_DIFFUSE_IRRADIANCE}; the compose pass remains the stable hand-off to
- * deferred lighting and is where additional environment sources (for example a colored block-light
- * volume) are combined later.</p>
+ * deferred lighting. Renderer-owned sky and colored block-light producers are combined here without
+ * changing BRDF semantics; later probes/sky implementations can extend the same boundary.</p>
  */
 final class DeferredEnvironmentIrradianceSource implements AutoCloseable {
     private static final int LOCAL_SIZE = 8;
-    private static final Identifier SKY_FALLBACK_SHADER = id("deferred/environment_sky_fallback");
+    private static final Identifier ZERO_IRRADIANCE_SHADER = id("deferred/environment_zero_irradiance");
     private static final Identifier ENVIRONMENT_COMPOSE_SHADER = id("deferred/environment_irradiance_compose");
 
     private static final ShaderResourceLayout SKY_FALLBACK_LAYOUT = new ShaderResourceLayout(List.of(
@@ -47,11 +47,12 @@ final class DeferredEnvironmentIrradianceSource implements AutoCloseable {
     ));
     private static final ShaderResourceLayout ENVIRONMENT_COMPOSE_LAYOUT = new ShaderResourceLayout(List.of(
             new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
-            new ShaderResourceSlot(1, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY)
+            new ShaderResourceSlot(1, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(2, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY)
     ));
 
     private CombatantRhi owner;
-    private RhiComputePipeline skyFallbackPipeline;
+    private RhiComputePipeline zeroIrradiancePipeline;
     private RhiComputePipeline environmentComposePipeline;
 
     void install(ArrayList<DeferredPassSpec> passes) {
@@ -62,19 +63,28 @@ final class DeferredEnvironmentIrradianceSource implements AutoCloseable {
                 .when(context -> !context.isValid(DeferredResource.SKY_DIFFUSE_IRRADIANCE))
                 .execute(this::writeNeutralSkyFallback)
                 .build());
+        passes.add(DeferredPassSpec.builder("world.environment.block-light.fallback", DeferredStage.PRE_LIGHTING)
+                .priority(950)
+                .write(DeferredResource.BLOCK_LIGHT_IRRADIANCE)
+                .requires(RhiShaderStage.COMPUTE)
+                .when(context -> !context.isValid(DeferredResource.BLOCK_LIGHT_IRRADIANCE))
+                .execute(context -> writeZeroIrradiance(context, DeferredResource.BLOCK_LIGHT_IRRADIANCE,
+                        "Combatant neutral block-light irradiance fallback"))
+                .build());
         passes.add(DeferredPassSpec.builder("world.environment.irradiance.compose", DeferredStage.PRE_LIGHTING)
                 .priority(1000)
-                .read(DeferredResource.SKY_DIFFUSE_IRRADIANCE)
+                .read(DeferredResource.SKY_DIFFUSE_IRRADIANCE, DeferredResource.BLOCK_LIGHT_IRRADIANCE)
                 .write(DeferredResource.ENVIRONMENT_IRRADIANCE)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.isValid(DeferredResource.SKY_DIFFUSE_IRRADIANCE))
+                .when(context -> context.isValid(DeferredResource.SKY_DIFFUSE_IRRADIANCE)
+                        && context.isValid(DeferredResource.BLOCK_LIGHT_IRRADIANCE))
                 .execute(this::composeEnvironment)
                 .build());
     }
 
     void prepare(CombatantRhi rhi) {
         ensureOwner(rhi);
-        skyFallbackPipeline();
+        zeroIrradiancePipeline();
         environmentComposePipeline();
     }
 
@@ -85,11 +95,15 @@ final class DeferredEnvironmentIrradianceSource implements AutoCloseable {
     }
 
     private void writeNeutralSkyFallback(DeferredPassContext context) {
+        writeZeroIrradiance(context, DeferredResource.SKY_DIFFUSE_IRRADIANCE,
+                "Combatant neutral sky irradiance fallback");
+    }
+
+    private void writeZeroIrradiance(DeferredPassContext context, DeferredResource resource, String label) {
         ensureOwner(context.rhi());
-        RhiStorageImage output = requireImage(context, DeferredResource.SKY_DIFFUSE_IRRADIANCE);
+        RhiStorageImage output = requireImage(context, resource);
         context.advancedShaders().dispatch(new ComputeDispatchCommand(
-                "Combatant neutral sky irradiance fallback",
-                skyFallbackPipeline(),
+                label, zeroIrradiancePipeline(),
                 groups(output.descriptor().width()), groups(output.descriptor().height()), 1,
                 List.of(), List.of(),
                 List.of(new StorageImageBinding(0, output, StorageAccess.WRITE_ONLY))
@@ -99,6 +113,7 @@ final class DeferredEnvironmentIrradianceSource implements AutoCloseable {
     private void composeEnvironment(DeferredPassContext context) {
         ensureOwner(context.rhi());
         GpuTextureView sky = requireTexture(context, DeferredResource.SKY_DIFFUSE_IRRADIANCE);
+        GpuTextureView blockLight = requireTexture(context, DeferredResource.BLOCK_LIGHT_IRRADIANCE);
         RhiStorageImage output = requireImage(context, DeferredResource.ENVIRONMENT_IRRADIANCE);
         GpuSampler linear = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
         context.advancedShaders().dispatch(new ComputeDispatchCommand(
@@ -106,8 +121,11 @@ final class DeferredEnvironmentIrradianceSource implements AutoCloseable {
                 environmentComposePipeline(),
                 groups(output.descriptor().width()), groups(output.descriptor().height()), 1,
                 List.of(),
-                List.of(new SampledTextureBinding(0, sky, linear)),
-                List.of(new StorageImageBinding(1, output, StorageAccess.WRITE_ONLY))
+                List.of(
+                        new SampledTextureBinding(0, sky, linear),
+                        new SampledTextureBinding(1, blockLight, linear)
+                ),
+                List.of(new StorageImageBinding(2, output, StorageAccess.WRITE_ONLY))
         ));
     }
 
@@ -117,14 +135,14 @@ final class DeferredEnvironmentIrradianceSource implements AutoCloseable {
         owner = rhi;
     }
 
-    private RhiComputePipeline skyFallbackPipeline() {
+    private RhiComputePipeline zeroIrradiancePipeline() {
         if (owner == null) throw new IllegalStateException("Environment irradiance source has no RHI owner");
-        if (skyFallbackPipeline == null) {
-            skyFallbackPipeline = owner.advancedShaders().createComputePipeline(new ComputePipelineDescriptor(
-                    "combatant-environment-sky-fallback", SKY_FALLBACK_SHADER, SKY_FALLBACK_LAYOUT
+        if (zeroIrradiancePipeline == null) {
+            zeroIrradiancePipeline = owner.advancedShaders().createComputePipeline(new ComputePipelineDescriptor(
+                    "combatant-environment-zero-irradiance", ZERO_IRRADIANCE_SHADER, SKY_FALLBACK_LAYOUT
             ));
         }
-        return skyFallbackPipeline;
+        return zeroIrradiancePipeline;
     }
 
     private RhiComputePipeline environmentComposePipeline() {
@@ -138,9 +156,9 @@ final class DeferredEnvironmentIrradianceSource implements AutoCloseable {
     }
 
     private void closeOwned() {
-        if (skyFallbackPipeline != null) {
-            try { skyFallbackPipeline.close(); } catch (Throwable ignored) { }
-            skyFallbackPipeline = null;
+        if (zeroIrradiancePipeline != null) {
+            try { zeroIrradiancePipeline.close(); } catch (Throwable ignored) { }
+            zeroIrradiancePipeline = null;
         }
         if (environmentComposePipeline != null) {
             try { environmentComposePipeline.close(); } catch (Throwable ignored) { }

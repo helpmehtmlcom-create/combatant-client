@@ -1,0 +1,24 @@
+{
+  "emitters": [
+    { "block": "minecraft:torch", "color": [1.0, 0.76, 0.48] },
+    { "block": "minecraft:wall_torch", "color": [1.0, 0.76, 0.48] },
+    { "block": "minecraft:lantern", "color": [1.0, 0.78, 0.52] },
+    { "block": "minecraft:campfire", "color": [1.0, 0.70, 0.38] },
+    { "block": "minecraft:fire", "color": [1.0, 0.62, 0.28] },
+    { "block": "minecraft:soul_torch", "color": [0.35, 0.88, 1.0] },
+    { "block": "minecraft:soul_wall_torch", "color": [0.35, 0.88, 1.0] },
+    { "block": "minecraft:soul_lantern", "color": [0.35, 0.88, 1.0] },
+    { "block": "minecraft:soul_campfire", "color": [0.35, 0.88, 1.0] },
+    { "block": "minecraft:soul_fire", "color": [0.35, 0.88, 1.0] },
+    { "block": "minecraft:redstone_torch", "color": [1.0, 0.16, 0.08] },
+    { "block": "minecraft:redstone_wall_torch", "color": [1.0, 0.16, 0.08] },
+    { "block": "minecraft:glowstone", "color": [1.0, 0.84, 0.60] },
+    { "block": "minecraft:shroomlight", "color": [1.0, 0.63, 0.34] },
+    { "block": "minecraft:sea_lantern", "color": [0.72, 0.94, 1.0] },
+    { "block": "minecraft:end_rod", "color": [0.92, 0.92, 1.0] },
+    { "block": "minecraft:ochre_froglight", "color": [1.0, 0.87, 0.58] },
+    { "block": "minecraft:verdant_froglight", "color": [0.70, 1.0, 0.72] },
+    { "block": "minecraft:pearlescent_froglight", "color": [1.0, 0.70, 0.96] },
+    { "block": "minecraft:lava", "color": [1.0, 0.32, 0.08] }
+  ]
+}

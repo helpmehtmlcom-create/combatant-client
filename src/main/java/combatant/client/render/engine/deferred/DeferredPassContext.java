@@ -10,6 +10,7 @@ package combatant.client.render.engine.deferred;
 import combatant.client.render.engine.core.RenderFrameContext;
 import combatant.client.render.engine.rhi.CombatantRhi;
 import combatant.client.render.engine.rhi.shader.AdvancedShaderBackend;
+import combatant.client.render.engine.world.WorldRenderState;
 
 public record DeferredPassContext(
         DeferredStage stage,
@@ -18,9 +19,11 @@ public record DeferredPassContext(
         DeferredResourceBindings resources,
         DeferredSecondaryViewRegistry secondaryViews,
         DeferredPrimaryViewSource primaryView,
+        WorldRenderState worldState,
         DeferredRuntimeConfig.Snapshot settings
 ) {
     public DeferredPassContext {
+        if (worldState == null) worldState = WorldRenderState.unknown(0L);
         if (settings == null) settings = DeferredRuntimeConfig.current();
     }
 

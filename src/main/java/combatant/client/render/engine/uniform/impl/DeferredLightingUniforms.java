@@ -13,6 +13,8 @@ import com.mojang.blaze3d.buffers.Std140SizeCalculator;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.deferred.DeferredPrimaryViewSource;
 import combatant.client.render.engine.deferred.DeferredWorldPipeline;
+import combatant.client.render.engine.world.DirectionalLightDescriptor;
+import combatant.client.render.engine.world.WorldRenderState;
 import combatant.client.render.engine.rhi.uniform.CombatantUniformAllocator;
 import org.joml.Matrix4f;
 
@@ -32,11 +34,13 @@ public enum DeferredLightingUniforms {
     private static final Data DATA = new Data();
 
     public static void update(DeferredWorldPipeline.LightingState state,
+                              WorldRenderState worldState,
                               DeferredPrimaryViewSource.FrameView view,
                               boolean zeroToOneDepth,
                               boolean shadowValid,
                               boolean ambientOcclusionValid) {
         DATA.state = state;
+        DATA.worldState = worldState;
         DATA.view = view;
         DATA.zeroToOneDepth = zeroToOneDepth;
         DATA.shadowValid = shadowValid;
@@ -50,6 +54,7 @@ public enum DeferredLightingUniforms {
 
     private static final class Data implements CombatantUniformAllocator.UniformWriter {
         private DeferredWorldPipeline.LightingState state;
+        private WorldRenderState worldState;
         private DeferredPrimaryViewSource.FrameView view;
         private boolean zeroToOneDepth;
         private boolean shadowValid;
@@ -58,23 +63,27 @@ public enum DeferredLightingUniforms {
         @Override
         public void write(java.nio.ByteBuffer buffer) {
             Matrix4f inverseProjection = view != null ? view.inverseProjection() : new Matrix4f();
-            float lightX = 0.0f;
-            float lightY = 1.0f;
-            float lightZ = 0.0f;
-            boolean directionalValid = false;
-            if (view != null && view.hasSunAngle()) {
-                float worldX = (float) -Math.sin(view.sunAngle());
-                float worldY = (float) Math.cos(view.sunAngle());
-                directionalValid = worldY > 0.0f;
+            DirectionalLightDescriptor directional = worldState != null
+                    ? worldState.directionalLight() : DirectionalLightDescriptor.NONE;
+            float lightX = directional.directionX();
+            float lightY = directional.directionY();
+            float lightZ = directional.directionZ();
+            boolean directionalValid = directional.valid();
+            if (directionalValid && view != null) {
                 Matrix4f matrix = view.view();
-                lightX = matrix.m00() * worldX + matrix.m10() * worldY;
-                lightY = matrix.m01() * worldX + matrix.m11() * worldY;
-                lightZ = matrix.m02() * worldX + matrix.m12() * worldY;
+                float worldX = lightX;
+                float worldY = lightY;
+                float worldZ = lightZ;
+                lightX = matrix.m00() * worldX + matrix.m10() * worldY + matrix.m20() * worldZ;
+                lightY = matrix.m01() * worldX + matrix.m11() * worldY + matrix.m21() * worldZ;
+                lightZ = matrix.m02() * worldX + matrix.m12() * worldY + matrix.m22() * worldZ;
                 float length = (float) Math.sqrt(lightX * lightX + lightY * lightY + lightZ * lightZ);
                 if (length > 1.0e-6f) {
                     lightX /= length;
                     lightY /= length;
                     lightZ /= length;
+                } else {
+                    directionalValid = false;
                 }
             }
 
@@ -84,7 +93,8 @@ public enum DeferredLightingUniforms {
                     .putVec4(state.environmentalFogStart(), state.environmentalFogEnd(),
                             state.renderFogStart(), state.renderFogEnd())
                     .putVec4(lightX, lightY, lightZ, directionalValid ? 1.0f : 0.0f)
-                    .putVec4(state.directionalRed(), state.directionalGreen(), state.directionalBlue(), 0.0f)
+                    .putVec4(directional.radianceRed(), directional.radianceGreen(), directional.radianceBlue(),
+                            directional.angularRadiusRadians())
                     .putVec4(
                             zeroToOneDepth ? 1.0f : 2.0f,
                             zeroToOneDepth ? 0.0f : -1.0f,

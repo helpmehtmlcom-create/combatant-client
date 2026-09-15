@@ -7,6 +7,7 @@
 
 package combatant.client.render.engine.deferred;
 
+import combatant.client.render.engine.world.DirectionalLightDescriptor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
@@ -17,7 +18,7 @@ import org.joml.Vector3f;
  * Frame-local directional-light cascade source.
  *
  * <p>This is geometry preparation, not a shadow renderer: it turns the authoritative primary
- * camera and Minecraft sun state into stable secondary view/projection contracts. A later
+ * camera and explicit directional-light state into stable secondary view/projection contracts. A later
  * SHADOW_MAP producer can render those views into an atlas/array without reconstructing camera
  * state or owning cascade split policy itself.</p>
  */
@@ -28,7 +29,8 @@ final class DeferredShadowCascadeSource {
 
     void prepare(DeferredPassContext context) {
         DeferredPrimaryViewSource.FrameView primary = context.primaryView().current();
-        if (primary == null || !primary.hasSunAngle()) return;
+        DirectionalLightDescriptor directional = context.worldState().directionalLight();
+        if (primary == null || !directional.shadowValid()) return;
 
         int cascadeCount = context.settings().shadowCascadeCount();
         float farDistance = primary.farPlane();
@@ -53,11 +55,7 @@ final class DeferredShadowCascadeSource {
 
         Matrix4f inverseView = primary.inverseView();
         Matrix4f projection = primary.projection();
-        Vector3f lightDirection = new Vector3f(
-                (float) -Math.sin(primary.sunAngle()),
-                (float) Math.cos(primary.sunAngle()),
-                0.0f
-        ).normalize();
+        Vector3f lightDirection = directional.direction(new Vector3f());
 
         int resolution = context.settings().shadowResolution();
         float blendFraction = context.settings().shadowCascadeBlendFraction();

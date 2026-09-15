@@ -494,7 +494,14 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
             return GL42C.GL_ALL_BARRIER_BITS;
         }
         int bits = GL43C.GL_SHADER_STORAGE_BARRIER_BIT;
-        if (!barrier.images().isEmpty()) bits |= GL42C.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT;
+        if (!barrier.images().isEmpty()) {
+            bits |= GL42C.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT;
+            if (barrier.destinationAccess() != RhiResourceBarrier.Access.WRITE) {
+                // Storage images frequently re-enter compute as sampled textures (ping-pong,
+                // denoise, clipmaps). Image-access visibility alone does not cover texture fetches.
+                bits |= GL42C.GL_TEXTURE_FETCH_BARRIER_BIT;
+            }
+        }
         switch (barrier.destinationStage()) {
             case INDIRECT -> bits |= GL42C.GL_COMMAND_BARRIER_BIT;
             case TRANSFER -> bits |= GL42C.GL_BUFFER_UPDATE_BARRIER_BIT;

@@ -20,6 +20,7 @@ import combatant.client.render.engine.rhi.shader.RhiResourceBarrier;
 import combatant.client.render.engine.rhi.shader.RhiStorageBuffer;
 import combatant.client.render.engine.rhi.shader.RhiStorageImage;
 import combatant.client.render.engine.rhi.shader.RhiShaderStage;
+import combatant.client.render.engine.world.WorldRenderState;
 import combatant.client.util.logging.DebugLog;
 
 import java.util.ArrayList;
@@ -105,7 +106,8 @@ public final class DeferredPassGraph {
     }
 
     public void execute(DeferredStage stage, RenderFrameContext frame, DeferredResourceBindings resources) {
-        execute(stage, frame, resources, new DeferredSecondaryViewRegistry(), new DeferredPrimaryViewSource(), DeferredRuntimeConfig.current());
+        execute(stage, frame, resources, new DeferredSecondaryViewRegistry(), new DeferredPrimaryViewSource(),
+                WorldRenderState.unknown(0L), DeferredRuntimeConfig.current());
     }
 
     public void execute(DeferredStage stage,
@@ -113,7 +115,8 @@ public final class DeferredPassGraph {
                         DeferredResourceBindings resources,
                         DeferredSecondaryViewRegistry secondaryViews,
                         DeferredPrimaryViewSource primaryView) {
-        execute(stage, frame, resources, secondaryViews, primaryView, DeferredRuntimeConfig.current());
+        execute(stage, frame, resources, secondaryViews, primaryView, WorldRenderState.unknown(0L),
+                DeferredRuntimeConfig.current());
     }
 
     public void execute(DeferredStage stage,
@@ -121,6 +124,7 @@ public final class DeferredPassGraph {
                         DeferredResourceBindings resources,
                         DeferredSecondaryViewRegistry secondaryViews,
                         DeferredPrimaryViewSource primaryView,
+                        WorldRenderState worldState,
                         DeferredRuntimeConfig.Snapshot settings) {
         if (stage == null || frame == null || resources == null) return;
         if (secondaryViews == null) throw new IllegalArgumentException("secondaryViews");
@@ -134,7 +138,9 @@ public final class DeferredPassGraph {
         }
 
         CombatantRhi rhi = CombatantRenderSystem.rhi();
-        DeferredPassContext context = new DeferredPassContext(stage, frame, rhi, resources, secondaryViews, primaryView, settings);
+        DeferredPassContext context = new DeferredPassContext(
+                stage, frame, rhi, resources, secondaryViews, primaryView, worldState, settings
+        );
         try (RenderPhaseScope ignored = CombatantRenderSystem.phase(stage.renderPhase(), "deferred:" + stage.name().toLowerCase())) {
             for (int passIndex = 0; passIndex < snapshot.size(); passIndex++) {
                 DeferredPassSpec pass = snapshot.get(passIndex);
