@@ -45,8 +45,10 @@ import java.util.List;
  */
 public enum CombatantRenderPipelines {
     ;
-    private static final float COPLANAR_DEPTH_BIAS_SLOPE = 0.0f;
-    private static final float COPLANAR_DEPTH_BIAS_CONSTANT = 1.0f;
+    private static final float COPLANAR_SURFACE_DEPTH_BIAS_SLOPE = 1.0f;
+    private static final float COPLANAR_SURFACE_DEPTH_BIAS_CONSTANT = 10.0f;
+    private static final float COPLANAR_DECAL_DEPTH_BIAS_SLOPE = 1.0f;
+    private static final float COPLANAR_DECAL_DEPTH_BIAS_CONSTANT = 1.0f;
 
     // Shaders (assets/combatant/shaders/*)
     public static final Identifier SHADER_POS_COLOR_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_color.vert");
@@ -317,7 +319,7 @@ public enum CombatantRenderPipelines {
             .withVertexShader(SHADER_POS_COLOR_VERT)
             .withFragmentShader(SHADER_POS_COLOR_FRAG)
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(COPLANAR_DEPTH_BIAS_SLOPE, COPLANAR_DEPTH_BIAS_CONSTANT)
+            .withDepthBias(COPLANAR_SURFACE_DEPTH_BIAS_SLOPE, COPLANAR_SURFACE_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withCull(false)
@@ -419,7 +421,7 @@ public enum CombatantRenderPipelines {
             .withVertexShader(SHADER_POS_TEX_COLOR_PARAMS2_VERT)
             .withFragmentShader(SHADER_WORLD_AIM_DECAL_FRAG)
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(COPLANAR_DEPTH_BIAS_SLOPE, COPLANAR_DEPTH_BIAS_CONSTANT)
+            .withDepthBias(COPLANAR_DECAL_DEPTH_BIAS_SLOPE, COPLANAR_DECAL_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withCull(false)
@@ -449,7 +451,7 @@ public enum CombatantRenderPipelines {
             .withVertexShader(SHADER_POS_TEX_COLOR_PARAMS2_VERT)
             .withFragmentShader(SHADER_WORLD_DECAL_SDF_FRAG)
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(COPLANAR_DEPTH_BIAS_SLOPE, COPLANAR_DEPTH_BIAS_CONSTANT)
+            .withDepthBias(COPLANAR_DECAL_DEPTH_BIAS_SLOPE, COPLANAR_DECAL_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withCull(false)
