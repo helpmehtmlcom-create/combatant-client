@@ -10,10 +10,12 @@
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(binding = 0) uniform sampler2D u_DirectLighting;
-layout(binding = 1) uniform sampler2D u_CompatibilityScene;
-layout(binding = 2) uniform sampler2D u_GbufferDepth;
-layout(binding = 3) uniform sampler2D u_CurrentDepth;
-layout(binding = 4, rgba16f) writeonly uniform image2D u_OpaqueBaseRadiance;
+layout(binding = 1) uniform sampler2D u_LocalLighting;
+layout(binding = 2) uniform sampler2D u_CompatibilityScene;
+layout(binding = 3) uniform sampler2D u_GbufferDepth;
+layout(binding = 4) uniform sampler2D u_CurrentDepth;
+layout(binding = 5, rgba16f) writeonly uniform image2D u_OpaqueBaseRadiance;
+layout(std430, binding = 6) readonly buffer RadianceCaptureData { vec4 flags; } u_Capture;
 
 bool terrainOwnsPixel(vec2 uv) {
     float gbufferDepth = textureLod(u_GbufferDepth, uv, 0.0).r;
@@ -29,8 +31,12 @@ void main() {
     if (any(greaterThanEqual(pixel, size))) return;
 
     vec2 uv = (vec2(pixel) + vec2(0.5)) / vec2(size);
-    vec4 radiance = terrainOwnsPixel(uv)
-            ? textureLod(u_DirectLighting, uv, 0.0)
-            : textureLod(u_CompatibilityScene, uv, 0.0);
+    vec4 radiance;
+    if (terrainOwnsPixel(uv)) {
+        radiance = textureLod(u_DirectLighting, uv, 0.0);
+        if (u_Capture.flags.x > 0.5) radiance.rgb += textureLod(u_LocalLighting, uv, 0.0).rgb;
+    } else {
+        radiance = textureLod(u_CompatibilityScene, uv, 0.0);
+    }
     imageStore(u_OpaqueBaseRadiance, pixel, radiance);
 }

@@ -88,7 +88,9 @@ final class DeferredBackendPasses implements AutoCloseable {
     private final DeferredContactShadowSource contactShadows = new DeferredContactShadowSource();
     private final DeferredAmbientOcclusionSource ambientOcclusion = new DeferredAmbientOcclusionSource();
     private final DeferredColoredBlockLightSource coloredBlockLight = new DeferredColoredBlockLightSource();
+    private final DeferredSkyEnvironmentSource skyEnvironment = new DeferredSkyEnvironmentSource();
     private final DeferredEnvironmentIrradianceSource environmentIrradiance = new DeferredEnvironmentIrradianceSource();
+    private final DeferredDynamicLightSource dynamicLights = new DeferredDynamicLightSource();
     private final DeferredSceneRadianceSource sceneRadiance = new DeferredSceneRadianceSource();
     private final DeferredIndirectLightSource indirectLight = new DeferredIndirectLightSource();
     private final DeferredReflectionCascadeSource reflectionCascades = new DeferredReflectionCascadeSource();
@@ -172,7 +174,9 @@ final class DeferredBackendPasses implements AutoCloseable {
         contactShadows.install(passes);
         ambientOcclusion.install(passes);
         coloredBlockLight.install(passes);
+        skyEnvironment.install(passes);
         environmentIrradiance.install(passes);
+        dynamicLights.install(passes);
         sceneRadiance.install(passes);
         indirectLight.install(passes);
         reflectionCascades.install(passes);
@@ -197,7 +201,9 @@ final class DeferredBackendPasses implements AutoCloseable {
         contactShadows.prepare(rhi);
         ambientOcclusion.prepare(rhi);
         coloredBlockLight.prepare(rhi);
+        skyEnvironment.prepare(rhi);
         environmentIrradiance.prepare(rhi);
+        dynamicLights.prepare(rhi);
         sceneRadiance.prepare(rhi);
         indirectLight.prepare(rhi);
         reflections.prepare(rhi);
@@ -218,7 +224,9 @@ final class DeferredBackendPasses implements AutoCloseable {
         contactShadows.release(releaseOwner);
         ambientOcclusion.release(releaseOwner);
         coloredBlockLight.release(releaseOwner);
+        skyEnvironment.release(releaseOwner);
         environmentIrradiance.release(releaseOwner);
+        dynamicLights.release(releaseOwner);
         sceneRadiance.release(releaseOwner);
         indirectLight.release(releaseOwner);
         reflectionCascades.release(releaseOwner);

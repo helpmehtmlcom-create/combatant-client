@@ -1,0 +1,160 @@
+#version 430 core
+
+/* Material-aware neutral GGX/Burley evaluation for analytic local lights. */
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0) uniform sampler2D u_GbufferSurface;
+layout(binding = 1) uniform sampler2D u_GbufferGeometry;
+layout(binding = 2) uniform sampler2D u_GbufferMaterial;
+layout(binding = 3) uniform sampler2D u_ResolvedDepth;
+layout(binding = 4) uniform sampler2D u_GbufferDepth;
+layout(binding = 5, rgba16f) writeonly uniform image2D u_LocalLighting;
+
+struct LocalLight {
+    vec4 positionRadius;
+    vec4 radianceType;
+    vec4 directionOuter;
+    vec4 coneArea;
+};
+layout(std430, binding = 6) readonly buffer LocalLightData { LocalLight lights[]; } u_Lights;
+layout(std430, binding = 7) readonly buffer LocalLightTileCounts { uint counts[]; } u_Counts;
+layout(std430, binding = 8) readonly buffer LocalLightTileIndices { uint indices[]; } u_Indices;
+layout(std430, binding = 9) readonly buffer LocalLightCullData {
+    mat4 projection;
+    mat4 inverseProjection;
+    vec4 viewportLightCount;
+    vec4 tileGrid;
+} u_Cull;
+
+const float PI = 3.14159265358979323846;
+
+vec3 decodeOctahedral(vec2 encoded) {
+    vec2 f = encoded * 2.0 - 1.0;
+    vec3 n = vec3(f, 1.0 - abs(f.x) - abs(f.y));
+    if (n.z < 0.0) n.xy = (1.0 - abs(n.yx)) * sign(n.xy);
+    return normalize(n);
+}
+
+vec3 reconstructView(vec2 uv, float depth) {
+    // Runtime depth convention is reconstructed by matching the projection API through the two
+    // candidate NDC ranges. Vulkan uses [0,1], GL uses [-1,1]; the CPU pre-bakes the correct
+    // inverse projection and stores the convention in tileGrid.w (1 = zero-to-one).
+    float ndcZ = u_Cull.tileGrid.w > 0.5 ? depth : depth * 2.0 - 1.0;
+    vec4 h = u_Cull.inverseProjection * vec4(uv * 2.0 - 1.0, ndcZ, 1.0);
+    return h.xyz / max(abs(h.w), 1e-7) * sign(h.w);
+}
+
+bool ownsGbufferPixel(vec2 uv, float currentDepth) {
+    float gbufferDepth = textureLod(u_GbufferDepth, uv, 0.0).r;
+    if (gbufferDepth <= 0.0 || currentDepth <= 0.0) return false;
+    float tolerance = max(1.0e-6, abs(gbufferDepth) * 1.0e-5);
+    return abs(gbufferDepth - currentDepth) <= tolerance;
+}
+
+float ggxDistribution(float ndoth, float roughness) {
+    float a = max(roughness * roughness, 1e-4);
+    float a2 = a * a;
+    float d = ndoth * ndoth * (a2 - 1.0) + 1.0;
+    return a2 / max(PI * d * d, 1e-6);
+}
+
+float smithGgxCorrelated(float ndotv, float ndotl, float roughness) {
+    float a = max(roughness * roughness, 1e-4);
+    float a2 = a * a;
+    float gv = ndotl * sqrt(max(ndotv * ndotv * (1.0 - a2) + a2, 1e-6));
+    float gl = ndotv * sqrt(max(ndotl * ndotl * (1.0 - a2) + a2, 1e-6));
+    return 0.5 / max(gv + gl, 1e-6);
+}
+
+vec3 fresnelSchlick(float vdoth, vec3 f0) {
+    float factor = pow(clamp(1.0 - vdoth, 0.0, 1.0), 5.0);
+    return f0 + (vec3(1.0) - f0) * factor;
+}
+
+float burleyDiffuse(float ndotv, float ndotl, float ldoth, float roughness) {
+    float fd90 = 0.5 + 2.0 * roughness * ldoth * ldoth;
+    float lightScatter = 1.0 + (fd90 - 1.0) * pow(1.0 - ndotl, 5.0);
+    float viewScatter = 1.0 + (fd90 - 1.0) * pow(1.0 - ndotv, 5.0);
+    return lightScatter * viewScatter / PI;
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(u_LocalLighting);
+    if (any(greaterThanEqual(pixel, size))) return;
+
+    vec2 uv = (vec2(pixel) + vec2(0.5)) / vec2(size);
+    float depth = textureLod(u_ResolvedDepth, uv, 0.0).r;
+    if (!ownsGbufferPixel(uv, depth)) {
+        imageStore(u_LocalLighting, pixel, vec4(0.0));
+        return;
+    }
+
+    vec4 surface = textureLod(u_GbufferSurface, uv, 0.0);
+    vec4 material = textureLod(u_GbufferMaterial, uv, 0.0);
+    vec3 albedo = max(surface.rgb, vec3(0.0));
+    float roughness = clamp(material.r, 0.045, 1.0);
+    float metallic = clamp(material.g, 0.0, 1.0);
+    float dielectricF0 = clamp(material.b, 0.0, 1.0);
+    vec3 f0 = mix(vec3(dielectricF0), albedo, metallic);
+
+    vec3 position = reconstructView(uv, depth);
+    vec3 normal = decodeOctahedral(textureLod(u_GbufferGeometry, uv, 0.0).rg);
+    vec3 viewDirection = normalize(-position);
+    float ndotv = max(dot(normal, viewDirection), 0.0);
+    if (ndotv <= 0.0) {
+        imageStore(u_LocalLighting, pixel, vec4(0.0));
+        return;
+    }
+
+    uint tileSize = uint(max(u_Cull.viewportLightCount.w, 1.0));
+    uvec2 tileCount = uvec2(max(u_Cull.tileGrid.xy, vec2(1.0)));
+    uvec2 tile = uvec2(pixel) / tileSize;
+    uint tileIndex = tile.y * tileCount.x + tile.x;
+    uint maxPerTile = uint(max(u_Cull.tileGrid.z, 1.0));
+    uint count = min(u_Counts.counts[tileIndex], maxPerTile);
+    uint base = tileIndex * maxPerTile;
+
+    vec3 result = vec3(0.0);
+    for (uint i = 0u; i < count; ++i) {
+        LocalLight light = u_Lights.lights[u_Indices.indices[base + i]];
+        vec3 toLight = light.positionRadius.xyz - position;
+        float distanceValue = length(toLight);
+        float radius = light.positionRadius.w;
+        if (distanceValue <= 1e-5 || distanceValue >= radius) continue;
+
+        vec3 lightDirection = toLight / distanceValue;
+        float ndotl = max(dot(normal, lightDirection), 0.0);
+        if (ndotl <= 0.0) continue;
+
+        int type = int(light.radianceType.w + 0.5);
+        float sourceDistance = distanceValue;
+        if (type == 2) sourceDistance = max(distanceValue - max(light.coneArea.y, 0.0), 1e-3);
+        float attenuation = 1.0 / max(sourceDistance * sourceDistance, 1e-4);
+
+        if (type == 1) {
+            vec3 fromLight = -lightDirection;
+            float coneCos = dot(fromLight, normalize(light.directionOuter.xyz));
+            float outerCos = light.directionOuter.w;
+            float innerCos = light.coneArea.x;
+            if (coneCos <= outerCos) continue;
+            attenuation *= innerCos > outerCos
+                    ? smoothstep(outerCos, innerCos, coneCos)
+                    : 1.0;
+        }
+
+        vec3 halfVector = normalize(viewDirection + lightDirection);
+        float ndoth = max(dot(normal, halfVector), 0.0);
+        float vdoth = max(dot(viewDirection, halfVector), 0.0);
+        vec3 fresnel = fresnelSchlick(vdoth, f0);
+        float distribution = ggxDistribution(ndoth, roughness);
+        float visibility = smithGgxCorrelated(ndotv, ndotl, roughness);
+        vec3 specularBrdf = fresnel * distribution * visibility;
+        float diffuseTerm = burleyDiffuse(ndotv, ndotl, max(dot(lightDirection, halfVector), 0.0), roughness);
+        vec3 diffuseBrdf = (vec3(1.0) - fresnel) * (1.0 - metallic) * albedo * diffuseTerm;
+        vec3 intensity = max(light.radianceType.rgb, vec3(0.0));
+        result += (diffuseBrdf + specularBrdf) * intensity * attenuation * ndotl;
+    }
+
+    imageStore(u_LocalLighting, pixel, vec4(result, 1.0));
+}

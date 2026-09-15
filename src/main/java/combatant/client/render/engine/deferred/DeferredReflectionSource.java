@@ -61,9 +61,11 @@ final class DeferredReflectionSource implements AutoCloseable {
             new ShaderResourceSlot(1, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(2, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(3, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
-            new ShaderResourceSlot(4, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
-            new ShaderResourceSlot(5, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
-            new ShaderResourceSlot(6, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
+            new ShaderResourceSlot(4, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(5, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(6, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
+            new ShaderResourceSlot(7, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
+            new ShaderResourceSlot(8, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
     ));
     private static final ShaderResourceLayout RESOLVE_LAYOUT = new ShaderResourceLayout(List.of(
             new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
@@ -93,7 +95,8 @@ final class DeferredReflectionSource implements AutoCloseable {
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.reflection.prepare", DeferredStage.REFLECTION_PREPARE)
                 .read(DeferredResource.LIGHTING_COLOR, DeferredResource.RESOLVED_DEPTH,
-                        DeferredResource.DEPTH_PYRAMID, DeferredResource.GBUFFER_GEOMETRY)
+                        DeferredResource.GBUFFER_DEPTH, DeferredResource.DEPTH_PYRAMID,
+                        DeferredResource.GBUFFER_GEOMETRY, DeferredResource.GBUFFER_MATERIAL)
                 .write(DeferredResource.REFLECTION_TRACE_DATA)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.settings().reflectionsEnabled()
@@ -106,7 +109,8 @@ final class DeferredReflectionSource implements AutoCloseable {
                 .build());
         passes.add(DeferredPassSpec.builder("world.reflection.trace", DeferredStage.REFLECTION_TRACE)
                 .read(DeferredResource.LIGHTING_COLOR, DeferredResource.GBUFFER_GEOMETRY,
-                        DeferredResource.RESOLVED_DEPTH, DeferredResource.DEPTH_PYRAMID,
+                        DeferredResource.GBUFFER_MATERIAL, DeferredResource.RESOLVED_DEPTH,
+                        DeferredResource.GBUFFER_DEPTH, DeferredResource.DEPTH_PYRAMID,
                         DeferredResource.REFLECTION_TRACE_DATA)
                 .write(DeferredResource.REFLECTION_TRACE_COLOR, DeferredResource.REFLECTION_TRACE_CONFIDENCE)
                 .requires(RhiShaderStage.COMPUTE)
@@ -184,7 +188,9 @@ final class DeferredReflectionSource implements AutoCloseable {
         ensureOwner(context.rhi());
         GpuTextureView scene = requireTexture(context, DeferredResource.LIGHTING_COLOR);
         GpuTextureView geometry = requireTexture(context, DeferredResource.GBUFFER_GEOMETRY);
+        GpuTextureView material = requireTexture(context, DeferredResource.GBUFFER_MATERIAL);
         GpuTextureView depth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
+        GpuTextureView gbufferDepth = requireTexture(context, DeferredResource.GBUFFER_DEPTH);
         GpuTextureView pyramid = requireTexture(context, DeferredResource.DEPTH_PYRAMID);
         RhiStorageBuffer data = requireBuffer(context, DeferredResource.REFLECTION_TRACE_DATA);
         RhiStorageImage color = requireImage(context, DeferredResource.REFLECTION_TRACE_COLOR);
@@ -196,16 +202,18 @@ final class DeferredReflectionSource implements AutoCloseable {
                 "Combatant reflection trace",
                 tracePipeline(),
                 groups(color.descriptor().width()), groups(color.descriptor().height()), 1,
-                List.of(new StorageBinding(6, data, 0L, data.descriptor().byteSize(), StorageAccess.READ_ONLY)),
+                List.of(new StorageBinding(8, data, 0L, data.descriptor().byteSize(), StorageAccess.READ_ONLY)),
                 List.of(
                         new SampledTextureBinding(0, scene, linear),
                         new SampledTextureBinding(1, geometry, nearest),
-                        new SampledTextureBinding(2, depth, nearest),
-                        new SampledTextureBinding(3, pyramid, nearest)
+                        new SampledTextureBinding(2, material, nearest),
+                        new SampledTextureBinding(3, depth, nearest),
+                        new SampledTextureBinding(4, gbufferDepth, nearest),
+                        new SampledTextureBinding(5, pyramid, nearest)
                 ),
                 List.of(
-                        new StorageImageBinding(4, color, StorageAccess.WRITE_ONLY),
-                        new StorageImageBinding(5, confidence, StorageAccess.WRITE_ONLY)
+                        new StorageImageBinding(6, color, StorageAccess.WRITE_ONLY),
+                        new StorageImageBinding(7, confidence, StorageAccess.WRITE_ONLY)
                 )
         ));
     }
