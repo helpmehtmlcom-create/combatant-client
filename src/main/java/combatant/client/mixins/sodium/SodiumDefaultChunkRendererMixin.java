@@ -14,7 +14,9 @@ import com.llamalad7.mixinextras.sugar.Local;
 import com.mojang.blaze3d.systems.CommandEncoder;
 import com.mojang.blaze3d.systems.RenderPass;
 import com.mojang.blaze3d.textures.GpuTextureView;
+import com.mojang.blaze3d.textures.GpuSampler;
 import combatant.client.render.engine.core.CombatantRenderSystem;
+import combatant.client.render.engine.material.MaterialAtlasManager;
 import combatant.client.render.sodium.SodiumSecondaryTerrainContext;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.TerrainRenderPass;
 import org.joml.Vector4fc;
@@ -59,6 +61,28 @@ public abstract class SodiumDefaultChunkRendererMixin {
                 encoder, label, color, clearColor, depth, clearDepth
         );
     }
+    @WrapOperation(
+            method = "render",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lcom/mojang/blaze3d/systems/RenderPass;bindTexture(Ljava/lang/String;Lcom/mojang/blaze3d/textures/GpuTextureView;Lcom/mojang/blaze3d/textures/GpuSampler;)V"
+            )
+    )
+    private void combatant$bindMaterialAtlases(
+            RenderPass pass,
+            String name,
+            GpuTextureView view,
+            GpuSampler sampler,
+            Operation<Void> original,
+            @Local(argsOnly = true) TerrainRenderPass terrainPass
+    ) {
+        original.call(pass, name, view, sampler);
+        if (!"u_BlockTex".equals(name)) return;
+        if (terrainPass.isTranslucent() || SodiumSecondaryTerrainContext.active()) return;
+        if (!CombatantRenderSystem.deferredWorld().enabled()) return;
+        MaterialAtlasManager.global().bind(pass, sampler, view);
+    }
+
     @ModifyExpressionValue(
             method = "render",
             at = @At(

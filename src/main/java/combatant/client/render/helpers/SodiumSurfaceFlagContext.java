@@ -8,14 +8,19 @@
 package combatant.client.render.helpers;
 
 import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.GrowingPlantBlock;
 import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.VegetationBlock;
 import net.minecraft.world.level.block.VineBlock;
+import net.minecraft.world.level.block.NetherPortalBlock;
+import net.minecraft.world.level.block.EndPortalBlock;
+import net.minecraft.world.level.block.EndGatewayBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import combatant.client.features.module.modules.visuals.NoRender;
+import combatant.client.render.engine.material.MaterialDomain;
 import combatant.client.features.module.modules.visuals.ReimaginedVisual;
 import combatant.client.util.logging.DebugLog;
 
@@ -33,17 +38,19 @@ public enum SodiumSurfaceFlagContext {
     public static void pushForState(Object stateObj, BlockPos origin) {
         boolean softFade = false;
         WaveType waveType = WaveType.NONE;
+        MaterialDomain materialDomain = null;
         if (stateObj instanceof BlockState state) {
             softFade = NoRender.shouldFadeSoftBlock(state);
             if (ReimaginedVisual.isWavyVegetationEnabledStatic()) {
                 waveType = getVegetationWaveType(state);
             }
+            materialDomain = explicitMaterialDomain(state);
             if (softFade && !loggedSoftFadeState) {
                 loggedSoftFadeState = true;
                 DebugLog.renderThread("[SodiumSurface] state hook saw soft fade block: %s", state.getBlock());
             }
         }
-        STACK.get().addLast(new StateFlags(softFade, waveType, origin == null ? 0 : origin.getY()));
+        STACK.get().addLast(new StateFlags(softFade, waveType, origin == null ? 0 : origin.getY(), materialDomain));
     }
 
     public static void pop() {
@@ -75,6 +82,24 @@ public enum SodiumSurfaceFlagContext {
             encoded |= encodeLocalY(vertexY - flags.originY) << SodiumMaterialFlags.WAVE_LOCAL_Y_SHIFT;
         }
         return encoded;
+    }
+
+    public static MaterialDomain materialDomain(MaterialDomain fallback) {
+        StateFlags flags = current();
+        return flags.materialDomain != null ? flags.materialDomain : fallback;
+    }
+
+    private static MaterialDomain explicitMaterialDomain(BlockState state) {
+        var fluid = state.getFluidState();
+        if (!fluid.isEmpty()) {
+            if (fluid.typeHolder().is(FluidTags.WATER)) return MaterialDomain.WATER;
+            if (fluid.typeHolder().is(FluidTags.LAVA)) return MaterialDomain.EMISSIVE;
+        }
+        Block block = state.getBlock();
+        if (block instanceof NetherPortalBlock || block instanceof EndPortalBlock || block instanceof EndGatewayBlock) {
+            return MaterialDomain.PORTAL;
+        }
+        return null;
     }
 
     private static WaveType getVegetationWaveType(BlockState state) {
@@ -112,7 +137,7 @@ public enum SodiumSurfaceFlagContext {
         FREE
     }
 
-    private record StateFlags(boolean softFade, WaveType waveType, int originY) {
-        private static final StateFlags EMPTY = new StateFlags(false, WaveType.NONE, 0);
+    private record StateFlags(boolean softFade, WaveType waveType, int originY, MaterialDomain materialDomain) {
+        private static final StateFlags EMPTY = new StateFlags(false, WaveType.NONE, 0, null);
     }
 }

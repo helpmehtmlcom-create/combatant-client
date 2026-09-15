@@ -24,6 +24,8 @@ public abstract class SodiumChunkVertexMixin implements CombatantChunkVertexExte
     @Unique
     private int combatant$materialMapPresenceMask;
     @Unique
+    private int combatant$materialFeatureMask;
+    @Unique
     private int combatant$packedScalarSurface;
 
     @Inject(method = "copyVertexTo", at = @At("HEAD"))
@@ -42,9 +44,10 @@ public abstract class SodiumChunkVertexMixin implements CombatantChunkVertexExte
     }
 
     @Override
-    public void combatant$setMaterialData(int materialId, int mapPresenceMask, int packedScalarSurface) {
+    public void combatant$setMaterialData(int materialId, int mapPresenceMask, int featureMask, int packedScalarSurface) {
         this.combatant$materialId = materialId;
         this.combatant$materialMapPresenceMask = mapPresenceMask & 0xFF;
+        this.combatant$materialFeatureMask = featureMask & 0xFFFF;
         this.combatant$packedScalarSurface = packedScalarSurface;
     }
 
@@ -59,6 +62,11 @@ public abstract class SodiumChunkVertexMixin implements CombatantChunkVertexExte
     }
 
     @Override
+    public int combatant$getMaterialFeatureMask() {
+        return this.combatant$materialFeatureMask;
+    }
+
+    @Override
     public int combatant$getPackedScalarSurface() {
         return this.combatant$packedScalarSurface;
     }
@@ -69,6 +77,7 @@ public abstract class SodiumChunkVertexMixin implements CombatantChunkVertexExte
         dest.combatant$setMaterialData(
                 this.combatant$materialId,
                 this.combatant$materialMapPresenceMask,
+                this.combatant$materialFeatureMask,
                 this.combatant$packedScalarSurface
         );
     }

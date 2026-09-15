@@ -30,6 +30,8 @@ public final class MaterialRegistry {
     private static final int DEFAULT_ID = 0;
 
     private volatile Snapshot snapshot = Snapshot.EMPTY;
+    private volatile ResourceManager resources;
+    private volatile Map<Identifier, Integer> gpuMapAvailability = Map.of();
 
     public static MaterialRegistry global() {
         return GLOBAL;
@@ -37,11 +39,28 @@ public final class MaterialRegistry {
 
     public void reload(ResourceManager resources) {
         if (resources == null) return;
+        this.resources = resources;
+        this.gpuMapAvailability = Map.of();
         Set<Identifier> available = new HashSet<>();
         for (String namespace : resources.getNamespaces()) {
             available.addAll(resources.listResources("textures", id -> id.getPath().endsWith(".png")).keySet());
         }
         snapshot = new Snapshot(Set.copyOf(available), new HashMap<>());
+    }
+
+    public ResourceManager resources() {
+        return resources;
+    }
+
+    /** Installed by the companion-atlas builder after validating dimensions/animation layout. */
+    public void installGpuMapAvailability(Map<Identifier, Integer> availability) {
+        this.gpuMapAvailability = availability == null ? Map.of() : Map.copyOf(availability);
+    }
+
+    public int gpuPresenceMask(MaterialSurfaceDescriptor descriptor) {
+        if (descriptor == null) return 0;
+        Integer usable = gpuMapAvailability.get(descriptor.spriteId());
+        return usable == null ? 0 : descriptor.gpuPresenceMask8() & usable;
     }
 
     public MaterialSurfaceDescriptor resolve(TextureAtlasSprite sprite, MaterialDomain domain) {
@@ -62,7 +81,8 @@ public final class MaterialRegistry {
 
     private static MaterialSurfaceDescriptor build(Set<Identifier> available, Identifier spriteId, MaterialDomain domain) {
         EnumMap<MaterialTextureSemantic, Identifier> maps = new EnumMap<>(MaterialTextureSemantic.class);
-        putIfPresent(available, maps, MaterialTextureSemantic.ALBEDO, texture(spriteId, ""));
+        putFirstPresent(available, maps, MaterialTextureSemantic.ALBEDO,
+                texture(spriteId, "_albedo"), texture(spriteId, "_diffuse"), texture(spriteId, "_basecolor"));
         putIfPresent(available, maps, MaterialTextureSemantic.NORMAL, texture(spriteId, "_normal"));
         putIfPresent(available, maps, MaterialTextureSemantic.AMBIENT_OCCLUSION, texture(spriteId, "_ao"));
         putIfPresent(available, maps, MaterialTextureSemantic.ROUGHNESS, texture(spriteId, "_roughness"));
@@ -74,12 +94,13 @@ public final class MaterialRegistry {
         putIfPresent(available, maps, MaterialTextureSemantic.LABPBR_NORMAL, texture(spriteId, "_n"));
         putIfPresent(available, maps, MaterialTextureSemantic.LABPBR_SPECULAR, texture(spriteId, "_s"));
 
-        int stableId = stableId32(spriteId);
+        int stableId = stableId32(spriteId, domain);
         if (stableId == DEFAULT_ID) stableId = 1;
         return new MaterialSurfaceDescriptor(
                 stableId, spriteId, domain, new MaterialTextureSet(maps),
                 1.0f, 0.72f, 0.0f, 0.04f, 0.0f,
-                0.0f, 0.0f, 0.0f, 0.0f, 0.25f, 0.5f, 1.0f
+                0.0f, 0.0f, 0.0f, 0.0f, 0.25f, 0.5f, 1.0f,
+                tessellation(domain, maps)
         );
     }
 
@@ -89,8 +110,29 @@ public final class MaterialRegistry {
                 domain == null ? MaterialDomain.UNKNOWN : domain,
                 new MaterialTextureSet(null),
                 1.0f, 0.72f, 0.0f, 0.04f, 0.0f,
-                0.0f, 0.0f, 0.0f, 0.0f, 0.25f, 0.5f, 1.0f
+                0.0f, 0.0f, 0.0f, 0.0f, 0.25f, 0.5f, 1.0f,
+                MaterialTessellationProfile.NONE
         );
+    }
+
+    private static MaterialTessellationProfile tessellation(MaterialDomain domain, Map<MaterialTextureSemantic, Identifier> maps) {
+        if (domain == MaterialDomain.WATER) return MaterialTessellationProfile.WATER;
+        if (maps.containsKey(MaterialTextureSemantic.HEIGHT) || maps.containsKey(MaterialTextureSemantic.LABPBR_NORMAL)) {
+            return MaterialTessellationProfile.height(0.04f);
+        }
+        return MaterialTessellationProfile.NONE;
+    }
+
+    private static void putFirstPresent(Set<Identifier> available,
+                                        Map<MaterialTextureSemantic, Identifier> target,
+                                        MaterialTextureSemantic semantic,
+                                        Identifier... ids) {
+        for (Identifier id : ids) {
+            if (available.contains(id)) {
+                target.put(semantic, id);
+                return;
+            }
+        }
     }
 
     private static void putIfPresent(Set<Identifier> available,
@@ -105,8 +147,8 @@ public final class MaterialRegistry {
     }
 
     /** Stable 32-bit FNV-1a producer ID derived only from the exact sprite identifier. */
-    private static int stableId32(Identifier id) {
-        byte[] bytes = id.toString().getBytes(StandardCharsets.UTF_8);
+    private static int stableId32(Identifier id, MaterialDomain domain) {
+        byte[] bytes = (id + "|" + domain.name()).getBytes(StandardCharsets.UTF_8);
         int hash = 0x811C9DC5;
         for (byte b : bytes) {
             hash ^= b & 0xFF;

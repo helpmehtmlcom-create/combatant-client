@@ -20,6 +20,7 @@ import com.mojang.blaze3d.textures.GpuSampler;
 import net.minecraft.client.Minecraft;
 import combatant.client.mixininterface.IMsaaTexture;
 import combatant.client.render.engine.core.CombatantRenderSystem;
+import combatant.client.render.engine.material.MaterialAtlasManager;
 import combatant.client.render.engine.rhi.FullscreenDrawCommand;
 import combatant.client.render.engine.rhi.resource.RenderResourceManager;
 import combatant.client.render.engine.rhi.resource.TransientTargetDescriptor;
@@ -285,6 +286,7 @@ public final class DeferredWorldPipeline {
         builder.withColorTargetState(MATERIAL_SLOT, new ColorTargetState(
                 Optional.empty(), MATERIAL_FORMAT, ColorTargetState.WRITE_ALL
         ));
+        builder.withBindGroupLayout(MaterialAtlasManager.BIND_GROUP);
         builder.withShaderDefine("COMBATANT_DEFERRED_GBUFFER");
     }
 

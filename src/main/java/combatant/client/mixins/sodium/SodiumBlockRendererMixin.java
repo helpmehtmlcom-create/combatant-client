@@ -61,10 +61,12 @@ public abstract class SodiumBlockRendererMixin {
         extension.combatant$setSurfaceFlags(SodiumSurfaceFlagContext.getSurfaceFlags(vertex.y));
 
         TextureAtlasSprite sprite = quad.sprite(SpriteFinderCache.forBlockAtlas());
-        MaterialSurfaceDescriptor descriptor = MaterialRegistry.global().resolve(sprite, combatant$domain(material));
+        MaterialDomain domain = SodiumSurfaceFlagContext.materialDomain(combatant$domain(material));
+        MaterialSurfaceDescriptor descriptor = MaterialRegistry.global().resolve(sprite, domain);
         extension.combatant$setMaterialData(
                 descriptor.stableId(),
-                descriptor.gpuPresenceMask8(),
+                MaterialRegistry.global().gpuPresenceMask(descriptor),
+                descriptor.gpuFeatureMask16(),
                 descriptor.packScalarSurface()
         );
     }

@@ -12,11 +12,13 @@ public interface CombatantChunkVertexExtension {
 
     int combatant$getSurfaceFlags();
 
-    void combatant$setMaterialData(int materialId, int mapPresenceMask, int packedScalarSurface);
+    void combatant$setMaterialData(int materialId, int mapPresenceMask, int featureMask, int packedScalarSurface);
 
     int combatant$getMaterialId();
 
     int combatant$getMaterialMapPresenceMask();
+
+    int combatant$getMaterialFeatureMask();
 
     int combatant$getPackedScalarSurface();
 

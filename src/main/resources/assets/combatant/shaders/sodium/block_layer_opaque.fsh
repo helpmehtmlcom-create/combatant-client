@@ -23,13 +23,20 @@ in vec4 v_CombatantBaseColor;
 in vec2 v_CombatantLightCoord;
 in vec3 v_CombatantViewPosition;
 flat in uint v_CombatantMaterialParams;
-flat in uint v_CombatantMaterialData;
+flat in uint v_CombatantMaterialId;
 flat in uint v_CombatantMaterialMeta;
 flat in uint v_CombatantMaterialSurface;
-in vec4 v_CombatantTangent;
+flat in vec4 v_CombatantTangent;
 #endif
 
 uniform sampler2D u_BlockTex;
+
+#ifdef COMBATANT_DEFERRED_GBUFFER
+uniform sampler2D u_CombatantAlbedoAtlas;
+uniform sampler2D u_CombatantNormalHeightAtlas;
+uniform sampler2D u_CombatantSurfaceAtlas;
+uniform sampler2D u_CombatantSpecularAtlas;
+#endif
 
 layout(location = 0) out vec4 fragColor;
 
@@ -80,10 +87,10 @@ vec4 sampleRGSS(sampler2D source, vec2 uv, vec2 pixelSize) {
     float mipLevelExact = max(0.0, log2(effectiveDerivative / minPixelSize));
 
     const vec2 offsets[4] = vec2[](
-    vec2(0.125, 0.375),
-    vec2(-0.125, -0.375),
-    vec2(0.375, -0.125),
-    vec2(-0.375, 0.125)
+        vec2(0.125, 0.375),
+        vec2(-0.125, -0.375),
+        vec2(0.375, -0.125),
+        vec2(-0.375, 0.125)
     );
 
     vec4 rgssColor = vec4(0.0);
@@ -111,13 +118,12 @@ float combatant_encode_distance(float distanceValue) {
     return clamp((log2(1.0 + max(distanceValue, 0.0)) + 1.0) / 17.0, 1.0 / 255.0, 1.0);
 }
 
-vec4 combatant_unpack_unorm8x4(uint packed) {
-    return vec4(
-        float(packed & 255u),
-        float((packed >> 8u) & 255u),
-        float((packed >> 16u) & 255u),
-        float((packed >> 24u) & 255u)
-    ) / 255.0;
+float combatant_unpack_unorm8(uint packed, uint shift) {
+    return float((packed >> shift) & 255u) / 255.0;
+}
+
+bool combatant_has_map(uint mask, uint bit) {
+    return (mask & (1u << bit)) != 0u;
 }
 #endif
 
@@ -134,6 +140,16 @@ void main() {
 #endif
 
     vec4 texel = u_UseRGSS ? sampleRGSS(u_BlockTex, v_TexCoord, u_TexelSize) : sampleNearest(u_BlockTex, v_TexCoord, u_TexelSize);
+
+#ifdef COMBATANT_DEFERRED_GBUFFER
+    uint mapMask = (v_CombatantMaterialMeta >> 8u) & 255u;
+    if (combatant_has_map(mapMask, 7u)) {
+        vec4 overrideAlbedo = texture(u_CombatantAlbedoAtlas, v_TexCoord);
+        texel.rgb = overrideAlbedo.rgb;
+        texel.a *= overrideAlbedo.a;
+    }
+#endif
+
     vec4 color = texel * v_Color;
 
     if ((v_CombatantSurfaceFlags & COMBATANT_SURFACE_SOFT_FADE) != 0u) {
@@ -150,15 +166,41 @@ void main() {
     fragColor = _linearFog(color, v_FragDistance, u_FogColor, u_EnvironmentFog, u_RenderFog, fadeFactor);
 
 #ifdef COMBATANT_DEFERRED_GBUFFER
-    vec3 viewNormal = normalize(cross(dFdx(v_CombatantViewPosition), dFdy(v_CombatantViewPosition)));
+    vec3 geometricNormal = normalize(cross(dFdx(v_CombatantViewPosition), dFdy(v_CombatantViewPosition)));
     if (!gl_FrontFacing) {
-        viewNormal = -viewNormal;
+        geometricNormal = -geometricNormal;
     }
+
+    vec3 viewNormal = geometricNormal;
+    if (combatant_has_map(mapMask, 0u)) {
+        vec3 tangentNormal = texture(u_CombatantNormalHeightAtlas, v_TexCoord).rgb * 2.0 - 1.0;
+        tangentNormal = normalize(tangentNormal);
+        vec3 tangent = normalize(v_CombatantTangent.xyz - geometricNormal * dot(geometricNormal, v_CombatantTangent.xyz));
+        vec3 bitangent = normalize(cross(geometricNormal, tangent)) * v_CombatantTangent.w;
+        viewNormal = normalize(mat3(tangent, bitangent, geometricNormal) * tangentNormal);
+    }
+
+    float vertexAo = combatant_unpack_unorm8(v_CombatantMaterialMeta, 0u);
+    float materialAo = 1.0;
+    float roughness = combatant_unpack_unorm8(v_CombatantMaterialSurface, 0u);
+    float metallic = combatant_unpack_unorm8(v_CombatantMaterialSurface, 8u);
+    float dielectricF0 = combatant_unpack_unorm8(v_CombatantMaterialSurface, 16u);
+    float emission = combatant_unpack_unorm8(v_CombatantMaterialSurface, 24u);
+
+    if ((mapMask & 0x3Fu) != 0u) {
+        vec4 surfaceSample = texture(u_CombatantSurfaceAtlas, v_TexCoord);
+        vec4 specularSample = texture(u_CombatantSpecularAtlas, v_TexCoord);
+        if (combatant_has_map(mapMask, 1u)) materialAo = surfaceSample.r;
+        if (combatant_has_map(mapMask, 2u)) roughness = surfaceSample.g;
+        if (combatant_has_map(mapMask, 3u)) metallic = surfaceSample.b;
+        if (combatant_has_map(mapMask, 4u)) dielectricF0 = specularSample.r;
+        if (combatant_has_map(mapMask, 5u)) emission = surfaceSample.a;
+    }
+
     vec3 albedo = texel.rgb * v_CombatantBaseColor.rgb;
+    float ao = max(1.0 / 255.0, clamp(vertexAo * materialAo, 0.0, 1.0));
     float material = float(v_CombatantMaterialParams & 255u) / 255.0;
-    float vertexAo = float(v_CombatantMaterialMeta & 255u) / 255.0;
-    vec4 scalarMaterial = combatant_unpack_unorm8x4(v_CombatantMaterialSurface);
-    combatantGbufferSurface = vec4(albedo, max(vertexAo, 1.0 / 255.0));
+    combatantGbufferSurface = vec4(albedo, ao);
     combatantGbufferGeometry = vec4(
         combatant_encode_octahedral(viewNormal),
         clamp(v_CombatantLightCoord, 0.0, 1.0)
@@ -169,6 +211,11 @@ void main() {
         clamp(fadeFactor, 0.0, 1.0),
         material
     );
-    combatantGbufferMaterial = scalarMaterial;
+    combatantGbufferMaterial = vec4(
+        clamp(roughness, 0.0, 1.0),
+        clamp(metallic, 0.0, 1.0),
+        clamp(dielectricF0, 0.0, 1.0),
+        max(emission, 0.0)
+    );
 #endif
 }

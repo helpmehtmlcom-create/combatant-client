@@ -33,7 +33,7 @@ float combatant_linear_fog(float distanceValue, float start, float end) {
 
 void main() {
     vec4 surface = texture(u_GbufferSurface, v_TexCoord);
-    if (surface.a < 0.5) {
+    if (surface.a <= 0.0) {
         discard;
     }
 
@@ -42,9 +42,10 @@ void main() {
     vec4 material = texture(u_GbufferMaterial, v_TexCoord);
 
     vec3 lightmap = texture(u_LightTex, geometry.ba).rgb;
-    float vertexAo = surface.a;
-    float emission = material.a;
-    vec3 litColor = surface.rgb * (lightmap * vertexAo + emission);
+    float ao = clamp(surface.a, 0.0, 1.0);
+    float emission = max(material.a, 0.0);
+    vec3 litColor = surface.rgb * lightmap * ao;
+    litColor += surface.rgb * emission;
 
     float sphericalDistance = combatant_decode_distance(auxiliary.r);
     float cylindricalDistance = combatant_decode_distance(auxiliary.g);

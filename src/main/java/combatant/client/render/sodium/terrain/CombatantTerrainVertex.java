@@ -92,7 +92,8 @@ public final class CombatantTerrainVertex implements ChunkVertexEncoder {
     private static int packMaterialMeta(CombatantChunkVertexExtension extension, float ao) {
         int packedAo = Math.round(Mth.clamp(ao, 0.0f, 1.0f) * 255.0f) & 0xFF;
         int mapMask = extension.combatant$getMaterialMapPresenceMask() & 0xFF;
-        return packedAo | (mapMask << 8);
+        int featureMask = extension.combatant$getMaterialFeatureMask() & 0xFFFF;
+        return packedAo | (mapMask << 8) | (featureMask << 16);
     }
 
     private static int packTangent(Vertex[] vertices) {

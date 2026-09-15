@@ -29,7 +29,8 @@ public record MaterialSurfaceDescriptor(
         float clearcoat,
         float clearcoatRoughness,
         float porosity,
-        float thickness
+        float thickness,
+        MaterialTessellationProfile tessellation
 ) {
     public MaterialSurfaceDescriptor {
         if (spriteId == null) throw new IllegalArgumentException("spriteId");
@@ -47,6 +48,7 @@ public record MaterialSurfaceDescriptor(
         clearcoatRoughness = clamp01(clearcoatRoughness);
         porosity = clamp01(porosity);
         thickness = Math.max(0.0f, thickness);
+        if (tessellation == null) tessellation = MaterialTessellationProfile.NONE;
     }
 
     public int gpuPresenceMask8() {
@@ -60,6 +62,21 @@ public record MaterialSurfaceDescriptor(
         if (textures.has(MaterialTextureSemantic.HEIGHT) || textures.has(MaterialTextureSemantic.LABPBR_NORMAL)) mask |= 1 << 6;
         if (textures.has(MaterialTextureSemantic.ALBEDO)) mask |= 1 << 7;
         return mask;
+    }
+
+    /**
+     * Packed feature bits carried with every terrain vertex. These bits express producer-known
+     * material policy; the shader never infers tessellation/domain semantics from color/depth.
+     */
+    public int gpuFeatureMask16() {
+        int flags = (domain.ordinal() & 0xF);
+        flags |= (tessellation.mode().gpuCode() & 0x3) << 4;
+        if (textures.has(MaterialTextureSemantic.HEIGHT) || textures.has(MaterialTextureSemantic.LABPBR_NORMAL)) flags |= 1 << 6;
+        if (emission > 0.0f || textures.has(MaterialTextureSemantic.EMISSIVE) || textures.has(MaterialTextureSemantic.LABPBR_SPECULAR)) flags |= 1 << 7;
+        if (transmission > 0.0f) flags |= 1 << 8;
+        if (subsurface > 0.0f) flags |= 1 << 9;
+        if (clearcoat > 0.0f) flags |= 1 << 10;
+        return flags & 0xFFFF;
     }
 
     /** RGBA8 scalar material fallback: roughness, metallic, dielectric F0, emission. */
