@@ -37,7 +37,7 @@ import java.util.Objects;
 
 /**
  * Isolated 3D preview scene around vanilla item model resolution and feature submission.
- * It deliberately owns buffers/projection/state, while ItemStackRenderState still owns all
+ * It owns buffers/projection/state, while ItemStackRenderState still owns all
  * vanilla model, component, trim, foil and feature layers.
  */
 public final class VisualPreviewItemRenderer {

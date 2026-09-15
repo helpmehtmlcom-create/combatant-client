@@ -8,11 +8,14 @@
 package combatant.client.mixins.sodium;
 
 import com.llamalad7.mixinextras.sugar.Local;
+import combatant.client.render.engine.material.MaterialClassification;
 import combatant.client.render.engine.material.MaterialDomain;
 import combatant.client.render.engine.material.MaterialRegistry;
 import combatant.client.render.engine.material.MaterialSurfaceDescriptor;
 import combatant.client.render.helpers.SodiumSurfaceFlagContext;
 import combatant.client.render.sodium.terrain.CombatantChunkVertexExtension;
+import combatant.client.render.sodium.fluid.WaterSurfaceExtractor;
+import combatant.client.render.sodium.fluid.HeightSurfacePatchRouting;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.DefaultTerrainRenderPasses;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.material.Material;
 import net.caffeinemc.mods.sodium.client.render.chunk.vertex.format.ChunkVertexEncoder;
@@ -25,6 +28,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import org.objectweb.asm.Opcodes;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -32,10 +37,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Pseudo
 @Mixin(targets = "net.caffeinemc.mods.sodium.client.render.chunk.compile.pipeline.BlockRenderer")
 public abstract class SodiumBlockRendererMixin {
+    @Shadow(remap = false) @Final private ChunkVertexEncoder.Vertex[] vertices;
+
 
     @Inject(method = "renderModel", at = @At("HEAD"), remap = false)
     private void combatant$pushSurfaceState(BlockStateModel model, BlockState state, BlockPos pos, BlockPos origin, CallbackInfo ci) {
-        SodiumSurfaceFlagContext.pushForState(state, origin);
+        SodiumSurfaceFlagContext.pushForState(state, pos, origin);
     }
 
     @Inject(method = "renderModel", at = @At("RETURN"), remap = false)
@@ -61,14 +68,43 @@ public abstract class SodiumBlockRendererMixin {
         extension.combatant$setSurfaceFlags(SodiumSurfaceFlagContext.getSurfaceFlags(vertex.y));
 
         TextureAtlasSprite sprite = quad.sprite(SpriteFinderCache.forBlockAtlas());
-        MaterialDomain domain = SodiumSurfaceFlagContext.materialDomain(combatant$domain(material));
-        MaterialSurfaceDescriptor descriptor = MaterialRegistry.global().resolve(sprite, domain);
+        MaterialClassification classification = SodiumSurfaceFlagContext.materialClassification(combatant$domain(material));
+        MaterialSurfaceDescriptor descriptor = MaterialRegistry.global().resolve(sprite, classification);
         extension.combatant$setMaterialData(
                 descriptor.stableId(),
                 MaterialRegistry.global().gpuPresenceMask(descriptor),
                 descriptor.gpuFeatureMask16(),
                 descriptor.packScalarSurface()
         );
+    }
+
+    @Inject(
+            method = "bufferQuad",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/caffeinemc/mods/sodium/client/render/chunk/terrain/TerrainRenderPass;isTranslucent()Z",
+                    shift = At.Shift.BEFORE
+            ),
+            remap = false,
+            cancellable = true
+    )
+    private void combatant$extractExplicitHeightPatch(MutableQuadViewImpl quad,
+                                                       float[] brightness,
+                                                       Material material,
+                                                       CallbackInfo ci) {
+        TextureAtlasSprite sprite = quad.sprite(SpriteFinderCache.forBlockAtlas());
+        MaterialClassification classification = SodiumSurfaceFlagContext.materialClassification(combatant$domain(material));
+        MaterialSurfaceDescriptor descriptor = MaterialRegistry.global().resolve(sprite, classification);
+        boolean captured = WaterSurfaceExtractor.captureHeight(
+                SodiumSurfaceFlagContext.worldPos(),
+                SodiumSurfaceFlagContext.renderOrigin(),
+                quad,
+                descriptor,
+                vertices
+        );
+        if (captured && HeightSurfacePatchRouting.replacementActive()) {
+            ci.cancel();
+        }
     }
 
     private static MaterialDomain combatant$domain(Material material) {

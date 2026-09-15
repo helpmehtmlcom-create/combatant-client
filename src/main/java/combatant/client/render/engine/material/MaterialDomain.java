@@ -8,15 +8,21 @@
 package combatant.client.render.engine.material;
 
 /**
- * High-level shading domain supplied by the producer together with a scene draw class.
- * Detailed material identity is deliberately separate and will be provided by MaterialRegistry.
+ * Semantic surface domain supplied by the producer. This is not the same thing as
+ * Sodium's terrain render pass: a glass or water surface may currently use Sodium's translucent
+ * compatibility pass while still being identified exactly as GLASS/WATER to Combatant.
  */
 public enum MaterialDomain {
     OPAQUE,
     CUTOUT,
     TRANSLUCENT,
     WATER,
+    LAVA,
+    GLASS,
     PORTAL,
-    EMISSIVE,
-    UNKNOWN
+    UNKNOWN;
+
+    public int gpuCode() {
+        return ordinal() & 0xF;
+    }
 }

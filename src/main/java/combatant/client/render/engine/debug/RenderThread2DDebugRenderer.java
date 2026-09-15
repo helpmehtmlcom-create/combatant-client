@@ -34,7 +34,7 @@ import combatant.client.util.logging.DebugLog;
  *     <li>Immediate probe: draws with {@link Renderer2D} after vanilla {@code GuiRenderer.render()}.</li>
  * </ul>
  *
- * <p>This deliberately does not move production HUD rendering. It only tells which side is broken:
+ * <p>This does not move production HUD rendering. It only tells which side is broken:
  * vanilla GUI/root-layer extraction or Combatant immediate Renderer2D/RHI.</p>
  */
 public enum RenderThread2DDebugRenderer {

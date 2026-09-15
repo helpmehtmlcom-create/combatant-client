@@ -21,7 +21,7 @@ import java.util.Set;
  * Build-time distribution metadata exposed to runtime code.
  *
  * <p>Release artifacts embed {@code META-INF/combatant/distribution.properties}.
- * Development and ordinary non-release builds deliberately fall back to a permissive
+ * Development and ordinary non-release builds fall back to a permissive
  * universal state so IDE/native dependency layouts keep working.</p>
  */
 public final class DistributionCapabilities {

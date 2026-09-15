@@ -38,7 +38,7 @@ import java.util.Locale;
 /**
  * Neutral one-bounce screen-space radiance source.
  *
- * <p>The output is deliberately not multiplied by an artistic GI strength or tint. It represents
+ * <p>The output is not multiplied by an artistic GI strength or tint. It represents
  * sampled incoming scene radiance plus a confidence channel kept separately for future temporal,
  * denoise and fallback producers.</p>
  */

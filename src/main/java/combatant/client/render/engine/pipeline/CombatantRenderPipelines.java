@@ -45,14 +45,10 @@ import java.util.List;
  */
 public enum CombatantRenderPipelines {
     ;
-    // WORLD depth-tested pipelines are overlays against already-populated scene depth.
-    // Keep the bias to a constant depth-buffer unit only. A non-zero slope factor is
-    // angle dependent and becomes an increasingly large world-space displacement with
-    // distance, which makes occluded quads leak through terrain when the camera moves away.
-    // Constant = 1 is enough to absorb the last raster/transform ULP without turning the
-    // depth test into a distance-dependent polygon offset.
-    private static final float WORLD_OVERLAY_DEPTH_BIAS_SLOPE = 0.0f;
-    private static final float WORLD_OVERLAY_DEPTH_BIAS_CONSTANT = 1.0f;
+    private static final float COPLANAR_SURFACE_DEPTH_BIAS_SLOPE = 1.0f;
+    private static final float COPLANAR_SURFACE_DEPTH_BIAS_CONSTANT = 10.0f;
+    private static final float COPLANAR_DECAL_DEPTH_BIAS_SLOPE = 1.0f;
+    private static final float COPLANAR_DECAL_DEPTH_BIAS_CONSTANT = 1.0f;
 
     // Shaders (assets/combatant/shaders/*)
     public static final Identifier SHADER_POS_COLOR_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_color.vert");
@@ -310,7 +306,20 @@ public enum CombatantRenderPipelines {
             .withVertexShader(SHADER_POS_COLOR_VERT)
             .withFragmentShader(SHADER_POS_COLOR_FRAG)
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
+            .withDepthWrite(false)
+            .withBlend(BlendFunction.TRANSLUCENT)
+            .withCull(false)
+            .build()
+    );
+
+    /** Depth-tested colored geometry that is intentionally coplanar with scene surfaces. */
+    public static final RenderPipeline WORLD_COLORED_COPLANAR_DEPTH = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
+            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_colored_coplanar_depth"))
+            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexShader(SHADER_POS_COLOR_VERT)
+            .withFragmentShader(SHADER_POS_COLOR_FRAG)
+            .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
+            .withDepthBias(COPLANAR_SURFACE_DEPTH_BIAS_SLOPE, COPLANAR_SURFACE_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withCull(false)
@@ -356,7 +365,6 @@ public enum CombatantRenderPipelines {
             .withFragmentShader(SHADER_POS_TEX_COLOR_FRAG)
             .withSampler("u_Texture")
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withCull(false)
@@ -371,7 +379,6 @@ public enum CombatantRenderPipelines {
             .withVertexShader(SHADER_POS_COLOR_VERT)
             .withFragmentShader(SHADER_POS_COLOR_FRAG)
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunctions.ALPHA_ADDITIVE)
             .withCull(false)
@@ -414,7 +421,7 @@ public enum CombatantRenderPipelines {
             .withVertexShader(SHADER_POS_TEX_COLOR_PARAMS2_VERT)
             .withFragmentShader(SHADER_WORLD_AIM_DECAL_FRAG)
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
+            .withDepthBias(COPLANAR_DECAL_DEPTH_BIAS_SLOPE, COPLANAR_DECAL_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withCull(false)
@@ -444,7 +451,7 @@ public enum CombatantRenderPipelines {
             .withVertexShader(SHADER_POS_TEX_COLOR_PARAMS2_VERT)
             .withFragmentShader(SHADER_WORLD_DECAL_SDF_FRAG)
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
+            .withDepthBias(COPLANAR_DECAL_DEPTH_BIAS_SLOPE, COPLANAR_DECAL_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withCull(false)
@@ -475,7 +482,6 @@ public enum CombatantRenderPipelines {
             .withFragmentShader(SHADER_TEXT_FRAG)
             .withSampler("u_Texture")
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withCull(false)
@@ -508,7 +514,6 @@ public enum CombatantRenderPipelines {
             .withSampler("u_Texture")
             .withUniform("MsdfText", UniformType.UNIFORM_BUFFER)
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withCull(false)
@@ -555,7 +560,6 @@ public enum CombatantRenderPipelines {
             .withFragmentShader(SHADER_POS_TEX_COLOR_FRAG)
             .withSampler("u_Texture")
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunctions.ALPHA_ADDITIVE)
             .withCull(false)
@@ -571,7 +575,6 @@ public enum CombatantRenderPipelines {
             .withVertexShader(SHADER_POS_COLOR_VERT)
             .withFragmentShader(SHADER_POS_COLOR_FRAG)
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withCull(false)
@@ -586,7 +589,6 @@ public enum CombatantRenderPipelines {
             .withVertexShader(SHADER_WIDE_LINE_VERT)
             .withFragmentShader(SHADER_POS_COLOR_FRAG)
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withCull(false)
@@ -602,7 +604,6 @@ public enum CombatantRenderPipelines {
             .withVertexShader(SHADER_POS_COLOR_VERT)
             .withFragmentShader(SHADER_POS_COLOR_FRAG)
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withCull(false)
@@ -618,7 +619,6 @@ public enum CombatantRenderPipelines {
             .withVertexShader(SHADER_POS_COLOR_VERT)
             .withFragmentShader(SHADER_POS_COLOR_FRAG)
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withCull(false)
@@ -633,7 +633,6 @@ public enum CombatantRenderPipelines {
             .withVertexShader(SHADER_WIDE_LINE_VERT)
             .withFragmentShader(SHADER_POS_COLOR_FRAG)
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withCull(false)
@@ -650,7 +649,6 @@ public enum CombatantRenderPipelines {
             .withFragmentShader(SHADER_POS_TEX_COLOR_FRAG)
             .withSampler("u_Texture")
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withCull(false)
@@ -666,7 +664,6 @@ public enum CombatantRenderPipelines {
             .withFragmentShader(SHADER_POS_TEX_COLOR_FRAG)
             .withSampler("u_Texture")
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunctions.ALPHA_ADDITIVE)
             .withCull(false)
@@ -681,7 +678,6 @@ public enum CombatantRenderPipelines {
             .withVertexShader(SHADER_POS_COLOR_VERT)
             .withFragmentShader(SHADER_POS_COLOR_FRAG)
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withCull(false)
@@ -697,7 +693,6 @@ public enum CombatantRenderPipelines {
             .withVertexShader(SHADER_POS_COLOR_VERT)
             .withFragmentShader(SHADER_POS_COLOR_FRAG)
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withCull(false)
@@ -712,7 +707,6 @@ public enum CombatantRenderPipelines {
             .withVertexShader(SHADER_WIDE_LINE_VERT)
             .withFragmentShader(SHADER_POS_COLOR_FRAG)
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withCull(false)
@@ -729,7 +723,6 @@ public enum CombatantRenderPipelines {
             .withFragmentShader(SHADER_POS_TEX_COLOR_FRAG)
             .withSampler("u_Texture")
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunctions.ALPHA_ADDITIVE)
             .withCull(false)
@@ -746,7 +739,6 @@ public enum CombatantRenderPipelines {
             .withSampler("u_Texture")
             .withUniform("TextureTint", UniformType.UNIFORM_BUFFER)
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunctions.ALPHA_ADDITIVE)
             .withCull(false)
@@ -762,7 +754,6 @@ public enum CombatantRenderPipelines {
             .withFragmentShader(SHADER_POS_TEX_COLOR_FRAG)
             .withSampler("u_Texture")
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthBias(WORLD_OVERLAY_DEPTH_BIAS_SLOPE, WORLD_OVERLAY_DEPTH_BIAS_CONSTANT)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withCull(false)

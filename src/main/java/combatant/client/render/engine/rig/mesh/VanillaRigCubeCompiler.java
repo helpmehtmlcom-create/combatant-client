@@ -14,7 +14,7 @@ import combatant.client.render.engine.rig.deform.RigDeformFlags;
 /**
  * Converts vanilla {@link ModelPart.Cube} geometry into the CPU-side rig mesh format.
  *
- * <p>The compiler deliberately consumes the final vanilla polygon vertices instead of reconstructing
+ * <p>The compiler consumes the final vanilla polygon vertices instead of reconstructing
  * the classic box UV layout. That preserves texture scaling, mirror winding, dilation and the visible-face
  * mask exactly as Minecraft baked them. Generated vertices are subdivided only along the requested
  * deformation axis and remain in ModelPart world units ({@code 1 px == 1/16 block}).</p>

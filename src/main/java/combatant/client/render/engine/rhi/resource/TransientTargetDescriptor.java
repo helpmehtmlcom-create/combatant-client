@@ -12,7 +12,7 @@ import com.mojang.blaze3d.GpuFormat;
 /**
  * Backend-neutral compatibility descriptor for a temporary render target.
  *
- * <p>The logical name describes a compiler allocation; it is deliberately not part of
+ * <p>The logical name describes a compiler allocation; it is not part of
  * {@link #compatibilityKey()}. Once a lifetime ends, another logical resource with the same
  * physical requirements may reuse the allocation.</p>
  */

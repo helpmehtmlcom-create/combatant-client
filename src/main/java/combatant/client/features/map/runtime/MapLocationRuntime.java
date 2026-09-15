@@ -68,6 +68,7 @@ public final class MapLocationRuntime {
     private final DuplexLocalConfig duplexConfig = DuplexLocalConfig.get();
     private final DuplexRuntime duplex = new DuplexRuntime();
     private final Map<UUID, Long> lastDuplexRevision = new HashMap<>();
+    private final Map<UUID, Long> lastDuplexSentAt = new HashMap<>();
     private final Map<UUID, Long> lastLocatorSeenAt = new HashMap<>();
     private final MapHeuristicConfig heuristicConfig = MapHeuristicConfig.get();
 
@@ -134,6 +135,11 @@ public final class MapLocationRuntime {
     public void shutdown() {
         reset();
         MapHistoryStore.get().shutdown();
+    }
+
+    /** Stops live locator/IPC state while keeping persistent storage resumable after soft panic. */
+    public void suspend() {
+        reset();
     }
 
     private Captured captureLocations(Minecraft mc,
@@ -405,6 +411,7 @@ public final class MapLocationRuntime {
 
     private void forwardDuplexBearings(List<LocatorObservation> observations, Set<UUID> exactTargets) {
         Set<UUID> seen = new HashSet<>();
+        long now = System.currentTimeMillis();
         for (LocatorObservation observation : observations) {
             UUID target = observation.targetUuid();
             if (target == null || observation.type() != LocatorObservationType.BEARING_ONLY
@@ -414,7 +421,11 @@ public final class MapLocationRuntime {
             seen.add(target);
             long revision = observation.sourceRevision();
             Long previous = lastDuplexRevision.get(target);
-            if (previous != null && previous == revision) continue;
+            long lastSent = lastDuplexSentAt.getOrDefault(target, 0L);
+            // Refresh unchanged rays at a bounded rate. Pairing uses observation time, so retaining
+            // only the first timestamp makes a newly connected courier impossible to pair with a
+            // perfectly valid, still-present local bearing.
+            if (previous != null && previous == revision && now - lastSent < 250L) continue;
 
             if (duplex.publishBearing(new DuplexBearingSample(
                     target,
@@ -424,9 +435,11 @@ public final class MapLocationRuntime {
                     observation.observedAtMs(),
                     revision))) {
                 lastDuplexRevision.put(target, revision);
+                lastDuplexSentAt.put(target, now);
             }
         }
         lastDuplexRevision.keySet().removeIf(id -> !seen.contains(id));
+        lastDuplexSentAt.keySet().removeIf(id -> !seen.contains(id));
     }
 
 
@@ -598,6 +611,7 @@ public final class MapLocationRuntime {
             activeWorldFingerprint = "";
             activeDuplexConfigFingerprint = 0;
             lastDuplexRevision.clear();
+            lastDuplexSentAt.clear();
             return;
         }
         int configFingerprint = duplexConfig.runtimeFingerprint();
@@ -607,6 +621,7 @@ public final class MapLocationRuntime {
         activeWorldFingerprint = world;
         activeDuplexConfigFingerprint = configFingerprint;
         lastDuplexRevision.clear();
+        lastDuplexSentAt.clear();
         duplex.start(server, world);
     }
 
@@ -618,6 +633,7 @@ public final class MapLocationRuntime {
         activeWorldFingerprint = "";
         activeDuplexConfigFingerprint = 0;
         lastDuplexRevision.clear();
+        lastDuplexSentAt.clear();
     }
 
     private static boolean usable(Minecraft mc) {

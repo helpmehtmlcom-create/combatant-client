@@ -326,7 +326,7 @@ public final class SodiumGlMsaaControl implements MsaaControl {
         if (fbo == 0) return 0;
 
         try {
-            // DirectStateAccess deliberately does not expose arbitrary multisample attachment target
+            // DirectStateAccess does not expose arbitrary multisample attachment target
             // selection on its emulated path (it assumes GL_TEXTURE_2D), so attachment setup remains
             // Combatant-owned here. Binding goes through GlStateManager to keep Mojang's FBO cache in sync.
             GlStateManager._glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);

@@ -830,7 +830,7 @@ final class XaeroMapSurface {
             }
         }
 
-        // Historical/accepted solver observations deliberately stay out of the production
+        // Historical/accepted solver observations stay out of the production
         // map overlay. They are useful for diagnostics and solving, but rendering them here creates
         // stale fans anchored at every previous observer position.
 

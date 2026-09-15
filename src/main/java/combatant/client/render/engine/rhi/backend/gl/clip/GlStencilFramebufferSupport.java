@@ -272,7 +272,7 @@ final class GlStencilFramebufferSupport {
             if (GlValidation.fullEnabled()) {
                 int status = GL30C.glCheckFramebufferStatus(GL30C.GL_FRAMEBUFFER);
                 if (status != GL30C.GL_FRAMEBUFFER_COMPLETE) {
-                    // Validation mode deliberately pays the preflight query cost and can rebuild a stale FBO.
+                    // Validation mode pays the preflight query cost and can rebuild a stale FBO.
                     invalidateAttachment(framebuffer, "clear preflight incomplete status=0x" + Integer.toHexString(status));
                     if (!ensure(colorView, depthView)) {
                         return false;

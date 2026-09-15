@@ -17,6 +17,9 @@ public record MaterialSurfaceDescriptor(
         int stableId,
         Identifier spriteId,
         MaterialDomain domain,
+        int traitMask,
+        MaterialSubmissionRoute submissionRoute,
+        MaterialResolutionSource resolutionSource,
         MaterialTextureSet textures,
         float ambientOcclusion,
         float roughness,
@@ -35,6 +38,8 @@ public record MaterialSurfaceDescriptor(
     public MaterialSurfaceDescriptor {
         if (spriteId == null) throw new IllegalArgumentException("spriteId");
         if (domain == null) domain = MaterialDomain.UNKNOWN;
+        if (submissionRoute == null) submissionRoute = MaterialSubmissionRoute.COMPATIBILITY;
+        if (resolutionSource == null) resolutionSource = MaterialResolutionSource.UNKNOWN;
         if (textures == null) textures = new MaterialTextureSet(null);
         ambientOcclusion = clamp01(ambientOcclusion);
         roughness = clamp01(roughness);
@@ -49,6 +54,15 @@ public record MaterialSurfaceDescriptor(
         porosity = clamp01(porosity);
         thickness = Math.max(0.0f, thickness);
         if (tessellation == null) tessellation = MaterialTessellationProfile.NONE;
+    }
+
+    public boolean hasTrait(MaterialTrait trait) {
+        return trait != null && (traitMask & trait.bit()) != 0;
+    }
+
+    public boolean requiresExtractedPatch() {
+        return submissionRoute == MaterialSubmissionRoute.EXTRACTED_PATCH
+                || tessellation.mode().requiresPatchMesh();
     }
 
     public int gpuPresenceMask8() {
@@ -69,13 +83,19 @@ public record MaterialSurfaceDescriptor(
      * material policy; the shader never infers tessellation/domain semantics from color/depth.
      */
     public int gpuFeatureMask16() {
-        int flags = (domain.ordinal() & 0xF);
+        int flags = domain.gpuCode();
         flags |= (tessellation.mode().gpuCode() & 0x3) << 4;
         if (textures.has(MaterialTextureSemantic.HEIGHT) || textures.has(MaterialTextureSemantic.LABPBR_NORMAL)) flags |= 1 << 6;
-        if (emission > 0.0f || textures.has(MaterialTextureSemantic.EMISSIVE) || textures.has(MaterialTextureSemantic.LABPBR_SPECULAR)) flags |= 1 << 7;
-        if (transmission > 0.0f) flags |= 1 << 8;
+        if (emission > 0.0f || textures.has(MaterialTextureSemantic.EMISSIVE)
+                || textures.has(MaterialTextureSemantic.LABPBR_SPECULAR) || hasTrait(MaterialTrait.EMISSIVE)) flags |= 1 << 7;
+        if (transmission > 0.0f || hasTrait(MaterialTrait.TRANSMISSIVE)) flags |= 1 << 8;
         if (subsurface > 0.0f) flags |= 1 << 9;
         if (clearcoat > 0.0f) flags |= 1 << 10;
+        if (hasTrait(MaterialTrait.FOLIAGE)) flags |= 1 << 11;
+        if (hasTrait(MaterialTrait.GLASS)) flags |= 1 << 12;
+        if (hasTrait(MaterialTrait.REFRACTIVE)) flags |= 1 << 13;
+        if (hasTrait(MaterialTrait.DOUBLE_SIDED)) flags |= 1 << 14;
+        if (hasTrait(MaterialTrait.FLUID)) flags |= 1 << 15;
         return flags & 0xFFFF;
     }
 

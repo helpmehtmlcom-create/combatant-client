@@ -20,7 +20,7 @@ import combatant.client.runtime.error.FailureRegistry;
 import combatant.client.runtime.CombatantBuild;
 import net.minecraft.client.Minecraft;
 
-/** Deliberately failing, resource-free diagnostic fixture. Dev source set only. */
+/** Failing, resource-free diagnostic fixture. Dev source set only. */
 @ModuleInfo(id = "deverrorprobe", displayName = "ErrorHandler Probe", category = ModuleCategory.MISC,
         description = "Development-only, manually armed failure scenarios")
 public final class DevErrorProbe extends Module {

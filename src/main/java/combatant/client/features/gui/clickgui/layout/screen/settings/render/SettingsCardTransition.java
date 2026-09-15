@@ -15,7 +15,7 @@ import combatant.client.render.engine.renderer.Renderer2D;
 /**
  * Card-local transition used when switching Settings sections.
  *
- * Keep this deliberately restrained. The previous blur/bloom arrival made every
+ * Keep this restrained. The previous blur/bloom arrival made every
  * card briefly read as a separate floating layer and exaggerated viewport clip
  * boundaries. Cards now keep most of their opacity and only settle the final
  * alpha during a short section transition.

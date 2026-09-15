@@ -95,6 +95,7 @@ final class DeferredBackendPasses implements AutoCloseable {
     private final DeferredTemporalSignalSource temporalSignals = new DeferredTemporalSignalSource();
     private final DeferredReflectionDenoiseSource reflectionDenoise = new DeferredReflectionDenoiseSource();
     private final DeferredTemporalHistorySource temporalHistory = new DeferredTemporalHistorySource();
+    private final DeferredPatchSurfaceSource patchSurfaces = new DeferredPatchSurfaceSource();
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.shadow.cascades", DeferredStage.SHADOW_PREPARE)
@@ -167,6 +168,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         temporalSignals.install(passes);
         reflectionDenoise.install(passes);
         temporalHistory.install(passes);
+        patchSurfaces.install(passes);
     }
 
     void prepare(CombatantRhi rhi) {
@@ -187,6 +189,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         temporalSignals.prepare(rhi);
         reflectionDenoise.prepare(rhi);
         temporalHistory.prepare(rhi);
+        patchSurfaces.prepare(rhi);
     }
 
     void release(CombatantRhi currentOwner) {
@@ -205,6 +208,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         temporalSignals.release(releaseOwner);
         reflectionDenoise.release(releaseOwner);
         temporalHistory.release(releaseOwner);
+        patchSurfaces.release(releaseOwner);
         owner = null;
     }
 
@@ -420,6 +424,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         temporalSignals.close();
         reflectionDenoise.close();
         temporalHistory.close();
+        patchSurfaces.close();
         owner = null;
     }
 

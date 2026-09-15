@@ -11,7 +11,9 @@ import combatant.client.render.engine.rhi.pipeline.VertexLayoutSpec;
 import net.minecraft.resources.Identifier;
 import org.jetbrains.annotations.Nullable;
 
-/** Native tessellation/patch pipeline contract, intentionally separate from Blaze3D RenderPipeline. */
+import java.util.List;
+
+/** Native tessellation/patch pipeline contract, separate from Blaze3D RenderPipeline. */
 public record PatchPipelineDescriptor(String label,
                                       Identifier vertexShader,
                                       Identifier tessControlShader,
@@ -24,7 +26,7 @@ public record PatchPipelineDescriptor(String label,
                                       AdvancedBlendMode blendMode,
                                       AdvancedDepthMode depthMode,
                                       AdvancedCullMode cullMode,
-                                      GpuFormat colorFormat,
+                                      List<GpuFormat> colorFormats,
                                       @Nullable GpuFormat depthFormat,
                                       int samples) {
     public PatchPipelineDescriptor {
@@ -37,7 +39,10 @@ public record PatchPipelineDescriptor(String label,
         if (controlPoints < 1 || controlPoints > 32) {
             throw new IllegalArgumentException("controlPoints must be in [1, 32]");
         }
-        if (colorFormat == null) throw new IllegalArgumentException("colorFormat");
+        if (colorFormats == null || colorFormats.isEmpty() || colorFormats.stream().anyMatch(java.util.Objects::isNull)) {
+            throw new IllegalArgumentException("patch pipeline requires at least one color format");
+        }
+        colorFormats = List.copyOf(colorFormats);
         if (samples != 1 && samples != 2 && samples != 4 && samples != 8 && samples != 16) {
             throw new IllegalArgumentException("unsupported patch sample count: " + samples);
         }
@@ -49,5 +54,33 @@ public record PatchPipelineDescriptor(String label,
         if (depthMode != AdvancedDepthMode.DISABLED && depthFormat == null) {
             throw new IllegalArgumentException("depthFormat is required when depth is enabled");
         }
+    }
+
+    public PatchPipelineDescriptor(String label,
+                                   Identifier vertexShader,
+                                   Identifier tessControlShader,
+                                   Identifier tessEvaluationShader,
+                                   @Nullable Identifier geometryShader,
+                                   Identifier fragmentShader,
+                                   VertexLayoutSpec vertexLayout,
+                                   int controlPoints,
+                                   ShaderResourceLayout resources,
+                                   AdvancedBlendMode blendMode,
+                                   AdvancedDepthMode depthMode,
+                                   AdvancedCullMode cullMode,
+                                   GpuFormat colorFormat,
+                                   @Nullable GpuFormat depthFormat,
+                                   int samples) {
+        this(label, vertexShader, tessControlShader, tessEvaluationShader, geometryShader, fragmentShader,
+                vertexLayout, controlPoints, resources, blendMode, depthMode, cullMode,
+                List.of(colorFormat), depthFormat, samples);
+    }
+
+    /** Compatibility accessor for single-target patch pipelines. */
+    public GpuFormat colorFormat() {
+        if (colorFormats.size() != 1) {
+            throw new IllegalStateException("Patch pipeline has " + colorFormats.size() + " color attachments");
+        }
+        return colorFormats.get(0);
     }
 }

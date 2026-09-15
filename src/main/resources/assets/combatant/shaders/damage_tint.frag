@@ -70,7 +70,7 @@ void main() {
         col = texture(u_Texture, sampleUv).rgb;
     }
 
-    // Persistent low-health response: deliberately slow/subtle and independent from hit impulses.
+    // Persistent low-health response: slow/subtle and independent from hit impulses.
     float desat = clamp(u_LowHealth.y, 0.0, 1.0);
     float contrast = clamp(u_LowHealth.z, 0.0, 1.0);
     float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));

@@ -4048,7 +4048,7 @@ public final class Renderer2D {
     }
 
     /**
-     * Blurs the scene captured before HUD rendering. Already-rendered HUD/UI is deliberately
+     * Blurs the scene captured before HUD rendering. Already-rendered HUD/UI is
      * excluded, so the result is stable regardless of widget order.
      */
     public void backdropBlurRect(double x, double y, double w, double h,

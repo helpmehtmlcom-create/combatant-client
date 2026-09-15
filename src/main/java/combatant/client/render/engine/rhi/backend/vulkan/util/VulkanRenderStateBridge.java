@@ -375,6 +375,7 @@ public enum VulkanRenderStateBridge {
                 && (stencilMode == StencilMode.WRITE || stencilMode == StencilMode.RESTORE);
     }
 
+
     public static void beginPipelineCompile(RenderPipeline pipeline) {
         COMPILING_PIPELINE.set(pipeline);
     }

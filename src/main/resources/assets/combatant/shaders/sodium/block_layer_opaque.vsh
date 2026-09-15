@@ -54,6 +54,7 @@ layout(location = 5) in uint a_CombatantMaterialData;
 layout(location = 6) in uint a_CombatantMaterialMeta;
 layout(location = 7) in vec4 a_CombatantTangent;
 layout(location = 8) in uint a_CombatantMaterialSurface;
+layout(location = 9) in vec4 a_CombatantBaseColor;
 #endif
 
 const uint COMBATANT_SURFACE_WAVY_VEGETATION = 1u << 1u;
@@ -138,7 +139,7 @@ void main() {
     v_CombatantSurfaceFlags = a_CombatantSurfaceFlags;
 
 #ifdef COMBATANT_DEFERRED_GBUFFER
-    v_CombatantBaseColor = _vert_color;
+    v_CombatantBaseColor = a_CombatantBaseColor;
     v_CombatantLightCoord = _vert_tex_light_coord;
     v_CombatantViewPosition = viewPosition.xyz;
     v_CombatantMaterialParams = _material_params;

@@ -50,7 +50,7 @@ public final class MapPlayerMarkerRenderer {
     }
 
     /**
-     * Compact production player marker. Source glyphs deliberately do not live on the head itself:
+     * Compact production player marker. Source glyphs do not live on the head itself:
      * source/freshness belongs to hover/context details, while the always-visible marker is only identity.
      */
     public static float drawMarker(float centerX,

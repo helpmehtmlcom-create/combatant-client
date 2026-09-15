@@ -272,7 +272,7 @@ public enum CombatantRenderSystem {
         CombatantRhi activeRhi = rhi();
         SodiumFrameContext sodiumFrame;
         if (!frameOpen) {
-            // Commit optional renderer families only at a clean frame boundary. This is deliberately
+            // Commit optional renderer families only at a clean frame boundary. This is
             // before any producer pipeline lookup so forward/deferred attachment layouts cannot mix.
             DEFERRED_WORLD.serviceRuntimeLifecycle();
             frameId++;

@@ -21,6 +21,7 @@ import net.minecraft.client.Minecraft;
 import combatant.client.mixininterface.IMsaaTexture;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.material.MaterialAtlasManager;
+import combatant.client.render.sodium.fluid.SurfacePatchRouting;
 import combatant.client.render.engine.rhi.FullscreenDrawCommand;
 import combatant.client.render.engine.rhi.resource.RenderResourceManager;
 import combatant.client.render.engine.rhi.resource.TransientTargetDescriptor;
@@ -48,10 +49,12 @@ public final class DeferredWorldPipeline {
     public static final int GEOMETRY_SLOT = 2;
     public static final int AUXILIARY_SLOT = 3;
     public static final int MATERIAL_SLOT = 4;
+    public static final int MATERIAL_ID_SLOT = 5;
     public static final GpuFormat SURFACE_FORMAT = GpuFormat.RGBA8_UNORM;
     public static final GpuFormat GEOMETRY_FORMAT = GpuFormat.RGBA8_UNORM;
     public static final GpuFormat AUXILIARY_FORMAT = GpuFormat.RGBA8_UNORM;
     public static final GpuFormat MATERIAL_FORMAT = GpuFormat.RGBA8_UNORM;
+    public static final GpuFormat MATERIAL_ID_FORMAT = GpuFormat.R32_UINT;
 
     private static final String OWNER = "DeferredWorldPipeline";
     private static final Vector4fc EMPTY_GBUFFER = new Vector4f(0.0f, 0.0f, 0.0f, 0.0f);
@@ -117,7 +120,7 @@ public final class DeferredWorldPipeline {
     }
 
     /**
-     * Called before world submission for a new Combatant frame. Deferred activation is deliberately
+     * Called before world submission for a new Combatant frame. Deferred activation is
      * world-gated so boot/menu resource reloads never compile or upload its assets.
      */
     public void serviceRuntimeLifecycle() {
@@ -270,8 +273,8 @@ public final class DeferredWorldPipeline {
     public void configureGeometryPipeline(RenderPipeline.Builder builder) {
         if (!enabled()) return;
         int availableAttachments = CombatantRenderSystem.rhi().capabilities().maxColorAttachments();
-        if (availableAttachments <= MATERIAL_SLOT) {
-            throw new IllegalStateException("Deferred world pipeline requires 5 color attachments; backend exposes "
+        if (availableAttachments <= MATERIAL_ID_SLOT) {
+            throw new IllegalStateException("Deferred world pipeline requires 6 color attachments; backend exposes "
                     + availableAttachments);
         }
         builder.withColorTargetState(SURFACE_SLOT, new ColorTargetState(
@@ -285,6 +288,9 @@ public final class DeferredWorldPipeline {
         ));
         builder.withColorTargetState(MATERIAL_SLOT, new ColorTargetState(
                 Optional.empty(), MATERIAL_FORMAT, ColorTargetState.WRITE_ALL
+        ));
+        builder.withColorTargetState(MATERIAL_ID_SLOT, new ColorTargetState(
+                Optional.empty(), MATERIAL_ID_FORMAT, ColorTargetState.WRITE_ALL
         ));
         builder.withBindGroupLayout(MaterialAtlasManager.BIND_GROUP);
         builder.withShaderDefine("COMBATANT_DEFERRED_GBUFFER");
@@ -322,6 +328,7 @@ public final class DeferredWorldPipeline {
         resourceBindings.bindTexture(DeferredResource.GBUFFER_GEOMETRY, geometry.geometry());
         resourceBindings.bindTexture(DeferredResource.GBUFFER_AUXILIARY, geometry.auxiliary());
         resourceBindings.bindTexture(DeferredResource.GBUFFER_MATERIAL, geometry.material());
+        resourceBindings.bindTexture(DeferredResource.GBUFFER_MATERIAL_ID, geometry.materialId());
         if (!frameSetupExecuted) {
             executeStage(DeferredStage.FRAME_SETUP);
             frameSetupExecuted = true;
@@ -345,6 +352,9 @@ public final class DeferredWorldPipeline {
                 .withColorAttachment(geometry.geometry(), clearGbuffer)
                 .withColorAttachment(geometry.auxiliary(), clearGbuffer)
                 .withColorAttachment(geometry.material(), clearGbuffer)
+                // Integer material IDs have no meaningful float clear. Every geometry fragment writes an exact ID;
+                // consumers must mask empty pixels using GBUFFER_SURFACE/depth.
+                .withColorAttachment(geometry.materialId(), Optional.empty())
                 .withRenderArea(new RenderPass.RenderArea(0, 0, width, height));
         if (depth != null) {
             descriptor.withDepthAttachment(depth, clearDepth);
@@ -372,12 +382,24 @@ public final class DeferredWorldPipeline {
         }
 
         try {
+            if (!postGeometryExecuted) {
+                // Native height-displacement patches are geometry producers. They must write the
+                // original (possibly multisampled) MRT before any G-buffer resolve takes place.
+                resourceBindings.bindTexture(DeferredResource.GBUFFER_SURFACE, geometry.surface());
+                resourceBindings.bindTexture(DeferredResource.GBUFFER_GEOMETRY, geometry.geometry());
+                resourceBindings.bindTexture(DeferredResource.GBUFFER_AUXILIARY, geometry.auxiliary());
+                resourceBindings.bindTexture(DeferredResource.GBUFFER_MATERIAL, geometry.material());
+                resourceBindings.bindTexture(DeferredResource.GBUFFER_MATERIAL_ID, geometry.materialId());
+                executeStage(DeferredStage.HEIGHT_SURFACE);
+            }
+
             GbufferViews inputs = lightingInputs(geometry);
             sampleableTargets = inputs;
             resourceBindings.bindTexture(DeferredResource.GBUFFER_SURFACE, inputs.surface());
             resourceBindings.bindTexture(DeferredResource.GBUFFER_GEOMETRY, inputs.geometry());
             resourceBindings.bindTexture(DeferredResource.GBUFFER_AUXILIARY, inputs.auxiliary());
             resourceBindings.bindTexture(DeferredResource.GBUFFER_MATERIAL, inputs.material());
+            resourceBindings.bindTexture(DeferredResource.GBUFFER_MATERIAL_ID, inputs.materialId());
             if (!postGeometryExecuted) {
                 executeStage(DeferredStage.POST_GEOMETRY_COMPUTE);
                 executeStage(DeferredStage.DEPTH_RESOLVE);
@@ -426,7 +448,7 @@ public final class DeferredWorldPipeline {
     /** Single-sample views safe for lighting, compute sampling and postprocess consumers. */
     public @Nullable GbufferViews currentSampleableTargets() {
         if (targets != null && targets.samples() <= 1) {
-            return new GbufferViews(targets.surface(), targets.geometry(), targets.auxiliary(), targets.material());
+            return new GbufferViews(targets.surface(), targets.geometry(), targets.auxiliary(), targets.material(), targets.materialId());
         }
         return sampleableTargets;
     }
@@ -437,8 +459,11 @@ public final class DeferredWorldPipeline {
      * would corrupt Sodium's active terrain program and would be too late to replace visibility.
      */
     public void beforeTerrainSubmission() {
-        if (!enabled()) return;
         RenderSystem.assertOnRenderThread();
+        if (SurfacePatchRouting.consumeReloadRequested()) {
+            CombatantRenderSystem.sodium().reloadWorldRenderer();
+        }
+        if (!enabled()) return;
         beginDeferredFrameState();
         if (!frameSetupExecuted) {
             executeStage(DeferredStage.FRAME_SETUP);
@@ -513,8 +538,9 @@ public final class DeferredWorldPipeline {
         RenderTarget geometry = acquire(resources, "world-gbuffer-geometry", width, height, samples, GEOMETRY_FORMAT);
         RenderTarget auxiliary = acquire(resources, "world-gbuffer-auxiliary", width, height, samples, AUXILIARY_FORMAT);
         RenderTarget material = acquire(resources, "world-gbuffer-material", width, height, samples, MATERIAL_FORMAT);
+        RenderTarget materialId = acquire(resources, "world-gbuffer-material-id", width, height, samples, MATERIAL_ID_FORMAT);
         targets = new GeometryTargets(
-                surface, geometry, auxiliary, material, width, height, samples
+                surface, geometry, auxiliary, material, materialId, width, height, samples
         );
         targetOwner = resources;
         targetFrameId = frameId;
@@ -548,6 +574,7 @@ public final class DeferredWorldPipeline {
         executeStage(DeferredStage.REFLECTION_DENOISE);
         executeStage(DeferredStage.REFLECTION_HISTORY);
         executeStage(DeferredStage.REFLECTION_COMPOSITE);
+        executeStage(DeferredStage.WATER_SURFACE);
         executeStage(DeferredStage.PRE_TRANSLUCENCY);
     }
 
@@ -646,7 +673,7 @@ public final class DeferredWorldPipeline {
 
     private static GbufferViews lightingInputs(GeometryTargets targets) {
         if (targets.samples() <= 1) {
-            return new GbufferViews(targets.surface(), targets.geometry(), targets.auxiliary(), targets.material());
+            return new GbufferViews(targets.surface(), targets.geometry(), targets.auxiliary(), targets.material(), targets.materialId());
         }
 
         RenderResourceManager resources = CombatantRenderSystem.resources();
@@ -658,6 +685,8 @@ public final class DeferredWorldPipeline {
                 targets.width(), targets.height(), 1, AUXILIARY_FORMAT);
         RenderTarget material = acquire(resources, "world-gbuffer-material-resolved",
                 targets.width(), targets.height(), 1, MATERIAL_FORMAT);
+        RenderTarget materialId = acquire(resources, "world-gbuffer-material-id-resolved",
+                targets.width(), targets.height(), 1, MATERIAL_ID_FORMAT);
 
         boolean resolved = CombatantRenderSystem.rhi().msaa().resolveTransient(
                 targets.surfaceTarget(), surface, true, false
@@ -671,12 +700,15 @@ public final class DeferredWorldPipeline {
         resolved &= CombatantRenderSystem.rhi().msaa().resolveTransient(
                 targets.materialTarget(), material, true, false
         );
+        resolved &= CombatantRenderSystem.rhi().msaa().resolveTransient(
+                targets.materialIdTarget(), materialId, true, false
+        );
         if (!resolved) {
             throw new IllegalStateException("Backend could not resolve the multisampled world G-buffer");
         }
         return new GbufferViews(
                 surface.getColorTextureView(), geometry.getColorTextureView(), auxiliary.getColorTextureView(),
-                material.getColorTextureView()
+                material.getColorTextureView(), materialId.getColorTextureView()
         );
     }
 
@@ -713,6 +745,7 @@ public final class DeferredWorldPipeline {
             RenderTarget geometryTarget,
             RenderTarget auxiliaryTarget,
             RenderTarget materialTarget,
+            RenderTarget materialIdTarget,
             int width,
             int height,
             int samples
@@ -732,13 +765,18 @@ public final class DeferredWorldPipeline {
         public GpuTextureView material() {
             return materialTarget.getColorTextureView();
         }
+
+        public GpuTextureView materialId() {
+            return materialIdTarget.getColorTextureView();
+        }
     }
 
     public record GbufferViews(
             GpuTextureView surface,
             GpuTextureView geometry,
             GpuTextureView auxiliary,
-            GpuTextureView material
+            GpuTextureView material,
+            GpuTextureView materialId
     ) {
     }
 

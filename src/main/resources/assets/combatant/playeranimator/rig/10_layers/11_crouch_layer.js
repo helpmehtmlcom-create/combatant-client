@@ -12,7 +12,7 @@
         m.speed/.075,
         c.horizontalSpeed/.075
       )));
-      // Slow deliberate stepping, but with enough travel to actually read as locomotion.
+      // Slow stepping, but with enough travel to actually read as locomotion.
       const sneakHz=.46+.34*moving;
       const sneakPhase=m.advanceCycle('sneak',sneakHz,2.6);
       // Tactical crouch: center of mass goes down/forward, but the spine remains nearly vertical.

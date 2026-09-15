@@ -114,7 +114,7 @@ public final class CustomBar extends AbstractHudElement {
     private static final float LOCATOR_LABEL_SCROLL_SPEED = 22.0f;
     private static final float LOCATOR_LABEL_SCROLL_GAP = 14.0f;
     private static final float LOCATOR_LABEL_SCROLL_PAUSE_SEC = 0.8f;
-    private static final int LOCATOR_LABEL_MAX_ROWS = 3;
+    private static final int LOCATOR_LABEL_BASE_MAX_ROWS = 3;
     private static final String COLOR_THEME = "Theme";
     private static final String COLOR_CUSTOM = "Custom";
     private static final Map<String, Float> LOCATOR_LABEL_ANIM = new HashMap<>();
@@ -160,6 +160,8 @@ public final class CustomBar extends AbstractHudElement {
             new EnumValue<>("locator_label_mode", LocatorLabelMode.CENTER, LocatorLabelMode.values());
     private final NumberValue<Float> locatorLabelAngle =
             new NumberValue<>("locator_label_angle", 6.0f, 4.0f, 45.0f);
+    private final NumberValue<Integer> locatorLabelMaxNearby =
+            new NumberValue<>("locator_label_max_nearby", 3, 1, 8);
     private final BooleanValue locatorLabelDistance =
             new BooleanValue("locator_label_distance", true);
     private final KeyBindValue locatorBarToggle =
@@ -285,7 +287,7 @@ public final class CustomBar extends AbstractHudElement {
         float overlay = bm.getHudOverlayAlphaFactor();
 
         if (locator) {
-            // Locator deliberately uses the same restrained matte language as TabList.
+            // Locator uses the same restrained matte language as TabList.
             // It must stay a compact navigation rail, not become another glass panel.
             int locatorTop = applyBarAlpha(HudRenderUtil.mixColor(theme().windowBg(), theme().surface(), 0.34f), bm);
             int locatorBottom = applyBarAlpha(HudRenderUtil.mixColor(theme().windowBg(), theme().surface(), 0.52f), bm);
@@ -507,6 +509,7 @@ public final class CustomBar extends AbstractHudElement {
         });
 
         LocatorCandidate focusedLabelCandidate = null;
+        Set<String> centerLabelCluster = Collections.emptySet();
         if (labelsEnabled && (labelMode == LocatorLabelMode.CENTER || labelMode == LocatorLabelMode.CENTER_TARGETS)) {
             focusedLabelCandidate = candidates.stream()
                     .filter(candidate -> Math.abs(candidate.yaw) <= labelAngle)
@@ -516,6 +519,8 @@ public final class CustomBar extends AbstractHudElement {
                             .thenComparing(candidate -> candidate.nameSort)
                             .thenComparing(candidate -> candidate.keySort))
                     .orElse(null);
+            centerLabelCluster = locatorCenterLabelCluster(
+                    candidates, focusedLabelCandidate, labelAngle, bm.getLocatorLabelMaxNearby());
         }
 
         for (LocatorCandidate candidate : candidates) {
@@ -578,7 +583,8 @@ public final class CustomBar extends AbstractHudElement {
 
             String labelKey = candidate.key != null ? candidate.key : candidate.nameSort;
             boolean focused = candidate == focusedLabelCandidate;
-            boolean showLabel = shouldShowLocatorLabel(labelMode, isTarget, focused);
+            boolean centerSelected = labelKey != null && centerLabelCluster.contains(labelKey);
+            boolean showLabel = shouldShowLocatorLabel(labelMode, isTarget, centerSelected);
             if (showLabel && labelKey != null && !labelKey.isBlank()) {
                 seenLabels.add(labelKey);
             }
@@ -687,8 +693,11 @@ public final class CustomBar extends AbstractHudElement {
                         .thenComparingDouble(label -> Math.abs(label.yaw()))
                         .thenComparing(label -> label.sort() == null ? "" : label.sort())
                         .thenComparing(LocatorLabel::name));
-                if (slotted.size() > LOCATOR_LABEL_MAX_ROWS) {
-                    slotted = new ArrayList<>(slotted.subList(0, LOCATOR_LABEL_MAX_ROWS));
+                int maxRows = labelMode == LocatorLabelMode.CENTER
+                        ? bm.getLocatorLabelMaxNearby()
+                        : Math.max(LOCATOR_LABEL_BASE_MAX_ROWS, bm.getLocatorLabelMaxNearby());
+                if (slotted.size() > maxRows) {
+                    slotted = new ArrayList<>(slotted.subList(0, maxRows));
                 }
 
                 Map<String, Integer> targetRows = new HashMap<>(slotted.size());
@@ -1044,12 +1053,43 @@ public final class CustomBar extends AbstractHudElement {
         return waypoint.id().right().orElse(null);
     }
 
-    private static boolean shouldShowLocatorLabel(LocatorLabelMode mode, boolean isTarget, boolean focused) {
+    private static Set<String> locatorCenterLabelCluster(List<LocatorCandidate> candidates,
+                                                         LocatorCandidate focused,
+                                                         float clusterAngle,
+                                                         int maxNearby) {
+        if (focused == null || candidates == null || candidates.isEmpty() || maxNearby <= 0) {
+            return Collections.emptySet();
+        }
+
+        float radius = Math.max(0.0f, clusterAngle);
+        List<LocatorCandidate> nearby = candidates.stream()
+                .filter(candidate -> candidate != null
+                        && candidate.key != null
+                        && !candidate.key.isBlank()
+                        && Math.abs(candidate.yaw - focused.yaw) <= radius)
+                .sorted(Comparator
+                        .comparingDouble((LocatorCandidate candidate) -> Math.abs(candidate.yaw - focused.yaw))
+                        .thenComparingDouble(candidate -> Math.abs(candidate.yaw))
+                        .thenComparingDouble(candidate -> candidate.dist)
+                        .thenComparing(candidate -> candidate.nameSort)
+                        .thenComparing(candidate -> candidate.keySort))
+                .limit(Math.max(1, maxNearby))
+                .toList();
+
+        if (nearby.isEmpty()) return Collections.emptySet();
+        Set<String> keys = new HashSet<>(nearby.size());
+        for (LocatorCandidate candidate : nearby) {
+            keys.add(candidate.key);
+        }
+        return keys;
+    }
+
+    private static boolean shouldShowLocatorLabel(LocatorLabelMode mode, boolean isTarget, boolean centerSelected) {
         return switch (mode) {
             case ALWAYS -> true;
-            case CENTER -> focused;
+            case CENTER -> centerSelected;
             case TARGETS -> isTarget;
-            case CENTER_TARGETS -> isTarget || focused;
+            case CENTER_TARGETS -> isTarget || centerSelected;
         };
     }
 
@@ -1265,6 +1305,10 @@ public final class CustomBar extends AbstractHudElement {
                 .visibleWhen(() -> locatorModeEnabled()
                         && locatorLabels.get()
                         && locatorLabelModeUsesCenter()));
+        defs.add(SettingDef.number(locatorLabelMaxNearby)
+                .visibleWhen(() -> locatorModeEnabled()
+                        && locatorLabels.get()
+                        && locatorLabelModeUsesCenter()));
         defs.add(SettingDef.bool(locatorLabelDistance)
                 .visibleWhen(() -> locatorModeEnabled() && locatorLabels.get()));
         defs.add(SettingDef.bind(locatorBarToggle, BindMode.PRESS).visibleWhen(this::locatorModeEnabled));
@@ -1390,6 +1434,10 @@ public final class CustomBar extends AbstractHudElement {
 
     public float getLocatorLabelAngle() {
         return locatorLabelAngle.get();
+    }
+
+    public int getLocatorLabelMaxNearby() {
+        return locatorLabelMaxNearby.get();
     }
 
     public LocatorLabelMode getLocatorLabelMode() {

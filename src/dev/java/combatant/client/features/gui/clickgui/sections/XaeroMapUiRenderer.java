@@ -509,7 +509,7 @@ final class XaeroMapUiRenderer {
         y = clamp(y, areaY + 6.0f, areaY + areaHeight - height - 6.0f);
 
         // Five vertices: the tip is part of the same analytic primitive as the tooltip body.
-        // This is deliberately not a rounded-rect plus a separately drawn triangle, so the
+        // This is not a rounded-rect plus a separately drawn triangle, so the
         // refraction/rim remains continuous across the pointer.
         UiPrimitive tooltipShape = opensRight
                 ? UiPrimitive.builder(x, y, totalWidth, height)

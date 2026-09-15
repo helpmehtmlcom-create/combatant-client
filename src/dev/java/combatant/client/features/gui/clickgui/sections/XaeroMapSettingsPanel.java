@@ -12,6 +12,7 @@ import combatant.client.config.values.ModeValue;
 import combatant.client.config.values.NumberValue;
 import combatant.client.config.values.StringValue;
 import combatant.client.config.values.SetValue;
+import combatant.client.config.subsystem.DuplexLocalConfig;
 import combatant.client.config.subsystem.MapUiConfig;
 import combatant.client.config.subsystem.MapHeuristicConfig;
 import combatant.client.config.subsystem.MapLinkConfig;
@@ -21,6 +22,7 @@ import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.gui.clickgui.util.ClickGuiRichTextRenderer;
 import combatant.client.features.gui.clickgui.layout.screen.settings.SettingsGuiPalette;
 import combatant.client.features.gui.clickgui.layout.screen.settings.implement.other.SearchComponent;
+import combatant.client.features.gui.clickgui.layout.screen.settings.render.LayoutRender2D;
 import combatant.client.features.gui.clickgui.settings.BooleanSetting;
 import combatant.client.features.gui.clickgui.settings.ColorSetting;
 import combatant.client.features.gui.clickgui.settings.ModeSetting;
@@ -32,6 +34,8 @@ import combatant.client.features.gui.clickgui.settings.SettingRenderSurface;
 import combatant.client.features.gui.clickgui.settings.SliderSetting;
 import combatant.client.features.gui.clickgui.settings.TextSetting;
 import combatant.client.features.gui.hud.script.HudScriptLayouts;
+import combatant.client.features.map.duplex.DuplexRuntime;
+import combatant.client.features.map.duplex.DuplexState;
 import combatant.client.features.map.location.PlayerLocationEvent;
 import combatant.client.features.map.location.PlayerLocationEventType;
 import combatant.client.features.map.location.PlayerLocationService;
@@ -43,6 +47,7 @@ import combatant.client.features.map.heuristic.HeuristicRuntimeStats;
 import combatant.client.features.map.heuristic.HeuristicObservation;
 import combatant.client.features.map.heuristic.HeuristicTargetMetrics;
 import combatant.client.features.map.heuristic.MapTriangulationMode;
+import combatant.client.features.map.runtime.MapLocationRuntime;
 import combatant.client.features.map.runtime.PlayerTrackingRangeRuntime;
 import combatant.client.features.map.runtime.PlayerTrackingRangeSnapshot;
 import combatant.client.features.maplink.model.MapLinkProfile;
@@ -148,7 +153,18 @@ final class XaeroMapSettingsPanel {
     private float height;
     private float scroll;
     private float scrollTarget;
+    private float scrollVelocity;
     private float maxScroll;
+    private float scrollbarX;
+    private float scrollbarY;
+    private float scrollbarW;
+    private float scrollbarH;
+    private float scrollbarThumbY;
+    private float scrollbarThumbH;
+    private float scrollbarDragOffset;
+    private float scrollbarHoverAnim;
+    private boolean scrollbarVisible;
+    private boolean scrollbarDragging;
     private float searchX;
     private float searchY;
     private float searchW;
@@ -285,7 +301,8 @@ final class XaeroMapSettingsPanel {
         float target = open ? 1.0f : 0.0f;
         openAnim = animateToward(openAnim, target, dt, open ? 10.5f : 12.0f);
         contentAnim = animateToward(contentAnim, 1.0f, dt, 8.5f);
-        scroll = animateToward(scroll, scrollTarget, dt, 18.0f);
+        if (scrollbarDragging) scrollToMouse(mouseY);
+        updateSmoothScroll(dt);
         flushXaeroSavesIfDue();
         if (!open && openAnim <= 0.001f) {
             openAnim = 0.0f;
@@ -516,6 +533,7 @@ final class XaeroMapSettingsPanel {
             }
             pendingRevealSetting = null;
         }
+        renderScrollbar(contentX, contentY, contentW, contentH, mouseX, mouseY);
     }
 
     private void renderAnimatedSetting(Setting setting, float sx, float sy, float sw,
@@ -564,6 +582,16 @@ final class XaeroMapSettingsPanel {
             close();
             return true;
         }
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && scrollbarVisible
+                && inside(mouseX, mouseY, scrollbarX - 4.0f, scrollbarY,
+                scrollbarW + 8.0f, scrollbarH)) {
+            scrollbarDragging = true;
+            scrollbarDragOffset = inside(mouseX, mouseY, scrollbarX - 4.0f, scrollbarThumbY,
+                    scrollbarW + 8.0f, scrollbarThumbH)
+                    ? mouseY - scrollbarThumbY : scrollbarThumbH * 0.5f;
+            scrollToMouse(mouseY);
+            return true;
+        }
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && inside(mouseX, mouseY, closeX, closeY, closeW, closeH)) {
             close();
             return true;
@@ -596,6 +624,7 @@ final class XaeroMapSettingsPanel {
 
     void mouseReleased(float mouseX, float mouseY, int button) {
         if (!open) return;
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) scrollbarDragging = false;
         try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.SETTINGS, 1.12f)) {
             for (Entry entry : entries) entry.setting.mouseReleasedSafely(mouseX, mouseY, button);
         }
@@ -922,6 +951,23 @@ final class XaeroMapSettingsPanel {
         status.setI18nEnabled(false, false);
         entries.add(new Entry(status, Category.TRIANGULATION,
                 "triangulation resolver status telemetry observations bearings confidence uncertainty estimates data mining targeted"));
+
+        entries.add(new Entry(new SectionHeaderSetting(
+                tr("gui.combatant.map.duplex.section", "Duplex courier"),
+                tr("gui.combatant.map.duplex.section.description",
+                        "Pairs this client's locator ray with a minimal courier running in another game session.")),
+                Category.TRIANGULATION, "duplex courier secondary peer local session"));
+        BooleanSetting duplexEnabled = new BooleanSetting(
+                tr("gui.combatant.map.duplex.enabled", "Enable Duplex listener"),
+                DuplexLocalConfig.get().enabledValue());
+        duplexEnabled.setI18nEnabled(false, false);
+        duplexEnabled.setParent(DuplexLocalConfig.get());
+        entries.add(new Entry(duplexEnabled, Category.TRIANGULATION,
+                "duplex enabled listener courier local ipc"));
+        DuplexStatusSetting duplexStatus = new DuplexStatusSetting();
+        duplexStatus.setI18nEnabled(false, false);
+        entries.add(new Entry(duplexStatus, Category.TRIANGULATION,
+                "duplex status courier peer connected session endpoint bearings estimates error"));
 
         entries.add(new Entry(new SectionHeaderSetting(
                 tr("gui.combatant.map.triangulation.section.workload", "Collection workload"),
@@ -1333,9 +1379,74 @@ final class XaeroMapSettingsPanel {
         return Math.abs(target - next) < 0.0001f ? target : next;
     }
 
+    /** Critically damped scrolling keeps wheel input responsive without the abrupt exponential tail. */
+    private void updateSmoothScroll(float dt) {
+        float safeDt = clamp(Float.isFinite(dt) ? dt : 1.0f / 60.0f, 0.0f, 1.0f / 20.0f);
+        float omega = 2.0f / 0.115f;
+        float x = omega * safeDt;
+        float decay = 1.0f / (1.0f + x + 0.48f * x * x + 0.235f * x * x * x);
+        float change = scroll - scrollTarget;
+        float temp = (scrollVelocity + omega * change) * safeDt;
+        scrollVelocity = (scrollVelocity - omega * temp) * decay;
+        scroll = scrollTarget + (change + temp) * decay;
+        if (Math.abs(scrollTarget - scroll) < 0.01f && Math.abs(scrollVelocity) < 0.05f) {
+            scroll = scrollTarget;
+            scrollVelocity = 0.0f;
+        }
+    }
+
+    private void renderScrollbar(float contentX, float contentY, float contentW, float contentH,
+                                 float mouseX, float mouseY) {
+        scrollbarVisible = maxScroll > 0.5f;
+        if (!scrollbarVisible) {
+            scrollbarDragging = false;
+            scrollbarX = scrollbarY = scrollbarW = scrollbarH = 0.0f;
+            return;
+        }
+
+        scrollbarW = 2.5f;
+        scrollbarX = contentX + contentW - 4.0f;
+        scrollbarY = contentY + 5.0f;
+        scrollbarH = Math.max(1.0f, contentH - 10.0f);
+        scrollbarThumbH = Math.max(18.0f, scrollbarH * (scrollbarH / (scrollbarH + maxScroll)));
+        float ratio = maxScroll <= 0.0f ? 0.0f : clamp(-scroll / maxScroll, 0.0f, 1.0f);
+        scrollbarThumbY = scrollbarY + (scrollbarH - scrollbarThumbH) * ratio;
+
+        boolean hovered = inside(mouseX, mouseY, scrollbarX - 4.0f, scrollbarY,
+                scrollbarW + 8.0f, scrollbarH);
+        scrollbarHoverAnim = animateToward(scrollbarHoverAnim,
+                hovered || scrollbarDragging ? 1.0f : 0.0f,
+                AnimationUtility.deltaTime(), hovered || scrollbarDragging ? 14.0f : 8.0f);
+        if (hovered || scrollbarDragging) SystemCursor.set(SystemCursor.CursorType.SCROLL);
+
+        SettingsGuiPalette palette = SettingsGuiPalette.current();
+        float reveal = smootherStep(scrollbarHoverAnim);
+        int trackA = SettingsGuiPalette.withAlpha(palette.moduleScrollTrackA(), Math.round(125.0f + reveal * 45.0f));
+        int trackB = SettingsGuiPalette.withAlpha(palette.moduleScrollTrackB(), Math.round(90.0f + reveal * 35.0f));
+        int handleA = SettingsGuiPalette.withAlpha(palette.moduleScrollHandleA(), Math.round(205.0f + reveal * 45.0f));
+        int handleB = SettingsGuiPalette.withAlpha(palette.moduleScrollHandleB(), Math.round(175.0f + reveal * 60.0f));
+        LayoutRender2D.roundedQuad(scrollbarX, scrollbarY, scrollbarW, scrollbarH,
+                scrollbarW * 0.5f, trackA, trackB, trackB, trackA);
+        LayoutRender2D.roundedQuad(scrollbarX, scrollbarThumbY, scrollbarW, scrollbarThumbH,
+                scrollbarW * 0.5f, handleA, handleB, handleB, handleA);
+    }
+
+    private void scrollToMouse(float mouseY) {
+        if (!scrollbarVisible || maxScroll <= 0.0f) return;
+        float span = scrollbarH - scrollbarThumbH;
+        if (span <= 0.0f) return;
+        float thumbTop = clamp(mouseY - scrollbarDragOffset, scrollbarY, scrollbarY + span);
+        float ratio = (thumbTop - scrollbarY) / span;
+        scrollTarget = -maxScroll * ratio;
+        scroll = scrollTarget;
+        scrollVelocity = 0.0f;
+    }
+
     private void resetScroll() {
         scroll = 0.0f;
         scrollTarget = 0.0f;
+        scrollVelocity = 0.0f;
+        scrollbarDragging = false;
     }
 
     /** Draws the accent through the card's own rounded silhouette instead of an exposed bar. */
@@ -1583,6 +1694,107 @@ final class XaeroMapSettingsPanel {
 
         @Override public void mouseClicked(double mx, double my, int button) {}
         @Override public float getHeight() { return description.isBlank() ? 34.0f : 52.0f; }
+    }
+
+    private static final class DuplexStatusSetting extends Setting implements DynamicSearchEntry {
+        private DuplexStatusSetting() {
+            super(tr("gui.combatant.map.duplex.status.title", "Duplex status"));
+        }
+
+        @Override
+        public void render(float x, float y, float width, float mouseX, float mouseY) {
+            SettingsGuiPalette palette = SettingsGuiPalette.current();
+            DuplexLocalConfig config = DuplexLocalConfig.get();
+            DuplexRuntime runtime = MapLocationRuntime.get().duplex();
+            DuplexState state = runtime.state();
+            boolean enabled = config.enabled();
+
+            int statusColor = duplexStatusColor(enabled, state, runtime.transportConnected());
+            String status = duplexStatusLabel(enabled, state, runtime.transportConnected());
+            String description = duplexStatusDescription(enabled, state);
+
+            ClickGuiRenderer.drawRoundedRect(x + 4.0f, y + 2.0f, Math.max(1.0f, width - 8.0f), 98.0f, 10.0f,
+                    SettingsGuiPalette.withAlpha(palette.panelText(), 8));
+            ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(),
+                    tr("gui.combatant.map.duplex.status.title", "Duplex status"),
+                    x + 17.0f, y + 13.0f, 17.0f, palette.panelText(), false);
+
+            Renderer2D.COLOR.circle(x + 19.5f, y + 43.0f, 3.0f,
+                    SettingsGuiPalette.withAlpha(statusColor, enabled ? 245 : 145));
+            ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), status,
+                    x + 30.0f, y + 34.0f, 14.2f, statusColor, false);
+            ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(),
+                    ClickGuiRenderer.fitText(ClickGuiRenderer.getOnestMedium(), description, 12.1f,
+                            Math.max(1.0f, width - 42.0f)),
+                    x + 17.0f, y + 57.0f, 12.1f, palette.panelMuted(), false);
+
+            String meta = runtime.transportEndpoint()
+                    + "  ·  " + runtime.localBearingCount() + " "
+                    + tr("gui.combatant.map.duplex.status.local", "local rays")
+                    + "  ·  " + runtime.remoteBearingCount() + " "
+                    + tr("gui.combatant.map.duplex.status.remote", "courier rays")
+                    + "  ·  " + runtime.estimateCount() + " "
+                    + tr("gui.combatant.map.duplex.status.estimates", "solutions");
+            if (runtime.peerVerified() && runtime.peerAgeMs() >= 0L) {
+                meta += "  ·  " + Math.max(0L, runtime.peerAgeMs() / 1000L) + "s";
+            }
+            ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(),
+                    ClickGuiRenderer.fitText(ClickGuiRenderer.getOnestMedium(), meta, 11.2f,
+                            Math.max(1.0f, width - 42.0f)),
+                    x + 17.0f, y + 78.0f, 11.2f, palette.panelMuted(), false);
+
+            String error = runtime.transportLastError();
+            if (enabled && state == DuplexState.DEGRADED && error != null && !error.isBlank()) {
+                ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(),
+                        ClickGuiRenderer.fitText(ClickGuiRenderer.getOnestMedium(), error, 10.8f,
+                                Math.max(1.0f, width * 0.38f)),
+                        x + width - Math.min(width * 0.38f, 260.0f) - 16.0f, y + 14.0f,
+                        10.8f, SettingsGuiPalette.withAlpha(statusColor, 190), false);
+            }
+        }
+
+        @Override public void mouseClicked(double mx, double my, int button) {}
+        @Override public float getHeight() { return 104.0f; }
+
+        @Override
+        public String dynamicSearchText() {
+            DuplexRuntime runtime = MapLocationRuntime.get().duplex();
+            return (runtime.state().name() + " " + runtime.transportEndpoint() + " "
+                    + runtime.transportLastError()).toLowerCase(Locale.ROOT);
+        }
+
+        private static int duplexStatusColor(boolean enabled, DuplexState state, boolean connected) {
+            if (!enabled) return 0xFF858A94;
+            if (state == DuplexState.READY) return 0xFF72E69A;
+            if (state == DuplexState.HANDSHAKING || state == DuplexState.SESSION_VERIFY || connected) return 0xFFFFD36A;
+            if (state == DuplexState.DEGRADED) return 0xFFFF8B6A;
+            return 0xFF9AA6B6;
+        }
+
+        private static String duplexStatusLabel(boolean enabled, DuplexState state, boolean connected) {
+            if (!enabled) return tr("gui.combatant.map.duplex.status.disabled", "Disabled");
+            if (state == DuplexState.READY) return tr("gui.combatant.map.duplex.status.ready", "Courier connected");
+            if (state == DuplexState.HANDSHAKING || state == DuplexState.SESSION_VERIFY || connected) {
+                return tr("gui.combatant.map.duplex.status.verifying", "Verifying courier session");
+            }
+            if (state == DuplexState.DEGRADED) return tr("gui.combatant.map.duplex.status.degraded", "Courier unavailable");
+            return tr("gui.combatant.map.duplex.status.waiting", "Waiting for courier");
+        }
+
+        private static String duplexStatusDescription(boolean enabled, DuplexState state) {
+            if (!enabled) return tr("gui.combatant.map.duplex.status.disabled.description",
+                    "Enable the listener when a courier client is running on the same computer.");
+            if (state == DuplexState.READY) return tr("gui.combatant.map.duplex.status.ready.description",
+                    "Session and world match. Locator bearings are being paired.");
+            if (state == DuplexState.HANDSHAKING || state == DuplexState.SESSION_VERIFY) {
+                return tr("gui.combatant.map.duplex.status.verifying.description",
+                        "Local transport is connected; checking the server and dimension.");
+            }
+            if (state == DuplexState.DEGRADED) return tr("gui.combatant.map.duplex.status.degraded.description",
+                    "Open the same server and dimension in the courier client.");
+            return tr("gui.combatant.map.duplex.status.waiting.description",
+                    "The listener is ready; start the courier build in another client.");
+        }
     }
 
     private final class TriangulationModeSetting extends Setting {

@@ -208,4 +208,17 @@ public enum CombatantVertexFormats {
             .addAttribute("DeformMeta", CombatantVertexFormatElements.DEFORM_META)
             .build();
 
+    /** Four-control-point extracted fluid patch consumed only by the native tessellation path. */
+    public static final VertexFormat WATER_PATCH = VertexFormat.builder(0)
+            .addAttribute("Position", CombatantVertexFormatElements.POS3)
+            .addAttribute("UV0", CombatantVertexFormatElements.TEXTURE)
+            .addAttribute("Color", CombatantVertexFormatElements.COLOR)
+            .addAttribute("Params", CombatantVertexFormatElements.PARAMS)
+            .addAttribute("Params2", CombatantVertexFormatElements.PARAMS2)
+            .addAttribute("Params3", CombatantVertexFormatElements.PARAMS3)
+            .addAttribute("MaterialId", CombatantVertexFormatElements.MATERIAL_ID)
+            .addAttribute("MaterialMapMask", CombatantVertexFormatElements.MATERIAL_MAP_MASK)
+            .addAttribute("MaterialSurface", CombatantVertexFormatElements.MATERIAL_SURFACE)
+            .build();
+
 }

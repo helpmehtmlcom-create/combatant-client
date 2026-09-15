@@ -177,6 +177,8 @@
     "sodium.SodiumChunkBuilderMeshingTaskMixin",
     "sodium.SodiumChunkMeshFormatsMixin",
     "sodium.SodiumChunkVertexMixin",
+    "sodium.SodiumDefaultFluidRendererMixin",
+    "sodium.SodiumRenderSectionSurfaceMixin",
     "sodium.SodiumDefaultChunkRendererMixin",
     "sodium.SodiumQueuedSectionStorageMixin",
     "sodium.SodiumRenderSectionManagerAccessor",
@@ -199,9 +201,7 @@
     "WeatherEffectRendererMixin",
     "xaero.minimap.AbstractWaypointRenderProviderMixin",
     "xaero.worldmap.WaypointRenderProviderMixin",
-    "xaero.worldmap.WorldMapWaypointAccessor",
-    "accessors.SpriteAnimationStateAccessor",
-    "TextureAtlasMaterialMixin"
+    "xaero.worldmap.WorldMapWaypointAccessor"
   ],
   "injectors": {
     "defaultRequire": 1
