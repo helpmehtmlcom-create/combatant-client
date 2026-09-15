@@ -793,6 +793,7 @@
   "setting.crosshair.orbiz_color_speed": "Скорость цвета",
   "setting.crosshair.orbiz_color": "Цвет орбиза",
   "setting.crosshair.orbiz_color2": "Второй цвет орбиза",
+  "setting.crosshair.orbiz_center_anchor": "Центральная точка",
   "setting.crosshair.orbiz_motion": "Движение орбиза",
   "setting.crosshair.orbiz_motion.option.static": "Статичное",
   "setting.crosshair.orbiz_motion.option.dynamic": "Динамическое",

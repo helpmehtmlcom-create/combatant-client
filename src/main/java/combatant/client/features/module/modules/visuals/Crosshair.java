@@ -74,6 +74,7 @@ public class Crosshair extends Module {
     private static final float GAP_SMOOTHING = 0.15f;
     private static final float COLOR_SMOOTH_SPEED = 14.0f;
     private static final float ORBIZ_PROGRESS_SMOOTH_SPEED = 22.0f;
+    private static final float ORBIZ_PROGRESS_RESET_SMOOTH_SPEED = 30.0f;
     private static final float COOLDOWN_LEAD = 0.06f;
     private static final float RIPTIDE_CROSS_LENGTH_FACTOR = 0.65f;
     private static final float VULCAN_REACH_FONT_SIZE = 14.0f;
@@ -168,7 +169,7 @@ public class Crosshair extends Module {
     private final NumberValue<Integer> orbizColorSpeed = visibleWhen(
             common(num("crosshairOrbizColorSpeed", "orbiz_color_speed", 18, 2, 54),
                     CommonSettingSchemas.RENDER_COLOR_SPEED.commonI18nKey()),
-            this::isOrbiz
+            () -> isOrbiz() && AnimatedRenderColors.animated(orbizColorMode.get())
     );
     private final RGBAColorValue orbizColor = visibleWhen(
             common(color("crosshairOrbizColor", "orbiz_color", "#EEFFFFFF"),
@@ -179,6 +180,10 @@ public class Crosshair extends Module {
             common(color("crosshairOrbizColor2", "orbiz_color2", "#EE55FFFF"),
                     CommonSettingSchemas.RENDER_SECONDARY_COLOR.commonI18nKey()),
             () -> isOrbiz() && AnimatedRenderColors.usesSecondary(orbizColorMode.get())
+    );
+    private final BooleanValue orbizCenterAnchor = visibleWhen(
+            bool("crosshairOrbizCenterAnchor", "orbiz_center_anchor", true),
+            this::isOrbiz
     );
     private final NumberValue<Double> orbizLookMultiplier = visibleWhen(
             num("crosshairOrbizLookMultiplier", "orbiz_look_multiplier", 0.45, 0.0, 2.5),
@@ -208,6 +213,7 @@ public class Crosshair extends Module {
     private float animatedGap;
     private int animatedColor = DEFAULT_COLOR;
     private float animatedOrbizProgress = 1.0f;
+    private boolean orbizProgressInitialized;
     private float orbizOffsetX;
     private float orbizOffsetY;
     private float lastOrbizYaw;
@@ -423,11 +429,18 @@ public class Crosshair extends Module {
         boolean danger = shouldShowRiptideBlocked(mc.player) || shouldShowCooldownCross(mc.player);
         float progress = danger ? 1.0f : resolveOrbizProgress();
         float targetProgress = Mth.clamp(progress * orbizCooldownMultiplier.get().floatValue(), 0.0f, 1.0f);
-        if (targetProgress < animatedOrbizProgress) {
+        if (!orbizProgressInitialized) {
             animatedOrbizProgress = targetProgress;
+            orbizProgressInitialized = true;
         } else {
-            float t = AnimationUtility.clamp01(AnimationUtility.deltaTime() * ORBIZ_PROGRESS_SMOOTH_SPEED);
-            animatedOrbizProgress = AnimationUtility.lerp(animatedOrbizProgress, targetProgress, t);
+            float progressSpeed = targetProgress < animatedOrbizProgress
+                    ? ORBIZ_PROGRESS_RESET_SMOOTH_SPEED
+                    : ORBIZ_PROGRESS_SMOOTH_SPEED;
+            float progressT = exponentialSmoothing(progressSpeed);
+            animatedOrbizProgress = AnimationUtility.lerp(animatedOrbizProgress, targetProgress, progressT);
+            if (Math.abs(animatedOrbizProgress - targetProgress) <= 0.001f) {
+                animatedOrbizProgress = targetProgress;
+            }
         }
 
         updateOrbizMotion();
@@ -440,9 +453,18 @@ public class Crosshair extends Module {
         int primary = danger
                 ? colorWithConfigAlpha(RIPTIDE_BLOCK_COLOR, configured)
                 : mode == AnimatedRenderColors.Mode.STATIC ? targetAware : configured;
-        int anchorColor = danger ? primary : targetAware;
-        int secondary = danger ? primary : AnimatedRenderColors.angularSecondaryColor(mode, primary, orbizColor2.getArgb());
-        primary = AnimatedRenderColors.angularPrimaryColor(mode, primary);
+        int secondary;
+        if (danger) {
+            secondary = primary;
+        } else if (mode == AnimatedRenderColors.Mode.THEME) {
+            HudRenderUtil.ThemeGradient themeGradient = HudRenderUtil.themeAccentGradient((configured >>> 24) & 0xFF);
+            primary = themeGradient.start();
+            secondary = themeGradient.end();
+        } else {
+            secondary = AnimatedRenderColors.angularSecondaryColor(mode, primary, orbizColor2.getArgb());
+            primary = AnimatedRenderColors.angularPrimaryColor(mode, primary);
+        }
+        int anchorColor = resolveOrbizAnchorColor(mode, danger, targetAware, primary, secondary);
 
         float radiusPx = (float) (orbizRadius.get() * scale);
         float thicknessPx = (float) (orbizThickness.get() * scale);
@@ -473,11 +495,42 @@ public class Crosshair extends Module {
                 true
         );
 
-        // Dynamic ring motion communicates movement without moving the actual aim reference.
-        // Keep a tiny fixed anchor at the real screen center so Orbiz stays usable as a crosshair.
-        float anchorRadius = Math.max(0.70f * scale, Math.min(1.15f * scale, thicknessPx * 0.42f));
-        float anchorSoftness = Math.max(0.20f * scale, softnessPx * 0.45f);
-        renderer.circle(centerX, centerY, anchorRadius, anchorSoftness, anchorColor);
+        if (orbizCenterAnchor.get()) {
+            // Dynamic ring motion communicates movement without moving the actual aim reference.
+            // The anchor stays at the true screen center and follows the selected color animation.
+            float anchorRadius = Math.max(0.70f * scale, Math.min(1.15f * scale, thicknessPx * 0.42f));
+            float anchorSoftness = Math.max(0.20f * scale, softnessPx * 0.45f);
+            renderer.circle(centerX, centerY, anchorRadius, anchorSoftness, anchorColor);
+        }
+    }
+
+    private int resolveOrbizAnchorColor(AnimatedRenderColors.Mode mode,
+                                        boolean danger,
+                                        int targetAware,
+                                        int primary,
+                                        int secondary) {
+        if (danger) return primary;
+        if (mode == AnimatedRenderColors.Mode.STATIC) return targetAware;
+
+        int configured = orbizColor.getArgb();
+        if (mode == AnimatedRenderColors.Mode.THEME) {
+            float phase = AnimatedRenderColors.angularOffset01(mode, orbizColorSpeed.get());
+            float triangular = phase < 0.5f ? phase * 2.0f : (1.0f - phase) * 2.0f;
+            return AnimatedRenderColors.mixArgb(primary, secondary, triangular);
+        }
+        return AnimatedRenderColors.resolve(
+                mode,
+                orbizColorSpeed.get(),
+                0,
+                configured,
+                orbizColor2.getArgb(),
+                true
+        );
+    }
+
+    private static float exponentialSmoothing(float speed) {
+        float dt = Math.max(0.0f, AnimationUtility.deltaTime());
+        return AnimationUtility.clamp01(1.0f - (float) Math.exp(-Math.max(0.0f, speed) * dt));
     }
 
     private float resolveOrbizProgress() {
@@ -541,6 +594,7 @@ public class Crosshair extends Module {
 
     private void resetOrbizState() {
         animatedOrbizProgress = 1.0f;
+        orbizProgressInitialized = false;
         orbizOffsetX = 0.0f;
         orbizOffsetY = 0.0f;
         lastOrbizYaw = 0.0f;
