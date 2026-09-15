@@ -11,13 +11,11 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(binding = 0) uniform sampler2D u_DirectLighting;
 layout(binding = 1) uniform sampler2D u_CompatibilityScene;
-layout(binding = 2) uniform sampler2D u_GbufferSurface;
-layout(binding = 3) uniform sampler2D u_GbufferDepth;
-layout(binding = 4) uniform sampler2D u_CurrentDepth;
-layout(binding = 5, rgba16f) writeonly uniform image2D u_OpaqueBaseRadiance;
+layout(binding = 2) uniform sampler2D u_GbufferDepth;
+layout(binding = 3) uniform sampler2D u_CurrentDepth;
+layout(binding = 4, rgba16f) writeonly uniform image2D u_OpaqueBaseRadiance;
 
 bool terrainOwnsPixel(vec2 uv) {
-    if (textureLod(u_GbufferSurface, uv, 0.0).a <= 0.0) return false;
     float gbufferDepth = textureLod(u_GbufferDepth, uv, 0.0).r;
     float currentDepth = textureLod(u_CurrentDepth, uv, 0.0).r;
     if (gbufferDepth <= 0.0 || currentDepth <= 0.0) return false;

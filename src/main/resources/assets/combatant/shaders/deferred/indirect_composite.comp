@@ -40,7 +40,7 @@ void main() {
     vec2 uv = (vec2(pixel) + vec2(0.5)) / vec2(size);
     vec4 base = textureLod(u_BaseRadiance, uv, 0.0);
     vec4 surface = textureLod(u_GbufferSurface, uv, 0.0);
-    if (surface.a <= 0.0 || !ownsGbufferPixel(uv) || u_Composite.flags.x < 0.5) {
+    if (!ownsGbufferPixel(uv) || u_Composite.flags.x < 0.5) {
         imageStore(u_LightingColor, pixel, base);
         return;
     }
@@ -54,10 +54,12 @@ void main() {
 
     float materialAo = clamp(surface.a, 0.0, 1.0);
     float metallic = clamp(material.g, 0.0, 1.0);
-    vec3 diffuseReflectance = surface.rgb * (1.0 - metallic);
+    float dielectricF0 = clamp(material.b, 0.0, 1.0);
+    vec3 f0 = mix(vec3(dielectricF0), max(surface.rgb, vec3(0.0)), metallic);
+    vec3 diffuseReflectance = max(surface.rgb, vec3(0.0)) * (vec3(1.0) - f0) * (1.0 - metallic);
 
-    // INDIRECT_LIGHT is a cosine-weighted screen-space incoming-radiance estimate. Multiplying by
-    // diffuse reflectance gives the Lambertian outgoing contribution without a style multiplier.
+    // INDIRECT_LIGHT is a cosine-weighted screen-space incoming-radiance estimate. The diffuse
+    // energy share is reduced by the material's specular F0 instead of being added on top of it.
     vec3 indirectDiffuse = incomingDiffuse * diffuseReflectance
             * materialAo * screenVisibility * confidence;
     imageStore(u_LightingColor, pixel, vec4(base.rgb + indirectDiffuse, base.a));

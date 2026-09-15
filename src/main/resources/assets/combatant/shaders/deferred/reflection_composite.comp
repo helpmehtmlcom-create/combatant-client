@@ -64,7 +64,7 @@ void main() {
     vec4 base = textureLod(u_LightingColor, uv, 0.0);
     vec4 surface = textureLod(u_GbufferSurface, uv, 0.0);
     float depth = textureLod(u_ResolvedDepth, uv, 0.0).r;
-    if (surface.a <= 0.0 || !ownsGbufferPixel(uv, depth) || u_Composite.flags.x < 0.5) {
+    if (!ownsGbufferPixel(uv, depth) || u_Composite.flags.x < 0.5) {
         imageStore(u_SceneRadiance, pixel, base);
         return;
     }

@@ -23,7 +23,6 @@ import combatant.client.render.engine.rhi.shader.ShaderResourceLayout;
 import combatant.client.render.engine.rhi.shader.ShaderResourceSlot;
 import combatant.client.render.engine.rhi.shader.StorageAccess;
 import combatant.client.render.engine.rhi.shader.StorageImageBinding;
-import combatant.client.render.sodium.fluid.WaterSurfaceExtractor;
 import net.minecraft.resources.Identifier;
 
 import java.util.ArrayList;
@@ -44,8 +43,7 @@ final class DeferredSceneRadianceSource implements AutoCloseable {
             new ShaderResourceSlot(1, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(2, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(3, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
-            new ShaderResourceSlot(4, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
-            new ShaderResourceSlot(5, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY)
+            new ShaderResourceSlot(4, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY)
     ));
 
     private CombatantRhi owner;
@@ -54,14 +52,10 @@ final class DeferredSceneRadianceSource implements AutoCloseable {
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.radiance.capture", DeferredStage.RADIANCE_CAPTURE)
                 .read(DeferredResource.DIRECT_LIGHTING_COLOR, DeferredResource.SCENE_COLOR,
-                        DeferredResource.GBUFFER_SURFACE, DeferredResource.GBUFFER_DEPTH,
-                        DeferredResource.RESOLVED_DEPTH)
+                        DeferredResource.GBUFFER_DEPTH, DeferredResource.RESOLVED_DEPTH)
                 .write(DeferredResource.OPAQUE_BASE_RADIANCE)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> (context.settings().indirectLightEnabled()
-                        || context.settings().reflectionsEnabled()
-                        || WaterSurfaceExtractor.hasWaterPatches())
-                        && context.isValid(DeferredResource.DIRECT_LIGHTING_COLOR)
+                .when(context -> context.isValid(DeferredResource.DIRECT_LIGHTING_COLOR)
                         && context.resources().texture(DeferredResource.SCENE_COLOR) != null
                         && context.isValid(DeferredResource.GBUFFER_DEPTH)
                         && context.isValid(DeferredResource.RESOLVED_DEPTH))
@@ -84,7 +78,6 @@ final class DeferredSceneRadianceSource implements AutoCloseable {
         ensureOwner(context.rhi());
         GpuTextureView directLighting = requireTexture(context, DeferredResource.DIRECT_LIGHTING_COLOR);
         GpuTextureView compatibilityScene = requireTexture(context, DeferredResource.SCENE_COLOR);
-        GpuTextureView surface = requireTexture(context, DeferredResource.GBUFFER_SURFACE);
         GpuTextureView gbufferDepth = requireTexture(context, DeferredResource.GBUFFER_DEPTH);
         GpuTextureView currentDepth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
         RhiStorageImage output = requireImage(context, DeferredResource.OPAQUE_BASE_RADIANCE);
@@ -99,11 +92,10 @@ final class DeferredSceneRadianceSource implements AutoCloseable {
                 List.of(
                         new SampledTextureBinding(0, directLighting, linear),
                         new SampledTextureBinding(1, compatibilityScene, linear),
-                        new SampledTextureBinding(2, surface, nearest),
-                        new SampledTextureBinding(3, gbufferDepth, nearest),
-                        new SampledTextureBinding(4, currentDepth, nearest)
+                        new SampledTextureBinding(2, gbufferDepth, nearest),
+                        new SampledTextureBinding(3, currentDepth, nearest)
                 ),
-                List.of(new StorageImageBinding(5, output, StorageAccess.WRITE_ONLY))
+                List.of(new StorageImageBinding(4, output, StorageAccess.WRITE_ONLY))
         ));
     }
 

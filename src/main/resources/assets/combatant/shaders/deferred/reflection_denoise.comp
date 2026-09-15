@@ -16,6 +16,7 @@ layout(binding = 3) uniform sampler2D u_Depth;
 layout(binding = 4, rgba16f) writeonly uniform image2D u_OutputColor;
 layout(binding = 5, r8) writeonly uniform image2D u_OutputConfidence;
 layout(std430, binding = 6) readonly buffer DenoiseParams { vec4 params; } u_Denoise;
+layout(binding = 7) uniform sampler2D u_GbufferMaterial;
 
 vec3 decodeOctahedral(vec2 encoded) {
     vec2 f = encoded * 2.0 - 1.0;
@@ -36,7 +37,12 @@ void main() {
     vec4 centerColor = textureLod(u_InputColor, centerUv, 0.0);
     float centerConfidence = textureLod(u_InputConfidence, centerUv, 0.0).r;
 
-    int radius = clamp(int(round(u_Denoise.params.x)), 0, 4);
+    int maxRadius = clamp(int(round(u_Denoise.params.x)), 0, 4);
+    float centerRoughness = clamp(textureLod(u_GbufferMaterial, centerUv, 0.0).r, 0.0, 1.0);
+    // The spatial footprint is a quality-bounded approximation of the rough microfacet cone:
+    // polished surfaces stay sharp while rough surfaces integrate a wider reflection neighborhood.
+    float microfacetAlpha = centerRoughness * centerRoughness;
+    int radius = min(maxRadius, int(ceil(microfacetAlpha * float(maxRadius))));
     if (radius == 0) {
         imageStore(u_OutputColor, pixel, centerColor);
         imageStore(u_OutputConfidence, pixel, vec4(centerConfidence, 0.0, 0.0, 0.0));

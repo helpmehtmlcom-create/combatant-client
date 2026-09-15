@@ -414,8 +414,9 @@ public final class DeferredWorldPipeline {
                 postGeometryExecuted = true;
             }
             GpuTextureView resolvedDepth = resourceBindings.texture(DeferredResource.RESOLVED_DEPTH);
-            if (resolvedDepth == null) {
-                throw new IllegalStateException("Deferred lighting requires resolved depth");
+            GpuTextureView gbufferDepth = resourceBindings.texture(DeferredResource.GBUFFER_DEPTH);
+            if (resolvedDepth == null || gbufferDepth == null) {
+                throw new IllegalStateException("Deferred lighting requires resolved and G-buffer depth");
             }
             boolean shadowValid = resourceBindings.isValid(DeferredResource.SHADOW_COLOR);
             boolean ambientOcclusionValid = resourceBindings.isValid(DeferredResource.AMBIENT_OCCLUSION);
@@ -445,8 +446,8 @@ public final class DeferredWorldPipeline {
                             .uniform("DeferredLighting", DeferredLightingUniforms.get())
                             .sampler("u_GbufferSurface", inputs.surface(), gbufferSampler)
                             .sampler("u_GbufferGeometry", inputs.geometry(), gbufferSampler)
-                            .sampler("u_GbufferAuxiliary", inputs.auxiliary(), gbufferSampler)
                             .sampler("u_GbufferMaterial", inputs.material(), gbufferSampler)
+                            .sampler("u_GbufferDepth", gbufferDepth, gbufferSampler)
                             .sampler("u_LightTex", lightmap, lightmapSampler)
                             .sampler("u_ResolvedDepth", resolvedDepth, gbufferSampler)
                             .sampler("u_ShadowVisibility", shadowVisibility, lightmapSampler)
@@ -461,8 +462,10 @@ public final class DeferredWorldPipeline {
                     FullscreenDrawCommand.builder("Combatant Deferred Terrain Publish")
                             .colorAttachment(sceneColor)
                             .pipeline(DeferredRuntimeAssets.terrainPublish())
+                            .uniform("DeferredLighting", DeferredLightingUniforms.get())
                             .sampler("u_Source", directLighting, gbufferSampler)
-                            .sampler("u_GbufferSurface", inputs.surface(), gbufferSampler)
+                            .sampler("u_GbufferAuxiliary", inputs.auxiliary(), gbufferSampler)
+                            .sampler("u_GbufferDepth", gbufferDepth, gbufferSampler)
                             .build()
             );
             lightingResolvedThisFrame = true;

@@ -31,7 +31,7 @@ import combatant.client.render.engine.rhi.shader.StorageBinding;
 import combatant.client.render.engine.rhi.shader.StorageBufferDescriptor;
 import combatant.client.render.engine.rhi.shader.StorageImageBinding;
 import net.minecraft.resources.Identifier;
-import combatant.client.render.sodium.fluid.WaterSurfaceExtractor;
+import combatant.client.render.engine.uniform.impl.DeferredLightingUniforms;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -99,9 +99,7 @@ final class DeferredOpaqueCompositeSource implements AutoCloseable {
                         DeferredResource.GBUFFER_DEPTH, DeferredResource.RESOLVED_DEPTH)
                 .write(DeferredResource.LIGHTING_COLOR)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.isValid(DeferredResource.OPAQUE_BASE_RADIANCE)
-                        && (context.settings().indirectLightEnabled() || context.settings().reflectionsEnabled()
-                        || WaterSurfaceExtractor.hasWaterPatches()))
+                .when(context -> context.isValid(DeferredResource.OPAQUE_BASE_RADIANCE))
                 .execute(this::composeIndirect)
                 .build());
 
@@ -118,12 +116,15 @@ final class DeferredOpaqueCompositeSource implements AutoCloseable {
 
         passes.add(DeferredPassSpec.builder("world.opaque.publish", DeferredStage.REFLECTION_COMPOSITE)
                 .priority(100)
-                .read(DeferredResource.SCENE_RADIANCE)
+                .read(DeferredResource.SCENE_RADIANCE, DeferredResource.GBUFFER_AUXILIARY,
+                        DeferredResource.GBUFFER_DEPTH, DeferredResource.RESOLVED_DEPTH)
                 .write(DeferredResource.SCENE_COLOR)
                 .when(context -> context.isValid(DeferredResource.SCENE_RADIANCE)
                         && context.resources().texture(DeferredResource.SCENE_COLOR) != null
-                        && context.isValid(DeferredResource.LIGHTING_COLOR)
-                        && (context.settings().indirectLightEnabled() || context.settings().reflectionsEnabled()))
+                        && context.isValid(DeferredResource.GBUFFER_DEPTH)
+                        && context.isValid(DeferredResource.RESOLVED_DEPTH)
+                        && context.resources().texture(DeferredResource.GBUFFER_AUXILIARY) != null
+                        && context.isValid(DeferredResource.LIGHTING_COLOR))
                 .execute(this::publish)
                 .build());
     }
@@ -243,12 +244,20 @@ final class DeferredOpaqueCompositeSource implements AutoCloseable {
     private void publish(DeferredPassContext context) {
         GpuTextureView source = requireTexture(context, DeferredResource.SCENE_RADIANCE);
         GpuTextureView target = requireTexture(context, DeferredResource.SCENE_COLOR);
+        GpuTextureView auxiliary = requireTexture(context, DeferredResource.GBUFFER_AUXILIARY);
+        GpuTextureView gbufferDepth = requireTexture(context, DeferredResource.GBUFFER_DEPTH);
+        GpuTextureView currentDepth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
         GpuSampler linear = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
+        GpuSampler nearest = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
         context.rhi().drawFullscreen(
                 FullscreenDrawCommand.builder("Combatant opaque radiance publish")
                         .colorAttachment(target)
                         .pipeline(DeferredRuntimeAssets.opaquePublish())
+                        .uniform("DeferredLighting", DeferredLightingUniforms.get())
                         .sampler("u_Source", source, linear)
+                        .sampler("u_GbufferAuxiliary", auxiliary, nearest)
+                        .sampler("u_GbufferDepth", gbufferDepth, nearest)
+                        .sampler("u_CurrentDepth", currentDepth, nearest)
                         .build()
         );
     }

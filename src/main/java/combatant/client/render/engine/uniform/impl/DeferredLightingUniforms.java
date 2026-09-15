@@ -16,7 +16,7 @@ import combatant.client.render.engine.deferred.DeferredWorldPipeline;
 import combatant.client.render.engine.rhi.uniform.CombatantUniformAllocator;
 import org.joml.Matrix4f;
 
-/** Frame state for neutral material-aware deferred lighting. */
+/** Frame state shared by neutral deferred lighting and compatibility presentation publish. */
 public enum DeferredLightingUniforms {
     ;
     public static final int SIZE = new Std140SizeCalculator()

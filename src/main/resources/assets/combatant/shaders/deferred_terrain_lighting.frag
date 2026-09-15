@@ -12,8 +12,8 @@ out vec4 color;
 
 uniform sampler2D u_GbufferSurface;
 uniform sampler2D u_GbufferGeometry;
-uniform sampler2D u_GbufferAuxiliary;
 uniform sampler2D u_GbufferMaterial;
+uniform sampler2D u_GbufferDepth;
 uniform sampler2D u_LightTex;
 uniform sampler2D u_ResolvedDepth;
 uniform sampler2D u_ShadowVisibility;
@@ -21,6 +21,7 @@ uniform sampler2D u_AmbientVisibility;
 
 layout(std140) uniform DeferredLighting {
     mat4 u_InverseProjection;
+    // Presentation-only compatibility fog data. Lighting deliberately does not consume it.
     vec4 u_FogColor;
     vec4 u_FogRanges;
     // xyz: view-space direction from receiver toward the directional light, w: valid.
@@ -32,16 +33,6 @@ layout(std140) uniform DeferredLighting {
 };
 
 const float PI = 3.14159265358979323846;
-
-float combatant_decode_distance(float encoded) {
-    return exp2(encoded * 17.0 - 1.0) - 1.0;
-}
-
-float combatant_linear_fog(float distanceValue, float start, float end) {
-    if (distanceValue <= start) return 0.0;
-    if (distanceValue >= end) return 1.0;
-    return (distanceValue - start) / max(end - start, 0.0001);
-}
 
 vec3 combatant_decode_octahedral(vec2 encoded) {
     vec2 f = encoded * 2.0 - 1.0;
@@ -58,6 +49,14 @@ vec3 combatant_reconstruct_view(vec2 uv, float depth) {
     vec4 h = u_InverseProjection * vec4(ndcXY, ndcZ, 1.0);
     if (abs(h.w) < 1e-7) return vec3(0.0, 0.0, -1.0);
     return h.xyz / h.w;
+}
+
+bool combatant_owns_gbuffer_pixel(vec2 uv) {
+    float gbufferDepth = texture(u_GbufferDepth, uv).r;
+    float currentDepth = texture(u_ResolvedDepth, uv).r;
+    if (gbufferDepth <= 0.0 || currentDepth <= 0.0) return false;
+    float tolerance = max(1.0e-6, abs(gbufferDepth) * 1.0e-5);
+    return abs(gbufferDepth - currentDepth) <= tolerance;
 }
 
 float combatant_ggx_distribution(float ndoth, float roughness) {
@@ -88,13 +87,12 @@ float combatant_burley_diffuse(float ndotv, float ndotl, float ldoth, float roug
 }
 
 void main() {
-    vec4 surface = texture(u_GbufferSurface, v_TexCoord);
-    if (surface.a <= 0.0) {
+    if (!combatant_owns_gbuffer_pixel(v_TexCoord)) {
         discard;
     }
 
+    vec4 surface = texture(u_GbufferSurface, v_TexCoord);
     vec4 geometry = texture(u_GbufferGeometry, v_TexCoord);
-    vec4 auxiliary = texture(u_GbufferAuxiliary, v_TexCoord);
     vec4 material = texture(u_GbufferMaterial, v_TexCoord);
 
     vec3 albedo = max(surface.rgb, vec3(0.0));
@@ -115,8 +113,8 @@ void main() {
             ? clamp(texture(u_AmbientVisibility, v_TexCoord).r, 0.0, 1.0)
             : 1.0;
 
-    // The Minecraft lightmap is currently the neutral ambient/local-light producer. It remains
-    // separate from the directional BRDF so later sky SH and colored block light can replace it.
+    // Minecraft lightmap is the current neutral ambient/local-light producer. It is kept separate
+    // from the directional microfacet BRDF so sky SH / colored block light can replace it later.
     vec3 ambientDiffuseWeight = (vec3(1.0) - f0) * (1.0 - metallic);
     vec3 litColor = albedo * ambientDiffuseWeight
             * lightmapRadiance * materialAo * ambientVisibility;
@@ -146,16 +144,7 @@ void main() {
         }
     }
 
+    // Emission is outgoing radiance and is therefore not attenuated by AO or directional shadow.
     litColor += albedo * emission;
-
-    float sphericalDistance = combatant_decode_distance(auxiliary.r);
-    float cylindricalDistance = combatant_decode_distance(auxiliary.g);
-    float environmentalFog = combatant_linear_fog(
-        sphericalDistance, u_FogRanges.x, u_FogRanges.y
-    );
-    float renderFog = combatant_linear_fog(
-        cylindricalDistance, u_FogRanges.z, u_FogRanges.w
-    );
-    float fogAmount = max(1.0 - auxiliary.b, max(environmentalFog, renderFog));
-    color = vec4(mix(litColor, u_FogColor.rgb, fogAmount * u_FogColor.a), 1.0);
+    color = vec4(litColor, 1.0);
 }

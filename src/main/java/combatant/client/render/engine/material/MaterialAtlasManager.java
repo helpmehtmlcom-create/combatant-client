@@ -436,8 +436,10 @@ public final class MaterialAtlasManager {
         image = maps.get(MaterialTextureSemantic.LABPBR_SPECULAR);
         if (image != null) {
             int p = sample(image, base, frameWidth, frameHeight, x, y);
-            float smooth = red(p) / 255.0f;
-            roughness = unorm((1.0f - smooth) * (1.0f - smooth));
+            float perceptualSmoothness = red(p) / 255.0f;
+            // Canonical surface atlas stores perceptual roughness. GGX consumers convert it to
+            // microfacet alpha exactly once (alpha = perceptualRoughness^2).
+            roughness = unorm(1.0f - perceptualSmoothness);
             int g = green(p);
             if (g < 230) {
                 f0 = Math.max(f0, g);

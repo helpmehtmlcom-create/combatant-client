@@ -63,8 +63,8 @@ public final class DeferredPassGraph {
         corePasses.add(DeferredPassSpec.builder("world.lighting.neutral", DeferredStage.LIGHTING)
                 .read(DeferredResource.GBUFFER_SURFACE, DeferredResource.GBUFFER_GEOMETRY,
                         DeferredResource.GBUFFER_AUXILIARY, DeferredResource.GBUFFER_MATERIAL,
-                        DeferredResource.RESOLVED_DEPTH, DeferredResource.SHADOW_COLOR,
-                        DeferredResource.AMBIENT_OCCLUSION)
+                        DeferredResource.GBUFFER_DEPTH, DeferredResource.RESOLVED_DEPTH,
+                        DeferredResource.SHADOW_COLOR, DeferredResource.AMBIENT_OCCLUSION)
                 .write(DeferredResource.DIRECT_LIGHTING_COLOR, DeferredResource.SCENE_COLOR)
                 .external().build());
         corePasses.add(DeferredPassSpec.builder("world.forward.opaque", DeferredStage.FORWARD_OPAQUE)
