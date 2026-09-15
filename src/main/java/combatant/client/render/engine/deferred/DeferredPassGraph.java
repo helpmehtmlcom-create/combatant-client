@@ -42,6 +42,7 @@ public final class DeferredPassGraph {
 
     private final ArrayList<DeferredPassSpec> corePasses = new ArrayList<>();
     private final ArrayList<DeferredPassSpec> extensionPasses = new ArrayList<>();
+    private final DeferredBackendPasses backendPasses = new DeferredBackendPasses();
     private List<DeferredPassSpec> ordered = List.of();
     private CompiledFrameGraph compiled = new CompiledFrameGraph(List.of(), List.of());
     private boolean dirty = true;
@@ -50,16 +51,16 @@ public final class DeferredPassGraph {
         corePasses.add(DeferredPassSpec.builder("world.geometry.opaque", DeferredStage.OPAQUE_GEOMETRY)
                 .write(DeferredResource.SCENE_COLOR, DeferredResource.MAIN_DEPTH,
                         DeferredResource.GBUFFER_SURFACE, DeferredResource.GBUFFER_GEOMETRY,
-                        DeferredResource.GBUFFER_AUXILIARY)
+                        DeferredResource.GBUFFER_AUXILIARY, DeferredResource.GBUFFER_MATERIAL)
                 .external().build());
         corePasses.add(DeferredPassSpec.builder("world.geometry.cutout", DeferredStage.CUTOUT_GEOMETRY)
                 .readWrite(DeferredResource.SCENE_COLOR, DeferredResource.MAIN_DEPTH,
                         DeferredResource.GBUFFER_SURFACE, DeferredResource.GBUFFER_GEOMETRY,
-                        DeferredResource.GBUFFER_AUXILIARY)
+                        DeferredResource.GBUFFER_AUXILIARY, DeferredResource.GBUFFER_MATERIAL)
                 .external().build());
         corePasses.add(DeferredPassSpec.builder("world.lighting.neutral", DeferredStage.LIGHTING)
                 .read(DeferredResource.GBUFFER_SURFACE, DeferredResource.GBUFFER_GEOMETRY,
-                        DeferredResource.GBUFFER_AUXILIARY)
+                        DeferredResource.GBUFFER_AUXILIARY, DeferredResource.GBUFFER_MATERIAL)
                 .write(DeferredResource.SCENE_COLOR)
                 .external().build());
         corePasses.add(DeferredPassSpec.builder("world.forward.opaque", DeferredStage.FORWARD_OPAQUE)
@@ -72,6 +73,17 @@ public final class DeferredPassGraph {
                 .read(DeferredResource.MAIN_DEPTH)
                 .readWrite(DeferredResource.SCENE_COLOR)
                 .external().build());
+        backendPasses.install(corePasses);
+    }
+
+    /** Releases native compute pipelines before the active RHI/device is destroyed or switched. */
+    public synchronized void releaseBackendResources(CombatantRhi owner) {
+        backendPasses.release(owner);
+    }
+
+    /** Compiles native deferred backend programs only after the deferred runtime asset scope activates. */
+    public synchronized void prepareBackendResources() {
+        backendPasses.prepare(CombatantRenderSystem.rhi());
     }
 
     public synchronized AutoCloseable register(DeferredPassSpec pass) {
@@ -88,7 +100,26 @@ public final class DeferredPassGraph {
     }
 
     public void execute(DeferredStage stage, RenderFrameContext frame, DeferredResourceBindings resources) {
+        execute(stage, frame, resources, new DeferredSecondaryViewRegistry(), new DeferredPrimaryViewSource(), DeferredRuntimeConfig.current());
+    }
+
+    public void execute(DeferredStage stage,
+                        RenderFrameContext frame,
+                        DeferredResourceBindings resources,
+                        DeferredSecondaryViewRegistry secondaryViews,
+                        DeferredPrimaryViewSource primaryView) {
+        execute(stage, frame, resources, secondaryViews, primaryView, DeferredRuntimeConfig.current());
+    }
+
+    public void execute(DeferredStage stage,
+                        RenderFrameContext frame,
+                        DeferredResourceBindings resources,
+                        DeferredSecondaryViewRegistry secondaryViews,
+                        DeferredPrimaryViewSource primaryView,
+                        DeferredRuntimeConfig.Snapshot settings) {
         if (stage == null || frame == null || resources == null) return;
+        if (secondaryViews == null) throw new IllegalArgumentException("secondaryViews");
+        if (primaryView == null) throw new IllegalArgumentException("primaryView");
         List<DeferredPassSpec> snapshot;
         CompiledFrameGraph compiledSnapshot;
         synchronized (this) {
@@ -98,7 +129,7 @@ public final class DeferredPassGraph {
         }
 
         CombatantRhi rhi = CombatantRenderSystem.rhi();
-        DeferredPassContext context = new DeferredPassContext(stage, frame, rhi, resources);
+        DeferredPassContext context = new DeferredPassContext(stage, frame, rhi, resources, secondaryViews, primaryView, settings);
         try (RenderPhaseScope ignored = CombatantRenderSystem.phase(stage.renderPhase(), "deferred:" + stage.name().toLowerCase())) {
             for (int passIndex = 0; passIndex < snapshot.size(); passIndex++) {
                 DeferredPassSpec pass = snapshot.get(passIndex);
@@ -113,6 +144,7 @@ public final class DeferredPassGraph {
                     continue;
                 }
                 try {
+                    if (!pass.condition().test(context)) continue;
                     prepareResources(pass, context);
                     lowerAdvancedBarriers(passIndex, snapshot, compiledSnapshot, context);
                     pass.executor().execute(context);
@@ -172,10 +204,20 @@ public final class DeferredPassGraph {
     private static void prepareResources(DeferredPassSpec pass, DeferredPassContext context) {
         for (var use : pass.resources()) {
             DeferredResource resource = resource(use.resource());
-            if (resource == null || resource.textureSpec() == null || context.resources().isBound(resource)) {
+            if (resource == null) continue;
+
+            // Persistent history survives physically across frames while logical bindings are
+            // frame-local. Rebind an existing allocation for reads, but never allocate a missing
+            // optional input just because a consumer declared it.
+            if (use.access().reads() && !context.resources().isBound(resource)) {
+                context.resources().bindExisting(resource, context.settings());
+            }
+
+            if (!use.access().writes() || resource.textureSpec() == null
+                    || context.resources().isBound(resource)) {
                 continue;
             }
-            context.resources().ensureTexture(resource, context.rhi());
+            context.resources().ensureTexture(resource, context.rhi(), context.settings());
         }
     }
 
@@ -192,6 +234,7 @@ public final class DeferredPassGraph {
                                               CompiledFrameGraph graph,
                                               DeferredPassContext context) {
         Map<BarrierKey, BarrierResources> grouped = new LinkedHashMap<>();
+        Set<BarrierKey> genericTextureBarriers = new HashSet<>();
         for (CompiledFrameGraph.Dependency dependency : graph.dependencies()) {
             if (dependency.consumerIndex() != consumerIndex) continue;
             DeferredResource resource = resource(dependency.resource());
@@ -199,13 +242,27 @@ public final class DeferredPassGraph {
 
             RhiStorageBuffer buffer = context.resources().buffer(resource);
             RhiStorageImage image = context.resources().storageImage(resource);
-            if (buffer == null && image == null) continue;
+            boolean genericTexture = image == null && context.resources().texture(resource) != null;
+            if (buffer == null && image == null && !genericTexture) continue;
 
             DeferredPassSpec producer = passes.get(dependency.producerIndex());
             DeferredPassSpec consumer = passes.get(dependency.consumerIndex());
+            RhiResourceBarrier.Access sourceAccess = barrierAccess(access(producer, dependency.resource()));
+            RhiResourceBarrier.Access destinationAccess = barrierAccess(access(consumer, dependency.resource()));
+            if (genericTexture) {
+                // Mojang-owned render targets/atlas views do not expose a Combatant RhiStorageImage.
+                // Use a conservative global memory dependency so framebuffer writes are visible to
+                // later compute/sampled consumers on both GL and Vulkan.
+                genericTextureBarriers.add(new BarrierKey(
+                        RhiResourceBarrier.Stage.ALL, sourceAccess,
+                        RhiResourceBarrier.Stage.ALL, destinationAccess
+                ));
+            }
+
+            if (buffer == null && image == null) continue;
             BarrierKey key = new BarrierKey(
-                    barrierStage(producer), barrierAccess(access(producer, dependency.resource())),
-                    barrierStage(consumer), barrierAccess(access(consumer, dependency.resource()))
+                    barrierStage(producer), sourceAccess,
+                    barrierStage(consumer), destinationAccess
             );
             BarrierResources values = grouped.computeIfAbsent(key, ignored -> new BarrierResources());
             if (buffer != null && !values.buffers.contains(buffer)) values.buffers.add(buffer);
@@ -219,6 +276,13 @@ public final class DeferredPassGraph {
                     key.sourceStage, key.sourceAccess,
                     key.destinationStage, key.destinationAccess,
                     resources.buffers, resources.images
+            ));
+        }
+        for (BarrierKey key : genericTextureBarriers) {
+            context.advancedShaders().barrier(new RhiResourceBarrier(
+                    key.sourceStage, key.sourceAccess,
+                    key.destinationStage, key.destinationAccess,
+                    List.of(), List.of()
             ));
         }
     }
@@ -236,7 +300,6 @@ public final class DeferredPassGraph {
     }
 
     private static RhiResourceBarrier.Stage barrierStage(DeferredPassSpec pass) {
-        if (pass.stage() == DeferredStage.DEPTH_RESOLVE) return RhiResourceBarrier.Stage.TRANSFER;
         if (pass.requiredShaderStages().contains(RhiShaderStage.COMPUTE)) {
             return RhiResourceBarrier.Stage.COMPUTE;
         }

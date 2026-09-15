@@ -45,7 +45,8 @@ public final class DeferredResourceAllocator implements AutoCloseable {
                               int fullWidth,
                               int fullHeight,
                               int sceneSamples,
-                              CombatantRhi rhi) {
+                              CombatantRhi rhi,
+                              DeferredRuntimeConfig.Snapshot settings) {
         if (resource == null || resource.textureSpec() == null) {
             throw new IllegalArgumentException("Deferred resource has no physical texture spec: " + resource);
         }
@@ -58,12 +59,16 @@ public final class DeferredResourceAllocator implements AutoCloseable {
         owner = rhi;
 
         DeferredTextureSpec spec = resource.textureSpec();
-        int width = spec.resolution().width(fullWidth);
-        int height = spec.resolution().height(fullHeight);
+        int width = spec.resolution().width(fullWidth, settings);
+        int height = spec.resolution().height(fullHeight, settings);
         int samples = spec.samples() == DeferredTextureSpec.SamplePolicy.MATCH_SCENE
                 ? Math.max(1, sceneSamples) : 1;
         int mipLevels = spec.mipChain()
                 ? 32 - Integer.numberOfLeadingZeros(Math.max(width, height)) : 1;
+        if (resource == DeferredResource.DEPTH_PYRAMID && settings != null
+                && settings.depthPyramidMaxMipLevels() > 0) {
+            mipLevels = Math.min(mipLevels, settings.depthPyramidMaxMipLevels());
+        }
         if (samples > 1 && mipLevels > 1) {
             throw new IllegalStateException("Multisampled deferred resources cannot have mip chains: " + resource);
         }
@@ -153,6 +158,7 @@ public final class DeferredResourceAllocator implements AutoCloseable {
         private final AutoCloseable owned;
         private boolean closed;
         private boolean valid;
+        private long validEpoch = Long.MIN_VALUE;
 
         private Allocation(AllocationKey key,
                            GpuTextureView view,
@@ -194,13 +200,23 @@ public final class DeferredResourceAllocator implements AutoCloseable {
             return !closed && valid;
         }
 
+        public boolean validForEpoch(long epoch) {
+            return !closed && valid && validEpoch == epoch;
+        }
+
         public void markValid() {
+            markValid(Long.MIN_VALUE);
+        }
+
+        public void markValid(long epoch) {
             if (closed) throw new IllegalStateException("Deferred allocation is closed");
             valid = true;
+            validEpoch = epoch;
         }
 
         private void invalidate() {
             valid = false;
+            validEpoch = Long.MIN_VALUE;
         }
 
         @Override

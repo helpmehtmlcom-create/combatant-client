@@ -27,6 +27,12 @@ public final class MapHeuristicConfig extends SubsystemConfig {
     private final NumberValue<Double> segmentResetDistance = number("segmentResetDistance", 48.0, 1.0, 1024.0);
     private final NumberValue<Double> segmentResetSigma = number("segmentResetSigma", 2.5, 0.5, 10.0);
     private final NumberValue<Double> segmentResetMinConfidence = number("segmentResetMinConfidence", 0.45, 0.0, 1.0);
+    private final NumberValue<Double> teleportResidualFloor = number("teleportResidualFloor", 12.0, 1.0, 256.0);
+    private final NumberValue<Double> teleportResidualSigma = number("teleportResidualSigma", 1.5, 0.5, 8.0);
+    private final NumberValue<Integer> teleportConfirmSamples = number("teleportConfirmSamples", 3, 2, 8);
+    private final NumberValue<Integer> teleportCandidateMaxAgeMs = number("teleportCandidateMaxAgeMs", 20000, 1000, 120000);
+    private final NumberValue<Integer> liveSourceGraceMs = number("liveSourceGraceMs", 2500, 0, 30000);
+    private final NumberValue<Integer> staleEstimateDisplayMs = number("staleEstimateDisplayMs", 30000, 1000, 300000);
 
     private MapHeuristicConfig() { loadConfig(); }
     public static MapHeuristicConfig get() { return INSTANCE; }
@@ -40,6 +46,12 @@ public final class MapHeuristicConfig extends SubsystemConfig {
     public double segmentResetDistance() { return segmentResetDistance.get().doubleValue(); }
     public double segmentResetSigma() { return segmentResetSigma.get().doubleValue(); }
     public double segmentResetMinConfidence() { return segmentResetMinConfidence.get().doubleValue(); }
+    public double teleportResidualFloor() { return teleportResidualFloor.get().doubleValue(); }
+    public double teleportResidualSigma() { return teleportResidualSigma.get().doubleValue(); }
+    public int teleportConfirmSamples() { return teleportConfirmSamples.get().intValue(); }
+    public int teleportCandidateMaxAgeMs() { return teleportCandidateMaxAgeMs.get().intValue(); }
+    public int liveSourceGraceMs() { return liveSourceGraceMs.get().intValue(); }
+    public int staleEstimateDisplayMs() { return staleEstimateDisplayMs.get().intValue(); }
 
     @Override
     public List<SettingDef> getSettingDefs() {
@@ -53,7 +65,13 @@ public final class MapHeuristicConfig extends SubsystemConfig {
                 SettingDef.number("bearingNoiseDegrees", bearingNoiseDegrees),
                 SettingDef.number("segmentResetDistance", segmentResetDistance),
                 SettingDef.number("segmentResetSigma", segmentResetSigma),
-                SettingDef.number("segmentResetMinConfidence", segmentResetMinConfidence)
+                SettingDef.number("segmentResetMinConfidence", segmentResetMinConfidence),
+                SettingDef.number("teleportResidualFloor", teleportResidualFloor),
+                SettingDef.number("teleportResidualSigma", teleportResidualSigma),
+                SettingDef.number("teleportConfirmSamples", teleportConfirmSamples),
+                SettingDef.number("teleportCandidateMaxAgeMs", teleportCandidateMaxAgeMs),
+                SettingDef.number("liveSourceGraceMs", liveSourceGraceMs),
+                SettingDef.number("staleEstimateDisplayMs", staleEstimateDisplayMs)
         );
     }
 }

@@ -22,23 +22,60 @@ public final class MapOverlayProjector {
         List<MapOverlayDrawList.Line> lines = new ArrayList<>();
         List<MapOverlayDrawList.Ellipse> ellipses = new ArrayList<>();
         List<MapOverlayDrawList.Circle> circles = new ArrayList<>();
+        List<MapOverlayDrawList.Player> players = new ArrayList<>();
         List<MapOverlayDrawList.Text> labels = new ArrayList<>();
         List<MapHitIndex.Entry> hits = new ArrayList<>();
 
         if (grid.enabled()) appendGrid(viewport, grid, lines, labels);
+        for (MapBearingRay ray : data.bearingRays()) {
+            double dirX = -Math.sin(ray.bearingRadians());
+            double dirZ = Math.cos(ray.bearingRadians());
+            MapScreenPoint observer = viewport.project(ray.observerX(), ray.observerZ());
+            MapScreenPoint unit = viewport.project(ray.observerX() + dirX, ray.observerZ() + dirZ);
+            double screenDx = unit.x() - observer.x();
+            double screenDy = unit.y() - observer.y();
+            double screenLength = Math.hypot(screenDx, screenDy);
+            if (!Double.isFinite(screenLength) || screenLength <= 1.0e-6) continue;
+
+            // A bearing is a directional constraint, not a decorative line through the whole map.
+            // Keep it screen-space bounded so zooming out can never produce kilometre-long stripes.
+            double ux = screenDx / screenLength;
+            double uy = screenDy / screenLength;
+            double shortSide = Math.min(viewport.screenBounds().width(), viewport.screenBounds().height());
+            double rayLengthPx = Math.max(92.0, Math.min(176.0, shortSide * 0.16));
+            double startInsetPx = 9.0;
+            double x1 = observer.x() + ux * startInsetPx;
+            double y1 = observer.y() + uy * startInsetPx;
+            double x2 = observer.x() + ux * rayLengthPx;
+            double y2 = observer.y() + uy * rayLengthPx;
+            lines.add(new MapOverlayDrawList.Line(x1, y1, x2, y2, ray.argb(), ray.thickness()));
+            circles.add(new MapOverlayDrawList.Circle(
+                    ray.id() + ":tip", x2, y2, Math.max(2.2, ray.thickness() * 1.7),
+                    ray.argb(), 0x00000000, ray.priority()));
+            if (!ray.label().isBlank()) {
+                double labelX = x2 + ux * 8.0;
+                double labelY = y2 + uy * 8.0;
+                labels.add(new MapOverlayDrawList.Text(
+                        ray.id() + ":label", labelX, labelY, ray.label(), ray.argb(), ray.priority()));
+            }
+        }
         for (MapUncertainty uncertainty : data.uncertainties()) {
             MapScreenPoint center = viewport.project(uncertainty.centerX(), uncertainty.centerZ());
             double radiusX = uncertainty.radiusX() * viewport.pixelsPerBlock();
             double radiusY = uncertainty.radiusZ() * viewport.pixelsPerBlock();
-            MapRect bounds = new MapRect(center.x() - radiusX, center.y() - radiusY, radiusX * 2.0, radiusY * 2.0);
+            double cos = Math.cos(uncertainty.angleRadians());
+            double sin = Math.sin(uncertainty.angleRadians());
+            double halfX = Math.hypot(radiusX * cos, radiusY * sin);
+            double halfY = Math.hypot(radiusX * sin, radiusY * cos);
+            MapRect bounds = new MapRect(center.x() - halfX, center.y() - halfY, halfX * 2.0, halfY * 2.0);
             if (!viewport.screenBounds().intersects(bounds)) continue;
             ellipses.add(new MapOverlayDrawList.Ellipse(
-                    uncertainty.id(), center.x(), center.y(), radiusX, radiusY,
+                    uncertainty.id(), center.x(), center.y(), radiusX, radiusY, uncertainty.angleRadians(),
                     uncertainty.fillArgb(), uncertainty.strokeArgb(), uncertainty.priority()
             ));
             hits.add(new MapHitIndex.Entry(
                     uncertainty.id(), MapHitIndex.Kind.UNCERTAINTY,
-                    center.x(), center.y(), radiusX, radiusY, uncertainty.priority()
+                    center.x(), center.y(), halfX, halfY, uncertainty.priority()
             ));
         }
         for (MapMarker marker : data.markers()) {
@@ -55,6 +92,16 @@ public final class MapOverlayProjector {
                     center.x(), center.y(), radius, radius, marker.priority()
             ));
         }
+        for (MapPlayerMarker marker : data.playerMarkers()) {
+            MapScreenPoint center = viewport.project(marker.worldX(), marker.worldZ());
+            double radius = marker.sizePixels() * 0.75;
+            if (!viewport.screenBounds().intersects(new MapRect(
+                    center.x() - radius, center.y() - radius, radius * 2.0, radius * 2.0))) continue;
+            players.add(new MapOverlayDrawList.Player(marker.id(), center.x(), center.y(), marker.playerUuid(),
+                    marker.playerName(), marker.accentArgb(), marker.sourceGlyph(), marker.sizePixels(), marker.alpha(), marker.priority()));
+            hits.add(new MapHitIndex.Entry(marker.id(), MapHitIndex.Kind.MARKER,
+                    center.x(), center.y(), radius, radius, marker.priority()));
+        }
         for (MapLabel label : data.labels()) {
             MapScreenPoint point = viewport.project(label.worldX(), label.worldZ());
             if (!viewport.screenBounds().contains(point.x(), point.y())) continue;
@@ -65,8 +112,9 @@ public final class MapOverlayProjector {
 
         ellipses.sort(Comparator.comparingInt(MapOverlayDrawList.Ellipse::priority));
         circles.sort(Comparator.comparingInt(MapOverlayDrawList.Circle::priority));
+        players.sort(Comparator.comparingInt(MapOverlayDrawList.Player::priority));
         labels.sort(Comparator.comparingInt(MapOverlayDrawList.Text::priority));
-        return new MapOverlayDrawList(lines, ellipses, circles, labels, new MapHitIndex(hits));
+        return new MapOverlayDrawList(lines, ellipses, circles, players, labels, new MapHitIndex(hits));
     }
 
     private static void appendGrid(MapViewport viewport,

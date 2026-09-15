@@ -32,6 +32,11 @@ public interface PostProcessGraphPass {
 
     boolean enabled(RenderFrameContext context);
 
+    /** Storage-capable ping/pong is allocated only when an active pass can actually use it. */
+    default boolean prefersStorageOutput(CombatantRhi rhi) {
+        return false;
+    }
+
     /**
      * Returns true when the pass wrote its destination and the graph should advance ping-pong state.
      */

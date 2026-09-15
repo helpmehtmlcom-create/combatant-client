@@ -7,22 +7,32 @@
 
 package combatant.client.features.map.heuristic;
 
+import combatant.client.features.map.location.LocationSessionKey;
+
 import java.util.UUID;
 
 public record HeuristicObservation(
         UUID targetUuid,
+        String targetName,
+        LocationSessionKey session,
+        long sourceGeneration,
         double observerX,
         double observerZ,
         double bearingRadians,
+        double minimumHorizontalRange,
         long observedAtMs,
         long sourceRevision,
         double weight
 ) {
     public HeuristicObservation {
         if (targetUuid == null) throw new IllegalArgumentException("targetUuid");
+        if (session == null) throw new IllegalArgumentException("session");
+        targetName = targetName == null ? "" : targetName.trim();
+        sourceGeneration = Math.max(1L, sourceGeneration);
         if (!Double.isFinite(observerX) || !Double.isFinite(observerZ) || !Double.isFinite(bearingRadians)) {
             throw new IllegalArgumentException("Non-finite observation");
         }
+        if (!Double.isFinite(minimumHorizontalRange) || minimumHorizontalRange < 0.0) minimumHorizontalRange = 0.0;
         if (!(weight > 0.0) || !Double.isFinite(weight)) weight = 1.0;
     }
 

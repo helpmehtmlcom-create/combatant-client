@@ -23,6 +23,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import combatant.client.mixins.accessors.ShaderLoaderDefinitionsAccessor;
 import combatant.client.mixins.accessors.ShaderSourceKeyAccessor;
 import combatant.client.render.engine.shader.CombatantShaderSources;
+import combatant.client.render.engine.deferred.DeferredRuntimeAssets;
 import combatant.client.render.iris.IrisCompatibilityGuards;
 import combatant.client.util.logging.DebugLog;
 import combatant.client.util.resources.RenderResourceReadiness;
@@ -57,6 +58,7 @@ public abstract class ShaderLoaderMixin {
         int added = 0;
         for (Map.Entry<Identifier, Resource> entry : resources.entrySet()) {
             Identifier resourceId = entry.getKey();
+            if (!DeferredRuntimeAssets.shouldPublishExtendedShader(resourceId)) continue;
             ShaderType type = CombatantShaderSources.typeByLocation(resourceId);
             if (type == null) continue;
 

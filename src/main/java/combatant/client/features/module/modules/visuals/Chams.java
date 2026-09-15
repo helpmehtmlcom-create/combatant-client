@@ -43,6 +43,9 @@ import combatant.client.render.engine.animation.AnimatedRenderColors;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.engine.postprocess.PostProcessPass;
+import combatant.client.render.engine.postprocess.PostProcessExecutionContext;
+import combatant.client.render.engine.postprocess.PostProcessBackendResourceOwner;
+import combatant.client.render.engine.postprocess.HandChamsComputeBackend;
 import combatant.client.render.engine.postprocess.graph.LegacyPostProcessGraphPass;
 import combatant.client.features.gui.preview.VisualPreviewRuntime;
 import combatant.client.render.engine.profiler.ProfilerPhase;
@@ -56,6 +59,8 @@ import combatant.client.render.engine.uniform.impl.HandSmokeUniforms;
 import combatant.client.render.iris.IrisHandMaskState;
 import combatant.client.render.iris.IrisRuntime;
 import combatant.client.render.engine.RenderState;
+import combatant.client.render.engine.core.CombatantRenderSystem;
+import combatant.client.render.engine.rhi.CombatantRhi;
 
 //todo Description
 @ModuleInfo(id = "chams", displayName = "Chams", category = ModuleCategory.VISUALS)
@@ -247,6 +252,7 @@ public class Chams extends Module {
             this::isGhostingVisible
     );
 
+    private final HandChamsComputeBackend chamsCompute = new HandChamsComputeBackend();
     private final PostProcessPass handsPass = new HandsPass();
     private final PostProcessPass ghostingPass = new GhostingPass();
     private TextureTarget handMask;
@@ -264,6 +270,7 @@ public class Chams extends Module {
     private boolean maskReady;
     private boolean ghostMaskReady;
     private boolean ghostHistoryNeedsClear = true;
+    private boolean ghostComputeNeedsReset = true;
     private RenderBuffers handMaskRenderBuffers;
     private FeatureRenderDispatcher handMaskFeatureDispatcher;
     private final java.util.ArrayList<SubmitNode> handSnapshotScratch = new java.util.ArrayList<>(32);
@@ -310,6 +317,8 @@ public class Chams extends Module {
         maskReady = false;
         ghostMaskReady = false;
         ghostHistoryNeedsClear = true;
+        ghostComputeNeedsReset = true;
+        chamsCompute.close();
         closeMetallicOccupancyBuffers();
         closeStandaloneHandRenderer();
     }
@@ -321,6 +330,8 @@ public class Chams extends Module {
         if (!hands.get() || !ghosting.get() || !isFirstPersonHandContext()) {
             ghostMaskReady = false;
             ghostHistoryNeedsClear = true;
+            ghostComputeNeedsReset = true;
+            chamsCompute.invalidateGhostHistory();
         }
     }
 
@@ -626,6 +637,8 @@ public class Chams extends Module {
             ghostMaskReady = false;
             // A later toggle must never resurrect an old trail. Clear lazily on the next ghost pass.
             ghostHistoryNeedsClear = true;
+            ghostComputeNeedsReset = true;
+            chamsCompute.invalidateGhostHistory();
         }
     }
 
@@ -907,7 +920,17 @@ public class Chams extends Module {
             float fillA = channel(fillArgb, 24);
             float glowA = glow.get() ? glowAlpha.get() : 0.0f;
             float shadowA = shadow.get() ? shadowAlpha.get() : 0.0f;
-            boolean occupancyReady = ensureMetallicOccupancyBuffers();
+            GpuTextureView occupancyView = chamsCompute.buildMetallicOccupancy(
+                    CombatantRenderSystem.rhi(),
+                    maskView,
+                    getHandMaskSampler(),
+                    mc.getWindow().getWidth(),
+                    mc.getWindow().getHeight(),
+                    edgeWidth.get(),
+                    METALLIC_OCCUPANCY_CELL_SIZE
+            );
+            boolean computeOccupancyReady = occupancyView != null;
+            boolean occupancyReady = computeOccupancyReady || ensureMetallicOccupancyBuffers();
 
             HandMetallicUniforms.update(
                     channel(baseRgb, 16), channel(baseRgb, 8), channel(baseRgb, 0), fillA,
@@ -921,21 +944,23 @@ public class Chams extends Module {
             );
 
             try (TracyGpuProfiler.Scope ignoredGpu = TracyGpuProfiler.beginZone("3d:chams:hands_metallic")) {
-                GpuTextureView occupancyView = maskView;
-                if (occupancyReady) {
-                    try (TracyGpuProfiler.Scope ignoredOccupancy = TracyGpuProfiler.beginZone("3d:chams:metallic_occupancy")) {
-                        FullScreenRenderer.begin("Combatant Hand Metallic Occupancy")
-                                .attachment(metallicOccupancyRaw)
-                                .pipeline(CombatantRenderPipelines.HAND_MASK_OCCUPANCY)
-                                .sampler("u_Mask", maskView, getHandMaskSampler())
-                                .end();
-                        FullScreenRenderer.begin("Combatant Hand Metallic Occupancy Dilate")
-                                .attachment(metallicOccupancyDilated)
-                                .pipeline(CombatantRenderPipelines.HAND_MASK_OCCUPANCY_DILATE)
-                                .uniform("HandMetallic", HandMetallicUniforms.get())
-                                .sampler("u_Mask", metallicOccupancyRaw.getColorTextureView(), getHandMaskSampler())
-                                .end();
-                        occupancyView = metallicOccupancyDilated.getColorTextureView();
+                if (!computeOccupancyReady) {
+                    occupancyView = maskView;
+                    if (occupancyReady) {
+                        try (TracyGpuProfiler.Scope ignoredOccupancy = TracyGpuProfiler.beginZone("3d:chams:metallic_occupancy")) {
+                            FullScreenRenderer.begin("Combatant Hand Metallic Occupancy")
+                                    .attachment(metallicOccupancyRaw)
+                                    .pipeline(CombatantRenderPipelines.HAND_MASK_OCCUPANCY)
+                                    .sampler("u_Mask", maskView, getHandMaskSampler())
+                                    .end();
+                            FullScreenRenderer.begin("Combatant Hand Metallic Occupancy Dilate")
+                                    .attachment(metallicOccupancyDilated)
+                                    .pipeline(CombatantRenderPipelines.HAND_MASK_OCCUPANCY_DILATE)
+                                    .uniform("HandMetallic", HandMetallicUniforms.get())
+                                    .sampler("u_Mask", metallicOccupancyRaw.getColorTextureView(), getHandMaskSampler())
+                                    .end();
+                            occupancyView = metallicOccupancyDilated.getColorTextureView();
+                        }
                     }
                 }
                 try (TracyGpuProfiler.Scope ignoredMaterial = TracyGpuProfiler.beginZone("3d:chams:metallic_material")) {
@@ -986,29 +1011,77 @@ public class Chams extends Module {
         return true;
     }
 
+    private boolean renderGhosting(PostProcessExecutionContext execution) {
+        if (execution == null || execution.source() == null || execution.destination() == null) return false;
+        GpuTextureView maskView = readyGhostMask();
+        if (maskView == null) return false;
+
+        GhostFrameParams frame = ghostFrameParams();
+        if (execution.destinationStorage() != null && chamsCompute.supported(execution.rhi())) {
+            boolean computed = chamsCompute.renderGhosting(
+                    execution.rhi(),
+                    execution.destinationStorage(),
+                    execution.source(),
+                    maskView,
+                    PostProcessManager.getSampler(),
+                    mc.getWindow().getWidth(),
+                    mc.getWindow().getHeight(),
+                    frame.dt(),
+                    frame.time(),
+                    frame.colorR(),
+                    frame.colorG(),
+                    frame.colorB(),
+                    frame.colorA(),
+                    frame.decay(),
+                    frame.strength(),
+                    frame.blurPx(),
+                    0.96f,
+                    frame.quality(),
+                    frame.octaves(),
+                    frame.speed(),
+                    frame.scale(),
+                    frame.swirl(),
+                    frame.contrast(),
+                    frame.density(),
+                    frame.historyScale(),
+                    ghostComputeNeedsReset
+            );
+            if (computed) {
+                ghostComputeNeedsReset = false;
+                // Raster history is a separate fallback chain. Keep it marked stale while compute owns history.
+                ghostHistoryNeedsClear = true;
+                ghostMaskReady = false;
+                return true;
+            }
+        }
+
+        // A policy/backend change back to compute must never resurrect an old compute trail.
+        ghostComputeNeedsReset = true;
+        chamsCompute.invalidateGhostHistory();
+        return renderGhostingRaster(execution.source(), execution.destination(), maskView, frame);
+    }
+
     private boolean renderGhosting(GpuTextureView src, GpuTextureView dst) {
+        GpuTextureView maskView = readyGhostMask();
+        if (maskView == null) return false;
+        ghostComputeNeedsReset = true;
+        chamsCompute.invalidateGhostHistory();
+        return renderGhostingRaster(src, dst, maskView, ghostFrameParams());
+    }
+
+    private GpuTextureView readyGhostMask() {
         if (!ghostMaskReady || handMask == null || handMask.getColorTextureView() == null) {
             ghostMaskReady = false;
-            return false;
+            return null;
         }
-        if (!ensureGhostBuffers()) {
-            ghostMaskReady = false;
-            return false;
-        }
+        return handMask.getColorTextureView();
+    }
 
-        GpuTextureView maskView = handMask.getColorTextureView();
-        GpuTextureView historyView = ghostHistoryRead.getColorTextureView();
-        GpuTextureView nextHistoryView = ghostHistoryWrite.getColorTextureView();
-        if (maskView == null || historyView == null || nextHistoryView == null) {
-            ghostMaskReady = false;
-            return false;
-        }
-
+    private GhostFrameParams ghostFrameParams() {
         float dt = TickDelta.frameDeltaSeconds();
         if (!Float.isFinite(dt) || dt <= 0.0f) dt = 1.0f / 60.0f;
         dt = Math.min(dt, 0.10f);
 
-        // Treat duration as the time until an old silhouette has effectively disappeared (~2%).
         float duration = Math.max(0.01f, ghostingDuration.get());
         float decay = (float) Math.pow(0.02, dt / duration);
         int ghostArgb = AnimatedRenderColors.resolve(
@@ -1019,32 +1092,51 @@ public class Chams extends Module {
                 ghostingColor2.getArgb(),
                 true
         );
+        return new GhostFrameParams(
+                dt, getRawTime(),
+                channel(ghostArgb, 16), channel(ghostArgb, 8), channel(ghostArgb, 0), channel(ghostArgb, 24),
+                decay, ghostingStrength.get(), ghostingBlur.get(),
+                ghostQualityLevel(), ghostingOctaves.get(), ghostingSpeed.get(), ghostingScale.get(),
+                ghostingSwirl.get(), ghostingContrast.get(), ghostingDensity.get(), ghostHistoryScale()
+        );
+    }
+
+    private boolean renderGhostingRaster(GpuTextureView src,
+                                         GpuTextureView dst,
+                                         GpuTextureView maskView,
+                                         GhostFrameParams frame) {
+        if (!ensureGhostBuffers()) {
+            ghostMaskReady = false;
+            return false;
+        }
+
+        GpuTextureView historyView = ghostHistoryRead.getColorTextureView();
+        GpuTextureView nextHistoryView = ghostHistoryWrite.getColorTextureView();
+        if (historyView == null || nextHistoryView == null) {
+            ghostMaskReady = false;
+            return false;
+        }
 
         HandGhostingUniforms.update(
                 mc.getWindow().getWidth(),
                 mc.getWindow().getHeight(),
-                dt,
-                getRawTime(),
-                channel(ghostArgb, 16),
-                channel(ghostArgb, 8),
-                channel(ghostArgb, 0),
-                channel(ghostArgb, 24),
-                decay,
-                ghostingStrength.get(),
-                ghostingBlur.get(),
+                frame.dt(),
+                frame.time(),
+                frame.colorR(), frame.colorG(), frame.colorB(), frame.colorA(),
+                frame.decay(),
+                frame.strength(),
+                frame.blurPx(),
                 0.96f,
-                ghostQualityLevel(),
-                ghostingOctaves.get(),
-                ghostingSpeed.get(),
-                ghostingScale.get(),
-                ghostingSwirl.get(),
-                ghostingContrast.get(),
-                ghostingDensity.get(),
-                ghostHistoryScale()
+                frame.quality(),
+                frame.octaves(),
+                frame.speed(),
+                frame.scale(),
+                frame.swirl(),
+                frame.contrast(),
+                frame.density(),
+                frame.historyScale()
         );
 
-        // Temporal accumulation is kept in a private ping-pong pair, independent from the graph's
-        // own source/destination ping-pong. This lets Ghosting remain a normal POST_HAND pass.
         try (TracyGpuProfiler.Scope ignoredGpu = TracyGpuProfiler.beginZone("3d:chams:ghost_history")) {
             FullScreenRenderer.begin("Combatant Hand Ghost History")
                     .attachment(nextHistoryView)
@@ -1066,15 +1158,24 @@ public class Chams extends Module {
         }
 
         swapGhostHistory();
+        ghostComputeNeedsReset = true;
         ghostMaskReady = false;
         return true;
     }
+
+    private record GhostFrameParams(
+            float dt, float time,
+            float colorR, float colorG, float colorB, float colorA,
+            float decay, float strength, float blurPx,
+            int quality, int octaves, float speed, float scale,
+            float swirl, float contrast, float density, float historyScale
+    ) { }
 
     private float getRawTime() {
         return (float) (Util.getMillis() / 1000.0);
     }
 
-    private final class HandsPass implements PostProcessPass {
+    private final class HandsPass implements PostProcessPass, PostProcessBackendResourceOwner {
         @Override
         public boolean isActive() {
             return isActiveForHandRender()
@@ -1094,6 +1195,11 @@ public class Chams extends Module {
             if (!isActiveForHandRender() || mc.player == null || mc.level == null) return false;
             if (!hands.get() || !isFirstPersonHandContext()) return false;
             return Chams.this.renderHands(src, dst, tickDelta);
+        }
+
+        @Override
+        public void releaseBackendResources(CombatantRhi owner) {
+            chamsCompute.release(owner);
         }
     }
 
@@ -1117,6 +1223,17 @@ public class Chams extends Module {
         @Override
         public Phase getPhase() {
             return Phase.POST_HAND;
+        }
+
+        @Override
+        public boolean prefersStorageOutput(CombatantRhi rhi) {
+            return chamsCompute.supported(rhi);
+        }
+
+        @Override
+        public boolean render(PostProcessExecutionContext execution) {
+            if (!isActive()) return false;
+            return Chams.this.renderGhosting(execution);
         }
 
         @Override

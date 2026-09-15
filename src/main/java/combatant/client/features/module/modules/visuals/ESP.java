@@ -62,6 +62,9 @@ import combatant.client.render.engine.msaa.MsaaWorldTarget;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.engine.postprocess.PostProcessPass;
+import combatant.client.render.engine.postprocess.PostProcessBackendResourceOwner;
+import combatant.client.render.engine.postprocess.SeparableMaskBlurComputeBackend;
+import combatant.client.render.engine.rhi.CombatantRhi;
 import combatant.client.render.engine.renderer.FullScreenRenderer;
 import combatant.client.render.engine.renderer.MeshRenderer;
 import combatant.client.render.engine.renderer.Renderer2D;
@@ -226,6 +229,7 @@ public class ESP extends Module {
     private TextureTarget shaderMask;
     private TextureTarget shaderBlurBuffer;
     private TextureTarget shaderEffectBuffer;
+    private final SeparableMaskBlurComputeBackend shaderEspComputeBlur = new SeparableMaskBlurComputeBackend();
     private MsaaFramebuffer shaderMaskMsaa;
     private FeatureRenderDispatcher shaderEspRenderDispatcher;
     private RenderBuffers shaderEspRenderBuffers;
@@ -626,6 +630,7 @@ public class ESP extends Module {
 
     @Override
     public void onDisable() {
+        shaderEspComputeBlur.close();
         if (shaderMaskMsaa != null) {
             shaderMaskMsaa.destroyBuffers();
             shaderMaskMsaa = null;
@@ -806,8 +811,8 @@ public class ESP extends Module {
 
         if (shaderGlow.get()) {
             float glowRadius = Math.max(1.0f, shaderGlowStrength.get());
-            blurShaderMask(shaderMask, shaderEffectBuffer, glowRadius, width, height);
-            drawShaderGradient(shaderEffectBuffer, dst, width, height,
+            GpuTextureView glowMask = blurShaderMask(shaderMask, shaderEffectBuffer, glowRadius, width, height);
+            drawShaderGradient(glowMask, dst, width, height,
                     alpha255(shaderGlowAlpha.get()),
                     darkMultiplier,
                     shaderGlowIntensity.get());
@@ -818,7 +823,7 @@ public class ESP extends Module {
             if (isShaderSmokeFill()) {
                 drawShaderSmoke(shaderMask, dst, width, height);
             } else {
-                drawShaderGradient(shaderMask, dst, width, height,
+                drawShaderGradient(shaderMask.getColorTextureView(), dst, width, height,
                         alpha255(shaderFillAlpha.get()),
                         darkMultiplier,
                         1.0f);
@@ -828,8 +833,8 @@ public class ESP extends Module {
 
         if (shaderOutline.get()) {
             float outlineRadius = Math.max(0.5f, shaderOutlineWidth.get());
-            blurShaderMask(shaderMask, shaderEffectBuffer, outlineRadius, width, height);
-            drawShaderGradient(shaderEffectBuffer, dst, width, height,
+            GpuTextureView outlineMask = blurShaderMask(shaderMask, shaderEffectBuffer, outlineRadius, width, height);
+            drawShaderGradient(outlineMask, dst, width, height,
                     alpha255(shaderOutlineAlpha.get()),
                     darkMultiplier,
                     shaderOutlineIntensity.get());
@@ -839,7 +844,14 @@ public class ESP extends Module {
         return rendered;
     }
 
-    private void blurShaderMask(RenderTarget input, RenderTarget output, float radius, int width, int height) {
+    private GpuTextureView blurShaderMask(RenderTarget input, RenderTarget output, float radius, int width, int height) {
+        GpuTextureView inputView = input != null ? input.getColorTextureView() : null;
+        if (inputView == null) return null;
+
+        GpuTextureView compute = shaderEspComputeBlur.blur(
+                CombatantRenderSystem.rhi(), inputView, inputView, getShaderEspSampler(),
+                width, height, Math.min(radius, 63.0f));
+        if (compute != null) return compute;
 
         clearFramebuffer(shaderBlurBuffer);
         ShaderEspBlurUniforms.update(width, height, Math.min(radius, 63.0f), 1.0f, 0.0f);
@@ -847,8 +859,8 @@ public class ESP extends Module {
                 .attachment(shaderBlurBuffer.getColorTextureView())
                 .pipeline(CombatantRenderPipelines.SHADER_ESP_SHADOW)
                 .uniform("ShaderEspBlur", ShaderEspBlurUniforms.get())
-                .sampler("u_Texture", input.getColorTextureView(), getShaderEspSampler())
-                .sampler("u_Mask", input.getColorTextureView(), getShaderEspSampler())
+                .sampler("u_Texture", inputView, getShaderEspSampler())
+                .sampler("u_Mask", inputView, getShaderEspSampler())
                 .end();
 
         clearFramebuffer(output);
@@ -858,12 +870,14 @@ public class ESP extends Module {
                 .pipeline(CombatantRenderPipelines.SHADER_ESP_SHADOW)
                 .uniform("ShaderEspBlur", ShaderEspBlurUniforms.get())
                 .sampler("u_Texture", shaderBlurBuffer.getColorTextureView(), getShaderEspSampler())
-                .sampler("u_Mask", input.getColorTextureView(), getShaderEspSampler())
+                .sampler("u_Mask", inputView, getShaderEspSampler())
                 .end();
+        return output.getColorTextureView();
     }
 
-    private void drawShaderGradient(RenderTarget input, GpuTextureView dst, int width, int height, int alpha,
+    private void drawShaderGradient(GpuTextureView input, GpuTextureView dst, int width, int height, int alpha,
                                     float darkMultiplier, float intensity) {
+        if (input == null || dst == null) return;
         boolean overrideColor = usesCustomFrameColors();
         ShaderEspGradientUniforms.update(
                 0.0f,
@@ -885,7 +899,7 @@ public class ESP extends Module {
                 .attachment(dst)
                 .pipeline(CombatantRenderPipelines.SHADER_ESP_GRADIENT)
                 .uniform("ShaderEspGradient", ShaderEspGradientUniforms.get())
-                .sampler("u_Texture", input.getColorTextureView(), getShaderEspSampler())
+                .sampler("u_Texture", input, getShaderEspSampler())
                 .end();
     }
 
@@ -1613,7 +1627,7 @@ public class ESP extends Module {
         }
     }
 
-    private final class ShaderEspPass implements PostProcessPass {
+    private final class ShaderEspPass implements PostProcessPass, PostProcessBackendResourceOwner {
         @Override
         public boolean isActive() {
             return ESP.this.isEnabled()
@@ -1630,6 +1644,11 @@ public class ESP extends Module {
         @Override
         public boolean render(GpuTextureView src, GpuTextureView dst, float tickDelta) {
             return ESP.this.renderShaderEsp(src, dst, tickDelta);
+        }
+
+        @Override
+        public void releaseBackendResources(CombatantRhi owner) {
+            shaderEspComputeBlur.release(owner);
         }
     }
 }

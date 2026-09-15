@@ -27,6 +27,8 @@ public record MapBearingFrame(
         worldKey = clean(worldKey);
         sourceKey = clean(sourceKey);
         if (source != MapHistorySource.LOCATOR_BEARING) throw new IllegalArgumentException("bearing source");
+        if (worldKey.isBlank()) throw new IllegalArgumentException("worldKey");
+        if (observedAtMs <= 0L) throw new IllegalArgumentException("observedAtMs");
         if (!Double.isFinite(observerX) || !Double.isFinite(observerZ) || !Double.isFinite(bearingRadians)) {
             throw new IllegalArgumentException("bearing");
         }

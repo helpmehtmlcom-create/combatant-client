@@ -13,6 +13,7 @@ out vec4 color;
 uniform sampler2D u_GbufferSurface;
 uniform sampler2D u_GbufferGeometry;
 uniform sampler2D u_GbufferAuxiliary;
+uniform sampler2D u_GbufferMaterial;
 uniform sampler2D u_LightTex;
 
 layout(std140) uniform DeferredLighting {
@@ -32,15 +33,19 @@ float combatant_linear_fog(float distanceValue, float start, float end) {
 
 void main() {
     vec4 surface = texture(u_GbufferSurface, v_TexCoord);
-    if (surface.a < 0.5) {
+    if (surface.a <= 0.0) {
         discard;
     }
 
     vec4 geometry = texture(u_GbufferGeometry, v_TexCoord);
     vec4 auxiliary = texture(u_GbufferAuxiliary, v_TexCoord);
+    vec4 material = texture(u_GbufferMaterial, v_TexCoord);
 
     vec3 lightmap = texture(u_LightTex, geometry.ba).rgb;
-    vec3 litColor = surface.rgb * lightmap;
+    float ao = clamp(surface.a, 0.0, 1.0);
+    float emission = max(material.a, 0.0);
+    vec3 litColor = surface.rgb * lightmap * ao;
+    litColor += surface.rgb * emission;
 
     float sphericalDistance = combatant_decode_distance(auxiliary.r);
     float cylindricalDistance = combatant_decode_distance(auxiliary.g);

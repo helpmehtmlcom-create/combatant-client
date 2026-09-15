@@ -8,7 +8,7 @@ package combatant.client.features.map.storage;
 
 import java.util.UUID;
 
-public sealed interface MapHistoryRecord permits MapEstimateFrame, MapExactPointFrame, MapBearingFrame {
+public sealed interface MapHistoryRecord permits MapEstimateFrame, MapExactPointFrame, MapBearingFrame, MapHistoryEventFrame {
     UUID targetUuid();
     String targetName();
     String worldKey();

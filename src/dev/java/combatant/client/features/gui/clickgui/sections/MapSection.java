@@ -14,7 +14,11 @@ import combatant.client.render.engine.renderer.ui.UiDeferredScheduler;
 import combatant.client.render.engine.text.FontInfo;
 import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
+import combatant.client.runtime.error.ErrorHandler;
+import combatant.client.runtime.error.FailureBoundary;
+import combatant.client.runtime.error.FailureExecution;
 import combatant.client.util.logging.DebugLog;
+import net.minecraft.client.resources.language.I18n;
 import org.lwjgl.glfw.GLFW;
 
 @ClickGuiSectionInfo(id = "combatant:map", label = "Map", order = 200, requiredMods = "xaeroworldmap")
@@ -48,13 +52,14 @@ public final class MapSection implements ClickGuiSection {
         renderer.quad(x, y, width, height, 0xFF090B0E);
 
         if (fatalFailure) {
-            drawStatus("World Map integration is incompatible");
+            drawStatus(tr("gui.combatant.map.error.incompatible", "World Map integration is incompatible"));
             return;
         }
         if (System.nanoTime() < retryAfterNanos) {
-            drawStatus("World Map is recovering…");
+            drawStatus(tr("gui.combatant.map.error.recovering", "World Map is recovering…"));
             return;
         }
+        if (ErrorHandler.blocked(this)) ErrorHandler.unregister(this);
 
         try {
             if (surface == null) surface = new XaeroMapSurface();
@@ -64,39 +69,47 @@ public final class MapSection implements ClickGuiSection {
             recover(error);
         } catch (LinkageError error) {
             failFatal(error);
+            drawStatus(tr("gui.combatant.map.error.incompatible", "World Map integration is incompatible"));
         }
     }
 
     @Override
     public boolean mousePressed(float mouseX, float mouseY, int button) {
-        return surface != null && surface.mousePressed(mouseX, mouseY, button);
+        return guardInput("mousePressed",
+                () -> surface != null && surface.mousePressed(mouseX, mouseY, button), false);
     }
 
     @Override
     public void mouseReleased(float mouseX, float mouseY, int button) {
-        if (surface != null) surface.mouseReleased(mouseX, mouseY, button);
+        guardInput("mouseReleased", () -> {
+            if (surface != null) surface.mouseReleased(mouseX, mouseY, button);
+            return true;
+        }, false);
     }
 
     @Override
     public boolean mouseScrolled(float mouseX, float mouseY, double amount) {
-        return surface != null && surface.mouseScrolled(mouseX, mouseY, amount);
+        return guardInput("mouseScrolled",
+                () -> surface != null && surface.mouseScrolled(mouseX, mouseY, amount), false);
     }
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (surface != null) {
+        return guardInput("keyPressed", () -> {
+            if (surface == null) return false;
             if (surface.keyPressed(keyCode, scanCode, modifiers)) return true;
             if (keyCode == GLFW.GLFW_KEY_R) {
                 surface.recenter();
                 return true;
             }
-        }
-        return false;
+            return false;
+        }, false);
     }
 
     @Override
     public boolean charTyped(char chr, int modifiers) {
-        return surface != null && surface.charTyped(chr, modifiers);
+        return guardInput("charTyped",
+                () -> surface != null && surface.charTyped(chr, modifiers), false);
     }
 
     @Override
@@ -112,13 +125,19 @@ public final class MapSection implements ClickGuiSection {
     @Override
     public void onSelected() {
         selected = true;
-        if (surface != null) surface.resume();
+        guardInput("resume", () -> {
+            if (surface != null) surface.resume();
+            return true;
+        }, false);
     }
 
     @Override
     public void onDeselected() {
         selected = false;
-        if (surface != null) surface.suspend();
+        guardInput("suspend", () -> {
+            if (surface != null) surface.suspend();
+            return true;
+        }, false);
     }
 
     @Override
@@ -144,14 +163,42 @@ public final class MapSection implements ClickGuiSection {
     private void recover(RuntimeException error) {
         surface = null;
         retryAfterNanos = System.nanoTime() + 1_000_000_000L;
+        FailureExecution.reportComponent(this, "World Map UI", "render", error, FailureBoundary.ISOLATE);
         DebugLog.warnOnce("clickgui-map-render-failure", "ClickGUI map surface failed and will retry", error);
-        drawStatus("World Map is recovering…");
+        drawStatus(tr("gui.combatant.map.error.recovering", "World Map is recovering…"));
     }
 
     private void failFatal(LinkageError error) {
         surface = null;
         fatalFailure = true;
         DebugLog.warnOnce("clickgui-map-unavailable", "ClickGUI map integration is incompatible", error);
-        drawStatus("World Map integration is incompatible");
+    }
+
+    private <T> T guardInput(String phase, java.util.function.Supplier<T> input, T fallback) {
+        if (fatalFailure || System.nanoTime() < retryAfterNanos || ErrorHandler.blocked(this)) return fallback;
+        try {
+            return input.get();
+        } catch (RuntimeException error) {
+            surface = null;
+            retryAfterNanos = System.nanoTime() + 1_000_000_000L;
+            FailureExecution.reportComponent(this, "World Map UI", phase, error, FailureBoundary.ISOLATE);
+            DebugLog.warnOnce("clickgui-map-input-failure-" + phase,
+                    "ClickGUI map input failed and will retry", error);
+            return fallback;
+        } catch (LinkageError error) {
+            failFatal(error);
+            return fallback;
+        }
+    }
+
+    private static String tr(String key, String fallback) {
+        try {
+            String translated = I18n.get(key);
+            if (translated != null && !translated.equals(key) && !translated.startsWith("Format error:")) {
+                return translated;
+            }
+        } catch (Throwable ignored) {
+        }
+        return fallback;
     }
 }

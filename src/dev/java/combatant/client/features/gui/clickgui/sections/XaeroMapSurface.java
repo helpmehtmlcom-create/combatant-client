@@ -8,6 +8,11 @@
 package combatant.client.features.gui.clickgui.sections;
 
 import combatant.client.config.subsystem.MapUiConfig;
+import combatant.client.config.subsystem.MapTriangulationConfig;
+import combatant.client.features.map.location.PlayerLocationService;
+import combatant.client.features.map.location.PlayerLocationSnapshot;
+import combatant.client.features.map.location.PlayerLocationSource;
+import combatant.client.features.relations.CategoryService;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.gui.clickgui.layout.screen.settings.SettingsGuiPalette;
 import combatant.client.features.theme.Theme;
@@ -16,6 +21,10 @@ import combatant.client.render.engine.renderer.ui.UiBlurResources;
 import combatant.client.render.engine.renderer.ui.UiDeferredScheduler;
 import combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest;
 import combatant.client.render.map.MapGridSpec;
+import combatant.client.render.map.MapBearingRay;
+import combatant.client.render.map.MapPlayerMarker;
+import combatant.client.render.map.MapPlayerMarkerRenderer;
+import combatant.client.render.map.MapUncertainty;
 import combatant.client.render.map.MapOverlaySnapshot;
 import combatant.client.render.map.MapPoint;
 import combatant.client.render.map.MapRect;
@@ -31,7 +40,10 @@ import combatant.client.render.map.MapTileResidencyKey;
 import combatant.client.render.map.MapTileUvRect;
 import combatant.client.render.map.MapViewport;
 import combatant.client.render.map.MapVisibleTileSelector;
+import combatant.client.render.helpers.SystemCursor;
+import combatant.client.render.helpers.ClipFunction;
 import combatant.client.util.logging.DebugLog;
+import combatant.client.util.text.ClipboardUtil;
 import combatant.client.util.text.LegacyTextUtil;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
@@ -68,6 +80,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 final class XaeroMapSurface {
     private static final int TILE_RESOLUTION = 64;
@@ -99,6 +112,12 @@ final class XaeroMapSurface {
     private final ArrayList<UiButton> uiButtons = new ArrayList<>();
     private final ArrayList<MenuEntry> contextEntries = new ArrayList<>();
     private final ArrayList<ElementHit> drawerHits = new ArrayList<>();
+    private final ArrayList<TargetHit> targetHits = new ArrayList<>();
+    private List<LocationMarkerEntry> locationPlayerMarkers = List.of();
+    private LocationMarkerEntry hoveredLocationMarker;
+    private LocationMarkerEntry rightClickLocationMarker;
+    private String transientStatus = "";
+    private long transientStatusUntilMs;
 
     private double centerX;
     private double centerZ;
@@ -161,14 +180,22 @@ final class XaeroMapSurface {
         areaWidth = width;
         areaHeight = height;
         hoveredElement = null;
+        hoveredLocationMarker = null;
+        // The map itself is not a permanent "move" affordance. Keep the native cursor neutral
+        // until the user is actually panning/selecting or points at an interactive overlay.
+        // Otherwise the whole surface looked draggable even while simply inspecting the map.
+        if (contains(mouseX, mouseY)) {
+            if (rightSelecting) SystemCursor.set(SystemCursor.CursorType.CROSSHAIR);
+            else if (dragging) SystemCursor.set(SystemCursor.CursorType.MOVE);
+        }
 
         WorldMapSession session = WorldMapSession.getCurrentSession();
-        if (session == null || !session.isUsable()) return Frame.waiting("Preparing World Map...");
+        if (session == null || !session.isUsable()) return Frame.waiting(tr("gui.combatant.map.loading", "Preparing World Map..."));
         MapProcessor processor = session.getMapProcessor();
-        if (processor == null || !processor.isMapWorldUsable()) return Frame.waiting("Preparing World Map...");
+        if (processor == null || !processor.isMapWorldUsable()) return Frame.waiting(tr("gui.combatant.map.loading", "Preparing World Map..."));
         MapWorld world = processor.getMapWorld();
         MapDimension dimension = world == null ? null : world.getCurrentDimension();
-        if (dimension == null) return Frame.waiting("Preparing World Map...");
+        if (dimension == null) return Frame.waiting(tr("gui.combatant.map.loading", "Preparing World Map..."));
         activeProcessor = processor;
         activeDimension = dimension;
 
@@ -193,7 +220,7 @@ final class XaeroMapSurface {
                 || processor.isWaitingForWorldUpdate()
                 || !processor.getMapSaveLoad().isRegionDetectionComplete()) {
             drawMapUi(processor, dimension, mouseX, mouseY);
-            return Frame.waiting("Preparing World Map...");
+            return Frame.waiting(tr("gui.combatant.map.loading", "Preparing World Map..."));
         }
 
         int lod = selectXaeroLod();
@@ -201,7 +228,7 @@ final class XaeroMapSurface {
         synchronized (processor.renderThreadPauseSync) {
             if (processor.isRenderingPaused()) {
                 drawMapUi(processor, dimension, mouseX, mouseY);
-                return Frame.waiting("Preparing World Map...");
+                return Frame.waiting(tr("gui.combatant.map.loading", "Preparing World Map..."));
             }
             processor.updateCaveStart();
             processor.getMapSaveLoad().mainTextureLevel = lod;
@@ -235,11 +262,18 @@ final class XaeroMapSurface {
         hoveredElement = elements.render(elementSnapshot, viewport,
                 elementPointerActive ? mouseX : Float.NaN,
                 elementPointerActive ? mouseY : Float.NaN);
+        if (hoveredElement != null) SystemCursor.set(SystemCursor.CursorType.HAND);
+        renderLocationPlayerMarkers(viewport, mouseX, mouseY, elementPointerActive);
+        if (hoveredLocationMarker != null) {
+            elements.clearHover();
+            hoveredElement = null;
+            SystemCursor.set(SystemCursor.CursorType.HAND);
+        }
         drawPlayerArrow(processor, dimension, viewport);
-        elements.renderHover(viewport);
+        if (hoveredLocationMarker == null) elements.renderHover(viewport);
         drawMapUi(processor, dimension, mouseX, mouseY);
         return result.terrainTilesDrawn() == 0
-                ? Frame.waiting("Preparing World Map...")
+                ? Frame.waiting(tr("gui.combatant.map.loading", "Preparing World Map..."))
                 : new Frame(true, "", result.terrainTilesDrawn());
     }
 
@@ -261,11 +295,19 @@ final class XaeroMapSurface {
         deleteArmed = false;
         if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
             rightSelecting = true;
-            rightClickElement = hoveredElement;
+            rightClickLocationMarker = hoveredLocationMarker;
+            rightClickElement = rightClickLocationMarker == null ? hoveredElement : null;
             contextBlockX = pointerBlockX;
             contextBlockY = pointerBlockY;
             contextBlockZ = pointerBlockZ;
-            if (rightClickElement != null) {
+            if (rightClickLocationMarker != null) {
+                PlayerLocationSnapshot location = rightClickLocationMarker.location();
+                contextWorldX = location.x();
+                contextWorldZ = location.z();
+                contextBlockX = floorBlock(location.x());
+                contextBlockZ = floorBlock(location.z());
+                contextBlockY = Double.isFinite(location.y()) ? floorBlock(location.y()) : Short.MAX_VALUE;
+            } else if (rightClickElement != null) {
                 contextWorldX = rightClickElement.worldX();
                 contextWorldZ = rightClickElement.worldZ();
             } else if (viewport != null) {
@@ -278,9 +320,19 @@ final class XaeroMapSurface {
             }
             selectionStartX = selectionEndX = pointerBlockX >> 4;
             selectionStartZ = selectionEndZ = pointerBlockZ >> 4;
+            if (rightClickLocationMarker != null) {
+                selectionStartX = selectionEndX = contextBlockX >> 4;
+                selectionStartZ = selectionEndZ = contextBlockZ >> 4;
+            }
             return true;
         }
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return false;
+        if (hoveredLocationMarker != null) {
+            centerX = hoveredLocationMarker.location().x();
+            centerZ = hoveredLocationMarker.location().z();
+            centered = true;
+            return true;
+        }
         dragging = true;
         dragX = mouseX;
         dragY = mouseY;
@@ -712,7 +764,179 @@ final class XaeroMapSurface {
     }
 
     private MapOverlaySnapshot collectOverlays(MapDimension dimension) {
-        return new MapOverlaySnapshot(List.of(), List.of(), List.of());
+        if (dimension == null) return MapOverlaySnapshot.EMPTY;
+        String dimensionKey = dimension.getDimId().identifier().toString();
+        var view = PlayerLocationService.get().snapshot();
+        List<LocationMarkerEntry> players = new ArrayList<>();
+        List<MapUncertainty> uncertainty = new ArrayList<>();
+        List<MapBearingRay> bearings = new ArrayList<>();
+        Set<String> bearingKeys = new LinkedHashSet<>();
+        long now = System.currentTimeMillis();
+
+        for (Map.Entry<UUID, PlayerLocationSnapshot> entry : view.bestByPlayer().entrySet()) {
+            UUID id = entry.getKey();
+            PlayerLocationSnapshot location = entry.getValue();
+            if (location == null || !dimensionKey.equals(location.worldIdentity().dimensionKey())) continue;
+
+            String name = MapPlayerMarkerRenderer.resolveDisplayName(id, location.playerName());
+            if (name == null || name.isBlank()) name = MapTriangulationConfig.get().nameForTarget(id);
+            int accent = CategoryService.getColor(name);
+
+            if (!location.hasPosition()) {
+                // Bearing samples are solver input, not a debug history overlay. In the normal map
+                // only the current constraint for an explicitly targeted player is useful. Older
+                // observations stay inside HeuristicRuntime and never remain painted at previous
+                // observer positions.
+                if (location.source() == PlayerLocationSource.LOCATOR_BEARING
+                        && location.hasBearing()
+                        && MapTriangulationConfig.get().isTargeted(id, name)) {
+                    double observerX = metadataDouble(location, "observerX");
+                    double observerZ = metadataDouble(location, "observerZ");
+                    if (Double.isFinite(observerX) && Double.isFinite(observerZ)) {
+                        String key = bearingKey(id, location.sourceRevision());
+                        if (bearingKeys.add(key)) {
+                            bearings.add(new MapBearingRay(
+                                    key, observerX, observerZ, location.bearingRadians(), name,
+                                    withAlpha(accent, 0.66f * freshnessAlpha(location, now)), 1.35,
+                                    150 + location.source().priority()));
+                        }
+                    }
+                }
+                continue;
+            }
+
+            if (location.source() == PlayerLocationSource.LOCAL_ENTITY_EXACT
+                    && !MapUiConfig.get().advancedPlayerMarkers()) continue;
+
+            float alpha = location.source() == PlayerLocationSource.HISTORICAL ? 0.42f : freshnessAlpha(location, now);
+            String statusLabel = location.source() == PlayerLocationSource.HISTORICAL
+                    ? staleAgeLabel(location, now) : "";
+            MapPlayerMarker marker = new MapPlayerMarker(
+                    "location-player:" + id, location.x(), location.z(), id, name, statusLabel, accent,
+                    sourceGlyph(location.source()), location.exact() ? 27.0f : 25.5f, alpha,
+                    300 + location.source().priority());
+            players.add(new LocationMarkerEntry(marker, location));
+
+            double major = location.uncertaintyMajor();
+            double minor = location.uncertaintyMinor();
+            if (!location.exact() && (major > 0.0 || minor > 0.0)) {
+                if (major <= 0.0) major = minor;
+                if (minor <= 0.0) minor = major;
+                int fill = withAlpha(accent, location.source() == PlayerLocationSource.LOCATOR_APPROXIMATE ? 0.12f : 0.095f);
+                int stroke = withAlpha(accent, location.source() == PlayerLocationSource.LOCATOR_APPROXIMATE ? 0.68f : 0.58f);
+                uncertainty.add(new MapUncertainty(
+                        "location-uncertainty:" + id, location.x(), location.z(), major, minor,
+                        location.uncertaintyAngleRadians(), fill, stroke, 180 + location.source().priority()));
+            }
+        }
+
+        // Historical/accepted solver observations deliberately stay out of the production
+        // map overlay. They are useful for diagnostics and solving, but rendering them here creates
+        // stale fans anchored at every previous observer position.
+
+        locationPlayerMarkers = List.copyOf(players);
+        return new MapOverlaySnapshot(List.of(), List.of(), List.of(), uncertainty, bearings);
+    }
+
+    private void renderLocationPlayerMarkers(MapViewport viewport,
+                                             float mouseX,
+                                             float mouseY,
+                                             boolean interactive) {
+        if (viewport == null || locationPlayerMarkers.isEmpty()) return;
+        MapRect clip = viewport.screenBounds();
+        hoveredLocationMarker = null;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        if (interactive) {
+            for (LocationMarkerEntry entry : locationPlayerMarkers) {
+                MapPlayerMarker marker = entry.marker();
+                MapScreenPoint point = viewport.project(marker.worldX(), marker.worldZ());
+                if (!clip.contains(point.x(), point.y())) continue;
+                float hitRadius = Math.max(14.0f, marker.sizePixels() * 0.62f + 2.0f);
+                double dx = mouseX - point.x();
+                double dy = mouseY - point.y();
+                double distance = dx * dx + dy * dy;
+                if (distance <= hitRadius * hitRadius && distance < bestDistance) {
+                    hoveredLocationMarker = entry;
+                    bestDistance = distance;
+                }
+            }
+        }
+        try (ClipFunction.Scope ignored = ClipFunction.rectScope(clip.x(), clip.y(), clip.width(), clip.height())) {
+            for (LocationMarkerEntry entry : locationPlayerMarkers) {
+                MapPlayerMarker marker = entry.marker();
+                MapScreenPoint point = viewport.project(marker.worldX(), marker.worldZ());
+                float radius = marker.sizePixels() * 0.8f + 24.0f;
+                if (!clip.intersects(new MapRect(point.x() - radius, point.y() - radius, radius * 2.0f, radius * 2.0f))) continue;
+                MapPlayerMarkerRenderer.drawMarker((float) point.x(), (float) point.y(), marker.playerUuid(), marker.playerName(),
+                        marker.accentArgb(), marker.sourceGlyph(), marker.sizePixels(), marker.alpha(),
+                        entry == hoveredLocationMarker);
+            }
+            Renderer2D.flushBatch();
+            for (LocationMarkerEntry entry : locationPlayerMarkers) {
+                MapPlayerMarker marker = entry.marker();
+                MapScreenPoint point = viewport.project(marker.worldX(), marker.worldZ());
+                float radius = marker.sizePixels() * 0.8f + 24.0f;
+                if (!clip.intersects(new MapRect(point.x() - radius, point.y() - radius, radius * 2.0f, radius * 2.0f))) continue;
+                MapPlayerMarkerRenderer.drawLabel((float) point.x(), (float) point.y(), marker.playerUuid(), marker.playerName(),
+                        marker.statusLabel(), marker.accentArgb(), marker.sizePixels(), marker.alpha(),
+                        entry == hoveredLocationMarker);
+            }
+        }
+    }
+
+    private static String sourceGlyph(PlayerLocationSource source) {
+        if (source == null) return "";
+        return switch (source) {
+            case LOCAL_ENTITY_EXACT -> "";
+            case MAPLINK_EXACT -> "map-pinned";
+            case LOCATOR_EXACT, LOCATOR_APPROXIMATE -> "locate-fixed";
+            case TRIANGULATED, DUPLEX_TRIANGULATED -> "crosshair";
+            case LOCATOR_BEARING -> "navigation";
+            case HISTORICAL -> "map-pin";
+        };
+    }
+
+    private static String staleAgeLabel(PlayerLocationSnapshot location, long now) {
+        if (location == null) return tr("gui.combatant.map.location.stale", "stale");
+        long lostAt = metadataLong(location, "lastLocatorSeenAt");
+        long age = lostAt > 0L ? Math.max(0L, now - lostAt) : location.ageMs(now);
+        if (age < 1_000L) return tr("gui.combatant.map.location.stale_now", "stale now");
+        long seconds = Math.max(1L, age / 1_000L);
+        return tr("gui.combatant.map.location.stale", "stale") + " " + seconds + "s";
+    }
+
+    private static long metadataLong(PlayerLocationSnapshot location, String key) {
+        if (location == null || location.metadata() == null || key == null) return 0L;
+        String value = location.metadata().get(key);
+        if (value == null || value.isBlank()) return 0L;
+        try { return Long.parseLong(value); } catch (NumberFormatException ignored) { return 0L; }
+    }
+
+    private static float freshnessAlpha(PlayerLocationSnapshot location, long now) {
+        long age = location == null ? 0L : location.ageMs(now);
+        if (age <= 2500L) return 1.0f;
+        if (age >= 30000L) return 0.58f;
+        return 1.0f - (age - 2500L) / 27500.0f * 0.42f;
+    }
+
+    private static String bearingKey(UUID id, long sourceRevision) {
+        return "bearing:" + id + ':' + sourceRevision;
+    }
+
+    private static double metadataDouble(PlayerLocationSnapshot location, String key) {
+        if (location == null || location.metadata() == null || key == null) return Double.NaN;
+        String value = location.metadata().get(key);
+        if (value == null || value.isBlank()) return Double.NaN;
+        try {
+            return Double.parseDouble(value);
+        } catch (NumberFormatException ignored) {
+            return Double.NaN;
+        }
+    }
+
+    private static int withAlpha(int argb, float alpha) {
+        return (Math.max(0, Math.min(255, Math.round(Math.max(0.0f, Math.min(1.0f, alpha)) * 255.0f))) << 24)
+                | (argb & 0x00FFFFFF);
     }
 
     private void drawLoading(MapViewport viewport) {
@@ -850,13 +1074,14 @@ final class XaeroMapSurface {
 
     private void drawMapUi(MapProcessor processor, MapDimension dimension, float mouseX, float mouseY) {
         SettingsGuiPalette palette = SettingsGuiPalette.current();
+        boolean radarAvailable = SupportMods.minimap();
         XaeroMapUiRenderer.layoutButtons(uiButtons, areaX, areaY, areaWidth, areaHeight,
                 new XaeroMapUiRenderer.ChromeState(
                         settings != null && settings.isOpen(),
                         dimension.getCaveModeType() != 0,
                         processor.getMapWorld().isUsingCustomDimension(),
                         SupportMods.minimap() && effective(WorldMapProfiledConfigOptions.WAYPOINTS),
-                        SupportMods.minimap(),
+                        radarAvailable,
                         SupportMods.minimap() && effective(WorldMapProfiledConfigOptions.MINIMAP_RADAR),
                         SupportMods.pac(),
                         SupportMods.pac() && effective(WorldMapProfiledConfigOptions.OPAC_CLAIMS),
@@ -868,11 +1093,13 @@ final class XaeroMapSurface {
                         tr("gui.xaero_box_cave_mode", "Cave mode"),
                         tr("gui.xaero_dimension_toggle_button", "Switch dimension"),
                         tr("gui.xaero_box_open_waypoints", "Waypoints"),
-                        tr("gui.xaero_box_open_players", "Players"),
-                        tr("gui.xaero_box_minimap_radar", "Minimap radar"),
+                        tr("gui.combatant.map.chrome.targets", "Targeted players"),
+                        radarAvailable
+                                ? tr("gui.combatant.map.chrome.radar", "Entity radar")
+                                : tr("gui.combatant.map.chrome.radar_unavailable", "Entity radar · Xaero Minimap required"),
                         tr("gui.xaero_box_pac_displaying_claims", "Claims"),
-                        tr("gui.xaero_box_export", "Export"),
-                        "",
+                        tr("gui.combatant.map.chrome.radar_list", "Radar list"),
+                        tr("gui.combatant.map.chrome.controls", "Controls"),
                         tr("gui.xaero_box_zoom_out", "Zoom out"),
                         tr("gui.xaero_box_zoom_in", "Zoom in")
                 ));
@@ -886,8 +1113,8 @@ final class XaeroMapSurface {
         drawCoordinates(palette, dimension);
         XaeroMapUiRenderer.drawZoom(areaX, areaY, areaWidth, areaHeight, destinationScale, palette);
         withMapGlassSource(() -> XaeroMapUiRenderer.drawDrawer(areaX, areaY, areaWidth, mouseX, mouseY,
-                drawer, elementSnapshot, drawerHits,
-                tr("gui.xaero_box_open_waypoints", "Waypoints"), palette, chromeMotion));
+                drawer, elementSnapshot, targetedRows(), drawerHits, targetHits,
+                effective(WorldMapProfiledConfigOptions.MAP_TELEPORT_ALLOWED), palette, chromeMotion));
         final XaeroMapUiRenderer.HelpBounds[] helpHolder = new XaeroMapUiRenderer.HelpBounds[1];
         withMapGlassSource(() -> helpHolder[0] = XaeroMapUiRenderer.drawHelp(
                 areaX, areaY, areaWidth, areaHeight, uiButtons, helpOpen, palette, chromeMotion));
@@ -925,6 +1152,7 @@ final class XaeroMapSurface {
             withMapGlassSource(() -> settings.render(
                     areaX, areaY, areaWidth, areaHeight, mouseX, mouseY));
         }
+        drawTransientStatus();
     }
 
     private static void withMapGlassSource(Runnable draw) {
@@ -965,7 +1193,27 @@ final class XaeroMapSurface {
     private void rebuildContextEntries() {
         contextEntries.clear();
         XaeroMapElements.Element element = rightClickElement;
-        if (element != null && element.handle() instanceof Waypoint waypoint) {
+        LocationMarkerEntry locationEntry = rightClickLocationMarker;
+        if (locationEntry != null) {
+            MapPlayerMarker marker = locationEntry.marker();
+            PlayerLocationSnapshot location = locationEntry.location();
+            String name = marker.playerName().isBlank()
+                    ? targetName(location.playerName(), location.playerUuid()) : marker.playerName();
+            contextEntries.add(new MenuEntry(name, "users-round", false, ContextAction.NONE));
+            contextEntries.add(new MenuEntry(locationSourceLabel(location),
+                    locationContextIcon(location.source()), false, ContextAction.NONE));
+            contextEntries.add(new MenuEntry(coordinateLabel(location), "clipboard", true,
+                    ContextAction.COPY_COORDINATES));
+            contextEntries.add(new MenuEntry(chunkLabel(contextBlockX >> 4, contextBlockZ >> 4), "clipboard", true,
+                    ContextAction.COPY_CHUNK));
+            contextEntries.add(new MenuEntry(tr("gui.combatant.map.action.center_player", "Center on player"),
+                    "navigation", true, ContextAction.CENTER_LOCATION));
+            boolean targeted = MapTriangulationConfig.get().isTargeted(location.playerUuid(), name);
+            contextEntries.add(new MenuEntry(targeted
+                    ? tr("gui.combatant.map.action.remove_target", "Remove target")
+                    : tr("gui.combatant.map.action.add_target", "Add target"),
+                    "crosshair", true, ContextAction.TOGGLE_TARGET));
+        } else if (element != null && element.handle() instanceof Waypoint waypoint) {
             contextEntries.add(new MenuEntry(element.plainName(), "map-pin", false, ContextAction.NONE));
             contextEntries.add(new MenuEntry(tr("gui.xaero_right_click_waypoint_edit", "Edit"),
                     "pencil", true, ContextAction.EDIT));
@@ -973,11 +1221,17 @@ final class XaeroMapSurface {
                     "navigation", true, ContextAction.TELEPORT_ELEMENT));
             contextEntries.add(new MenuEntry(tr("gui.xaero_right_click_waypoint_share", "Share"),
                     "share-2", true, ContextAction.SHARE_ELEMENT));
-            contextEntries.add(new MenuEntry(waypoint.isDisabled() ? "Enable" : "Disable",
+            contextEntries.add(new MenuEntry(waypoint.isDisabled()
+                    ? tr("gui.combatant.map.action.enable", "Enable")
+                    : tr("gui.combatant.map.action.disable", "Disable"),
                     "eye", true, ContextAction.TOGGLE_DISABLED));
-            contextEntries.add(new MenuEntry(waypoint.isTemporary() ? "Make permanent" : "Make temporary",
+            contextEntries.add(new MenuEntry(waypoint.isTemporary()
+                    ? tr("gui.combatant.map.action.make_permanent", "Make permanent")
+                    : tr("gui.combatant.map.action.make_temporary", "Make temporary"),
                     "clock-3", true, ContextAction.TOGGLE_TEMPORARY));
-            contextEntries.add(new MenuEntry(deleteArmed ? "Click again to delete" : "Delete",
+            contextEntries.add(new MenuEntry(deleteArmed
+                    ? tr("gui.combatant.map.action.confirm_delete", "Click again to delete")
+                    : tr("gui.combatant.map.action.delete", "Delete"),
                     "trash-2", true, ContextAction.DELETE));
         } else if (element != null && element.handle() instanceof PlayerTrackerMapElement<?>) {
             contextEntries.add(new MenuEntry(element.plainName(), "users-round", false, ContextAction.NONE));
@@ -986,16 +1240,16 @@ final class XaeroMapSurface {
         } else {
             boolean coordinates = effective(WorldMapProfiledConfigOptions.COORDINATES);
             String chunk = selectionStartX == selectionEndX && selectionStartZ == selectionEndZ
-                    ? "Chunk " + selectionStartX + ", " + selectionStartZ
-                    : "Chunks " + Math.min(selectionStartX, selectionEndX) + ", "
+                    ? tr("gui.combatant.map.selection.chunk", "Chunk") + " " + selectionStartX + ", " + selectionStartZ
+                    : tr("gui.combatant.map.selection.chunks", "Chunks") + " " + Math.min(selectionStartX, selectionEndX) + ", "
                     + Math.min(selectionStartZ, selectionEndZ) + " → "
                     + Math.max(selectionStartX, selectionEndX) + ", " + Math.max(selectionStartZ, selectionEndZ);
-            contextEntries.add(new MenuEntry(chunk, "land-plot", false, ContextAction.NONE));
+            contextEntries.add(new MenuEntry(chunk, "clipboard", true, ContextAction.COPY_CHUNK));
             if (coordinates) {
                 String xyz = contextBlockY == Short.MAX_VALUE
                         ? "X " + contextBlockX + "  Z " + contextBlockZ
                         : "X " + contextBlockX + "  Y " + contextBlockY + "  Z " + contextBlockZ;
-                contextEntries.add(new MenuEntry(xyz, "crosshair", false, ContextAction.NONE));
+                contextEntries.add(new MenuEntry(xyz, "clipboard", true, ContextAction.COPY_COORDINATES));
             }
             if (XaeroMapActions.available() && effective(WorldMapProfiledConfigOptions.WAYPOINTS)) {
                 contextEntries.add(new MenuEntry(tr("gui.xaero_right_click_map_create_waypoint", "Create waypoint"),
@@ -1015,8 +1269,6 @@ final class XaeroMapSurface {
                         "map-pinned", true, ContextAction.WAYPOINTS));
             }
         }
-        contextEntries.add(new MenuEntry(tr("gui.xaero_right_click_box_map_export", "Export selection"),
-                "map", true, ContextAction.EXPORT));
         contextEntries.add(new MenuEntry(tr("gui.xaero_right_click_box_map_settings", "Settings"),
                 "settings-2", true, ContextAction.SETTINGS));
     }
@@ -1025,6 +1277,7 @@ final class XaeroMapSurface {
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return false;
         for (UiButton uiButton : uiButtons) {
             if (!uiButton.contains(mouseX, mouseY)) continue;
+            if (!uiButton.enabled()) return true;
             pressedUiAction = uiButton.action();
             runUiAction(uiButton.action());
             return true;
@@ -1041,9 +1294,9 @@ final class XaeroMapSurface {
             case DIMENSION -> toggleDimension();
             case WAYPOINTS -> drawer = drawer == Drawer.WAYPOINTS ? Drawer.NONE : Drawer.WAYPOINTS;
             case PLAYERS -> drawer = drawer == Drawer.PLAYERS ? Drawer.NONE : Drawer.PLAYERS;
+            case RADAR_LIST -> drawer = drawer == Drawer.RADAR ? Drawer.NONE : Drawer.RADAR;
             case RADAR -> toggle(WorldMapProfiledConfigOptions.MINIMAP_RADAR);
             case CLAIMS -> toggle(WorldMapProfiledConfigOptions.OPAC_CLAIMS);
-            case EXPORT -> exportSelection();
             case CONTROLS -> {
                 helpOpen = !helpOpen;
                 if (helpOpen) {
@@ -1060,9 +1313,24 @@ final class XaeroMapSurface {
     }
 
     private boolean clickDrawer(float mouseX, float mouseY, int button) {
+        for (TargetHit hit : targetHits) {
+            if (!hit.contains(mouseX, mouseY)) continue;
+            PlayerLocationSnapshot location = hit.target().location();
+            if (location == null || !location.hasPosition()) return true;
+            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && hit.teleportable()) {
+                if (teleportTarget(location)) return true;
+            }
+            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT || button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+                centerX = location.x();
+                centerZ = location.z();
+                centered = true;
+            }
+            return true;
+        }
         for (ElementHit hit : drawerHits) {
             if (!hit.contains(mouseX, mouseY)) continue;
             if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+                rightClickLocationMarker = null;
                 rightClickElement = hit.element();
                 contextWorldX = hit.element().worldX();
                 contextWorldZ = hit.element().worldZ();
@@ -1093,6 +1361,7 @@ final class XaeroMapSurface {
             contextOpen = false;
             contextBounds = null;
             deleteArmed = false;
+            rightClickLocationMarker = null;
             return false;
         }
         int row = XaeroMapUiRenderer.contextEntryAt(bounds, mouseX, mouseY, contextEntries);
@@ -1105,6 +1374,7 @@ final class XaeroMapSurface {
 
     private void runContextAction(ContextAction action) {
         XaeroMapElements.Element element = rightClickElement;
+        LocationMarkerEntry locationEntry = rightClickLocationMarker;
         Waypoint waypoint = element != null && element.handle() instanceof Waypoint value ? value : null;
         switch (action) {
             case EDIT -> openWaypointDraft(waypoint);
@@ -1125,8 +1395,28 @@ final class XaeroMapSurface {
             case SHARE_LOCATION -> XaeroMapActions.shareLocation(elementSnapshot.waypointWorld(),
                     contextBlockX, contextBlockY == Short.MAX_VALUE ? Short.MAX_VALUE : contextBlockY + 1,
                     contextBlockZ);
+            case COPY_COORDINATES -> copyContextCoordinates();
+            case COPY_CHUNK -> copyContextChunk();
+            case CENTER_LOCATION -> {
+                if (locationEntry != null && locationEntry.location().hasPosition()) {
+                    centerX = locationEntry.location().x();
+                    centerZ = locationEntry.location().z();
+                    centered = true;
+                }
+            }
+            case TOGGLE_TARGET -> {
+                if (locationEntry != null) {
+                    PlayerLocationSnapshot location = locationEntry.location();
+                    String name = locationEntry.marker().playerName();
+                    MapTriangulationConfig config = MapTriangulationConfig.get();
+                    if (config.isTargeted(location.playerUuid(), name)) {
+                        config.removeTargetedPlayer(location.playerUuid(), name);
+                    } else {
+                        config.addTargetedPlayer(location.playerUuid(), name);
+                    }
+                }
+            }
             case WAYPOINTS -> drawer = Drawer.WAYPOINTS;
-            case EXPORT -> exportSelection();
             case SETTINGS -> toggleSettings();
             case NONE -> {
             }
@@ -1134,6 +1424,7 @@ final class XaeroMapSurface {
         contextOpen = false;
         contextBounds = null;
         deleteArmed = false;
+        rightClickLocationMarker = null;
     }
 
     private void runElementTeleport(XaeroMapElements.Element element) {
@@ -1143,6 +1434,99 @@ final class XaeroMapSurface {
         } else if (element.handle() instanceof PlayerTrackerMapElement<?> player) {
             XaeroMapActions.teleportPlayer(activeProcessor, player);
         }
+    }
+
+    private void copyContextCoordinates() {
+        String value = contextBlockY == Short.MAX_VALUE
+                ? contextBlockX + " " + contextBlockZ
+                : contextBlockX + " " + contextBlockY + " " + contextBlockZ;
+        ClipboardUtil.copy(value);
+        showTransientStatus(tr("gui.combatant.map.copied.coordinates", "Coordinates copied") + " · " + value);
+    }
+
+    private void copyContextChunk() {
+        int minX = Math.min(selectionStartX, selectionEndX);
+        int minZ = Math.min(selectionStartZ, selectionEndZ);
+        int maxX = Math.max(selectionStartX, selectionEndX);
+        int maxZ = Math.max(selectionStartZ, selectionEndZ);
+        String value = minX == maxX && minZ == maxZ
+                ? minX + " " + minZ
+                : minX + " " + minZ + " -> " + maxX + " " + maxZ;
+        ClipboardUtil.copy(value);
+        showTransientStatus(tr("gui.combatant.map.copied.chunk", "Chunk copied") + " · " + value);
+    }
+
+    private void showTransientStatus(String value) {
+        transientStatus = value == null ? "" : value.trim();
+        transientStatusUntilMs = System.currentTimeMillis() + 1_700L;
+    }
+
+    private void drawTransientStatus() {
+        if (transientStatus.isBlank()) return;
+        long now = System.currentTimeMillis();
+        long remaining = transientStatusUntilMs - now;
+        if (remaining <= 0L) {
+            transientStatus = "";
+            return;
+        }
+        float alpha = remaining < 220L ? Math.max(0.0f, remaining / 220.0f) : 1.0f;
+        float textSize = 10.8f;
+        float textW = ClickGuiRenderer.textWidth(ClickGuiRenderer.getOnestMedium(), transientStatus, textSize);
+        float width = textW + 18.0f;
+        float height = 20.0f;
+        float x = areaX + (areaWidth - width) * 0.5f;
+        float y = areaY + areaHeight - height - 18.0f;
+        Renderer2D.COLOR.roundedRect(x, y, width, height, 7.0f,
+                withAlpha(0xFF0B1016, 0.88f * alpha));
+        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), transientStatus,
+                x + 9.0f, y + 4.0f, textSize, withAlpha(0xFFF4F7FA, alpha), false);
+    }
+
+    private static int floorBlock(double value) {
+        return (int) Math.floor(value);
+    }
+
+    private static String coordinateLabel(PlayerLocationSnapshot location) {
+        int x = floorBlock(location.x());
+        int z = floorBlock(location.z());
+        return Double.isFinite(location.y())
+                ? "X " + x + "  Y " + floorBlock(location.y()) + "  Z " + z
+                : "X " + x + "  Z " + z;
+    }
+
+    private static String chunkLabel(int chunkX, int chunkZ) {
+        return tr("gui.combatant.map.selection.chunk", "Chunk") + " " + chunkX + ", " + chunkZ;
+    }
+
+    private static String locationSourceLabel(PlayerLocationSnapshot location) {
+        if (location == null || location.source() == null) {
+            return tr("gui.combatant.map.source.unknown", "unknown");
+        }
+        String source = switch (location.source()) {
+            case LOCAL_ENTITY_EXACT -> tr("gui.combatant.map.source.local", "local");
+            case MAPLINK_EXACT -> tr("gui.combatant.map.source.maplink", "MapLink");
+            case LOCATOR_EXACT -> tr("gui.combatant.map.source.locator_exact", "locator exact");
+            case LOCATOR_APPROXIMATE -> tr("gui.combatant.map.source.locator_approx", "locator approximate");
+            case LOCATOR_BEARING -> tr("gui.combatant.map.source.bearing", "locator bearing");
+            case TRIANGULATED -> tr("gui.combatant.map.source.triangulated", "triangulated");
+            case DUPLEX_TRIANGULATED -> tr("gui.combatant.map.source.duplex", "duplex");
+            case HISTORICAL -> tr("gui.combatant.map.source.history", "history");
+        };
+        if (location.source() == PlayerLocationSource.HISTORICAL) {
+            String stale = staleAgeLabel(location, System.currentTimeMillis());
+            if (!stale.isBlank()) source += " · " + stale;
+        }
+        return source;
+    }
+
+    private static String locationContextIcon(PlayerLocationSource source) {
+        if (source == null) return "crosshair";
+        return switch (source) {
+            case MAPLINK_EXACT -> "map-pinned";
+            case LOCATOR_EXACT, LOCATOR_APPROXIMATE, LOCATOR_BEARING -> "locate-fixed";
+            case LOCAL_ENTITY_EXACT -> "users-round";
+            default -> "crosshair";
+        };
     }
 
     private void createTemporaryWaypoint() {
@@ -1214,12 +1598,72 @@ final class XaeroMapSurface {
                 && (!minecraft.gameMode.canHurtPlayer() || contextBlockY != Short.MAX_VALUE);
     }
 
-    private void exportSelection() {
-        int startX = rightSelecting || contextOpen ? selectionStartX : pointerBlockX >> 4;
-        int startZ = rightSelecting || contextOpen ? selectionStartZ : pointerBlockZ >> 4;
-        int endX = rightSelecting || contextOpen ? selectionEndX : startX;
-        int endZ = rightSelecting || contextOpen ? selectionEndZ : startZ;
-        XaeroMapActions.export(activeProcessor, startX, startZ, endX, endZ);
+    private List<TargetRow> targetedRows() {
+        MapTriangulationConfig config = MapTriangulationConfig.get();
+        Map<UUID, PlayerLocationSnapshot> locations = PlayerLocationService.get().snapshot().bestByPlayer();
+        LinkedHashMap<UUID, TargetRow> rows = new LinkedHashMap<>();
+
+        locations.forEach((id, location) -> {
+            if (config.isTargeted(id, location.playerName())) {
+                String name = location.playerName().isBlank() ? config.nameForTarget(id) : location.playerName();
+                rows.put(id, new TargetRow(id, targetName(name, id), location));
+            }
+        });
+        Set<String> ids = config.targetedPlayersValue().get();
+        if (ids != null) {
+            for (String raw : ids) {
+                try {
+                    UUID id = UUID.fromString(raw == null ? "" : raw.trim());
+                    PlayerLocationSnapshot location = locations.get(id);
+                    rows.putIfAbsent(id, new TargetRow(id,
+                            targetName(config.nameForTarget(id), id), location));
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        }
+        Set<String> names = config.targetedPlayerNamesValue().get();
+        if (names != null) {
+            for (String raw : names) {
+                if (raw == null || raw.isBlank()) continue;
+                String name = raw.trim();
+                TargetRow resolved = rows.values().stream()
+                        .filter(row -> row.name().equalsIgnoreCase(name))
+                        .findFirst().orElse(null);
+                if (resolved == null) {
+                    UUID id = MapTriangulationConfig.offlineTargetUuid(name);
+                    rows.putIfAbsent(id, new TargetRow(id, name, locations.get(id)));
+                }
+            }
+        }
+        return rows.values().stream()
+                .sorted(Comparator
+                        .comparing((TargetRow row) -> row.location() == null)
+                        .thenComparing(row -> row.location() == null || !row.location().exact())
+                        .thenComparing(TargetRow::name, String.CASE_INSENSITIVE_ORDER))
+                .limit(32)
+                .toList();
+    }
+
+    private static String targetName(String name, UUID id) {
+        if (name != null && !name.isBlank()) return name.trim();
+        String value = id == null ? "?" : id.toString();
+        return value.length() > 8 ? value.substring(0, 8) : value;
+    }
+
+    private boolean targetTeleportable(PlayerLocationSnapshot location) {
+        if (location == null || !location.exact() || activeDimension == null
+                || !effective(WorldMapProfiledConfigOptions.MAP_TELEPORT_ALLOWED)) return false;
+        String targetDimension = location.worldIdentity().dimensionKey();
+        return targetDimension.isBlank()
+                || targetDimension.equals(activeDimension.getDimId().identifier().toString());
+    }
+
+    private boolean teleportTarget(PlayerLocationSnapshot location) {
+        if (!targetTeleportable(location)) return false;
+        int y = Double.isFinite(location.y()) ? (int) Math.floor(location.y()) : Short.MAX_VALUE;
+        XaeroMapActions.teleportMap(activeProcessor,
+                (int) Math.floor(location.x()), y, (int) Math.floor(location.z()), null);
+        return true;
     }
     private void toggleDimension() {
         if (activeProcessor == null || activeProcessor.getMapWorld() == null) return;
@@ -1339,7 +1783,7 @@ final class XaeroMapSurface {
         MapPoint point = currentViewport.unproject(mouseX, mouseY);
         pointerBlockX = (int) Math.floor(point.x());
         pointerBlockZ = (int) Math.floor(point.z());
-        if (rightSelecting && rightClickElement == null) {
+        if (rightSelecting && rightClickElement == null && rightClickLocationMarker == null) {
             selectionEndX = pointerBlockX >> 4;
             selectionEndZ = pointerBlockZ >> 4;
         }
@@ -1366,7 +1810,7 @@ final class XaeroMapSurface {
     }
 
     private void drawSelection(MapViewport currentViewport) {
-        if ((!rightSelecting && !contextOpen) || rightClickElement != null) return;
+        if ((!rightSelecting && !contextOpen) || rightClickElement != null || rightClickLocationMarker != null) return;
         int left = Math.min(selectionStartX, selectionEndX) << 4;
         int right = (Math.max(selectionStartX, selectionEndX) + 1) << 4;
         int top = Math.min(selectionStartZ, selectionEndZ) << 4;
@@ -1457,9 +1901,9 @@ final class XaeroMapSurface {
         DIMENSION,
         WAYPOINTS,
         PLAYERS,
+        RADAR_LIST,
         RADAR,
         CLAIMS,
-        EXPORT,
         CONTROLS,
         ZOOM_IN,
         ZOOM_OUT
@@ -1477,19 +1921,23 @@ final class XaeroMapSurface {
         CREATE_TEMPORARY,
         TELEPORT_MAP,
         SHARE_LOCATION,
+        COPY_COORDINATES,
+        COPY_CHUNK,
+        CENTER_LOCATION,
+        TOGGLE_TARGET,
         WAYPOINTS,
-        EXPORT,
         SETTINGS
     }
 
     enum Drawer {
         NONE,
         WAYPOINTS,
-        PLAYERS
+        PLAYERS,
+        RADAR
     }
 
     record UiButton(Action action, String icon, float x, float y, float size,
-                            String tooltip, boolean active) {
+                    String tooltip, boolean active, boolean enabled) {
         boolean contains(float mouseX, float mouseY) {
             return inside(mouseX, mouseY, x, y, size, size);
         }
@@ -1503,6 +1951,19 @@ final class XaeroMapSurface {
         boolean contains(float mouseX, float mouseY) {
             return inside(mouseX, mouseY, x, y, width, height);
         }
+    }
+
+    record TargetRow(UUID playerUuid, String name, PlayerLocationSnapshot location) {
+    }
+
+    record TargetHit(TargetRow target, float x, float y, float width, float height,
+                     boolean teleportable) {
+        boolean contains(float mouseX, float mouseY) {
+            return inside(mouseX, mouseY, x, y, width, height);
+        }
+    }
+
+    record LocationMarkerEntry(MapPlayerMarker marker, PlayerLocationSnapshot location) {
     }
 
     record Frame(boolean ready, String status, int texturesRendered) {

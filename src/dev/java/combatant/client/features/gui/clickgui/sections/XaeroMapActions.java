@@ -14,6 +14,7 @@ import combatant.client.util.logging.DebugLog;
 import combatant.client.util.screen.ClientScreen;
 import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
 import xaero.hud.minimap.BuiltInHudModules;
@@ -22,8 +23,6 @@ import xaero.hud.minimap.waypoint.WaypointColor;
 import xaero.hud.minimap.waypoint.set.WaypointSet;
 import xaero.hud.minimap.world.MinimapWorld;
 import xaero.map.MapProcessor;
-import xaero.map.gui.ExportScreen;
-import xaero.map.gui.MapTileSelection;
 import xaero.map.mods.SupportMods;
 import xaero.map.mods.gui.Waypoint;
 import xaero.map.radar.tracker.PlayerTeleporter;
@@ -45,7 +44,8 @@ final class XaeroMapActions {
         MinimapSession session = session();
         WaypointSet set = currentSet(world);
         if (session == null || set == null) return;
-        String safeName = name == null || name.isBlank() ? "Waypoint" : name.trim();
+        String safeName = name == null || name.isBlank()
+                ? tr("gui.combatant.map.waypoint.default_name", "Waypoint") : name.trim();
         String safeSymbol = symbol == null || symbol.isBlank()
                 ? safeName.substring(0, 1).toUpperCase()
                 : symbol.substring(0, Math.min(2, symbol.length())).toUpperCase();
@@ -125,7 +125,8 @@ final class XaeroMapActions {
         xaero.common.minimap.waypoints.Waypoint location =
                 new xaero.common.minimap.waypoints.Waypoint(
                         x, y == Short.MAX_VALUE ? 0 : y, z,
-                        "Shared Location", "S", WaypointColor.getRandom());
+                        tr("gui.combatant.map.waypoint.shared_location", "Shared Location"), "S",
+                        WaypointColor.getRandom());
         location.setYIncluded(y != Short.MAX_VALUE);
         session.getWaypointSession().getSharing().shareWaypoint(screen, location, world);
     }
@@ -142,15 +143,6 @@ final class XaeroMapActions {
         Screen screen = externalScreenParent();
         if (screen == null || processor == null || processor.getMapWorld() == null || player == null) return;
         new PlayerTeleporter().teleportToPlayer(screen, processor.getMapWorld(), player);
-    }
-
-    static void export(MapProcessor processor, int startChunkX, int startChunkZ,
-                       int endChunkX, int endChunkZ) {
-        Screen parent = externalScreenParent();
-        if (parent == null || processor == null) return;
-        MapTileSelection selection = new MapTileSelection(startChunkX, startChunkZ);
-        selection.setEnd(endChunkX, endChunkZ);
-        ClientScreen.show(new ExportScreen(parent, parent, processor, selection));
     }
 
     private static Screen externalScreenParent() {
@@ -188,5 +180,16 @@ final class XaeroMapActions {
             DebugLog.warnOnce("xaero-map-waypoint-save", "Failed to save a Xaero waypoint change", error);
         }
         SupportMods.xaeroMinimap.requestWaypointsRefresh();
+    }
+
+    private static String tr(String key, String fallback) {
+        try {
+            String translated = I18n.get(key);
+            if (translated != null && !translated.equals(key) && !translated.startsWith("Format error:")) {
+                return translated;
+            }
+        } catch (Throwable ignored) {
+        }
+        return fallback;
     }
 }

@@ -15,6 +15,7 @@ import combatant.client.features.module.modules.visuals.NameTags;
 import combatant.client.util.resources.asset.AssetAutoLoader;
 import combatant.client.render.engine.prewarm.RenderPrewarmManager;
 import combatant.client.render.engine.visuals.CombatantVisuals;
+import combatant.client.render.engine.material.MaterialRegistry;
 import combatant.client.render.iris.IrisRuntime;
 import combatant.client.util.logging.DebugLog;
 import combatant.client.util.media.MediaSessionService;
@@ -29,6 +30,7 @@ public enum ResourceReloadHooks {
         try {
             // Static resource-backed systems are discovered through @AssetLoad.
             AssetAutoLoader.reload(manager);
+            MaterialRegistry.global().reload(manager);
 
             I18nDuplicateScanner.scan(manager, "resource reload");
             I18nPreflightManager.preflight("resource reload");

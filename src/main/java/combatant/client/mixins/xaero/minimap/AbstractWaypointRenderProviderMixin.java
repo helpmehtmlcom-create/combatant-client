@@ -13,6 +13,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
 import combatant.client.compat.xaero.XaeroIntegration;
+import combatant.client.compat.xaero.XaeroWaypointHudOverlay;
 import combatant.client.compat.xaero.XaeroMinimapIntegration;
 import xaero.common.minimap.waypoints.Waypoint;
 import xaero.hud.minimap.element.render.MinimapElementRenderLocation;
@@ -40,6 +41,19 @@ public abstract class AbstractWaypointRenderProviderMixin {
                                         Operation<Void> original,
                                         MinimapElementRenderLocation location,
                                         AbstractWaypointRenderContext context) {
+        if (context instanceof WaypointWorldRenderContext
+                && XaeroWaypointHudOverlay.shouldSuppressNativeXaeroWaypoints()) {
+            // Keep Xaero's collector lifecycle intact, but discard only the entries appended by it.
+            // Combatant's world marker overlay reads the same session independently, so leaving the
+            // provider list populated would render both Xaero's native waypoint and our marker.
+            int existing = destination.size();
+            original.call(instance, destination);
+            if (destination.size() > existing) {
+                destination.subList(existing, destination.size()).clear();
+            }
+            return;
+        }
+
         XaeroIntegration.RenderTarget target = null;
         if (context instanceof WaypointWorldRenderContext) {
             target = XaeroIntegration.RenderTarget.WORLD_HUD;

@@ -26,6 +26,7 @@ public record DeferredPassSpec(
         List<FrameGraphResourceUse> resources,
         Set<RhiShaderStage> requiredShaderStages,
         boolean externallyDriven,
+        DeferredPassCondition condition,
         DeferredPassExecutor executor
 ) {
     public DeferredPassSpec {
@@ -36,6 +37,7 @@ public record DeferredPassSpec(
         requiredShaderStages = requiredShaderStages == null || requiredShaderStages.isEmpty()
                 ? Set.of()
                 : Set.copyOf(requiredShaderStages);
+        condition = condition == null ? DeferredPassCondition.ALWAYS : condition;
         if (!externallyDriven && executor == null) {
             throw new IllegalArgumentException("Executable deferred pass requires an executor: " + id);
         }
@@ -56,6 +58,7 @@ public record DeferredPassSpec(
         private final EnumSet<RhiShaderStage> requiredStages = EnumSet.noneOf(RhiShaderStage.class);
         private int priority;
         private boolean externallyDriven;
+        private DeferredPassCondition condition = DeferredPassCondition.ALWAYS;
         private DeferredPassExecutor executor;
 
         private Builder(String id, DeferredStage stage) {
@@ -93,6 +96,12 @@ public record DeferredPassSpec(
             return this;
         }
 
+        /** Evaluated before implicit allocation so disabled optional branches stay physically lazy. */
+        public Builder when(DeferredPassCondition condition) {
+            this.condition = condition == null ? DeferredPassCondition.ALWAYS : condition;
+            return this;
+        }
+
         public Builder execute(DeferredPassExecutor executor) {
             this.executor = executor;
             this.externallyDriven = false;
@@ -106,7 +115,7 @@ public record DeferredPassSpec(
                 if (access != null) uses.add(new FrameGraphResourceUse(resource.key(), access));
             }
             return new DeferredPassSpec(
-                    id, stage, priority, uses, requiredStages, externallyDriven, executor
+                    id, stage, priority, uses, requiredStages, externallyDriven, condition, executor
             );
         }
 

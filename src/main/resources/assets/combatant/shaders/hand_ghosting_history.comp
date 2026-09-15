@@ -1,0 +1,59 @@
+#version 430 core
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(binding = 0) uniform sampler2D u_History;
+layout(binding = 1) uniform sampler2D u_Mask;
+layout(binding = 2, rgba8) writeonly uniform image2D u_Output;
+layout(std430, binding = 3) readonly buffer HandGhosting {
+    vec4 u_Screen;
+    vec4 u_Color;
+    vec4 u_Params;
+    vec4 u_Noise0;
+    vec4 u_Noise1;
+    vec4 u_State; // x = reset history
+};
+
+float hash21(vec2 p) { p = fract(p * vec2(123.34, 345.45)); p += dot(p, p + 34.345); return fract(p.x * p.y); }
+float valueNoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+    float a = hash21(i), b = hash21(i + vec2(1,0)), c = hash21(i + vec2(0,1)), d = hash21(i + vec2(1,1));
+    return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
+}
+float fbm(vec2 p, int octaves) {
+    float value = 0.0, amplitude = 0.55; mat2 rotation = mat2(0.80, 0.60, -0.60, 0.80);
+    for (int i = 0; i < 6; ++i) { if (i >= octaves) break; value += valueNoise(p) * amplitude; p = rotation * p * 2.03 + vec2(31.7,17.3); amplitude *= 0.52; }
+    return value;
+}
+float maskAt(vec2 uv) { vec4 m = texture(u_Mask, clamp(uv, vec2(0), vec2(1))); return max(m.a, max(m.r, max(m.g, m.b))); }
+vec3 historyAt(vec2 uv) { return texture(u_History, clamp(uv, vec2(0), vec2(1))).rgb; }
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy), size = imageSize(u_Output);
+    if (any(greaterThanEqual(pixel, size))) return;
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(size);
+    int quality = clamp(int(u_Noise0.x + 0.5), 1, 4);
+    int octaves = min(clamp(int(u_Noise0.y + 0.5), 1, 6), quality + 2);
+    float dt = clamp(u_Screen.z, 0.0, 0.10), time = u_Screen.w * max(u_Noise0.z, 0.0);
+    float scale = max(u_Noise0.w, 0.05), swirl = max(u_Noise1.x, 0.0), contrast = max(u_Noise1.y, 0.05), density = max(u_Noise1.z, 0.0);
+    vec2 historyTexel = 1.0 / vec2(max(textureSize(u_History, 0), ivec2(1)));
+    vec2 aspect = vec2(max(u_Screen.x, 1.0) / max(u_Screen.y, 1.0), 1.0);
+    vec2 p = (uv - 0.5) * aspect * scale;
+    float current = maskAt(uv);
+    bool reset = u_State.x > 0.5;
+    vec3 previousCenter = reset ? vec3(0.0, current, 0.0) : historyAt(uv);
+    float previousCurrent = previousCenter.g;
+    float slowTime = time * 0.18;
+    float nx = fbm(p * 1.18 + vec2(slowTime * 0.42, -slowTime), octaves);
+    float ny = fbm(p * 1.18 + vec2(7.3 - slowTime, 3.1 + slowTime * 0.37), octaves);
+    vec2 flow = vec2(nx - 0.5, ny - 0.5);
+    float frameScale = min(dt * 60.0, 3.0);
+    vec2 advectedUv = uv - flow * historyTexel * swirl * (0.90 + quality * 0.32) * frameScale;
+    float previousTrail = reset ? 0.0 : historyAt(advectedUv).r;
+    float bodyNoise = fbm(p * 2.05 + flow * (0.65 + swirl * 0.35) + vec2(time * 0.035, -time * 0.07), octaves);
+    float turbulence = pow(clamp(bodyNoise * (0.72 + density * 0.45), 0.0, 1.0), 1.0 / contrast);
+    float decay = clamp(u_Params.x, 0.0, 0.99995);
+    float decayedTrail = previousTrail * decay * pow(mix(0.94, 1.0, turbulence), frameScale);
+    decayedTrail = max(decayedTrail - (1.0 - decay) * 0.025, 0.0);
+    float newlyExposed = reset ? 0.0 : smoothstep(0.015, 0.20, max(previousCurrent - current, 0.0));
+    float trail = max(decayedTrail, newlyExposed); if (trail < 0.0025) trail = 0.0;
+    imageStore(u_Output, pixel, vec4(clamp(trail,0.0,1.0), clamp(current,0.0,1.0), turbulence, 1.0));
+}

@@ -15,6 +15,8 @@ import combatant.client.render.engine.renderer.ui.draw.UiLiquidGlassMaterial;
 import combatant.client.render.engine.renderer.ui.draw.UiPaint;
 import combatant.client.render.engine.renderer.ui.draw.UiPrimitive;
 import combatant.client.render.engine.svg.SvgRenderOptions;
+import combatant.client.render.helpers.SystemCursor;
+import net.minecraft.client.resources.language.I18n;
 import org.lwjgl.glfw.GLFW;
 import xaero.map.mods.gui.Waypoint;
 
@@ -82,7 +84,7 @@ final class XaeroMapWaypointEditor {
         this.anchorX = anchorX;
         this.anchorY = anchorY;
         this.saveHandler = saveHandler;
-        this.name = edited == null ? "Waypoint" : edited.getName();
+        this.name = edited == null ? tr("gui.combatant.map.waypoint.default_name", "Waypoint") : edited.getName();
         this.symbol = edited == null ? "W" : edited.getSymbol();
         if (edited != null && edited.getOriginal() instanceof xaero.common.minimap.waypoints.Waypoint source) {
             this.colorIndex = Math.floorMod(source.getColor(), 16);
@@ -133,6 +135,7 @@ final class XaeroMapWaypointEditor {
 
         layout();
         updateMotion(mouseX, mouseY, dt);
+        updateCursor(mouseX, mouseY);
 
         Renderer2D renderer = Renderer2D.COLOR;
         UiPrimitive panel = panelShape();
@@ -158,6 +161,26 @@ final class XaeroMapWaypointEditor {
         drawFields(renderer, mouseX, mouseY, palette, eased);
         drawColors(renderer, palette, eased);
         drawActions(renderer, mouseX, mouseY, palette, eased);
+    }
+
+    private void updateCursor(float mouseX, float mouseY) {
+        if (inside(mouseX, mouseY, nameX, nameY, nameW, FIELD_HEIGHT)
+                || inside(mouseX, mouseY, symbolX, symbolY, symbolW, FIELD_HEIGHT)) {
+            SystemCursor.set(SystemCursor.CursorType.TEXT);
+            return;
+        }
+        if (inside(mouseX, mouseY, cancelX, cancelY, cancelW, 30.0f)
+                || inside(mouseX, mouseY, saveX, saveY, saveW, 30.0f)) {
+            SystemCursor.set(SystemCursor.CursorType.HAND);
+            return;
+        }
+        for (int i = 0; i < 16; i++) {
+            float cx = colorStartX + i * COLOR_STEP;
+            if (inside(mouseX, mouseY, cx - 8.0f, colorY - 8.0f, 16.0f, 16.0f)) {
+                SystemCursor.set(SystemCursor.CursorType.HAND);
+                return;
+            }
+        }
     }
 
     private static void drawLiquidGlassPrimitive(Renderer2D renderer,
@@ -251,7 +274,9 @@ final class XaeroMapWaypointEditor {
     private void drawHeader(Renderer2D renderer, SettingsGuiPalette palette, float reveal) {
         int text = SettingsGuiPalette.withAlpha(palette.panelText(), Math.round(255.0f * reveal));
         int color = waypointColor();
-        String title = edited == null ? "Create waypoint" : "Edit waypoint";
+        String title = edited == null
+                ? tr("gui.combatant.map.waypoint.create_title", "Create waypoint")
+                : tr("gui.combatant.map.waypoint.edit_title", "Edit waypoint");
 
         renderer.svg("map-pin", contentLeft, y + 15.5f, 17.0f, 17.0f,
                 SvgRenderOptions.overrideColor(
@@ -267,9 +292,9 @@ final class XaeroMapWaypointEditor {
         int muted = SettingsGuiPalette.withAlpha(palette.panelMuted(), Math.round(220.0f * reveal));
         int text = SettingsGuiPalette.withAlpha(palette.panelText(), Math.round(255.0f * reveal));
 
-        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), "Name",
+        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), tr("gui.combatant.map.waypoint.name", "Name"),
                 nameX, y + 45.0f, 11.0f, muted, false);
-        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), "Symbol",
+        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), tr("gui.combatant.map.waypoint.symbol", "Symbol"),
                 symbolX, y + 45.0f, 11.0f, muted, false);
 
         drawField(renderer, nameX, nameY, nameW, FIELD_HEIGHT,
@@ -319,7 +344,7 @@ final class XaeroMapWaypointEditor {
 
     private void drawColors(Renderer2D renderer, SettingsGuiPalette palette, float reveal) {
         int muted = SettingsGuiPalette.withAlpha(palette.panelMuted(), Math.round(215.0f * reveal));
-        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), "Color",
+        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), tr("gui.combatant.map.waypoint.color", "Color"),
                 contentLeft, y + 108.0f, 11.0f, muted, false);
 
         for (int i = 0; i < 16; i++) {
@@ -352,7 +377,7 @@ final class XaeroMapWaypointEditor {
         cancelColor = SettingsGuiPalette.withAlpha(cancelColor, Math.round(245.0f * reveal));
         float cancelTextW = ClickGuiRenderer.textWidth(
                 ClickGuiRenderer.getOnestMedium(), "Cancel", 13.5f);
-        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), "Cancel",
+        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), tr("gui.combatant.map.common.cancel", "Cancel"),
                 cancelX + (cancelW - cancelTextW) * 0.5f,
                 cancelY + 8.0f,
                 13.5f, cancelColor, false);
@@ -377,7 +402,9 @@ final class XaeroMapWaypointEditor {
         // not another refractive surface stacked on top of it.
         renderer.primitive(saveShape, UiPaint.solid(saveFill));
 
-        String primary = edited == null ? "Create" : "Save";
+        String primary = edited == null
+                ? tr("gui.combatant.map.common.create", "Create")
+                : tr("gui.combatant.map.common.save", "Save");
         int primaryText = SettingsGuiPalette.withAlpha(palette.panelText(), Math.round(255.0f * reveal));
         float saveTextW = ClickGuiRenderer.textWidth(
                 ClickGuiRenderer.getOnestMedium(), primary, 13.5f);
@@ -517,6 +544,17 @@ final class XaeroMapWaypointEditor {
     private static boolean inside(double mouseX, double mouseY,
                                   double x, double y, double width, double height) {
         return mouseX >= x && mouseY >= y && mouseX <= x + width && mouseY <= y + height;
+    }
+
+    private static String tr(String key, String fallback) {
+        try {
+            String translated = I18n.get(key);
+            if (translated != null && !translated.equals(key) && !translated.startsWith("Format error:")) {
+                return translated;
+            }
+        } catch (Throwable ignored) {
+        }
+        return fallback;
     }
 
     private static final class Spring {

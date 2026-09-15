@@ -8,6 +8,7 @@
 package combatant.client.render.engine.rhi.backend.vulkan;
 
 import com.mojang.blaze3d.IndexType;
+import com.mojang.blaze3d.textures.GpuTextureView;
 import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanCommandEncoder;
 import com.mojang.blaze3d.vulkan.VulkanConst;
@@ -83,8 +84,7 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
         if (backend.combatant$vma() == 0L) {
             throw new UnsupportedOperationException("Native Vulkan storage allocator is unavailable");
         }
-        long maxRange = Integer.toUnsignedLong(
-                backend.combatant$physicalDevice().vkPhysicalDeviceProperties().limits().maxStorageBufferRange());
+        long maxRange = backend.combatant$maxStorageBufferRange();
         if (descriptor.byteSize() > maxRange) {
             throw new IllegalArgumentException("Storage buffer exceeds Vulkan maxStorageBufferRange: size="
                     + descriptor.byteSize() + " max=" + maxRange + " label=" + descriptor.label());
@@ -631,16 +631,17 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
                 if (!(binding.buffer() instanceof VulkanStorageBuffer buffer)) {
                     throw new IllegalArgumentException("Storage binding does not belong to the active Vulkan backend");
                 }
-                if (storageAlignment > 1L && (binding.offset() % storageAlignment) != 0L) {
+                long physicalOffset = buffer.bindingOffset(binding.offset());
+                if (storageAlignment > 1L && (physicalOffset % storageAlignment) != 0L) {
                     throw new IllegalArgumentException("Storage binding offset is not aligned: binding="
-                            + binding.binding() + " offset=" + binding.offset() + " alignment=" + storageAlignment);
+                            + binding.binding() + " offset=" + physicalOffset + " alignment=" + storageAlignment);
                 }
                 if (binding.size() <= 0L || binding.size() > maxStorageRange) {
                     throw new IllegalArgumentException("Storage binding range is invalid for Vulkan: binding="
                             + binding.binding() + " size=" + binding.size() + " max=" + maxStorageRange);
                 }
                 VkDescriptorBufferInfo.Buffer info = VkDescriptorBufferInfo.calloc(1, stack);
-                info.get(0).buffer(buffer.vkBuffer()).offset(binding.offset()).range(binding.size());
+                info.get(0).buffer(buffer.vkBuffer()).offset(physicalOffset).range(binding.size());
                 bufferInfos.add(info);
                 writes.get(write++).sType$Default()
                         .dstSet(descriptorSet)
@@ -651,10 +652,18 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
             }
             for (SampledTextureBinding binding : sampled) {
                 if (!(binding.texture() instanceof VulkanGpuTextureView texture) || texture.isClosed()) {
-                    throw new IllegalArgumentException("Sampled texture does not belong to the active Vulkan backend");
+                    GpuTextureView supplied = binding.texture();
+                    Object suppliedTexture = supplied != null ? supplied.texture() : null;
+                    throw new RhiResourceOwnershipException("Sampled texture does not belong to the active Vulkan backend: "
+                            + "binding=" + binding.binding()
+                            + " view=" + className(supplied)
+                            + " texture=" + className(suppliedTexture)
+                            + " closed=" + (supplied != null && supplied.isClosed()));
                 }
                 if (!(binding.sampler() instanceof VulkanGpuSampler sampler)) {
-                    throw new IllegalArgumentException("Sampler does not belong to the active Vulkan backend");
+                    throw new RhiResourceOwnershipException("Sampler does not belong to the active Vulkan backend: "
+                            + "binding=" + binding.binding()
+                            + " sampler=" + className(binding.sampler()));
                 }
                 VkDescriptorImageInfo.Buffer info = VkDescriptorImageInfo.calloc(1, stack);
                 info.get(0).sampler(sampler.vkSampler())
@@ -688,6 +697,10 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
             vkCmdBindDescriptorSets(commandBuffer, bindPoint, pipelineLayout, 0,
                     stack.longs(descriptorSet), null);
         }
+    }
+
+    private static String className(Object value) {
+        return value == null ? "null" : value.getClass().getName();
     }
 
     private long allocateDescriptorSet(VulkanCommandEncoder encoder,
@@ -820,15 +833,11 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
     }
 
     private static long storageBufferOffsetAlignment() {
-        IVulkanBackendInfo backend = requireBackend();
-        return Math.max(1L, backend.combatant$physicalDevice()
-                .vkPhysicalDeviceProperties().limits().minStorageBufferOffsetAlignment());
+        return Math.max(1L, requireBackend().combatant$minStorageBufferOffsetAlignment());
     }
 
     private static long maxStorageBufferRange() {
-        IVulkanBackendInfo backend = requireBackend();
-        return Integer.toUnsignedLong(backend.combatant$physicalDevice()
-                .vkPhysicalDeviceProperties().limits().maxStorageBufferRange());
+        return requireBackend().combatant$maxStorageBufferRange();
     }
 
     private static void validateStorageImageFormat(IVulkanBackendInfo backend, StorageImageDescriptor descriptor) {
@@ -842,6 +851,9 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
             }
             if (descriptor.sampled() && (features & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) == 0) {
                 throw new UnsupportedOperationException("Vulkan format is not sampleable: " + descriptor.format());
+            }
+            if (descriptor.renderAttachment() && (features & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) == 0) {
+                throw new UnsupportedOperationException("Vulkan format is not color-attachment capable: " + descriptor.format());
             }
         }
     }
@@ -926,11 +938,19 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
             case GRAPHICS -> VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT_KHR;
             case INDIRECT -> VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT_KHR;
             case TRANSFER -> VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+            case ALL -> VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR;
         };
     }
 
     private static long accessMask(RhiResourceBarrier.Stage stage, RhiResourceBarrier.Access access) {
         if (stage == RhiResourceBarrier.Stage.INDIRECT) return VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT_KHR;
+        if (stage == RhiResourceBarrier.Stage.ALL) {
+            return switch (access) {
+                case READ -> VK_ACCESS_2_MEMORY_READ_BIT_KHR;
+                case WRITE -> VK_ACCESS_2_MEMORY_WRITE_BIT_KHR;
+                case READ_WRITE -> VK_ACCESS_2_MEMORY_READ_BIT_KHR | VK_ACCESS_2_MEMORY_WRITE_BIT_KHR;
+            };
+        }
         if (stage == RhiResourceBarrier.Stage.TRANSFER) {
             return switch (access) {
                 case READ -> VK_ACCESS_2_TRANSFER_READ_BIT_KHR;

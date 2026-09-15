@@ -14,6 +14,8 @@ import combatant.client.render.engine.deferred.DeferredWorldPipeline;
 import combatant.client.render.engine.deferred.DeferredPassGraph;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.renderer.ui.ItemBatchRenderer;
+import combatant.client.render.engine.renderer.ui.UiBlurResources;
+import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.iris.IrisRuntime;
 import combatant.client.render.iris.IrisRuntimeSnapshot;
 import combatant.client.render.sodium.SodiumTerrainInteropStatsSnapshot;
@@ -136,6 +138,9 @@ public enum CombatantRenderSystem {
         backendKind = desired;
         try {
             DEFERRED_WORLD.releasePhysicalResources();
+            DEFERRED_GRAPH.releaseBackendResources(previous);
+            UiBlurResources.onBackendChanged();
+            PostProcessManager.releaseBackendResources(previous);
             previous.close();
         } catch (Throwable t) {
             DebugLog.warnOnChange(
@@ -155,6 +160,7 @@ public enum CombatantRenderSystem {
                 previousKind,
                 backendKind
         );
+        DEFERRED_WORLD.onBackendChanged();
         logCapabilities();
     }
 
@@ -266,6 +272,9 @@ public enum CombatantRenderSystem {
         CombatantRhi activeRhi = rhi();
         SodiumFrameContext sodiumFrame;
         if (!frameOpen) {
+            // Commit optional renderer families only at a clean frame boundary. This is deliberately
+            // before any producer pipeline lookup so forward/deferred attachment layouts cannot mix.
+            DEFERRED_WORLD.serviceRuntimeLifecycle();
             frameId++;
             UiPipelineTelemetry.beginFrame(frameId);
             activeRhi.stats().setDetailedPipelineStats(TracyProfiler.isEnabled());
@@ -427,7 +436,10 @@ public enum CombatantRenderSystem {
         if (!initialized) return;
         try {
             UiMsaaClipLayer.shutdown();
-            DEFERRED_WORLD.releasePhysicalResources();
+            DEFERRED_WORLD.shutdownRuntime();
+            DEFERRED_GRAPH.releaseBackendResources(rhi);
+            UiBlurResources.onBackendChanged();
+            PostProcessManager.releaseBackendResources(rhi);
             UNIFORMS.close();
             rhi.close();
         } finally {

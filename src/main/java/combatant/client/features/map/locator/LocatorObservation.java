@@ -20,6 +20,8 @@ public record LocatorObservation(
         double z,
         double bearingRadians,
         double uncertaintyRadius,
+        double minimumHorizontalRange,
         long observedAtMs,
-        long sourceRevision
+        long sourceRevision,
+        long sourceGeneration
 ) {}

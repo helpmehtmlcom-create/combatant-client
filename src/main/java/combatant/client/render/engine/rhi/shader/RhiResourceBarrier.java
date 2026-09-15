@@ -16,7 +16,7 @@ public record RhiResourceBarrier(Stage sourceStage,
                                  Access destinationAccess,
                                  List<RhiStorageBuffer> buffers,
                                  List<RhiStorageImage> images) {
-    public enum Stage { COMPUTE, GRAPHICS, INDIRECT, TRANSFER }
+    public enum Stage { COMPUTE, GRAPHICS, INDIRECT, TRANSFER, ALL }
     public enum Access { READ, WRITE, READ_WRITE }
 
     public RhiResourceBarrier {

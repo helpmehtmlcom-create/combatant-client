@@ -32,10 +32,14 @@ public record MapExactPointFrame(
                 && source != MapHistorySource.LOCATOR_APPROXIMATE) {
             throw new IllegalArgumentException("Exact source required: " + source);
         }
+        if (worldKey.isBlank()) throw new IllegalArgumentException("worldKey");
+        if (observedAtMs <= 0L) throw new IllegalArgumentException("observedAtMs");
         if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) {
             throw new IllegalArgumentException("position");
         }
-        accuracyRadius = Double.isFinite(accuracyRadius) ? Math.max(0.0, accuracyRadius) : 0.0;
+        if (!Double.isFinite(accuracyRadius) || accuracyRadius < 0.0) {
+            throw new IllegalArgumentException("accuracyRadius");
+        }
     }
 
     @Override public MapHistoryRecordType type() { return MapHistoryRecordType.EXACT_POINT; }

@@ -31,6 +31,17 @@ public final class MapOverlayRenderer {
                     Renderer2D.COLOR.circleStroke(circle.centerX(), circle.centerY(), circle.radius(), 1.0, circle.strokeArgb());
                 }
             }
+            for (MapOverlayDrawList.Player player : drawList.players()) {
+                MapPlayerMarkerRenderer.drawMarker((float) player.x(), (float) player.y(), player.playerUuid(), player.playerName(),
+                        player.accentArgb(), player.sourceGlyph(), player.sizePixels(), player.alpha());
+            }
+            if (!drawList.players().isEmpty()) {
+                Renderer2D.flushBatch();
+                for (MapOverlayDrawList.Player player : drawList.players()) {
+                    MapPlayerMarkerRenderer.drawLabel((float) player.x(), (float) player.y(), player.playerUuid(), player.playerName(),
+                            player.accentArgb(), player.sizePixels(), player.alpha());
+                }
+            }
             if (textRenderer != null && !drawList.labels().isEmpty()) {
                 boolean building = textRenderer.isBuilding();
                 if (!building) textRenderer.begin();
@@ -54,35 +65,62 @@ public final class MapOverlayRenderer {
     }
 
     private static void drawLine(MapOverlayDrawList.Line line) {
-        double thickness = Math.max(0.5, line.thickness());
-        if (line.x1() == line.x2()) {
-            Renderer2D.COLOR.quad(
-                    line.x1() - thickness * 0.5,
-                    Math.min(line.y1(), line.y2()),
-                    thickness,
-                    Math.abs(line.y2() - line.y1()),
-                    line.argb()
-            );
-        } else if (line.y1() == line.y2()) {
-            Renderer2D.COLOR.quad(
-                    Math.min(line.x1(), line.x2()),
-                    line.y1() - thickness * 0.5,
-                    Math.abs(line.x2() - line.x1()),
-                    thickness,
-                    line.argb()
-            );
-        } else {
-            Renderer2D.COLOR.line(line.x1(), line.y1(), line.x2(), line.y2(), line.argb());
-        }
+        drawClippableSegment(
+                line.x1(), line.y1(), line.x2(), line.y2(),
+                Math.max(0.5, line.thickness()), line.argb()
+        );
+    }
+
+    /**
+     * Map overlays render under an analytic ClipFunction snapshot. UiBatchType.LINES intentionally
+     * has no analytic-clip pipeline, so using Renderer2D.COLOR.line() here is invalid and crashes
+     * UiPassCompiler. Emit the stroke as a thin SHAPE quad instead; SHAPE has an analytic-clip
+     * variant and therefore obeys the same map viewport clip as the other overlay primitives.
+     */
+    private static void drawClippableSegment(double x1, double y1,
+                                              double x2, double y2,
+                                              double thickness, int argb) {
+        double dx = x2 - x1;
+        double dy = y2 - y1;
+        double length = Math.hypot(dx, dy);
+        if (!Double.isFinite(length) || length <= 1.0e-6 || thickness <= 0.0) return;
+
+        double invLength = 1.0 / length;
+        double ux = dx * invLength;
+        double uy = dy * invLength;
+        double half = thickness * 0.5;
+
+        // Slightly overlap neighbouring ellipse segments so their flat quad caps cannot leave
+        // sub-pixel cracks at joins. The viewport analytic clip trims any overlap at its boundary.
+        double ex = ux * half;
+        double ey = uy * half;
+        double nx = -uy * half;
+        double ny = ux * half;
+        double ax = x1 - ex;
+        double ay = y1 - ey;
+        double bx = x2 + ex;
+        double by = y2 + ey;
+
+        Renderer2D.COLOR.polygon(new double[]{
+                ax + nx, ay + ny,
+                ax - nx, ay - ny,
+                bx - nx, by - ny,
+                bx + nx, by + ny
+        }, 4, argb);
     }
 
     private static void drawEllipse(MapOverlayDrawList.Ellipse ellipse) {
         if (ellipse.radiusX() <= 0.0 || ellipse.radiusY() <= 0.0) return;
         double[] points = new double[ELLIPSE_SEGMENTS * 2];
+        double rotation = ellipse.angleRadians();
+        double cosR = Math.cos(rotation);
+        double sinR = Math.sin(rotation);
         for (int i = 0; i < ELLIPSE_SEGMENTS; i++) {
             double angle = Math.PI * 2.0 * i / ELLIPSE_SEGMENTS;
-            points[i * 2] = ellipse.centerX() + Math.cos(angle) * ellipse.radiusX();
-            points[i * 2 + 1] = ellipse.centerY() + Math.sin(angle) * ellipse.radiusY();
+            double lx = Math.cos(angle) * ellipse.radiusX();
+            double ly = Math.sin(angle) * ellipse.radiusY();
+            points[i * 2] = ellipse.centerX() + lx * cosR - ly * sinR;
+            points[i * 2 + 1] = ellipse.centerY() + lx * sinR + ly * cosR;
         }
         if (((ellipse.fillArgb() >>> 24) & 0xFF) != 0) {
             Renderer2D.COLOR.polygon(points, ELLIPSE_SEGMENTS, ellipse.fillArgb());
@@ -90,10 +128,10 @@ public final class MapOverlayRenderer {
         if (((ellipse.strokeArgb() >>> 24) & 0xFF) != 0) {
             for (int i = 0; i < ELLIPSE_SEGMENTS; i++) {
                 int next = (i + 1) % ELLIPSE_SEGMENTS;
-                Renderer2D.COLOR.line(
+                drawClippableSegment(
                         points[i * 2], points[i * 2 + 1],
                         points[next * 2], points[next * 2 + 1],
-                        ellipse.strokeArgb()
+                        1.0, ellipse.strokeArgb()
                 );
             }
         }

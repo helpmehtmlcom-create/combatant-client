@@ -1,0 +1,28 @@
+#version 430 core
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(binding = 0) uniform sampler2D u_Mask;
+layout(binding = 1, rgba8) writeonly uniform image2D u_Output;
+layout(std430, binding = 2) readonly buffer Params { vec4 u_Params; };
+
+float maskAt(ivec2 pixel, ivec2 size) {
+    vec4 mask = texelFetch(u_Mask, clamp(pixel, ivec2(0), size - ivec2(1)), 0);
+    return max(mask.a, max(mask.r, max(mask.g, mask.b)));
+}
+
+void main() {
+    ivec2 cell = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 outSize = imageSize(u_Output);
+    if (any(greaterThanEqual(cell, outSize))) return;
+    ivec2 sourceSize = max(ivec2(u_Params.xy + vec2(0.5)), ivec2(1));
+    int cellSize = max(1, int(u_Params.z + 0.5));
+    ivec2 firstPixel = cell * cellSize;
+    float occupied = 0.0;
+    for (int y = 0; y < 16; ++y) {
+        if (y >= cellSize) break;
+        for (int x = 0; x < 16; ++x) {
+            if (x >= cellSize) break;
+            occupied = max(occupied, maskAt(firstPixel + ivec2(x, y), sourceSize));
+        }
+    }
+    imageStore(u_Output, cell, vec4(occupied, 0.0, 0.0, 1.0));
+}

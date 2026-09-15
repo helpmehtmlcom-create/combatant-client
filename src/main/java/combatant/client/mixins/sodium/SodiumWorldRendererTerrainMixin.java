@@ -7,12 +7,17 @@
 
 package combatant.client.mixins.sodium;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.mojang.blaze3d.textures.GpuSampler;
 import com.mojang.blaze3d.textures.FilterMode;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.deferred.DeferredWorldPipeline;
+import combatant.client.render.sodium.SodiumSecondaryTerrainContext;
 import net.caffeinemc.mods.sodium.client.render.SodiumWorldRenderer;
 import net.caffeinemc.mods.sodium.client.render.chunk.ChunkRenderMatrices;
+import net.caffeinemc.mods.sodium.client.render.chunk.RenderSectionManager;
+import net.caffeinemc.mods.sodium.client.render.chunk.lists.SortedRenderLists;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.DefaultTerrainRenderPasses;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.TerrainRenderPass;
 import net.caffeinemc.mods.sodium.client.util.FogParameters;
@@ -37,11 +42,17 @@ public abstract class SodiumWorldRendererTerrainMixin {
                                               FogParameters fog,
                                               GpuSampler sampler,
                                               CallbackInfo ci) {
-        if (pass == DefaultTerrainRenderPasses.TRANSLUCENT) {
-            CombatantRenderSystem.deferredWorld().beforeTranslucency();
-        }
+        if (SodiumSecondaryTerrainContext.active()) return;
         CombatantRenderSystem.sodium().terrainInterop().beforeTerrainDraw(
                 matrices, pass, cameraX, cameraY, cameraZ, fog, sampler);
+        if (pass == DefaultTerrainRenderPasses.TRANSLUCENT) {
+            CombatantRenderSystem.deferredWorld().beforeTranslucency(
+                    pass.getTarget().getColorTextureView(),
+                    pass.getTarget().getDepthTextureView()
+            );
+        } else if (CombatantRenderSystem.deferredWorld().enabled()) {
+            CombatantRenderSystem.deferredWorld().beforeTerrainSubmission();
+        }
     }
 
     @Inject(method = "renderLayer(Lnet/caffeinemc/mods/sodium/client/render/chunk/ChunkRenderMatrices;Lnet/caffeinemc/mods/sodium/client/render/chunk/terrain/TerrainRenderPass;DDDLnet/caffeinemc/mods/sodium/client/util/FogParameters;Lcom/mojang/blaze3d/textures/GpuSampler;)V", at = @At("RETURN"), remap = false)
@@ -53,6 +64,7 @@ public abstract class SodiumWorldRendererTerrainMixin {
                                              FogParameters fog,
                                              GpuSampler sampler,
                                              CallbackInfo ci) {
+        if (SodiumSecondaryTerrainContext.active()) return;
         if (pass == DefaultTerrainRenderPasses.CUTOUT && CombatantRenderSystem.deferredWorld().enabled()) {
             DeferredWorldPipeline.LightingState lighting = new DeferredWorldPipeline.LightingState(
                     fog.red(), fog.green(), fog.blue(), fog.alpha(),
@@ -70,4 +82,18 @@ public abstract class SodiumWorldRendererTerrainMixin {
         CombatantRenderSystem.sodium().terrainInterop().afterTerrainDraw(
                 matrices, pass, cameraX, cameraY, cameraZ, fog, sampler);
     }
+    @WrapOperation(
+            method = "renderLayer(Lnet/caffeinemc/mods/sodium/client/render/chunk/ChunkRenderMatrices;Lnet/caffeinemc/mods/sodium/client/render/chunk/terrain/TerrainRenderPass;DDDLnet/caffeinemc/mods/sodium/client/util/FogParameters;Lcom/mojang/blaze3d/textures/GpuSampler;)V",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/caffeinemc/mods/sodium/client/render/chunk/RenderSectionManager;getRenderLists()Lnet/caffeinemc/mods/sodium/client/render/chunk/lists/SortedRenderLists;"
+            ),
+            remap = false
+    )
+    private SortedRenderLists combatant$secondaryRenderLists(RenderSectionManager manager,
+                                                              Operation<SortedRenderLists> original) {
+        SodiumSecondaryTerrainContext.State secondary = SodiumSecondaryTerrainContext.current();
+        return secondary != null ? secondary.renderLists(manager) : original.call(manager);
+    }
+
 }

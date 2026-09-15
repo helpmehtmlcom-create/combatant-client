@@ -114,7 +114,7 @@ public final class MapHistoryCatalog {
                     .filter(path -> path.getFileName().toString().endsWith(".cbpdat")).toList()) {
                 List<MapHistoryChunkMeta> chunks;
                 try {
-                    chunks = CbpDatFile.inspect(candidate);
+                    chunks = CbpDatFile.inspectVerified(candidate);
                 } catch (IOException ignored) {
                     continue;
                 }

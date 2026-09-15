@@ -7,15 +7,20 @@
 
 package combatant.client.mixins.sodium;
 
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
 import com.mojang.blaze3d.systems.CommandEncoder;
 import com.mojang.blaze3d.systems.RenderPass;
 import com.mojang.blaze3d.textures.GpuTextureView;
+import com.mojang.blaze3d.textures.GpuSampler;
 import combatant.client.render.engine.core.CombatantRenderSystem;
+import combatant.client.render.engine.material.MaterialAtlasManager;
+import combatant.client.render.sodium.SodiumSecondaryTerrainContext;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.TerrainRenderPass;
 import org.joml.Vector4fc;
+import org.objectweb.asm.Opcodes;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
@@ -45,6 +50,10 @@ public abstract class SodiumDefaultChunkRendererMixin {
             Operation<RenderPass> original,
             @Local(argsOnly = true) TerrainRenderPass terrainPass
     ) {
+        SodiumSecondaryTerrainContext.State secondary = SodiumSecondaryTerrainContext.current();
+        if (secondary != null) {
+            return secondary.openPass(encoder, label);
+        }
         if (terrainPass.isTranslucent() || !CombatantRenderSystem.deferredWorld().enabled()) {
             return original.call(encoder, label, color, clearColor, depth, clearDepth);
         }
@@ -52,4 +61,37 @@ public abstract class SodiumDefaultChunkRendererMixin {
                 encoder, label, color, clearColor, depth, clearDepth
         );
     }
+    @WrapOperation(
+            method = "render",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lcom/mojang/blaze3d/systems/RenderPass;bindTexture(Ljava/lang/String;Lcom/mojang/blaze3d/textures/GpuTextureView;Lcom/mojang/blaze3d/textures/GpuSampler;)V"
+            )
+    )
+    private void combatant$bindMaterialAtlases(
+            RenderPass pass,
+            String name,
+            GpuTextureView view,
+            GpuSampler sampler,
+            Operation<Void> original,
+            @Local(argsOnly = true) TerrainRenderPass terrainPass
+    ) {
+        original.call(pass, name, view, sampler);
+        if (!"u_BlockTex".equals(name)) return;
+        if (terrainPass.isTranslucent() || SodiumSecondaryTerrainContext.active()) return;
+        if (!CombatantRenderSystem.deferredWorld().enabled()) return;
+        MaterialAtlasManager.global().bind(pass, sampler, view);
+    }
+
+    @ModifyExpressionValue(
+            method = "render",
+            at = @At(
+                    value = "FIELD",
+                    target = "Lnet/caffeinemc/mods/sodium/client/gui/SodiumOptions$PerformanceSettings;useBlockFaceCulling:Z",
+                    opcode = Opcodes.GETFIELD)
+    )
+    private boolean combatant$disablePrimaryCameraFaceCullingForSecondaryView(boolean original) {
+        return SodiumSecondaryTerrainContext.active() ? false : original;
+    }
+
 }

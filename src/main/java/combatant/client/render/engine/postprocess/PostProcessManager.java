@@ -127,8 +127,26 @@ public enum PostProcessManager {
         }
     }
 
+    public static void releaseBackendResources(combatant.client.render.engine.rhi.CombatantRhi owner) {
+        GRAPH.releaseBackendResources(owner);
+        invalidateBackendObjects();
+    }
+
+    /** Backend-generation boundary for Blaze3D objects that are not owned by the graph itself. */
+    public static void invalidateBackendObjects() {
+        GpuSampler previous = sampler;
+        sampler = null;
+        if (previous != null) {
+            try {
+                previous.close();
+            } catch (Throwable ignored) {
+                // The owning backend may already be tearing down. Never keep the stale handle.
+            }
+        }
+    }
+
     public static void shutdownForRuntime() {
         GRAPH.close();
-        sampler = null;
+        invalidateBackendObjects();
     }
 }

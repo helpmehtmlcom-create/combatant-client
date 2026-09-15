@@ -15,15 +15,13 @@ import net.minecraft.world.phys.AABB;
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.NumberValue;
 import combatant.client.config.values.RGBAColorValue;
-import combatant.client.events.EventHandler;
-import combatant.client.events.impl.RenderWorldEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 import combatant.client.render.engine.renderer.Renderer3D;
 
-import java.util.HashSet;
-import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
 
 @ModuleInfo(
         id = "portalesp",
@@ -33,52 +31,81 @@ import java.util.Set;
 public final class PortalESP extends Module {
 
     private final NumberValue<Integer> radius = num("radius", 32, 8, 64);
-    private final RGBAColorValue netherColor = color("nether_color", "#B28000FF");
-    private final RGBAColorValue endColor = color("end_color", "#B200FFFF");
-    private final BooleanValue box = bool("box", true);
+    private final RGBAColorValue netherColor = color("nether_color", "#FF8000B2");
+    private final RGBAColorValue endColor = color("end_color", "#FF00FFB2");
+    private final BooleanValue fill = bool("fill", true);
     private final BooleanValue outline = bool("outline", true);
 
     private final Minecraft mc = Minecraft.getInstance();
-    private final Set<BlockPos> portals = new HashSet<>();
-    private int ticks = 0;
+    private final List<PortalEntry> portals = new ArrayList<>();
+    private int scanTicks = 0;
 
     @Override
     public void onDisable() {
         portals.clear();
     }
 
-    @EventHandler
-    public void onRender(RenderWorldEvent event) {
+    @Override
+    public void onRenderWorldEngine(Renderer3D renderer, Renderer3D depthRenderer, float tickDelta) {
         if (!isEnabled() || mc.level == null || mc.player == null) return;
 
-        ticks++;
-        if (ticks % 20 == 0) {
+        scanTicks++;
+        if (scanTicks % 20 == 0) {
             portals.clear();
             BlockPos p = mc.player.blockPosition();
             int r = radius.get();
             for (int x = -r; x <= r; x++) {
                 for (int y = -r / 2; y <= r / 2; y++) {
                     for (int z = -r; z <= r; z++) {
-                        BlockPos target = p.offset(x, y, z);
-                        BlockState state = mc.level.getBlockState(target);
-                        if (state.is(Blocks.NETHER_PORTAL) || state.is(Blocks.END_PORTAL) || state.is(Blocks.END_GATEWAY)) {
-                            portals.add(target);
+                        BlockPos pos = p.offset(x, y, z);
+                        BlockState state = mc.level.getBlockState(pos);
+                        if (state.is(Blocks.NETHER_PORTAL)) {
+                            portals.add(new PortalEntry(new AABB(pos), netherColor.getArgb()));
+                        } else if (state.is(Blocks.END_PORTAL) || state.is(Blocks.END_GATEWAY)) {
+                            portals.add(new PortalEntry(new AABB(pos), endColor.getArgb()));
                         }
                     }
                 }
             }
         }
 
-        for (BlockPos pos : portals) {
-            BlockState state = mc.level.getBlockState(pos);
-            int c = state.is(Blocks.NETHER_PORTAL) ? netherColor.getRGB() : endColor.getRGB();
-            AABB bb = new AABB(pos);
-            if (box.get()) {
-                Renderer3D.drawBox(bb, c);
-            }
-            if (outline.get()) {
-                Renderer3D.drawBoundingBox(bb, 1.5f, c);
-            }
+        for (PortalEntry entry : portals) {
+            if (fill.get()) drawFilledBox(renderer, entry.box(), entry.argb());
+            if (outline.get()) drawOutlineBox(renderer, entry.box(), entry.argb());
         }
     }
+
+    private static void drawFilledBox(Renderer3D renderer, AABB box, int argb) {
+        int a = (argb >>> 24) & 0xFF;
+        int r = (argb >>> 16) & 0xFF;
+        int g = (argb >>> 8) & 0xFF;
+        int b = argb & 0xFF;
+        renderer.quad(box.minX, box.minY, box.minZ, box.maxX, box.minY, box.minZ, box.maxX, box.minY, box.maxZ, box.minX, box.minY, box.maxZ, r, g, b, a);
+        renderer.quad(box.minX, box.maxY, box.minZ, box.minX, box.maxY, box.maxZ, box.maxX, box.maxY, box.maxZ, box.maxX, box.maxY, box.minZ, r, g, b, a);
+        renderer.quad(box.minX, box.minY, box.maxZ, box.maxX, box.minY, box.maxZ, box.maxX, box.maxY, box.maxZ, box.minX, box.maxY, box.maxZ, r, g, b, a);
+        renderer.quad(box.minX, box.minY, box.minZ, box.minX, box.maxY, box.minZ, box.maxX, box.maxY, box.minZ, box.maxX, box.minY, box.minZ, r, g, b, a);
+        renderer.quad(box.maxX, box.minY, box.minZ, box.maxX, box.maxY, box.minZ, box.maxX, box.maxY, box.maxZ, box.maxX, box.minY, box.maxZ, r, g, b, a);
+        renderer.quad(box.minX, box.minY, box.minZ, box.minX, box.minY, box.maxZ, box.minX, box.maxY, box.maxZ, box.minX, box.maxY, box.minZ, r, g, b, a);
+    }
+
+    private static void drawOutlineBox(Renderer3D renderer, AABB box, int argb) {
+        int a = (argb >>> 24) & 0xFF;
+        int r = (argb >>> 16) & 0xFF;
+        int g = (argb >>> 8) & 0xFF;
+        int b = argb & 0xFF;
+        renderer.line(box.minX, box.minY, box.minZ, box.maxX, box.minY, box.minZ, r, g, b, a);
+        renderer.line(box.maxX, box.minY, box.minZ, box.maxX, box.minY, box.maxZ, r, g, b, a);
+        renderer.line(box.maxX, box.minY, box.maxZ, box.minX, box.minY, box.maxZ, r, g, b, a);
+        renderer.line(box.minX, box.minY, box.maxZ, box.minX, box.minY, box.minZ, r, g, b, a);
+        renderer.line(box.minX, box.maxY, box.minZ, box.maxX, box.maxY, box.minZ, r, g, b, a);
+        renderer.line(box.maxX, box.maxY, box.minZ, box.maxX, box.maxY, box.maxZ, r, g, b, a);
+        renderer.line(box.maxX, box.maxY, box.maxZ, box.minX, box.maxY, box.maxZ, r, g, b, a);
+        renderer.line(box.minX, box.maxY, box.maxZ, box.minX, box.maxY, box.minZ, r, g, b, a);
+        renderer.line(box.minX, box.minY, box.minZ, box.minX, box.maxY, box.minZ, r, g, b, a);
+        renderer.line(box.maxX, box.minY, box.minZ, box.maxX, box.maxY, box.minZ, r, g, b, a);
+        renderer.line(box.maxX, box.minY, box.maxZ, box.maxX, box.maxY, box.maxZ, r, g, b, a);
+        renderer.line(box.minX, box.minY, box.maxZ, box.minX, box.maxY, box.maxZ, r, g, b, a);
+    }
+
+    private record PortalEntry(AABB box, int argb) {}
 }

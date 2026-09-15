@@ -19,6 +19,14 @@ import combatant.client.render.sodium.terrain.CombatantChunkVertexExtension;
 public abstract class SodiumChunkVertexMixin implements CombatantChunkVertexExtension {
     @Unique
     private int combatant$surfaceFlags;
+    @Unique
+    private int combatant$materialId;
+    @Unique
+    private int combatant$materialMapPresenceMask;
+    @Unique
+    private int combatant$materialFeatureMask;
+    @Unique
+    private int combatant$packedScalarSurface;
 
     @Inject(method = "copyVertexTo", at = @At("HEAD"))
     private static void combatant$copyVertexData(ChunkVertexEncoder.Vertex from, ChunkVertexEncoder.Vertex to, CallbackInfo ci) {
@@ -36,7 +44,41 @@ public abstract class SodiumChunkVertexMixin implements CombatantChunkVertexExte
     }
 
     @Override
+    public void combatant$setMaterialData(int materialId, int mapPresenceMask, int featureMask, int packedScalarSurface) {
+        this.combatant$materialId = materialId;
+        this.combatant$materialMapPresenceMask = mapPresenceMask & 0xFF;
+        this.combatant$materialFeatureMask = featureMask & 0xFFFF;
+        this.combatant$packedScalarSurface = packedScalarSurface;
+    }
+
+    @Override
+    public int combatant$getMaterialId() {
+        return this.combatant$materialId;
+    }
+
+    @Override
+    public int combatant$getMaterialMapPresenceMask() {
+        return this.combatant$materialMapPresenceMask;
+    }
+
+    @Override
+    public int combatant$getMaterialFeatureMask() {
+        return this.combatant$materialFeatureMask;
+    }
+
+    @Override
+    public int combatant$getPackedScalarSurface() {
+        return this.combatant$packedScalarSurface;
+    }
+
+    @Override
     public void combatant$copyData(CombatantChunkVertexExtension dest) {
         dest.combatant$setSurfaceFlags(this.combatant$surfaceFlags);
+        dest.combatant$setMaterialData(
+                this.combatant$materialId,
+                this.combatant$materialMapPresenceMask,
+                this.combatant$materialFeatureMask,
+                this.combatant$packedScalarSurface
+        );
     }
 }

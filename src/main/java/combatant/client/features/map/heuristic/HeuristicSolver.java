@@ -80,7 +80,7 @@ public final class HeuristicSolver {
         }
 
         S s = solveWeighted(geometryWeighted);
-        if (s == null) return null;
+        if (s == null || violatesSourceRange(obs, s.x, s.z)) return null;
 
         double sumSq = 0.0;
         int inliers = 0;
@@ -163,6 +163,16 @@ public final class HeuristicSolver {
         double x = (b0 * a11 - b1 * a01) / det;
         double z = (a00 * b1 - a01 * b0) / det;
         return Double.isFinite(x) && Double.isFinite(z) ? new S(x, z, a00, a01, a11) : null;
+    }
+
+    private static boolean violatesSourceRange(List<W> observations, double x, double z) {
+        for (W w : observations) {
+            double minimum = w.o.minimumHorizontalRange();
+            if (!(minimum > 0.0)) continue;
+            double range = Math.hypot(x - w.o.observerX(), z - w.o.observerZ());
+            if (range + 1.5 < minimum) return true;
+        }
+        return false;
     }
 
     private static double residual(HeuristicObservation o, double x, double z) {

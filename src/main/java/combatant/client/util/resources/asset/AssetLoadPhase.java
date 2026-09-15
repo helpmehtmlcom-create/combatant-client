@@ -10,5 +10,7 @@ package combatant.client.util.resources.asset;
 public enum AssetLoadPhase {
     INITIALIZE,
     RELOAD,
-    POST_RELOAD
+    POST_RELOAD,
+    ACTIVATE,
+    DEACTIVATE
 }

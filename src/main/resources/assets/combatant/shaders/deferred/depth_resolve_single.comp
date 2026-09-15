@@ -1,0 +1,22 @@
+#version 430 core
+
+/*
+ * This file is part of the Combatant Client distribution.
+ * Copyright (c) 2026 pivosos2007.
+ *
+ * Licensed under the GNU General Public License v3.0.
+ */
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0) uniform sampler2D u_Depth;
+layout(binding = 1, r32f) writeonly uniform image2D u_ResolvedDepth;
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(u_ResolvedDepth);
+    if (any(greaterThanEqual(pixel, size))) return;
+
+    float depth = texelFetch(u_Depth, pixel, 0).r;
+    imageStore(u_ResolvedDepth, pixel, vec4(depth, 0.0, 0.0, 0.0));
+}

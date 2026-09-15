@@ -44,6 +44,7 @@ public enum AssetAutoLoader {
     private static final Map<String, ScriptDefinition> SCRIPT_ASSETS = new LinkedHashMap<>();
     private static final Map<String, Identifier> RESOURCE_ASSETS = new LinkedHashMap<>();
     private static final Set<String> UI_SCRIPT_IDS = new LinkedHashSet<>();
+    private static final Set<String> ACTIVE_SCOPES = new LinkedHashSet<>();
     private static boolean discovered;
 
     public static synchronized void discover() {
@@ -76,6 +77,54 @@ public enum AssetAutoLoader {
 
     public static void postReload(ResourceManager manager) {
         run(AssetLoadPhase.POST_RELOAD, manager);
+    }
+
+    /**
+     * Activates a named runtime asset scope. Activation hooks are strict: a failed hook rolls the
+     * scope back. If rollback itself fails, the scope deliberately remains published so ownership
+     * can be recovered instead of being disguised as inactive.
+     */
+    public static synchronized boolean activate(String scope, ResourceManager manager) {
+        String normalized = normalizeScope(scope);
+        discover();
+        if (ACTIVE_SCOPES.contains(normalized)) return false;
+        ACTIVE_SCOPES.add(normalized);
+        try {
+            runScopedStrict(AssetLoadPhase.ACTIVATE, normalized, manager);
+            return true;
+        } catch (RuntimeException | Error error) {
+            // Roll back already-created resources from earlier hooks in the same scope. Keep the
+            // scope published if teardown itself fails: ownership may still be live and the caller
+            // must be able to retry authoritative cleanup instead of observing a false inactive state.
+            boolean rollbackComplete = false;
+            try {
+                runScopedStrict(AssetLoadPhase.DEACTIVATE, normalized, manager);
+                rollbackComplete = true;
+            } catch (RuntimeException | Error teardownError) {
+                error.addSuppressed(teardownError);
+            } finally {
+                if (rollbackComplete) ACTIVE_SCOPES.remove(normalized);
+            }
+            throw error;
+        }
+    }
+
+    /**
+     * Deactivates a runtime scope after its teardown hooks completed. A teardown failure keeps the
+     * scope active because GPU/resource ownership may still be live.
+     */
+    public static synchronized boolean deactivate(String scope, ResourceManager manager) {
+        String normalized = normalizeScope(scope);
+        discover();
+        if (!ACTIVE_SCOPES.contains(normalized)) return false;
+        runScopedStrict(AssetLoadPhase.DEACTIVATE, normalized, manager);
+        ACTIVE_SCOPES.remove(normalized);
+        return true;
+    }
+
+    public static synchronized boolean isScopeActive(String scope) {
+        if (scope == null || scope.isBlank()) return false;
+        return ACTIVE_SCOPES.contains(normalizeScope(scope));
     }
 
     public static List<FontDefinition> fontAssets() {
@@ -165,17 +214,36 @@ public enum AssetAutoLoader {
         discover();
         for (Hook hook : HOOKS) {
             if (!hook.phases.contains(phase)) continue;
+            if (!hook.scope.isEmpty() && !ACTIVE_SCOPES.contains(hook.scope)) continue;
             try {
-                if (hook.acceptsManager) {
-                    hook.method.invoke(null, manager);
-                } else {
-                    hook.method.invoke(null);
-                }
+                invokeHook(hook, manager);
             } catch (Throwable error) {
                 Throwable cause = error.getCause() != null ? error.getCause() : error;
                 DebugLog.error("[Combatant][Assets] %s hook failed: %s#%s",
                         cause, phase.name().toLowerCase(Locale.ROOT), hook.method.getDeclaringClass().getName(), hook.method.getName());
             }
+        }
+    }
+
+    private static void runScopedStrict(AssetLoadPhase phase, String scope, ResourceManager manager) {
+        for (Hook hook : HOOKS) {
+            if (!hook.phases.contains(phase) || !scope.equals(hook.scope)) continue;
+            try {
+                invokeHook(hook, manager);
+            } catch (Throwable error) {
+                Throwable cause = error.getCause() != null ? error.getCause() : error;
+                throw new IllegalStateException("Runtime asset hook failed: " + scope + " "
+                        + phase.name().toLowerCase(Locale.ROOT) + " "
+                        + hook.method.getDeclaringClass().getName() + "#" + hook.method.getName(), cause);
+            }
+        }
+    }
+
+    private static void invokeHook(Hook hook, ResourceManager manager) throws ReflectiveOperationException {
+        if (hook.acceptsManager) {
+            hook.method.invoke(null, manager);
+        } else {
+            hook.method.invoke(null);
         }
     }
 
@@ -190,6 +258,7 @@ public enum AssetAutoLoader {
                 HOOKS.add(new Hook(method,
                         EnumSet.copyOf(Arrays.asList(annotation.value())),
                         annotation.order(),
+                        normalizeOptionalScope(annotation.scope()),
                         method.getParameterCount() == 1));
             }
         }
@@ -365,10 +434,25 @@ public enum AssetAutoLoader {
         SCRIPT_ASSETS.clear();
         RESOURCE_ASSETS.clear();
         UI_SCRIPT_IDS.clear();
+        ACTIVE_SCOPES.clear();
         discovered = false;
     }
 
-    private record Hook(Method method, EnumSet<AssetLoadPhase> phases, int order, boolean acceptsManager) {
+    private static String normalizeScope(String scope) {
+        String normalized = normalizeOptionalScope(scope);
+        if (normalized.isEmpty()) throw new IllegalArgumentException("Runtime asset scope must not be blank");
+        return normalized;
+    }
+
+    private static String normalizeOptionalScope(String scope) {
+        return scope == null ? "" : scope.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private record Hook(Method method,
+                        EnumSet<AssetLoadPhase> phases,
+                        int order,
+                        String scope,
+                        boolean acceptsManager) {
     }
 
     public record FontDefinition(FontInfo info, Identifier resource, boolean atlasOnly, boolean primary, boolean prewarm, int order) {

@@ -29,6 +29,9 @@ public final class CombatantMixinPlugin implements IMixinConfigPlugin {
             "combatant.client.mixins.sodium.SodiumChunkBuilderMeshingTaskMixin",
             "combatant.client.mixins.sodium.SodiumChunkVertexMixin",
             "combatant.client.mixins.sodium.SodiumDefaultChunkRendererMixin",
+            "combatant.client.mixins.sodium.SodiumQueuedSectionStorageMixin",
+            "combatant.client.mixins.sodium.SodiumRenderSectionManagerAccessor",
+            "combatant.client.mixins.sodium.SodiumSortedRenderListsInvoker",
             "combatant.client.mixins.sodium.SodiumShaderChunkRendererMixin",
             "combatant.client.mixins.sodium.SodiumVertexConsumerTrackerMixin"
     );

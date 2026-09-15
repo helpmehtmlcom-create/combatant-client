@@ -9,6 +9,11 @@ package combatant.client.features.gui.clickgui.sections;
 
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.gui.clickgui.layout.screen.settings.SettingsGuiPalette;
+import combatant.client.features.map.location.PlayerLocationEvent;
+import combatant.client.features.map.location.PlayerLocationEventType;
+import combatant.client.features.map.location.PlayerLocationService;
+import combatant.client.features.map.location.PlayerLocationSnapshot;
+import combatant.client.features.map.location.PlayerLocationSource;
 import combatant.client.features.theme.Themes;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.renderer.Renderer2D;
@@ -19,6 +24,8 @@ import combatant.client.render.engine.renderer.ui.draw.UiPaint;
 import combatant.client.render.engine.renderer.ui.draw.UiPrimitive;
 import combatant.client.render.engine.renderer.ui.draw.UiRect;
 import combatant.client.render.engine.svg.SvgRenderOptions;
+import combatant.client.render.helpers.SystemCursor;
+import net.minecraft.client.resources.language.I18n;
 
 import java.util.EnumMap;
 import java.util.List;
@@ -53,16 +60,16 @@ final class XaeroMapUiRenderer {
         float inset = 18.0f;
 
         out.add(new XaeroMapSurface.UiButton(XaeroMapSurface.Action.SETTINGS, "settings-2",
-                areaX + inset, areaY + inset, size, state.settingsTooltip(), state.settingsOpen()));
+                areaX + inset, areaY + inset, size, state.settingsTooltip(), state.settingsOpen(), true));
         out.add(new XaeroMapSurface.UiButton(XaeroMapSurface.Action.RECENTER, "locate-fixed",
-                areaX + inset + size + CONTROL_ISLAND_GAP, areaY + inset, size, state.recenterTooltip(), false));
+                areaX + inset + size + CONTROL_ISLAND_GAP, areaY + inset, size, state.recenterTooltip(), false, true));
 
         float leftBottom = areaY + areaHeight - inset - size;
         out.add(new XaeroMapSurface.UiButton(XaeroMapSurface.Action.CAVE, "layers",
-                areaX + inset, leftBottom, size, state.caveTooltip(), state.caveActive()));
+                areaX + inset, leftBottom, size, state.caveTooltip(), state.caveActive(), true));
         out.add(new XaeroMapSurface.UiButton(XaeroMapSurface.Action.DIMENSION, "route",
                 areaX + inset, leftBottom - size - CONTROL_ISLAND_GAP, size,
-                state.dimensionTooltip(), state.customDimension()));
+                state.dimensionTooltip(), state.customDimension(), true));
 
         // Right-side chrome is intentionally split into small semantic islands rather than
         // one long glass rail. Inside an island the lobes sit close enough for a metaball neck;
@@ -73,24 +80,26 @@ final class XaeroMapUiRenderer {
         if (state.showWaypoints()) {
             out.add(new XaeroMapSurface.UiButton(XaeroMapSurface.Action.WAYPOINTS, "map-pinned",
                     right, cursor, size, state.waypointsTooltip(),
-                    state.drawer() == XaeroMapSurface.Drawer.WAYPOINTS));
+                    state.drawer() == XaeroMapSurface.Drawer.WAYPOINTS, true));
             cursor -= size + CONTROL_ISLAND_GAP;
         }
         out.add(new XaeroMapSurface.UiButton(XaeroMapSurface.Action.PLAYERS, "users-round",
                 right, cursor, size, state.playersTooltip(),
-                state.drawer() == XaeroMapSurface.Drawer.PLAYERS));
+                state.drawer() == XaeroMapSurface.Drawer.PLAYERS, true));
+        cursor -= size + CONTROL_GROUP_GAP;
+
+        out.add(new XaeroMapSurface.UiButton(XaeroMapSurface.Action.RADAR_LIST, "list",
+                right, cursor, size, state.radarListTooltip(),
+                state.drawer() == XaeroMapSurface.Drawer.RADAR, state.radarAvailable()));
+        cursor -= size + CONTROL_ISLAND_GAP;
+        out.add(new XaeroMapSurface.UiButton(XaeroMapSurface.Action.RADAR, "radar",
+                right, cursor, size, state.radarTooltip(), state.radarActive(), state.radarAvailable()));
         cursor -= size + CONTROL_GROUP_GAP;
 
         boolean hasOverlayGroup = false;
-        if (state.showRadar()) {
-            out.add(new XaeroMapSurface.UiButton(XaeroMapSurface.Action.RADAR, "radar",
-                    right, cursor, size, state.radarTooltip(), state.radarActive()));
-            cursor -= size + CONTROL_ISLAND_GAP;
-            hasOverlayGroup = true;
-        }
         if (state.showClaims()) {
             out.add(new XaeroMapSurface.UiButton(XaeroMapSurface.Action.CLAIMS, "land-plot",
-                    right, cursor, size, state.claimsTooltip(), state.claimsActive()));
+                    right, cursor, size, state.claimsTooltip(), state.claimsActive(), true));
             cursor -= size + CONTROL_ISLAND_GAP;
             hasOverlayGroup = true;
         }
@@ -98,19 +107,16 @@ final class XaeroMapUiRenderer {
             cursor += CONTROL_ISLAND_GAP - CONTROL_GROUP_GAP;
         }
 
-        out.add(new XaeroMapSurface.UiButton(XaeroMapSurface.Action.EXPORT, "map",
-                right, cursor, size, state.exportTooltip(), false));
-        cursor -= size + CONTROL_ISLAND_GAP;
         out.add(new XaeroMapSurface.UiButton(XaeroMapSurface.Action.CONTROLS, "circle-question-mark",
-                right, cursor, size, state.controlsTooltip(), state.helpOpen()));
+                right, cursor, size, state.controlsTooltip(), state.helpOpen(), true));
         cursor -= size + CONTROL_GROUP_GAP;
 
         if (state.showZoomButtons()) {
             out.add(new XaeroMapSurface.UiButton(XaeroMapSurface.Action.ZOOM_OUT, "zoom-out",
-                    right, cursor, size, state.zoomOutTooltip(), false));
+                    right, cursor, size, state.zoomOutTooltip(), false, true));
             cursor -= size + CONTROL_ISLAND_GAP;
             out.add(new XaeroMapSurface.UiButton(XaeroMapSurface.Action.ZOOM_IN, "zoom-in",
-                    right, cursor, size, state.zoomInTooltip(), false));
+                    right, cursor, size, state.zoomInTooltip(), false, true));
         }
     }
 
@@ -143,6 +149,11 @@ final class XaeroMapUiRenderer {
         for (XaeroMapSurface.UiButton button : buttons) {
             motion.control(button.action()).update(
                     button, mouseX, mouseY, pressedAction == button.action(), button.active());
+            if (button.contains(mouseX, mouseY)) {
+                SystemCursor.set(button.enabled()
+                        ? SystemCursor.CursorType.HAND
+                        : SystemCursor.CursorType.NOT_ALLOWED);
+            }
         }
 
         drawControlIsland(buttons, palette, motion,
@@ -152,9 +163,9 @@ final class XaeroMapUiRenderer {
         drawControlIsland(buttons, palette, motion,
                 XaeroMapSurface.Action.WAYPOINTS, XaeroMapSurface.Action.PLAYERS);
         drawControlIsland(buttons, palette, motion,
-                XaeroMapSurface.Action.RADAR, XaeroMapSurface.Action.CLAIMS);
+                XaeroMapSurface.Action.RADAR_LIST, XaeroMapSurface.Action.RADAR);
         drawControlIsland(buttons, palette, motion,
-                XaeroMapSurface.Action.EXPORT, XaeroMapSurface.Action.CONTROLS);
+                XaeroMapSurface.Action.CLAIMS, XaeroMapSurface.Action.CONTROLS);
         drawControlIsland(buttons, palette, motion,
                 XaeroMapSurface.Action.ZOOM_OUT, XaeroMapSurface.Action.ZOOM_IN);
     }
@@ -181,6 +192,9 @@ final class XaeroMapUiRenderer {
         float pressB = bMotion != null ? clamp01(bMotion.press.value) : 0.0f;
         float groupHover = Math.max(hoverA, hoverB);
         float groupPress = Math.max(pressA, pressB);
+        float availability = bButton == null
+                ? (aButton.enabled() ? 1.0f : 0.0f)
+                : ((aButton.enabled() ? 1.0f : 0.0f) + (bButton.enabled() ? 1.0f : 0.0f)) * 0.5f;
 
         Renderer2D renderer = Renderer2D.COLOR;
 
@@ -190,7 +204,7 @@ final class XaeroMapUiRenderer {
                 palette.panelBgRight(), palette.controlSurfaceHover(),
                 0.055f + groupHover * 0.055f);
         int glassTint = SettingsGuiPalette.withAlpha(
-                glassBase, Math.round(114.0f + groupHover * 22.0f));
+                glassBase, Math.round(55.0f + availability * 59.0f + groupHover * 22.0f));
         int neutralGlow = SettingsGuiPalette.withAlpha(
                 palette.panelText(), Math.round(34.0f + 18.0f * groupHover));
         UiLiquidGlassMaterial material = UiLiquidGlassMaterial.DEFAULT
@@ -238,7 +252,7 @@ final class XaeroMapUiRenderer {
                                                  VisualControl visual,
                                                  ControlMotion motion) {
         float active = clamp01(motion.active.value);
-        if (!button.active() && active <= 0.001f) return;
+        if (!button.enabled() || !button.active() && active <= 0.001f) return;
         int accent = Themes.hudAccentGradient().start();
         int activeFill = SettingsGuiPalette.withAlpha(
                 accent, Math.round(10.0f + 22.0f * active));
@@ -259,8 +273,9 @@ final class XaeroMapUiRenderer {
         float iconSize = button.size() * 0.50f * iconScale;
         float iconPullX = motion.pointerX.value * hover * 0.75f;
         float iconPullY = motion.pointerY.value * hover * 0.75f;
-        int iconColor = SettingsGuiPalette.mix(
-                palette.panelMuted(), palette.panelText(), Math.max(hover, active));
+        int iconColor = button.enabled()
+                ? SettingsGuiPalette.mix(palette.panelMuted(), palette.panelText(), Math.max(hover, active))
+                : SettingsGuiPalette.withAlpha(palette.panelMuted(), 92);
         renderer.svg(button.icon(),
                 visual.centerX - iconSize * 0.5f + iconPullX,
                 visual.centerY - iconSize * 0.5f + iconPullY,
@@ -318,10 +333,8 @@ final class XaeroMapUiRenderer {
             float dt = motionDt();
             if (drawer != XaeroMapSurface.Drawer.NONE && drawer != renderedDrawer) {
                 renderedDrawer = drawer;
-                if (reveal.value > 0.65f) {
-                    reveal.value = 0.72f;
-                    reveal.velocity = 0.0f;
-                }
+                // Preserve the shell's current reveal when switching tabs. Pulling a fully open
+                // drawer back to 72% made it visibly jump before expanding again.
                 hoverAlpha.value = 0.0f;
                 hoverBand.value = -1.0f;
             }
@@ -358,8 +371,8 @@ final class XaeroMapUiRenderer {
         void update(float anchorX, float anchorY, boolean open) {
             float dt = motionDt();
             if (open && !wasOpen) {
-                reveal.value = Math.min(reveal.value, 0.14f);
-                reveal.velocity = 0.0f;
+                // Reopening during the exit animation continues from the current visual state.
+                if (reveal.value < 0.002f) reveal.value = 0.002f;
                 hoverAlpha.value = 0.0f;
                 hoverBand.value = -1.0f;
             }
@@ -392,8 +405,9 @@ final class XaeroMapUiRenderer {
     }
 
     private static float motionDt() {
-        return Math.min(1.0f / 30.0f,
-                Math.max(1.0f / 240.0f, AnimationUtility.deltaTime()));
+        float dt = AnimationUtility.deltaTime();
+        if (!Float.isFinite(dt) || dt < 0.0f) return 1.0f / 60.0f;
+        return Math.min(1.0f / 20.0f, dt);
     }
 
     private static final class ControlMotion {
@@ -407,7 +421,7 @@ final class XaeroMapUiRenderer {
                     float mouseX, float mouseY,
                     boolean pressed,
                     boolean activeState) {
-            boolean hovered = button.contains(mouseX, mouseY);
+            boolean hovered = button.enabled() && button.contains(mouseX, mouseY);
             float targetX = 0.0f;
             float targetY = 0.0f;
             if (hovered) {
@@ -417,8 +431,8 @@ final class XaeroMapUiRenderer {
             }
             float dt = motionDt();
             hover.step(hovered ? 1.0f : 0.0f, dt, 180.0f, 20.0f);
-            press.step(pressed ? 1.0f : 0.0f, dt, 260.0f, 18.0f);
-            active.step(activeState ? 1.0f : 0.0f, dt, 135.0f, 20.0f);
+            press.step(pressed && button.enabled() ? 1.0f : 0.0f, dt, 260.0f, 18.0f);
+            active.step(activeState && button.enabled() ? 1.0f : 0.0f, dt, 135.0f, 20.0f);
             pointerX.step(targetX, dt, 150.0f, 22.0f);
             pointerY.step(targetY, dt, 150.0f, 22.0f);
         }
@@ -429,9 +443,16 @@ final class XaeroMapUiRenderer {
         float velocity;
 
         void step(float target, float dt, float stiffness, float damping) {
-            velocity += (target - value) * stiffness * dt;
-            velocity *= (float) Math.exp(-damping * dt);
-            value += velocity * dt;
+            if (!Float.isFinite(dt) || dt <= 0.0f) return;
+            // Closed-form critically damped spring. It is stable after frame stalls, cannot
+            // overshoot alpha endpoints and therefore does not get clipped before snapping back.
+            float omega = Math.max(1.0f,
+                    (float) Math.sqrt(Math.max(1.0f, stiffness)) * 0.55f + Math.max(0.0f, damping) * 0.24f);
+            float displacement = value - target;
+            float decay = (float) Math.exp(-omega * dt);
+            float carry = (velocity + omega * displacement) * dt;
+            value = target + (displacement + carry) * decay;
+            velocity = (velocity - omega * carry) * decay;
             if (Math.abs(target - value) < 0.0005f && Math.abs(velocity) < 0.0005f) {
                 value = target;
                 velocity = 0.0f;
@@ -511,10 +532,13 @@ final class XaeroMapUiRenderer {
                     .build();
 
         Renderer2D renderer = Renderer2D.COLOR;
-        int glassBase = SettingsGuiPalette.mix(palette.panelBgRight(),
-                palette.controlSurfaceHover(), 0.08f);
-        int tint = SettingsGuiPalette.withAlpha(glassBase, Math.round(112.0f * eased));
-        int inner = SettingsGuiPalette.withAlpha(palette.panelText(), Math.round(30.0f * eased));
+        int glassBase = anchor.enabled()
+                ? SettingsGuiPalette.mix(palette.panelBgRight(), palette.controlSurfaceHover(), 0.08f)
+                : SettingsGuiPalette.mix(palette.panelBgRight(), 0xFF050608, 0.42f);
+        int tint = SettingsGuiPalette.withAlpha(glassBase,
+                Math.round((anchor.enabled() ? 112.0f : 76.0f) * eased));
+        int inner = SettingsGuiPalette.withAlpha(palette.panelText(),
+                Math.round((anchor.enabled() ? 30.0f : 12.0f) * eased));
         UiLiquidGlassMaterial material = UiLiquidGlassMaterial.DEFAULT
                 .withInnerGlow(0.045f * eased, 4.4f, inner);
         renderer.withLiquidGlassMaterial(material, () ->
@@ -531,7 +555,8 @@ final class XaeroMapUiRenderer {
         renderer.roundedRect(gleamX, y + 7.0f, 1.0f, height - 14.0f, 0.5f, gleam);
 
         int textColor = SettingsGuiPalette.withAlpha(
-                palette.panelText(), Math.round(255.0f * eased));
+                anchor.enabled() ? palette.panelText() : palette.panelMuted(),
+                Math.round((anchor.enabled() ? 255.0f : 180.0f) * eased));
         float textX = opensRight ? x + tip + bodyPad : x + bodyPad;
         ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), anchor.tooltip(),
                 textX, y + 8.25f, fontSize, textColor, false);
@@ -546,11 +571,9 @@ final class XaeroMapUiRenderer {
                 renderedAction = hoveredAction;
                 // Changing directly between neighbouring buttons should feel like a tooltip
                 // relocating, not like an unrelated popup being destroyed and recreated.
-                reveal.value = Math.min(reveal.value, 0.38f);
-                reveal.velocity *= 0.25f;
+                reveal.velocity *= 0.35f;
             }
-            float dt = Math.min(1.0f / 30.0f,
-                    Math.max(1.0f / 240.0f, AnimationUtility.deltaTime()));
+            float dt = motionDt();
             reveal.step(hoveredAction != null ? 1.0f : 0.0f, dt, 205.0f, 22.0f);
             if (hoveredAction == null && reveal.value <= 0.002f && Math.abs(reveal.velocity) < 0.002f) {
                 renderedAction = null;
@@ -601,11 +624,14 @@ final class XaeroMapUiRenderer {
                            float mouseX, float mouseY,
                            XaeroMapSurface.Drawer drawer,
                            XaeroMapElements.Snapshot snapshot,
+                           List<XaeroMapSurface.TargetRow> targets,
                            List<XaeroMapSurface.ElementHit> hits,
-                           String waypointsTitle,
+                           List<XaeroMapSurface.TargetHit> targetHits,
+                           boolean teleportAllowed,
                            SettingsGuiPalette palette,
                            ChromeMotion motion) {
         hits.clear();
+        targetHits.clear();
 
         DrawerMotion state = motion.drawer;
         state.update(drawer);
@@ -624,9 +650,13 @@ final class XaeroMapUiRenderer {
         List<XaeroMapElements.Element> rows = snapshot.elements().stream()
                 .filter(element -> rendered == XaeroMapSurface.Drawer.WAYPOINTS
                         ? element.kind() == XaeroMapElements.Kind.WAYPOINT
-                        : element.kind() != XaeroMapElements.Kind.WAYPOINT)
+                        : rendered == XaeroMapSurface.Drawer.RADAR
+                        && element.kind() != XaeroMapElements.Kind.WAYPOINT)
                 .limit(12)
                 .toList();
+        List<XaeroMapSurface.TargetRow> targetRows = rendered == XaeroMapSurface.Drawer.PLAYERS
+                ? targets.stream().limit(12).toList() : List.of();
+        int rowCount = rendered == XaeroMapSurface.Drawer.PLAYERS ? targetRows.size() : rows.size();
 
         int totalMatching = 0;
         int playerCount = 0;
@@ -634,17 +664,19 @@ final class XaeroMapUiRenderer {
         for (XaeroMapElements.Element element : snapshot.elements()) {
             boolean matches = rendered == XaeroMapSurface.Drawer.WAYPOINTS
                     ? element.kind() == XaeroMapElements.Kind.WAYPOINT
-                    : element.kind() != XaeroMapElements.Kind.WAYPOINT;
+                    : rendered == XaeroMapSurface.Drawer.RADAR
+                    && element.kind() != XaeroMapElements.Kind.WAYPOINT;
             if (!matches) continue;
             totalMatching++;
             if (element.kind() == XaeroMapElements.Kind.PLAYER) playerCount++;
             if (element.kind() == XaeroMapElements.Kind.ENTITY) radarCount++;
         }
+        if (rendered == XaeroMapSurface.Drawer.PLAYERS) totalMatching = targets.size();
 
         float headerHeight = 61.0f;
         float footerHeight = 28.0f;
-        float emptyHeight = rows.isEmpty() ? 48.0f : 0.0f;
-        float height = headerHeight + Math.max(emptyHeight, rows.size() * rowHeight) + footerHeight;
+        float emptyHeight = rowCount == 0 ? 48.0f : 0.0f;
+        float height = headerHeight + Math.max(emptyHeight, rowCount * rowHeight) + footerHeight;
         float bodyWidth = width - tip;
         float tipY = 29.0f;
 
@@ -678,12 +710,21 @@ final class XaeroMapUiRenderer {
                 palette.panelMuted(), Math.round(225.0f * eased));
         int accent = Themes.hudAccentGradient().start();
 
-        String title = rendered == XaeroMapSurface.Drawer.WAYPOINTS
-                ? waypointsTitle
-                : "Radar / Players";
-        String subtitle = rendered == XaeroMapSurface.Drawer.WAYPOINTS
-                ? totalMatching + (totalMatching == 1 ? " waypoint" : " waypoints")
-                : playerCount + " players  ·  " + radarCount + " radar";
+        String title = switch (rendered) {
+            case WAYPOINTS -> tr("gui.combatant.map.drawer.waypoints", "Waypoints");
+            case PLAYERS -> tr("gui.combatant.map.drawer.targets", "Targeted players");
+            case RADAR -> tr("gui.combatant.map.drawer.radar", "Radar list");
+            case NONE -> "";
+        };
+        String subtitle = switch (rendered) {
+            case WAYPOINTS -> trCount("gui.combatant.map.drawer.waypoint_count", totalMatching,
+                    totalMatching + " waypoints");
+            case PLAYERS -> trCount("gui.combatant.map.drawer.target_count", totalMatching,
+                    totalMatching + " targets");
+            case RADAR -> tr("gui.combatant.map.drawer.radar_count", "%s players · %s entities",
+                    playerCount, radarCount);
+            case NONE -> "";
+        };
 
         renderer.roundedRect(headerX, y + 16.0f, 2.0f, 28.0f, 1.0f,
                 SettingsGuiPalette.withAlpha(accent, Math.round(170.0f * eased)));
@@ -693,12 +734,12 @@ final class XaeroMapUiRenderer {
                 headerX + 10.0f, y + 34.0f, 11.5f, muted, false);
 
         int closeHint = SettingsGuiPalette.withAlpha(palette.panelMuted(), Math.round(155.0f * eased));
-        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), "ESC",
+        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), tr("gui.combatant.map.common.esc", "ESC"),
                 contentRight - 35.0f, y + 21.0f, 10.5f, closeHint, false);
 
         float rowsY = y + headerHeight;
         int hoveredIndex = -1;
-        for (int i = 0; i < rows.size(); i++) {
+        for (int i = 0; i < rowCount; i++) {
             float rowY = rowsY + i * rowHeight;
             if (inside(mouseX, mouseY, x + 8.0f, rowY, bodyWidth - 15.0f, rowHeight)) {
                 hoveredIndex = i;
@@ -706,6 +747,17 @@ final class XaeroMapUiRenderer {
             }
         }
         state.updateHover(hoveredIndex);
+        if (hoveredIndex >= 0) {
+            if (rendered == XaeroMapSurface.Drawer.PLAYERS) {
+                XaeroMapSurface.TargetRow target = targetRows.get(hoveredIndex);
+                boolean hasPosition = target.location() != null && target.location().hasPosition();
+                boolean teleportable = hasPosition && target.location().exact() && teleportAllowed;
+                SystemCursor.set(teleportable ? SystemCursor.CursorType.CROSSHAIR
+                        : hasPosition ? SystemCursor.CursorType.HAND : SystemCursor.CursorType.NOT_ALLOWED);
+            } else {
+                SystemCursor.set(SystemCursor.CursorType.HAND);
+            }
+        }
 
         if (hoveredIndex >= 0 || state.hoverBand.value >= 0.0f && state.hoverAlpha.value > 0.002f) {
             float bandY = rowsY + Math.max(0.0f, state.hoverBand.value) * rowHeight;
@@ -720,12 +772,37 @@ final class XaeroMapUiRenderer {
                     SettingsGuiPalette.withAlpha(accent, Math.round(185.0f * a)));
         }
 
-        if (rows.isEmpty()) {
-            ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), "Nothing visible on this map",
+        if (rowCount == 0) {
+            String empty = rendered == XaeroMapSurface.Drawer.PLAYERS
+                    ? tr("gui.combatant.map.drawer.targets_empty", "No targeted players")
+                    : tr("gui.combatant.map.drawer.empty", "Nothing visible on this map");
+            ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), empty,
                     headerX + 10.0f, rowsY + 15.0f, 13.0f, muted, false);
         }
 
-        for (int i = 0; i < rows.size(); i++) {
+        if (rendered == XaeroMapSurface.Drawer.PLAYERS) {
+            for (int i = 0; i < targetRows.size(); i++) {
+                XaeroMapSurface.TargetRow target = targetRows.get(i);
+                float rowY = rowsY + i * rowHeight;
+                float hover = hoveredIndex == i ? clamp01(state.hoverAlpha.value) : 0.0f;
+                float shift = hover * 2.5f;
+                boolean hasPosition = target.location() != null && target.location().hasPosition();
+                boolean exact = hasPosition && target.location().exact();
+                int targetColor = exact ? 0xFF55D6BE : hasPosition ? 0xFFFFB85C : muted;
+                renderer.svg(exact ? "navigation" : hasPosition ? "locate" : "circle-dashed",
+                        x + 18.0f + shift, rowY + 11.0f, 18.0f, 18.0f,
+                        SvgRenderOptions.overrideColor(SettingsGuiPalette.withAlpha(targetColor,
+                                Math.round(235.0f * eased))));
+                ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), target.name(),
+                        x + 47.0f + shift, rowY + 7.0f, 14.0f, titleColor, false);
+                String meta = targetMeta(target);
+                ClickGuiRenderer.drawText(ClickGuiRenderer.getIosevkaRegular(), meta,
+                        x + 47.0f + shift, rowY + 25.0f, 11.0f, muted, false);
+                boolean teleportable = exact && teleportAllowed;
+                targetHits.add(new XaeroMapSurface.TargetHit(target,
+                        x + 8.0f, rowY, bodyWidth - 15.0f, rowHeight, teleportable));
+            }
+        } else for (int i = 0; i < rows.size(); i++) {
             XaeroMapElements.Element element = rows.get(i);
             float rowY = rowsY + i * rowHeight;
             float hover = hoveredIndex == i ? clamp01(state.hoverAlpha.value) : 0.0f;
@@ -745,7 +822,8 @@ final class XaeroMapUiRenderer {
 
             String name = element.plainName();
             if (name == null || name.isBlank()) name = element.kind() == XaeroMapElements.Kind.ENTITY
-                    ? "Radar contact" : "Unnamed";
+                    ? tr("gui.combatant.map.drawer.radar_contact", "Radar contact")
+                    : tr("gui.combatant.map.drawer.unnamed", "Unnamed");
             int rowText = element.disabled() ? muted : titleColor;
             ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), name,
                     x + 47.0f + shift, rowY + 7.0f, 14.0f, rowText, false);
@@ -767,8 +845,56 @@ final class XaeroMapUiRenderer {
         float footerY = y + height - footerHeight;
         int separator = SettingsGuiPalette.withAlpha(palette.panelText(), Math.round(18.0f * eased));
         renderer.quad(x + 16.0f, footerY, bodyWidth - 31.0f, 1.0f, separator);
-        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), "LMB focus   ·   RMB actions",
+        String footer = rendered == XaeroMapSurface.Drawer.PLAYERS
+                ? tr("gui.combatant.map.drawer.target_hint", "LMB teleport when exact · otherwise focus")
+                : tr("gui.combatant.map.drawer.element_hint", "LMB focus · RMB actions");
+        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), footer,
                 x + 17.0f, footerY + 8.0f, 10.5f, muted, false);
+    }
+
+    private static String targetMeta(XaeroMapSurface.TargetRow target) {
+        var service = PlayerLocationService.get();
+        var view = service.snapshot();
+        PlayerLocationSnapshot location = target.location();
+        PlayerLocationSnapshot locator = view.locatorSource(target.playerUuid());
+        String locatorState;
+        if (locator != null) {
+            locatorState = switch (locator.source()) {
+                case LOCATOR_EXACT -> tr("gui.combatant.map.locator.present_exact", "locator exact");
+                case LOCATOR_APPROXIMATE -> tr("gui.combatant.map.locator.present_chunk", "locator chunk");
+                case LOCATOR_BEARING -> tr("gui.combatant.map.locator.present_bearing", "locator bearing");
+                default -> tr("gui.combatant.map.locator.present", "locator visible");
+            };
+        } else {
+            PlayerLocationEvent lost = service.latestLocatorEvent(target.playerUuid(), PlayerLocationEventType.SOURCE_LOST);
+            if (lost != null) {
+                long age = Math.max(0L, System.currentTimeMillis() - lost.timestampMs());
+                locatorState = tr("gui.combatant.map.locator.lost", "locator lost") + " " + Math.max(0L, age / 1000L) + "s";
+            } else {
+                locatorState = tr("gui.combatant.map.locator.absent", "locator not visible");
+            }
+        }
+        if (location == null) return locatorState + " · "
+                + tr("gui.combatant.map.drawer.target_waiting", "waiting for coordinates");
+        if (!location.hasPosition()) return locatorState;
+        String source = sourceLabel(location.source());
+        String prefix = location.exact() ? "" : "≈ ";
+        String coordinates = prefix + "X " + (int) Math.floor(location.x()) + "  Z " + (int) Math.floor(location.z());
+        return locator != null && locator == location ? coordinates + " · " + locatorState
+                : locatorState + " · " + coordinates + " · " + source;
+    }
+
+    private static String sourceLabel(PlayerLocationSource source) {
+        return switch (source) {
+            case LOCAL_ENTITY_EXACT -> tr("gui.combatant.map.source.local", "local");
+            case MAPLINK_EXACT -> tr("gui.combatant.map.source.maplink", "MapLink");
+            case LOCATOR_EXACT -> tr("gui.combatant.map.source.locator_exact", "locator exact");
+            case DUPLEX_TRIANGULATED -> tr("gui.combatant.map.source.duplex", "duplex");
+            case TRIANGULATED -> tr("gui.combatant.map.source.triangulated", "triangulated");
+            case LOCATOR_BEARING -> tr("gui.combatant.map.source.bearing", "locator bearing");
+            case LOCATOR_APPROXIMATE -> tr("gui.combatant.map.source.locator_approx", "locator approximate");
+            case HISTORICAL -> tr("gui.combatant.map.source.history", "history");
+        };
     }
 
     static HelpBounds drawHelp(float areaX, float areaY, float areaWidth, float areaHeight,
@@ -840,15 +966,21 @@ final class XaeroMapUiRenderer {
 
         renderer.svg("circle-question-mark", left, y + 17.0f, 24.0f, 24.0f,
                 SvgRenderOptions.overrideColor(accent));
-        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestBold(), "Map controls",
+        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestBold(),
+                tr("gui.combatant.map.help.title", "Map controls"),
                 left + 35.0f, y + 13.0f, 18.0f, text, false);
-        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(), "Navigation & marker actions",
+        ClickGuiRenderer.drawText(ClickGuiRenderer.getOnestMedium(),
+                tr("gui.combatant.map.help.subtitle", "Navigation & marker actions"),
                 left + 35.0f, y + 36.0f, 12.5f, muted, false);
 
-        drawHelpLine(left, y + 69.0f, "LMB drag", "Pan the map", palette, eased);
-        drawHelpLine(left, y + 95.0f, "Wheel / +/-", "Zoom around pointer", palette, eased);
-        drawHelpLine(left, y + 121.0f, "RMB", "Open actions / selection", palette, eased);
-        drawHelpLine(left, y + 147.0f, "T / E", "Teleport / edit marker", palette, eased);
+        drawHelpLine(left, y + 69.0f, tr("gui.combatant.map.help.drag_key", "LMB drag"),
+                tr("gui.combatant.map.help.drag", "Pan the map"), palette, eased);
+        drawHelpLine(left, y + 95.0f, tr("gui.combatant.map.help.zoom_key", "Wheel / +/-"),
+                tr("gui.combatant.map.help.zoom", "Zoom around pointer"), palette, eased);
+        drawHelpLine(left, y + 121.0f, tr("gui.combatant.map.help.actions_key", "RMB"),
+                tr("gui.combatant.map.help.actions", "Open actions / selection"), palette, eased);
+        drawHelpLine(left, y + 147.0f, tr("gui.combatant.map.help.marker_key", "T / E"),
+                tr("gui.combatant.map.help.marker", "Teleport / edit marker"), palette, eased);
 
         return new HelpBounds(x, y, width, height);
     }
@@ -955,15 +1087,20 @@ final class XaeroMapUiRenderer {
         }
 
         int hoveredIndex = -1;
+        int pointedIndex = -1;
         for (int i = layout.firstActionIndex; i < entries.size(); i++) {
             float rowY = y + layout.rowStartOffset
                     + (i - layout.firstActionIndex) * layout.rowHeight;
-            if (entries.get(i).enabled()
-                    && inside(mouseX, mouseY, bodyX + 7.0f, rowY,
+            if (inside(mouseX, mouseY, bodyX + 7.0f, rowY,
                     bodyWidth - 14.0f, layout.rowHeight)) {
-                hoveredIndex = i;
+                pointedIndex = i;
+                if (entries.get(i).enabled()) hoveredIndex = i;
                 break;
             }
+        }
+        if (pointedIndex >= 0) {
+            SystemCursor.set(entries.get(pointedIndex).enabled()
+                    ? SystemCursor.CursorType.HAND : SystemCursor.CursorType.NOT_ALLOWED);
         }
         state.updateHover(hoveredIndex < 0 ? -1 : hoveredIndex - layout.firstActionIndex);
 
@@ -1124,7 +1261,7 @@ final class XaeroMapUiRenderer {
             boolean caveActive,
             boolean customDimension,
             boolean showWaypoints,
-            boolean showRadar,
+            boolean radarAvailable,
             boolean radarActive,
             boolean showClaims,
             boolean claimsActive,
@@ -1139,11 +1276,26 @@ final class XaeroMapUiRenderer {
             String playersTooltip,
             String radarTooltip,
             String claimsTooltip,
-            String exportTooltip,
+            String radarListTooltip,
             String controlsTooltip,
             String zoomOutTooltip,
             String zoomInTooltip
     ) {
+    }
+
+    private static String tr(String key, String fallback, Object... args) {
+        try {
+            String translated = I18n.get(key, args);
+            if (translated != null && !translated.equals(key) && !translated.startsWith("Format error:")) {
+                return translated;
+            }
+        } catch (Throwable ignored) {
+        }
+        return args.length == 0 ? fallback : String.format(fallback, args);
+    }
+
+    private static String trCount(String key, int count, String fallback) {
+        return tr(key, fallback, count);
     }
 
     record HelpBounds(float x, float y, float width, float height) {

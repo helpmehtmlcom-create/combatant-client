@@ -9,6 +9,8 @@ package combatant.client.features.map.location;
 public enum PlayerLocationEventType {
     APPEARED,
     DISAPPEARED,
+    SOURCE_APPEARED,
+    SOURCE_LOST,
     SOURCE_CHANGED,
     EXACT_SOURCE_APPEARED,
     EXACT_SOURCE_LOST

@@ -16,6 +16,11 @@ import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 
 final class LocatorWaypointExtractor {
+    // Vanilla WaypointTransmitter.EntityAzimuthConnection is only used while the source/receiver
+    // 3D distance is greater than 332 blocks. Keep the source semantic here rather than teaching
+    // the solver about a Minecraft implementation detail.
+    static final double AZIMUTH_MIN_DISTANCE_3D = 332.0;
+
     private static final ConcurrentHashMap<String, Field> FIELDS = new ConcurrentHashMap<>();
 
     private LocatorWaypointExtractor() {}
@@ -44,7 +49,7 @@ final class LocatorWaypointExtractor {
                 if (value instanceof Number n) {
                     return new Extracted(LocatorObservationType.BEARING_ONLY,
                             Double.NaN, Double.NaN, Double.NaN,
-                            normalize(Math.toRadians(n.doubleValue())), Double.NaN);
+                            normalize(n.doubleValue()), Double.NaN);
                 }
             }
         } catch (ReflectiveOperationException | RuntimeException ignored) {

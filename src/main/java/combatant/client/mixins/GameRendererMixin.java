@@ -492,11 +492,38 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
                 && gameRenderState.levelRenderState.cameraRenderState.viewRotationMatrix != null
                 && gameRenderState.levelRenderState.cameraRenderState.projectionMatrix != null) {
             CameraRenderState cameraRenderState = gameRenderState.levelRenderState.cameraRenderState;
+            Vec3 cameraPosition = cameraRenderState.pos != null ? cameraRenderState.pos : mainCamera.position();
             CombatantWorldMatrices.capture(
                     cameraRenderState.viewRotationMatrix,
                     renderProjectionMatrix,
                     cameraRenderState.projectionMatrix,
-                    cameraRenderState.pos != null ? cameraRenderState.pos : mainCamera.position()
+                    cameraPosition
+            );
+
+            // This is the first stable point where Minecraft has committed the actual world
+            // projection and camera render state, but terrain submission has not started yet.
+            // Open the Combatant frame here so deferred producers can never bootstrap from the
+            // identity fallback used by non-world UI paths.
+            DeltaTracker tickCounter = minecraft.getDeltaTracker();
+            float tickProgress = tickCounter != null
+                    ? tickCounter.getGameTimeDeltaPartialTick(true) : RenderState.tickProgress;
+            float frameDeltaTicks = tickCounter != null
+                    ? tickCounter.getGameTimeDeltaTicks() : RenderState.frameDeltaTicks;
+            float fixedDeltaTicks = tickCounter != null
+                    ? tickCounter.getRealtimeDeltaTicks() : RenderState.fixedDeltaTicks;
+            var frame = CombatantRenderSystem.beginFrame(
+                    tickProgress,
+                    frameDeltaTicks,
+                    fixedDeltaTicks,
+                    renderProjectionMatrix,
+                    new Matrix4f(cameraRenderState.viewRotationMatrix)
+            );
+            CombatantRenderSystem.deferredWorld().capturePrimaryView(
+                    frame.frameId(),
+                    cameraRenderState.viewRotationMatrix,
+                    renderProjectionMatrix,
+                    cameraPosition,
+                    cameraRenderState.depthFar
             );
         }
         return original.call(instance, renderProjectionMatrix);
