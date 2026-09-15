@@ -117,7 +117,7 @@ public enum DeferredRuntimeAssets {
                     .withSampler("u_GbufferGeometry")
                     .withSampler("u_GbufferMaterial")
                     .withSampler("u_GbufferDepth")
-                    .withSampler("u_LightTex")
+                    .withSampler("u_EnvironmentIrradiance")
                     .withSampler("u_ResolvedDepth")
                     .withSampler("u_ShadowVisibility")
                     .withSampler("u_AmbientVisibility")

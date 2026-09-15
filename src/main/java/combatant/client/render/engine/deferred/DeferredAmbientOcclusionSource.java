@@ -35,7 +35,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-/** Screen-space ambient visibility source backed by resolved depth/Hi-Z and the geometry normal. */
+/** GTAO visibility and bent-normal producer backed by resolved depth/Hi-Z and G-buffer normals. */
 final class DeferredAmbientOcclusionSource implements AutoCloseable {
     private static final int LOCAL_SIZE = 8;
     private static final Identifier SHADER = id("deferred/ambient_occlusion");
@@ -52,8 +52,10 @@ final class DeferredAmbientOcclusionSource implements AutoCloseable {
             new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(1, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(2, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
-            new ShaderResourceSlot(3, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
-            new ShaderResourceSlot(4, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
+            new ShaderResourceSlot(3, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(4, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
+            new ShaderResourceSlot(5, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
+            new ShaderResourceSlot(6, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
     ));
 
     private CombatantRhi owner;
@@ -63,14 +65,15 @@ final class DeferredAmbientOcclusionSource implements AutoCloseable {
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.ambient-occlusion", DeferredStage.AMBIENT_OCCLUSION)
                 .read(DeferredResource.RESOLVED_DEPTH, DeferredResource.DEPTH_PYRAMID,
-                        DeferredResource.GBUFFER_GEOMETRY)
-                .write(DeferredResource.AMBIENT_OCCLUSION)
+                        DeferredResource.GBUFFER_GEOMETRY, DeferredResource.GBUFFER_DEPTH)
+                .write(DeferredResource.AMBIENT_OCCLUSION, DeferredResource.AMBIENT_BENT_NORMAL)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.settings().ambientOcclusionEnabled()
                         && context.primaryView().current() != null
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
                         && context.isValid(DeferredResource.DEPTH_PYRAMID)
-                        && context.resources().texture(DeferredResource.GBUFFER_GEOMETRY) != null)
+                        && context.resources().texture(DeferredResource.GBUFFER_GEOMETRY) != null
+                        && context.isValid(DeferredResource.GBUFFER_DEPTH))
                 .execute(this::resolve)
                 .build());
     }
@@ -95,7 +98,9 @@ final class DeferredAmbientOcclusionSource implements AutoCloseable {
         GpuTextureView depth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
         GpuTextureView pyramid = requireTexture(context, DeferredResource.DEPTH_PYRAMID);
         GpuTextureView geometry = requireTexture(context, DeferredResource.GBUFFER_GEOMETRY);
-        RhiStorageImage output = requireImage(context, DeferredResource.AMBIENT_OCCLUSION);
+        GpuTextureView gbufferDepth = requireTexture(context, DeferredResource.GBUFFER_DEPTH);
+        RhiStorageImage visibility = requireImage(context, DeferredResource.AMBIENT_OCCLUSION);
+        RhiStorageImage bentNormal = requireImage(context, DeferredResource.AMBIENT_BENT_NORMAL);
         DeferredRuntimeConfig.Snapshot settings = context.settings();
         boolean zeroToOne = isVulkan(context);
 
@@ -110,26 +115,29 @@ final class DeferredAmbientOcclusionSource implements AutoCloseable {
                 .putVec4(0, "params0",
                         settings.ambientOcclusionSampleCount(),
                         settings.ambientOcclusionRadius(),
-                        settings.ambientOcclusionBias(),
+                        settings.ambientOcclusionThickness(),
                         settings.ambientOcclusionMipBias())
                 .putVec4(0, "params1",
-                        settings.ambientOcclusionMaxMip(),
-                        depth.getWidth(0), depth.getHeight(0), 0.0f);
+                        settings.ambientOcclusionMaxMip(), depth.getWidth(0), depth.getHeight(0), 0.0f);
         RhiStorageBuffer data = data();
         data.upload(writer.buffer(), 0L);
 
         GpuSampler nearest = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
         context.advancedShaders().dispatch(new ComputeDispatchCommand(
-                "Combatant ambient visibility",
+                "Combatant GTAO",
                 pipeline(),
-                groups(output.descriptor().width()), groups(output.descriptor().height()), 1,
-                List.of(new StorageBinding(4, data, 0L, writer.byteSize(), StorageAccess.READ_ONLY)),
+                groups(visibility.descriptor().width()), groups(visibility.descriptor().height()), 1,
+                List.of(new StorageBinding(6, data, 0L, writer.byteSize(), StorageAccess.READ_ONLY)),
                 List.of(
                         new SampledTextureBinding(0, depth, nearest),
                         new SampledTextureBinding(1, pyramid, nearest),
-                        new SampledTextureBinding(2, geometry, nearest)
+                        new SampledTextureBinding(2, geometry, nearest),
+                        new SampledTextureBinding(3, gbufferDepth, nearest)
                 ),
-                List.of(new StorageImageBinding(3, output, StorageAccess.WRITE_ONLY))
+                List.of(
+                        new StorageImageBinding(4, visibility, StorageAccess.WRITE_ONLY),
+                        new StorageImageBinding(5, bentNormal, StorageAccess.WRITE_ONLY)
+                )
         ));
     }
 
@@ -143,7 +151,7 @@ final class DeferredAmbientOcclusionSource implements AutoCloseable {
         if (owner == null) throw new IllegalStateException("Ambient occlusion source has no RHI owner");
         if (pipeline == null) {
             pipeline = owner.advancedShaders().createComputePipeline(new ComputePipelineDescriptor(
-                    "combatant-ambient-occlusion", SHADER, LAYOUT
+                    "combatant-gtao", SHADER, LAYOUT
             ));
         }
         return pipeline;
@@ -153,7 +161,7 @@ final class DeferredAmbientOcclusionSource implements AutoCloseable {
         if (owner == null) throw new IllegalStateException("Ambient occlusion source has no RHI owner");
         if (data == null) {
             data = owner.advancedShaders().createStorageBuffer(new StorageBufferDescriptor(
-                    "combatant-ambient-occlusion-data", DATA_LAYOUT, 1, StorageAccess.READ_ONLY, false
+                    "combatant-gtao-data", DATA_LAYOUT, 1, StorageAccess.READ_ONLY, false
             ));
         }
         return data;

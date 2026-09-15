@@ -14,21 +14,17 @@ uniform sampler2D u_GbufferSurface;
 uniform sampler2D u_GbufferGeometry;
 uniform sampler2D u_GbufferMaterial;
 uniform sampler2D u_GbufferDepth;
-uniform sampler2D u_LightTex;
+uniform sampler2D u_EnvironmentIrradiance;
 uniform sampler2D u_ResolvedDepth;
 uniform sampler2D u_ShadowVisibility;
 uniform sampler2D u_AmbientVisibility;
 
 layout(std140) uniform DeferredLighting {
     mat4 u_InverseProjection;
-    // Presentation-only compatibility fog data. Lighting deliberately does not consume it.
     vec4 u_FogColor;
     vec4 u_FogRanges;
-    // xyz: view-space direction from receiver toward the directional light, w: valid.
     vec4 u_DirectionalDirection;
-    // rgb: neutral producer-provided radiance.
     vec4 u_DirectionalRadiance;
-    // xy: depth -> NDC, z: shadow valid, w: ambient visibility valid.
     vec4 u_DepthAndFlags;
 };
 
@@ -37,9 +33,7 @@ const float PI = 3.14159265358979323846;
 vec3 combatant_decode_octahedral(vec2 encoded) {
     vec2 f = encoded * 2.0 - 1.0;
     vec3 n = vec3(f, 1.0 - abs(f.x) - abs(f.y));
-    if (n.z < 0.0) {
-        n.xy = (1.0 - abs(n.yx)) * sign(n.xy);
-    }
+    if (n.z < 0.0) n.xy = (1.0 - abs(n.yx)) * sign(n.xy);
     return normalize(n);
 }
 
@@ -87,9 +81,7 @@ float combatant_burley_diffuse(float ndotv, float ndotl, float ldoth, float roug
 }
 
 void main() {
-    if (!combatant_owns_gbuffer_pixel(v_TexCoord)) {
-        discard;
-    }
+    if (!combatant_owns_gbuffer_pixel(v_TexCoord)) discard;
 
     vec4 surface = texture(u_GbufferSurface, v_TexCoord);
     vec4 geometry = texture(u_GbufferGeometry, v_TexCoord);
@@ -108,16 +100,16 @@ void main() {
     vec3 viewDirection = normalize(-viewPosition);
 
     vec3 f0 = mix(vec3(dielectricF0), albedo, metallic);
-    vec3 lightmapRadiance = max(texture(u_LightTex, geometry.ba).rgb, vec3(0.0));
+    vec3 environmentIrradiance = max(texture(u_EnvironmentIrradiance, v_TexCoord).rgb, vec3(0.0));
     float ambientVisibility = u_DepthAndFlags.w > 0.5
             ? clamp(texture(u_AmbientVisibility, v_TexCoord).r, 0.0, 1.0)
             : 1.0;
 
-    // Minecraft lightmap is the current neutral ambient/local-light producer. It is kept separate
-    // from the directional microfacet BRDF so sky SH / colored block light can replace it later.
+    // Incoming environment irradiance is an explicit renderer contract. Vanilla lightmap data is
+    // neither sampled nor inferred here. Material AO and GTAO remain independent visibility terms.
     vec3 ambientDiffuseWeight = (vec3(1.0) - f0) * (1.0 - metallic);
     vec3 litColor = albedo * ambientDiffuseWeight
-            * lightmapRadiance * materialAo * ambientVisibility;
+            * environmentIrradiance * materialAo * ambientVisibility;
 
     if (u_DirectionalDirection.w > 0.5) {
         vec3 lightDirection = normalize(u_DirectionalDirection.xyz);
@@ -144,7 +136,6 @@ void main() {
         }
     }
 
-    // Emission is outgoing radiance and is therefore not attenuated by AO or directional shadow.
     litColor += albedo * emission;
     color = vec4(litColor, 1.0);
 }

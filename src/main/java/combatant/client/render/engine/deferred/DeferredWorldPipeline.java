@@ -368,9 +368,7 @@ public final class DeferredWorldPipeline {
 
     /** Executes the neutral backend lighting stage once after opaque and cutout terrain. */
     public boolean resolveLighting(GpuTextureView sceneColor,
-                                   GpuTextureView lightmap,
                                    GpuSampler gbufferSampler,
-                                   GpuSampler lightmapSampler,
                                    LightingState state) {
         if (!enabled() || lightingResolvedThisFrame || targets == null) return false;
         RenderSystem.assertOnRenderThread();
@@ -420,6 +418,10 @@ public final class DeferredWorldPipeline {
             }
             boolean shadowValid = resourceBindings.isValid(DeferredResource.SHADOW_COLOR);
             boolean ambientOcclusionValid = resourceBindings.isValid(DeferredResource.AMBIENT_OCCLUSION);
+            if (!resourceBindings.isValid(DeferredResource.ENVIRONMENT_IRRADIANCE)) {
+                throw new IllegalStateException("Deferred lighting requires environment irradiance contract");
+            }
+            GpuTextureView environmentIrradiance = resourceBindings.texture(DeferredResource.ENVIRONMENT_IRRADIANCE);
             GpuTextureView shadowVisibility = shadowValid
                     ? resourceBindings.texture(DeferredResource.SHADOW_COLOR) : inputs.surface();
             GpuTextureView ambientVisibility = ambientOcclusionValid
@@ -448,10 +450,10 @@ public final class DeferredWorldPipeline {
                             .sampler("u_GbufferGeometry", inputs.geometry(), gbufferSampler)
                             .sampler("u_GbufferMaterial", inputs.material(), gbufferSampler)
                             .sampler("u_GbufferDepth", gbufferDepth, gbufferSampler)
-                            .sampler("u_LightTex", lightmap, lightmapSampler)
+                            .sampler("u_EnvironmentIrradiance", environmentIrradiance, gbufferSampler)
                             .sampler("u_ResolvedDepth", resolvedDepth, gbufferSampler)
-                            .sampler("u_ShadowVisibility", shadowVisibility, lightmapSampler)
-                            .sampler("u_AmbientVisibility", ambientVisibility, lightmapSampler)
+                            .sampler("u_ShadowVisibility", shadowVisibility, gbufferSampler)
+                            .sampler("u_AmbientVisibility", ambientVisibility, gbufferSampler)
                             .build()
             );
             resourceBindings.markWritten(DeferredResource.DIRECT_LIGHTING_COLOR);

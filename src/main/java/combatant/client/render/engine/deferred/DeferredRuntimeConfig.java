@@ -65,7 +65,7 @@ public final class DeferredRuntimeConfig {
             float ambientOcclusionScale,
             int ambientOcclusionSampleCount,
             float ambientOcclusionRadius,
-            float ambientOcclusionBias,
+            float ambientOcclusionThickness,
             int ambientOcclusionMaxMip,
             float ambientOcclusionMipBias,
             boolean indirectLightEnabled,
@@ -110,6 +110,13 @@ public final class DeferredRuntimeConfig {
             int shadowResolution,
             float shadowSplitLambda,
             float shadowCasterDistance,
+            float shadowCascadeBlendFraction,
+            float shadowNormalOffsetTexels,
+            float shadowReceiverBiasTexels,
+            float shadowFilterRadiusTexels,
+            float shadowBlockerSearchRadiusTexels,
+            float shadowPenumbraScaleTexels,
+            float shadowMaxPenumbraTexels,
             int depthPyramidMaxMipLevels,
             boolean indirectTemporalEnabled,
             float indirectTemporalHistoryWeight,
@@ -173,6 +180,13 @@ public final class DeferredRuntimeConfig {
                     2048,
                     0.5f,
                     64.0f,
+                    0.10f,
+                    1.0f,
+                    1.0f,
+                    1.5f,
+                    2.5f,
+                    24.0f,
+                    8.0f,
                     0,
                     true,
                     0.9f,
@@ -194,7 +208,8 @@ public final class DeferredRuntimeConfig {
                     floatProperty("combatant.render.deferred.aoScale", d.ambientOcclusionScale),
                     intProperty("combatant.render.deferred.aoSamples", d.ambientOcclusionSampleCount),
                     floatProperty("combatant.render.deferred.aoRadius", d.ambientOcclusionRadius),
-                    floatProperty("combatant.render.deferred.aoBias", d.ambientOcclusionBias),
+                    floatProperty("combatant.render.deferred.aoThickness",
+                            floatProperty("combatant.render.deferred.aoBias", d.ambientOcclusionThickness)),
                     intProperty("combatant.render.deferred.aoMaxMip", d.ambientOcclusionMaxMip),
                     floatProperty("combatant.render.deferred.aoMipBias", d.ambientOcclusionMipBias),
                     booleanProperty("combatant.render.deferred.indirect", d.indirectLightEnabled),
@@ -239,6 +254,13 @@ public final class DeferredRuntimeConfig {
                     intProperty("combatant.render.deferred.shadowResolution", d.shadowResolution),
                     floatProperty("combatant.render.deferred.shadowSplitLambda", d.shadowSplitLambda),
                     floatProperty("combatant.render.deferred.shadowCasterDistance", d.shadowCasterDistance),
+                    floatProperty("combatant.render.deferred.shadowCascadeBlendFraction", d.shadowCascadeBlendFraction),
+                    floatProperty("combatant.render.deferred.shadowNormalOffsetTexels", d.shadowNormalOffsetTexels),
+                    floatProperty("combatant.render.deferred.shadowReceiverBiasTexels", d.shadowReceiverBiasTexels),
+                    floatProperty("combatant.render.deferred.shadowFilterRadiusTexels", d.shadowFilterRadiusTexels),
+                    floatProperty("combatant.render.deferred.shadowBlockerSearchRadiusTexels", d.shadowBlockerSearchRadiusTexels),
+                    floatProperty("combatant.render.deferred.shadowPenumbraScaleTexels", d.shadowPenumbraScaleTexels),
+                    floatProperty("combatant.render.deferred.shadowMaxPenumbraTexels", d.shadowMaxPenumbraTexels),
                     intProperty("combatant.render.deferred.depthPyramidMaxMipLevels", d.depthPyramidMaxMipLevels),
                     booleanProperty("combatant.render.deferred.indirectTemporal", d.indirectTemporalEnabled),
                     floatProperty("combatant.render.deferred.indirectTemporalHistoryWeight", d.indirectTemporalHistoryWeight),
@@ -259,7 +281,7 @@ public final class DeferredRuntimeConfig {
                     clamp(ambientOcclusionScale, 0.125f, 1.0f),
                     clamp(ambientOcclusionSampleCount, 4, 64),
                     clamp(ambientOcclusionRadius, 0.05f, 16.0f),
-                    clamp(ambientOcclusionBias, 0.0f, 1.0f),
+                    clamp(ambientOcclusionThickness, 0.0f, 1.0f),
                     clamp(ambientOcclusionMaxMip, 0, 16),
                     clamp(ambientOcclusionMipBias, -4.0f, 4.0f),
                     indirectLightEnabled,
@@ -304,6 +326,13 @@ public final class DeferredRuntimeConfig {
                     clamp(shadowResolution, 256, 8192),
                     clamp(shadowSplitLambda, 0.0f, 1.0f),
                     clamp(shadowCasterDistance, 0.0f, 1024.0f),
+                    clamp(shadowCascadeBlendFraction, 0.0f, 0.35f),
+                    clamp(shadowNormalOffsetTexels, 0.0f, 8.0f),
+                    clamp(shadowReceiverBiasTexels, 0.0f, 8.0f),
+                    clamp(shadowFilterRadiusTexels, 0.0f, 8.0f),
+                    clamp(shadowBlockerSearchRadiusTexels, 0.0f, 16.0f),
+                    clamp(shadowPenumbraScaleTexels, 0.0f, 128.0f),
+                    clamp(shadowMaxPenumbraTexels, 0.0f, 32.0f),
                     clamp(depthPyramidMaxMipLevels, 0, 32),
                     indirectTemporalEnabled,
                     clamp(indirectTemporalHistoryWeight, 0.0f, 0.99f),
@@ -358,7 +387,7 @@ public final class DeferredRuntimeConfig {
         private float ambientOcclusionScale;
         private int ambientOcclusionSampleCount;
         private float ambientOcclusionRadius;
-        private float ambientOcclusionBias;
+        private float ambientOcclusionThickness;
         private int ambientOcclusionMaxMip;
         private float ambientOcclusionMipBias;
         private boolean indirectLightEnabled;
@@ -403,6 +432,13 @@ public final class DeferredRuntimeConfig {
         private int shadowResolution;
         private float shadowSplitLambda;
         private float shadowCasterDistance;
+        private float shadowCascadeBlendFraction;
+        private float shadowNormalOffsetTexels;
+        private float shadowReceiverBiasTexels;
+        private float shadowFilterRadiusTexels;
+        private float shadowBlockerSearchRadiusTexels;
+        private float shadowPenumbraScaleTexels;
+        private float shadowMaxPenumbraTexels;
         private int depthPyramidMaxMipLevels;
         private boolean indirectTemporalEnabled;
         private float indirectTemporalHistoryWeight;
@@ -421,7 +457,7 @@ public final class DeferredRuntimeConfig {
             ambientOcclusionScale = s.ambientOcclusionScale();
             ambientOcclusionSampleCount = s.ambientOcclusionSampleCount();
             ambientOcclusionRadius = s.ambientOcclusionRadius();
-            ambientOcclusionBias = s.ambientOcclusionBias();
+            ambientOcclusionThickness = s.ambientOcclusionThickness();
             ambientOcclusionMaxMip = s.ambientOcclusionMaxMip();
             ambientOcclusionMipBias = s.ambientOcclusionMipBias();
             indirectLightEnabled = s.indirectLightEnabled();
@@ -466,6 +502,13 @@ public final class DeferredRuntimeConfig {
             shadowResolution = s.shadowResolution();
             shadowSplitLambda = s.shadowSplitLambda();
             shadowCasterDistance = s.shadowCasterDistance();
+            shadowCascadeBlendFraction = s.shadowCascadeBlendFraction();
+            shadowNormalOffsetTexels = s.shadowNormalOffsetTexels();
+            shadowReceiverBiasTexels = s.shadowReceiverBiasTexels();
+            shadowFilterRadiusTexels = s.shadowFilterRadiusTexels();
+            shadowBlockerSearchRadiusTexels = s.shadowBlockerSearchRadiusTexels();
+            shadowPenumbraScaleTexels = s.shadowPenumbraScaleTexels();
+            shadowMaxPenumbraTexels = s.shadowMaxPenumbraTexels();
             depthPyramidMaxMipLevels = s.depthPyramidMaxMipLevels();
             indirectTemporalEnabled = s.indirectTemporalEnabled();
             indirectTemporalHistoryWeight = s.indirectTemporalHistoryWeight();
@@ -483,7 +526,7 @@ public final class DeferredRuntimeConfig {
         public Builder ambientOcclusionScale(float value) { ambientOcclusionScale = value; return this; }
         public Builder ambientOcclusionSampleCount(int value) { ambientOcclusionSampleCount = value; return this; }
         public Builder ambientOcclusionRadius(float value) { ambientOcclusionRadius = value; return this; }
-        public Builder ambientOcclusionBias(float value) { ambientOcclusionBias = value; return this; }
+        public Builder ambientOcclusionThickness(float value) { ambientOcclusionThickness = value; return this; }
         public Builder ambientOcclusionMaxMip(int value) { ambientOcclusionMaxMip = value; return this; }
         public Builder ambientOcclusionMipBias(float value) { ambientOcclusionMipBias = value; return this; }
         public Builder indirectLightEnabled(boolean value) { indirectLightEnabled = value; return this; }
@@ -528,6 +571,13 @@ public final class DeferredRuntimeConfig {
         public Builder shadowResolution(int value) { shadowResolution = value; return this; }
         public Builder shadowSplitLambda(float value) { shadowSplitLambda = value; return this; }
         public Builder shadowCasterDistance(float value) { shadowCasterDistance = value; return this; }
+        public Builder shadowCascadeBlendFraction(float value) { shadowCascadeBlendFraction = value; return this; }
+        public Builder shadowNormalOffsetTexels(float value) { shadowNormalOffsetTexels = value; return this; }
+        public Builder shadowReceiverBiasTexels(float value) { shadowReceiverBiasTexels = value; return this; }
+        public Builder shadowFilterRadiusTexels(float value) { shadowFilterRadiusTexels = value; return this; }
+        public Builder shadowBlockerSearchRadiusTexels(float value) { shadowBlockerSearchRadiusTexels = value; return this; }
+        public Builder shadowPenumbraScaleTexels(float value) { shadowPenumbraScaleTexels = value; return this; }
+        public Builder shadowMaxPenumbraTexels(float value) { shadowMaxPenumbraTexels = value; return this; }
         public Builder depthPyramidMaxMipLevels(int value) { depthPyramidMaxMipLevels = value; return this; }
         public Builder indirectTemporalEnabled(boolean value) { indirectTemporalEnabled = value; return this; }
         public Builder indirectTemporalHistoryWeight(float value) { indirectTemporalHistoryWeight = value; return this; }
@@ -546,7 +596,7 @@ public final class DeferredRuntimeConfig {
                     ambientOcclusionScale,
                     ambientOcclusionSampleCount,
                     ambientOcclusionRadius,
-                    ambientOcclusionBias,
+                    ambientOcclusionThickness,
                     ambientOcclusionMaxMip,
                     ambientOcclusionMipBias,
                     indirectLightEnabled,
@@ -591,6 +641,13 @@ public final class DeferredRuntimeConfig {
                     shadowResolution,
                     shadowSplitLambda,
                     shadowCasterDistance,
+                    shadowCascadeBlendFraction,
+                    shadowNormalOffsetTexels,
+                    shadowReceiverBiasTexels,
+                    shadowFilterRadiusTexels,
+                    shadowBlockerSearchRadiusTexels,
+                    shadowPenumbraScaleTexels,
+                    shadowMaxPenumbraTexels,
                     depthPyramidMaxMipLevels,
                     indirectTemporalEnabled,
                     indirectTemporalHistoryWeight,

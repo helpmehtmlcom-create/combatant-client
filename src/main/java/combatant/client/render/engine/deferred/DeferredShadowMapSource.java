@@ -42,6 +42,7 @@ final class DeferredShadowMapSource implements AutoCloseable {
             .member("viewProjection", Std430Type.MAT4)
             .member("atlasScaleBias", Std430Type.VEC4)
             .member("splitRange", Std430Type.VEC4)
+            .member("shadowTexel", Std430Type.VEC4)
             .build();
 
     private TextureTarget atlas;
@@ -150,6 +151,19 @@ final class DeferredShadowMapSource implements AutoCloseable {
             );
             writer.putVec4(i, "splitRange",
                     view.nearPlane(), view.farPlane(), (float) i, (float) count
+            );
+            Matrix4f projection = view.projection();
+            float extentX = Math.abs(projection.m00()) > 1.0e-6f ? Math.abs(2.0f / projection.m00()) : 0.0f;
+            float extentY = Math.abs(projection.m11()) > 1.0e-6f ? Math.abs(2.0f / projection.m11()) : 0.0f;
+            float worldTexel = Math.max(
+                    extentX / Math.max(1.0f, view.viewportWidth()),
+                    extentY / Math.max(1.0f, view.viewportHeight())
+            );
+            writer.putVec4(i, "shadowTexel",
+                    1.0f / Math.max(1.0f, width),
+                    1.0f / Math.max(1.0f, height),
+                    worldTexel,
+                    0.0f
             );
         }
         cascadeData.upload(writer.buffer(), 0L);

@@ -9,6 +9,7 @@ package combatant.client.mixins.sodium;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.GpuSampler;
 import com.mojang.blaze3d.textures.FilterMode;
 import combatant.client.render.engine.core.CombatantRenderSystem;
@@ -22,7 +23,6 @@ import net.caffeinemc.mods.sodium.client.render.chunk.terrain.DefaultTerrainRend
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.TerrainRenderPass;
 import net.caffeinemc.mods.sodium.client.util.FogParameters;
 import net.minecraft.client.Minecraft;
-import com.mojang.blaze3d.systems.RenderSystem;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -79,9 +79,7 @@ public abstract class SodiumWorldRendererTerrainMixin {
             );
             CombatantRenderSystem.deferredWorld().resolveLighting(
                     pass.getTarget().getColorTextureView(),
-                    Minecraft.getInstance().gameRenderer.lightmap(),
                     RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST),
-                    RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR),
                     lighting
             );
         }

@@ -87,6 +87,7 @@ final class DeferredBackendPasses implements AutoCloseable {
     private final DeferredShadowResolveSource shadowResolve = new DeferredShadowResolveSource();
     private final DeferredContactShadowSource contactShadows = new DeferredContactShadowSource();
     private final DeferredAmbientOcclusionSource ambientOcclusion = new DeferredAmbientOcclusionSource();
+    private final DeferredEnvironmentIrradianceSource environmentIrradiance = new DeferredEnvironmentIrradianceSource();
     private final DeferredSceneRadianceSource sceneRadiance = new DeferredSceneRadianceSource();
     private final DeferredIndirectLightSource indirectLight = new DeferredIndirectLightSource();
     private final DeferredReflectionCascadeSource reflectionCascades = new DeferredReflectionCascadeSource();
@@ -169,6 +170,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         shadowResolve.install(passes);
         contactShadows.install(passes);
         ambientOcclusion.install(passes);
+        environmentIrradiance.install(passes);
         sceneRadiance.install(passes);
         indirectLight.install(passes);
         reflectionCascades.install(passes);
@@ -192,6 +194,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         shadowResolve.prepare(rhi);
         contactShadows.prepare(rhi);
         ambientOcclusion.prepare(rhi);
+        environmentIrradiance.prepare(rhi);
         sceneRadiance.prepare(rhi);
         indirectLight.prepare(rhi);
         reflections.prepare(rhi);
@@ -211,6 +214,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         shadowResolve.release(releaseOwner);
         contactShadows.release(releaseOwner);
         ambientOcclusion.release(releaseOwner);
+        environmentIrradiance.release(releaseOwner);
         sceneRadiance.release(releaseOwner);
         indirectLight.release(releaseOwner);
         reflectionCascades.release(releaseOwner);
