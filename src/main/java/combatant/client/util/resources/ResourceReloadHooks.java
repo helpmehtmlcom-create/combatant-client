@@ -9,6 +9,7 @@ package combatant.client.util.resources;
 
 import combatant.client.features.module.Modules;
 import combatant.client.features.gui.clickgui.settings.I18nDuplicateScanner;
+import combatant.client.runtime.distribution.DistributionCapabilities;
 import combatant.client.features.gui.clickgui.settings.I18nPreflightManager;
 import net.minecraft.server.packs.resources.ResourceManager;
 import combatant.client.features.module.modules.visuals.NameTags;
@@ -32,7 +33,9 @@ public enum ResourceReloadHooks {
             AssetAutoLoader.reload(manager);
             MaterialRegistry.global().reload(manager);
 
-            I18nDuplicateScanner.scan(manager, "resource reload");
+            if (!DistributionCapabilities.isReleaseArtifact()) {
+                I18nDuplicateScanner.scan(manager, "resource reload");
+            }
             I18nPreflightManager.preflight("resource reload");
 
             // Per-instance/dynamic caches keep their explicit owners.

@@ -50,7 +50,7 @@ public enum PickerCatalogFactory {
     );
     private static final Map<TextListSetting.PickerMode, CompletableFuture<List<PickerEntryData>>> ASYNC_CACHE =
             new ConcurrentHashMap<>();
-    private static final ExecutorService CATALOG_EXECUTOR = Executors.newFixedThreadPool(2, runnable -> {
+    private static final ExecutorService CATALOG_EXECUTOR = Executors.newFixedThreadPool(4, runnable -> {
         Thread thread = new Thread(runnable, "Combatant-PickerCatalog");
         thread.setDaemon(true);
         return thread;

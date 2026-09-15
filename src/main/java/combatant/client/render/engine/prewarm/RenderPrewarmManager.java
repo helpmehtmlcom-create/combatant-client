@@ -39,7 +39,7 @@ public enum RenderPrewarmManager {
     };
     private static final int[] ITEM_ATLAS_WARM_LIMITS = {64, 32};
     private static final int ITEM_ATLAS_ITEMS_PER_TICK = Math.max(1,
-            Integer.getInteger("combatant.render.prewarm.itemsPerTick", 1));
+            Integer.getInteger("combatant.render.prewarm.itemsPerTick", 8));
 
     private static volatile boolean pickerCatalogPending;
     private static volatile boolean gpuLifecycleReady;
