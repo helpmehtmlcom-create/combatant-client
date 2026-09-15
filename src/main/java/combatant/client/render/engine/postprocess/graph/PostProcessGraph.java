@@ -8,9 +8,9 @@
 package combatant.client.render.engine.postprocess.graph;
 
 import com.mojang.blaze3d.textures.GpuTextureView;
-import combatant.client.render.engine.core.RenderFrameContext;
-import combatant.client.render.engine.postprocess.PostProcessPass;
 import combatant.client.render.engine.postprocess.PostProcessBackendResourceOwner;
+import combatant.client.render.engine.postprocess.PostProcessExecutionContext;
+import combatant.client.render.engine.postprocess.PostProcessPass;
 import combatant.client.render.engine.profiler.RenderCostProfiler;
 import combatant.client.render.engine.profiler.TracyGpuProfiler;
 import combatant.client.render.engine.rhi.CombatantRhi;
@@ -20,67 +20,48 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.function.Predicate;
 
+/** Ordered ping-pong executor for registered post-process passes. */
 public final class PostProcessGraph implements AutoCloseable {
-    private final List<PostProcessGraphPass> passes = new ArrayList<>();
-    private final List<PostProcessGraphPass> activePasses = new ArrayList<>();
+    private final List<PostProcessPass> passes = new ArrayList<>();
+    private final List<PostProcessPass> activePasses = new ArrayList<>();
     private final PostProcessGraphResources resources = new PostProcessGraphResources();
-    private final HistoryBufferManager history = new HistoryBufferManager();
 
-    public void add(PostProcessGraphPass pass) {
+    public void add(PostProcessPass pass) {
         if (pass == null) return;
-        for (PostProcessGraphPass existing : passes) {
-            if (existing.getId().equals(pass.getId())) return;
+        for (PostProcessPass existing : passes) {
+            if (existing == pass) return;
         }
         passes.add(pass);
         passes.sort(Comparator
-                .comparingInt(PostProcessGraphPass::priority)
-                .thenComparing(PostProcessGraphPass::id));
+                .comparingInt(PostProcessPass::getPriority)
+                .thenComparing(passEntry -> passEntry.getClass().getName()));
     }
 
-    public void addLegacy(PostProcessPass pass) {
-        if (pass != null) add(new LegacyPostProcessGraphPass(pass));
-    }
-
-    public boolean hasActivePass(PostProcessPass.Phase phase, RenderFrameContext context) {
-        for (PostProcessGraphPass pass : passes) {
-            if (pass.phase() == phase && pass.enabled(context)) return true;
-        }
-        return false;
-    }
-
-    /**
-     * Executes one postprocess phase as a ping-pong graph.
-     * <p>
-     * Flow:
-     * main color -> graph source -> active passes -> final graph source -> main color
-     */
     public boolean execute(PostProcessPass.Phase phase,
                            float tickDelta,
-                           RenderFrameContext context,
                            CombatantRhi rhi,
                            GraphCopy copy) {
-        return execute(phase, tickDelta, context, rhi, copy, pass -> true);
+        return execute(phase, tickDelta, rhi, copy, pass -> true);
     }
 
-    /** Executes only graph passes accepted by {@code selector}, preserving the normal ping-pong path. */
     public boolean execute(PostProcessPass.Phase phase,
                            float tickDelta,
-                           RenderFrameContext context,
                            CombatantRhi rhi,
                            GraphCopy copy,
-                           Predicate<? super PostProcessGraphPass> selector) {
+                           Predicate<? super PostProcessPass> selector) {
         activePasses.clear();
-        for (PostProcessGraphPass pass : passes) {
-            if (pass.phase() == phase && selector.test(pass) && pass.enabled(context)) activePasses.add(pass);
+        for (PostProcessPass pass : passes) {
+            if (pass.getPhase() == phase && selector.test(pass) && pass.isActive()) activePasses.add(pass);
         }
         if (activePasses.isEmpty()) return false;
+
         String gpuGraphLabel = phase == PostProcessPass.Phase.PRE_HAND
                 ? "3d:post_graph:pre_hand"
                 : "3d:post_graph:post_hand";
         try (RenderCostProfiler.Scope ignoredGraph = RenderCostProfiler.postPass("graph:" + phase);
              TracyGpuProfiler.Scope ignoredGpuGraph = TracyGpuProfiler.beginZone(gpuGraphLabel)) {
             boolean preferStorageTargets = false;
-            for (PostProcessGraphPass pass : activePasses) {
+            for (PostProcessPass pass : activePasses) {
                 if (pass.prefersStorageOutput(rhi)) {
                     preferStorageTargets = true;
                     break;
@@ -96,11 +77,19 @@ public final class PostProcessGraph implements AutoCloseable {
             resources.resetPingPong();
 
             boolean anyApplied = false;
-            for (PostProcessGraphPass pass : activePasses) {
+            for (PostProcessPass pass : activePasses) {
+                String passId = pass.getClass().getName();
                 boolean applied;
-                try (RenderCostProfiler.Scope ignoredPass = RenderCostProfiler.postPass(pass.getId());
-                     TracyGpuProfiler.Scope ignoredGpu = TracyGpuProfiler.beginZone(pass.getId())) {
-                    applied = pass.execute(context, rhi, resources);
+                try (RenderCostProfiler.Scope ignoredPass = RenderCostProfiler.postPass(passId);
+                     TracyGpuProfiler.Scope ignoredGpu = TracyGpuProfiler.beginZone(passId)) {
+                    applied = pass.render(new PostProcessExecutionContext(
+                            resources.context(),
+                            rhi,
+                            resources.currentSource(),
+                            resources.currentDestination(),
+                            resources.currentSourceStorage(),
+                            resources.currentDestinationStorage()
+                    ));
                 }
                 if (applied) {
                     anyApplied = true;
@@ -110,32 +99,17 @@ public final class PostProcessGraph implements AutoCloseable {
 
             if (!anyApplied) return false;
             GpuTextureView finalColor = resources.finalColor();
-            if (finalColor != null && mainColor != null) {
-                copy.copy(finalColor, mainColor);
-            }
+            if (finalColor != null) copy.copy(finalColor, mainColor);
             return true;
         } finally {
             activePasses.clear();
         }
     }
 
-    public HistoryBufferManager history() {
-        return history;
-    }
-
-    public List<PostProcessGraphPass> passes() {
-        return List.copyOf(passes);
-    }
-
-    public PostProcessGraphResources resources() {
-        return resources;
-    }
-
     public void releaseBackendResources(CombatantRhi owner) {
         resources.releaseBackendResources(owner);
-        for (PostProcessGraphPass pass : passes) {
-            if (pass instanceof LegacyPostProcessGraphPass legacy
-                    && legacy.delegate() instanceof PostProcessBackendResourceOwner resourceOwner) {
+        for (PostProcessPass pass : passes) {
+            if (pass instanceof PostProcessBackendResourceOwner resourceOwner) {
                 resourceOwner.releaseBackendResources(owner);
             }
         }

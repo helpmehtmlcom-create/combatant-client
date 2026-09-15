@@ -51,21 +51,6 @@ public interface ShapeClipBackend {
      */
     void bindPipeline(RenderPipeline pipeline, ShapeClipRenderPassContract contract);
 
-    /**
-     * Legacy/manual preparation hook for non-Mojang pass paths. Prefer beginRenderPass.
-     */
-    boolean prepareMainTarget();
-
-    /**
-     * Legacy/manual preparation hook for non-Mojang pass paths. Prefer beginRenderPass.
-     */
-    boolean prepare(@Nullable GpuTextureView colorView, @Nullable GpuTextureView depthView);
-
-    /**
-     * Legacy/manual clear hook for non-Mojang pass paths. Prefer requestClear + beginRenderPass.
-     */
-    boolean clearMainTarget();
-
     void beginWrite(int parentReference, int newReference);
 
     void beginRestore(int currentReference, int parentReference);

@@ -16,7 +16,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
-/** Constant-cost separable mask blur for glow/outline effects. Raster remains the compatibility path. */
+/** Constant-cost separable mask blur for glow/outline effects. Raster remains the capability/runtime fallback. */
 public final class SeparableMaskBlurComputeBackend implements AutoCloseable {
     private static final int LOCAL_SIZE = 8;
     private static final Identifier SHADER = Identifier.fromNamespaceAndPath("combatant", "mask_blur");

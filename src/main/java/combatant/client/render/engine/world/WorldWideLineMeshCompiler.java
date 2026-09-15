@@ -19,7 +19,7 @@ import static org.lwjgl.system.MemoryUtil.memGetFloat;
 import static org.lwjgl.system.MemoryUtil.memGetInt;
 
 /**
- * Converts legacy DEBUG_LINES world meshes into screen-space wide-line triangle meshes.
+ * Converts DEBUG_LINES world meshes into screen-space wide-line triangle meshes.
  *
  * <p>Modern GL core profiles do not guarantee line widths above 1px. The renderer therefore keeps native line
  * primitives for thin 1px lines only and expands configurable thick outlines into quads before the mesh is uploaded.

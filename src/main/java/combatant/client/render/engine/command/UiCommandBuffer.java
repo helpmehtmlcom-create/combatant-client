@@ -19,7 +19,7 @@ import java.util.List;
 /**
  * High-level normalized UI command stream.
  */
-public final class UiCommandBuffer implements RenderCommandBuffer {
+public final class UiCommandBuffer {
     private final List<UiCommand> commands = new ArrayList<>();
     private final List<UiRecordedCommand> entries = new ArrayList<>();
     private final UiCommandStats stats = new UiCommandStats();
@@ -63,19 +63,13 @@ public final class UiCommandBuffer implements RenderCommandBuffer {
         return stats.snapshot();
     }
 
-    @Override
     public void clear() {
         commands.clear();
         entries.clear();
     }
 
-    @Override
     public int size() {
         return commands.size();
     }
 
-    @Override
-    public void submit(RenderFrameContext context) {
-        beginFrame(context);
-    }
 }

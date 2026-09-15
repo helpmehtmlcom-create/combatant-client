@@ -377,11 +377,6 @@ public class ReimaginedVisual extends Module implements PostProcessPass, PostPro
     }
 
     @Override
-    public boolean render(GpuTextureView src, GpuTextureView dst, float tickDelta) {
-        return false;
-    }
-
-    @Override
     public boolean prefersStorageOutput(CombatantRhi rhi) {
         return dofComputeSupported && isActive() && PostProcessExecutionPolicy.useCompute(rhi);
     }
@@ -392,11 +387,6 @@ public class ReimaginedVisual extends Module implements PostProcessPass, PostPro
         return renderDepthOfField(
                 execution.context(), execution.source(), execution.destination(),
                 execution.rhi(), execution.destinationStorage());
-    }
-
-    @Override
-    public boolean render(PostProcessContext context, GpuTextureView src, GpuTextureView dst) {
-        return renderDepthOfField(context, src, dst, CombatantRenderSystem.rhi(), null);
     }
 
     private boolean renderDepthOfField(PostProcessContext context,

@@ -38,11 +38,11 @@ public enum UiPipelineTelemetry {
     private static int directPasses;
     private static int itemPasses;
     private static int mixedItemPasses;
-    private static int legacyPasses;
-    private static int legacyMixedItems;
-    private static int legacyBlurCapture;
-    private static int legacyPreparedGlass;
-    private static int legacyUnsupported;
+    private static int captureAwarePasses;
+    private static int captureAwareMixedItems;
+    private static int captureAwareBlurCapture;
+    private static int captureAwarePreparedGlass;
+    private static int captureAwareUnsupported;
 
     public static void beginFrame(long nextFrameId) {
         frameId = nextFrameId;
@@ -68,11 +68,11 @@ public enum UiPipelineTelemetry {
         directPasses = 0;
         itemPasses = 0;
         mixedItemPasses = 0;
-        legacyPasses = 0;
-        legacyMixedItems = 0;
-        legacyBlurCapture = 0;
-        legacyPreparedGlass = 0;
-        legacyUnsupported = 0;
+        captureAwarePasses = 0;
+        captureAwareMixedItems = 0;
+        captureAwareBlurCapture = 0;
+        captureAwarePreparedGlass = 0;
+        captureAwareUnsupported = 0;
     }
 
     public static void recordAnalyticClipPush() {
@@ -151,25 +151,25 @@ public enum UiPipelineTelemetry {
         mixedItemPasses++;
     }
 
-    public static void recordLegacyPass(String reason) {
-        legacyPasses++;
+    public static void recordCaptureAwarePass(String reason) {
+        captureAwarePasses++;
         String value = reason == null ? "" : reason;
         boolean classified = false;
         if (value.contains("mixed_items")) {
-            legacyMixedItems++;
+            captureAwareMixedItems++;
             classified = true;
         }
         if (value.contains("blur_capture")) {
-            legacyBlurCapture++;
+            captureAwareBlurCapture++;
             classified = true;
         }
         if (value.contains("prepared_glass")) {
-            legacyPreparedGlass++;
+            captureAwarePreparedGlass++;
             classified = true;
         }
         if (!classified || value.contains("unknown") || value.contains("missing_")
                 || value.contains("unsupported")) {
-            legacyUnsupported++;
+            captureAwareUnsupported++;
         }
     }
 
@@ -198,11 +198,11 @@ public enum UiPipelineTelemetry {
                 directPasses,
                 itemPasses,
                 mixedItemPasses,
-                legacyPasses,
-                legacyMixedItems,
-                legacyBlurCapture,
-                legacyPreparedGlass,
-                legacyUnsupported
+                captureAwarePasses,
+                captureAwareMixedItems,
+                captureAwareBlurCapture,
+                captureAwarePreparedGlass,
+                captureAwareUnsupported
         );
     }
 }

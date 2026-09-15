@@ -136,7 +136,7 @@ public enum DevFrameStutterProfiler {
         if (rhi != null) {
             long uploaded = rhi.uploadedVertexBytes() + rhi.uploadedIndexBytes();
             lines.add(String.format(Locale.ROOT,
-                    "[FrameStutter] rhi draw=%d fs=%d meshUpload=%d/%s copies=%d/%d ringWrap=%d stall=%d fallback=%d backlog=%d",
+                    "[FrameStutter] rhi draw=%d fs=%d meshUpload=%d/%s copies=%d/%d ringWrap=%d stall=%d backlog=%d",
                     rhi.drawCalls(),
                     rhi.fullscreenPasses(),
                     rhi.meshUploads(),
@@ -145,7 +145,6 @@ public enum DevFrameStutterProfiler {
                     rhi.textureShaderCopies(),
                     rhi.ringWraps(),
                     rhi.ringStalls(),
-                    rhi.immediateFallbackUploads(),
                     rhi.dynamicArenaBacklogEvents()));
         }
         if (uniforms != null || resources != null) {

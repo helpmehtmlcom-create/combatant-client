@@ -9,7 +9,6 @@ package combatant.client.render.engine;
 
 import combatant.client.addon.ClickGuiSectionManager;
 import combatant.client.util.resources.asset.AssetAutoLoader;
-import combatant.client.render.engine.guard.RenderBoundaryAudit;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.iris.IrisRuntime;
 import net.minecraft.client.Minecraft;
@@ -18,7 +17,6 @@ public enum CombatantRenderEngineBootstrap {
     ;
 
     public static void init() {
-        RenderBoundaryAudit.runOnce();
         // Read the generated ClickGUI component index alongside the rest of client bootstrap.
         ClickGuiSectionManager.prepareDiscovery();
         // RHI backend selection must be lazy: onInitializeClient can run before RenderSystem has

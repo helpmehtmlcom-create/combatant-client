@@ -20,7 +20,6 @@ import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.postprocess.graph.PostProcessGraph;
-import combatant.client.render.engine.postprocess.graph.PostProcessGraphPass;
 import combatant.client.render.engine.profiler.RenderCostProfiler;
 import combatant.client.render.engine.renderer.FullScreenRenderer;
 import combatant.client.render.engine.renderer.MeshRenderer;
@@ -36,11 +35,7 @@ public enum PostProcessManager {
     private static GpuSampler sampler;
 
     public static void register(PostProcessPass pass) {
-        GRAPH.addLegacy(pass);
-    }
-
-    public static PostProcessGraph graph() {
-        return GRAPH;
+        GRAPH.add(pass);
     }
 
     public static void renderAll(PostProcessPass.Phase phase, float tickDelta) {
@@ -53,7 +48,7 @@ public enum PostProcessManager {
      */
     public static void renderSelected(PostProcessPass.Phase phase,
                                       float tickDelta,
-                                      Predicate<? super PostProcessGraphPass> selector) {
+                                      Predicate<? super PostProcessPass> selector) {
         if (!RuntimeGate.canRunRender()) return;
         if (selector == null) return;
         Minecraft mc = Minecraft.getInstance();
@@ -76,11 +71,10 @@ public enum PostProcessManager {
             GRAPH.execute(
                     phase,
                     tickDelta,
-                     CombatantRenderSystem.ensureFrameContext(),
-                     CombatantRenderSystem.rhi(),
-                     PostProcessManager::copy,
-                     selector
-             );
+                    CombatantRenderSystem.rhi(),
+                    PostProcessManager::copy,
+                    selector
+            );
         } finally {
             MeshRenderer.setProjection(previousProjection);
             if (previousProjectionBuffer != null && previousProjectionType != null) {

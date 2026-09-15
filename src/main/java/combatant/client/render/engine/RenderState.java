@@ -23,10 +23,6 @@ public enum RenderState {
     public static final Quaternionf cameraRotation = new Quaternionf();
     public static final Matrix4f worldProjection = new Matrix4f().identity();
     public static boolean rendering3D = false;
-    /**
-     * Legacy alias for vanilla tick progress.
-     */
-    public static float tickDelta = 0f;
     public static float tickProgress = 0f;
     public static float frameDeltaTicks = 0f;
     public static float frameDeltaSeconds = 0f;
@@ -44,7 +40,6 @@ public enum RenderState {
 
     public static void applyContext(RenderFrameContext context) {
         if (context == null) return;
-        tickDelta = context.tickDelta();
         tickProgress = context.tickProgress();
         frameDeltaTicks = context.frameDeltaTicks();
         frameDeltaSeconds = context.frameDeltaSeconds();
@@ -61,7 +56,6 @@ public enum RenderState {
         rendering3D = false;
         worldTranslucent = false;
         activeWorldFrameId = -1;
-        tickDelta = 0f;
         tickProgress = 0f;
         frameDeltaTicks = 0f;
         frameDeltaSeconds = 0f;

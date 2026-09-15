@@ -324,8 +324,8 @@ public final class OrderedUiBatcher {
         UiRenderDispatcher.submitOrderedBatcher(this, finish);
     }
 
-    /** Executes a compiler-owned opaque ordered pass. Never call directly from facade code. */
-    void executeCompiled(boolean finish) {
+    /** Executes a compiler-owned capture-dependent ordered sequence. Never call directly from facade code. */
+    void executeCaptureAware(boolean finish) {
         if (!active) return;
         flushing = true;
         List<RhiDrawCommand> pendingDraws = new ArrayList<>(order.size());
@@ -748,7 +748,7 @@ public final class OrderedUiBatcher {
     /**
      * Executes ordinary draw/text batches interleaved with item batches without entering the
      * capture-aware blur/glass replay. Item boundaries flush only the pending RHI draw segment,
-     * preserving exact order while avoiding all legacy effect setup and per-entry effect branches.
+     * preserving exact order while avoiding repeated effect setup and per-entry effect branches.
      */
     void executeCompiledMixedItems(boolean finish) {
         if (!active) return;
@@ -887,7 +887,7 @@ public final class OrderedUiBatcher {
     /**
      * Executes a compiler-classified item-only submission. Item atlas preparation remains an
      * explicit pre-draw stage, while the submission itself is no longer hidden inside the generic
-     * OrderedSpecial replay path.
+     * special ordered-effect replay path.
      */
     void executeCompiledItems(boolean finish) {
         if (!active) return;

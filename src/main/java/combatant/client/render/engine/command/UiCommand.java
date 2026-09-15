@@ -10,8 +10,7 @@ package combatant.client.render.engine.command;
 /**
  * Normalized UI command root.
  * <p>
- * Renderer2D facade methods and the newer shape/effect/text/item command families can
- * coexist while callers move toward explicit UI command boundaries.
+ * Commands emitted by Renderer2D into the ordered UI compiler.
  */
 public interface UiCommand {
     UiCommandKind kind();

@@ -27,6 +27,5 @@ public enum RenderPhase {
      * and HUD rendering interleave differently.
      */
     SCREEN_TOP,
-    SCREEN,
-    LEGACY_SHADOW_TERRAIN
+    SCREEN
 }

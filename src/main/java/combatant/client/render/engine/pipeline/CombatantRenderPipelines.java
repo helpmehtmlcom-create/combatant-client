@@ -45,7 +45,7 @@ import java.util.List;
  */
 public enum CombatantRenderPipelines {
     ;
-    private static final float COPLANAR_SURFACE_DEPTH_BIAS_SLOPE = Float.MIN_NORMAL;
+    private static final float COPLANAR_SURFACE_DEPTH_BIAS_SLOPE = 0.0f;
     private static final float COPLANAR_SURFACE_DEPTH_BIAS_CONSTANT = 1.0f;
     private static final float COPLANAR_DECAL_DEPTH_BIAS_SLOPE = 1.0f;
     private static final float COPLANAR_DECAL_DEPTH_BIAS_CONSTANT = 1.0f;
@@ -211,12 +211,6 @@ public enum CombatantRenderPipelines {
             "rig_entity_translucent_no_depth_write_cull", SHADER_RIG_ENTITY_TRANSLUCENT_FRAG, true, false, true
     ));
 
-    /**
-     * Compatibility alias for callers written against the first rig pipeline.
-     * New code should choose a {@link RigRenderMode} explicitly.
-     */
-    @Deprecated
-    public static final RenderPipeline RIG_TEXTURED = RIG_ENTITY_TRANSLUCENT_CULL;
 
     /**
      * No depth test; translucent; triangles.

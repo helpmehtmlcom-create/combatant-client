@@ -177,7 +177,7 @@ public enum DevRenderProfiler2D {
                     textStats.vanilla(),
                     textStats.bitmap(),
                     textStats.msdf(),
-                    textStats.world(),
+                    textStats.worldPlacements(),
                     textStats.effect(),
                     textStats.clipped(),
                     textStats.glyphs(),
@@ -204,17 +204,16 @@ public enum DevRenderProfiler2D {
         UiStatsSnapshot uiDraw = Renderer2D.getUiStatsSnapshot();
         if (uiDraw.recordedCommands() > 0 || uiDraw.compiledPasses() > 0) {
             lines.add(String.format(
-                    "ui commands: total %d, shape/path/tex/text/item/effect %d/%d/%d/%d/%d/%d, passes/ordered/legacy %d/%d/%d, rhi/backend %d/%d",
+                    "ui commands: total %d, shape/path/tex/item/effect %d/%d/%d/%d/%d, passes/ordered/capture %d/%d/%d, rhi/backend %d/%d",
                     uiDraw.recordedCommands(),
                     uiDraw.shapeCommands(),
                     uiDraw.pathCommands(),
                     uiDraw.textureCommands(),
-                    uiDraw.textCommands(),
                     uiDraw.itemCommands(),
                     uiDraw.effectCommands(),
                     uiDraw.compiledPasses(),
                     uiDraw.compiledOrderedBatches(),
-                    uiDraw.compiledLegacySpecialPasses(),
+                    uiDraw.compiledCaptureAwarePasses(),
                     uiDraw.rhiDrawCommands(),
                     uiDraw.backendDrawCalls()
             ));
@@ -316,18 +315,15 @@ public enum DevRenderProfiler2D {
                     formatBytes(rhi.uploadedIndexBytes())
             ));
         }
-        if (rhi.ringWraps() > 0 || rhi.ringStalls() > 0 || rhi.immediateFallbackUploads() > 0) {
+        if (rhi.ringWraps() > 0 || rhi.ringStalls() > 0 || rhi.dynamicArenaBacklogEvents() > 0) {
             lines.add(String.format(
-                    "rhi upload: wraps %d, stalls %d, immediateFallback %d, arena reuse/retire %d/%d",
+                    "rhi upload: wraps %d, stalls %d, backlog %d, arena reuse/retire %d/%d",
                     rhi.ringWraps(),
                     rhi.ringStalls(),
-                    rhi.immediateFallbackUploads(),
+                    rhi.dynamicArenaBacklogEvents(),
                     rhi.dynamicArenaReuses(),
                     rhi.dynamicArenaRetires()
             ));
-        }
-        if (rhi.legacyPathUses() > 0) {
-            lines.add("rhi legacy paths: " + rhi.legacyPathUses() + " " + rhi.legacyPathBreakdown());
         }
         if (uniforms.writes() > 0 || uniforms.ringRotations() > 0 || uniforms.staleReadMisses() > 0) {
             lines.add(String.format(

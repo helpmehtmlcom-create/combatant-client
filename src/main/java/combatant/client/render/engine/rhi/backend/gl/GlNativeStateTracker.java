@@ -15,7 +15,7 @@ import com.mojang.blaze3d.opengl.GlStateManager;
  * Differential tracker for GL state that Combatant owns outside Blaze3D's {@code GlStateManager}.
  *
  * <p>Do not mirror depth/cull/color/scissor here: Mojang already caches those states and Combatant
- * must mutate them through {@code GlStateManager}. Stencil, sample-alpha-to-coverage and legacy
+ * must mutate them through {@code GlStateManager}. Stencil, sample-alpha-to-coverage and native
  * line smoothing are not represented by that public cache in this Minecraft snapshot, so the RHI
  * owns them explicitly and invalidates the shadow state at foreign/native boundaries.</p>
  */

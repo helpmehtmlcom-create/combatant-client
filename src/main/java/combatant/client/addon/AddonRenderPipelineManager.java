@@ -18,6 +18,7 @@ import combatant.client.features.module.HudPhase;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.engine.postprocess.PostProcessPass;
+import combatant.client.render.engine.postprocess.PostProcessExecutionContext;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.text.TextRenderer;
@@ -170,8 +171,11 @@ public enum AddonRenderPipelineManager {
         }
 
         @Override
-        public boolean render(GpuTextureView src, GpuTextureView dst, float tickDelta) {
-            if (!isActive()) return false;
+        public boolean render(PostProcessExecutionContext execution) {
+            if (!isActive() || execution == null || execution.context() == null) return false;
+            GpuTextureView src = execution.source();
+            GpuTextureView dst = execution.destination();
+            float tickDelta = execution.context().tickDelta();
             try {
                 return callback.render(new CombatantPostProcessContext(addonId, passId, phase, src, dst, tickDelta));
             } catch (Throwable t) {

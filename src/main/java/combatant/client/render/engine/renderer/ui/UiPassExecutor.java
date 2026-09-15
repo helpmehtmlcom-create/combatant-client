@@ -10,7 +10,7 @@ package combatant.client.render.engine.renderer.ui;
 import combatant.client.render.engine.core.RenderFrameContext;
 import combatant.client.render.engine.rhi.CombatantRhi;
 
-/** Production UI execution point. Command compilation and legacy lowering both terminate here. */
+/** Production UI execution point. All compiled UI passes terminate here. */
 public final class UiPassExecutor {
     private UiBatchPlan lastPlan = UiBatchPlan.EMPTY;
 

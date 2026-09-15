@@ -130,11 +130,11 @@ public enum DevTracyProfiler {
         p[18].setValue(s.directPasses());
         p[19].setValue(s.itemPasses());
         p[20].setValue(s.mixedItemPasses());
-        p[21].setValue(s.legacyPasses());
-        p[22].setValue(s.legacyMixedItems());
-        p[23].setValue(s.legacyBlurCapture());
-        p[24].setValue(s.legacyPreparedGlass());
-        p[25].setValue(s.legacyUnsupported());
+        p[21].setValue(s.captureAwarePasses());
+        p[22].setValue(s.captureAwareMixedItems());
+        p[23].setValue(s.captureAwareBlurCapture());
+        p[24].setValue(s.captureAwarePreparedGlass());
+        p[25].setValue(s.captureAwareUnsupported());
         p[26].setValue(s.msaaDiscards());
     }
 
@@ -164,20 +164,17 @@ public enum DevTracyProfiler {
         p[19].setValue(s.estimatedShaderLoopOps());
         p[20].setValue(s.ringWraps());
         p[21].setValue(s.ringStalls());
-        p[22].setValue(s.immediateFallbackUploads());
-        p[23].setValue(s.temporaryOwnedMeshes());
-        p[24].setValue(s.dynamicArenaAllocations());
-        p[25].setValue(s.dynamicPersistentArenaAllocations());
-        p[26].setValue(s.dynamicSpillArenaAllocations());
-        p[27].setValue(s.dynamicArenaReuses());
-        p[28].setValue(s.dynamicArenaRetires());
-        p[29].setValue(s.dynamicFenceChecks());
-        p[30].setValue(s.dynamicFenceCompletions());
-        p[31].setValue(s.dynamicArenaBacklogEvents());
-        p[32].setValue(s.dynamicPersistentArenaBytes());
-        p[33].setValue(s.dynamicSpillArenaBytes());
-        p[34].setValue(s.legacyPathUses());
-        p[35].setValue(s.textureGlCopyImages());
+        p[22].setValue(s.dynamicArenaAllocations());
+        p[23].setValue(s.dynamicPersistentArenaAllocations());
+        p[24].setValue(s.dynamicSpillArenaAllocations());
+        p[25].setValue(s.dynamicArenaReuses());
+        p[26].setValue(s.dynamicArenaRetires());
+        p[27].setValue(s.dynamicFenceChecks());
+        p[28].setValue(s.dynamicFenceCompletions());
+        p[29].setValue(s.dynamicArenaBacklogEvents());
+        p[30].setValue(s.dynamicPersistentArenaBytes());
+        p[31].setValue(s.dynamicSpillArenaBytes());
+        p[32].setValue(s.textureGlCopyImages());
         plotPipelineBreakdown(s.pipelineBreakdown());
     }
 
@@ -383,11 +380,11 @@ public enum DevTracyProfiler {
                         "render.ui_compiler.direct_passes",
                         "render.ui_compiler.item_passes",
                         "render.ui_compiler.mixed_item_passes",
-                        "render.ui_compiler.legacy_passes",
-                        "render.ui_compiler.legacy_mixed_items",
-                        "render.ui_compiler.legacy_blur_capture",
-                        "render.ui_compiler.legacy_prepared_glass",
-                        "render.ui_compiler.legacy_unsupported",
+                        "render.ui_compiler.capture_aware_passes",
+                        "render.ui_compiler.capture_aware_mixed_items",
+                        "render.ui_compiler.capture_aware_blur_capture",
+                        "render.ui_compiler.capture_aware_prepared_glass",
+                        "render.ui_compiler.capture_aware_unsupported",
                         "render.ui_msaa.discards"
                 };
                 Plot[] created = new Plot[names.length];
@@ -428,8 +425,6 @@ public enum DevTracyProfiler {
                         "render.shader.estimated_loop_per_draw_sum",
                         "render.rhi.ring_wraps",
                         "render.rhi.ring_stalls",
-                        "render.rhi.immediate_fallback_uploads",
-                        "render.rhi.temporary_owned_meshes",
                         "render.rhi.dynamic.arena_creations",
                         "render.rhi.dynamic.persistent_arena_creations",
                         "render.rhi.dynamic.spill_arena_creations",
@@ -440,7 +435,6 @@ public enum DevTracyProfiler {
                         "render.rhi.dynamic.backlog_events",
                         "render.rhi.dynamic.persistent_arena_bytes",
                         "render.rhi.dynamic.spill_arena_bytes",
-                        "render.rhi.legacy_path_uses",
                         "render.rhi.texture_gl_copy_image"
                 };
                 Plot[] created = new Plot[names.length];

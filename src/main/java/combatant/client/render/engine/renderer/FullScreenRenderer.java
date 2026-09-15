@@ -13,63 +13,28 @@
 
 package combatant.client.render.engine.renderer;
 
-import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.textures.GpuSampler;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import combatant.client.render.engine.core.CombatantRenderSystem;
-import combatant.client.render.engine.guard.LegacyRenderPath;
-import combatant.client.render.engine.guard.RenderArchitectureGuard;
 import combatant.client.render.engine.rhi.FullscreenDrawCommand;
-import combatant.client.render.engine.rhi.GpuMeshHandle;
-import combatant.client.render.engine.uniform.MeshBuilder;
-import combatant.client.render.engine.vertex.CombatantVertexFormats;
 
 /** Fullscreen rendering facade backed by the persistent RHI fullscreen path. */
 public enum FullScreenRenderer {
     ;
-    public static GpuBuffer vbo;
-    public static GpuBuffer ibo;
-
-    /** @deprecated Use {@link #begin()} or {@code CombatantRHI.fullscreen()}. */
-    @Deprecated(forRemoval = false)
-    public static MeshBuilder mesh;
-
     private static boolean initialized;
 
     public static void init() {
         if (initialized) return;
-        GpuMeshHandle quad = CombatantRenderSystem.rhi().fullscreen().quad();
-        vbo = quad.vertexBuffer();
-        ibo = quad.indexBuffer();
-
-        // Compatibility marker mesh. MeshRenderer detects this object and routes it through the RHI
-        // fullscreen backend, so it does not trigger a CPU quad upload anymore.
-        mesh = new MeshBuilder(CombatantVertexFormats.POS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES, 4, 6);
-        mesh.begin();
-        mesh.quad(
-                mesh.vec2(-1, -1).next(),
-                mesh.vec2(-1, 1).next(),
-                mesh.vec2(1, 1).next(),
-                mesh.vec2(1, -1).next()
-        );
-        mesh.end();
+        // Materialize the persistent backend-owned fullscreen quad once.
+        CombatantRenderSystem.rhi().fullscreen().quad();
         initialized = true;
     }
 
     public static void ensureInit() {
         if (!initialized) init();
-    }
-
-    public static boolean isLegacyFullscreenMesh(MeshBuilder candidate) {
-        ensureInit();
-        boolean legacy = candidate != null && candidate == mesh;
-        if (legacy) {
-            RenderArchitectureGuard.requireAllowed(LegacyRenderPath.LEGACY_FULLSCREEN_MESH, "FullScreenRenderer.mesh");
-        }
-        return legacy;
     }
 
     public static Draw begin(String label) {

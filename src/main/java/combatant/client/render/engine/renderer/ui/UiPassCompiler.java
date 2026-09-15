@@ -34,9 +34,9 @@ import java.util.LinkedHashMap;
  * Owns the production UI work queue and compiles it into one ordered executable plan.
  *
  * <p>Normal draw/text-only {@link OrderedUiBatcher} submissions are lowered here to concrete
- * {@link RhiDrawCommand} sequences. Item/effect/glass submissions keep the existing ordered
- * lowering temporarily because they have explicit preparation/capture barriers, but they are still
- * scheduled and executed only through {@link UiPassExecutor}.</p>
+ * {@link RhiDrawCommand} sequences. Item and capture-dependent effect/glass submissions retain
+ * strict order because their preparation/capture barriers are execution-time dependencies; all of
+ * them are still scheduled and executed only through {@link UiPassExecutor}.</p>
  */
 public final class UiPassCompiler {
     private final ArrayList<Object> pending = new ArrayList<>(8);
@@ -80,9 +80,7 @@ public final class UiPassCompiler {
 
         int shapes = 0;
         int paths = 0;
-        int primitives = 0;
         int textures = 0;
-        int text = 0;
         int items = 0;
         int effects = 0;
         int commandCount = 0;
@@ -94,28 +92,26 @@ public final class UiPassCompiler {
                 switch (kind) {
                     case SHAPE -> shapes++;
                     case PATH -> paths++;
-                    case PRIMITIVE -> primitives++;
                     case TEXTURE -> textures++;
-                    case TEXT -> text++;
                     case ITEM -> items++;
-                    case BLUR_REGION, LIQUID_GLASS_REGION, EFFECT_REGION -> effects++;
+                    case EFFECT_REGION -> effects++;
                 }
             }
         }
 
         int orderedBatches = 0;
-        int legacySpecialPasses = 0;
+        int captureAwarePasses = 0;
         for (UiBatchPlan.Pass pass : executablePasses) {
             orderedBatches += pass.orderedBatchCount();
-            if (pass.label().startsWith("Renderer2D.OrderedSpecial")) {
-                legacySpecialPasses++;
+            if (pass.label().startsWith("Renderer2D.CaptureAwareSequence")) {
+                captureAwarePasses++;
             }
         }
 
         if (commands != null) {
             commands.stats().addCompiledPasses(executablePasses.size());
             commands.stats().addCompiledOrderedBatches(orderedBatches);
-            commands.stats().addCompiledLegacySpecialPasses(legacySpecialPasses);
+            commands.stats().addCompiledCaptureAwarePasses(captureAwarePasses);
         }
 
         UiBackdropPlan backdropPlan = UiBackdropPlan.compile(commands);
@@ -124,9 +120,7 @@ public final class UiPassCompiler {
                 commandCount,
                 shapes,
                 paths,
-                primitives,
                 textures,
-                text,
                 items,
                 effects,
                 orderedBatches,
@@ -160,15 +154,15 @@ public final class UiPassCompiler {
         }
 
         if (!canLowerDirectly(batcher)) {
-            return legacyOrderedPass(batcher, finish, orderedBatchCount, legacyReason(batcher));
+            return captureAwarePass(batcher, finish, orderedBatchCount, captureAwareReason(batcher));
         }
 
         Minecraft mc = Minecraft.getInstance();
-        if (mc == null) return legacyOrderedPass(batcher, finish, orderedBatchCount, "missing_minecraft");
+        if (mc == null) return captureAwarePass(batcher, finish, orderedBatchCount, "missing_minecraft");
         RenderTarget framebuffer = mc.gameRenderer.mainRenderTarget();
-        if (framebuffer == null) return legacyOrderedPass(batcher, finish, orderedBatchCount, "missing_framebuffer");
+        if (framebuffer == null) return captureAwarePass(batcher, finish, orderedBatchCount, "missing_framebuffer");
         GpuTextureView mainColorView = UiMsaaClipLayer.currentColorAttachment(framebuffer.getColorTextureView());
-        if (mainColorView == null) return legacyOrderedPass(batcher, finish, orderedBatchCount, "missing_color");
+        if (mainColorView == null) return captureAwarePass(batcher, finish, orderedBatchCount, "missing_color");
         GpuTextureView uiUnderlayView = batcher.resolveUiUnderlayView(mc);
         GpuTextureView secondaryReplayView = batcher.hudBackdropContribution
                 ? batcher.resolveHudBackdropView(mc)
@@ -182,7 +176,7 @@ public final class UiPassCompiler {
         int vertices = 0;
         int indices = 0;
 
-        // executeCompiled() resets this before replay. Direct compiler lowering has the same
+        // Capture-aware execution resets this before replay. Direct compiler lowering has the same
         // lifetime semantics even though these batches do not consume blur resources.
         batcher.resetSharedBlur();
 
@@ -361,25 +355,25 @@ public final class UiPassCompiler {
         return hasItems && hasDraws;
     }
 
-    private static UiBatchPlan.Pass legacyOrderedPass(OrderedUiBatcher batcher,
+    private static UiBatchPlan.Pass captureAwarePass(OrderedUiBatcher batcher,
                                                        boolean finish,
                                                        int orderedBatchCount,
                                                        String reason) {
         String normalizedReason = reason != null && !reason.isBlank() ? reason : "unknown";
-        UiPipelineTelemetry.recordLegacyPass(normalizedReason);
+        UiPipelineTelemetry.recordCaptureAwarePass(normalizedReason);
         DebugLog.renderThreadOnChange(
-                "ui.compiler.legacy." + normalizedReason,
+                "ui.compiler.capture_aware." + normalizedReason,
                 normalizedReason + "|" + orderedBatchCount,
-                "UiPassCompiler retained OrderedSpecial pass: reason=%s orderedBatches=%d",
+                "UiPassCompiler capture-aware sequence: reason=%s orderedBatches=%d",
                 normalizedReason,
                 orderedBatchCount
         );
         return new UiBatchPlan.Pass(
-                "Renderer2D.OrderedSpecial[" + normalizedReason + "]",
+                "Renderer2D.CaptureAwareSequence[" + normalizedReason + "]",
                 orderedBatchCount,
                 List.of(),
                 transientTargetsFor(batcher),
-                (frame, rhi) -> batcher.executeCompiled(finish)
+                (frame, rhi) -> batcher.executeCaptureAware(finish)
         );
     }
 
@@ -395,7 +389,7 @@ public final class UiPassCompiler {
         return merged.isEmpty() ? List.of() : List.copyOf(merged.values());
     }
 
-    /** Declares frame-live Kawase resources before the legacy effect pass executes them. */
+    /** Declares frame-live Kawase resources before the ordered effect sequence executes them. */
     private static List<TransientTargetDescriptor> transientTargetsFor(OrderedUiBatcher batcher) {
         if (batcher == null || batcher.order.isEmpty()) return List.of();
         Minecraft minecraft = Minecraft.getInstance();
@@ -502,7 +496,7 @@ public final class UiPassCompiler {
         output.putIfAbsent(descriptor.logicalKey(), descriptor);
     }
 
-    private static String legacyReason(OrderedUiBatcher batcher) {
+    private static String captureAwareReason(OrderedUiBatcher batcher) {
         boolean items = false;
         boolean blur = false;
         boolean preparedGlass = false;

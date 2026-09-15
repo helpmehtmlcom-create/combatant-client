@@ -17,6 +17,7 @@ import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
+import combatant.client.render.engine.postprocess.PostProcessExecutionContext;
 import combatant.client.render.engine.postprocess.PostProcessPass;
 import combatant.client.render.engine.renderer.FullScreenRenderer;
 import combatant.client.render.engine.uniform.impl.PostFXUniforms;
@@ -129,7 +130,10 @@ public class PostFX extends Module implements PostProcessPass {
     }
 
     @Override
-    public boolean render(GpuTextureView src, GpuTextureView dst, float tickDelta) {
+    public boolean render(PostProcessExecutionContext execution) {
+        if (execution == null) return false;
+        GpuTextureView src = execution.source();
+        GpuTextureView dst = execution.destination();
         if (!isActive()) return false;
         if (src == null || dst == null) return false;
 

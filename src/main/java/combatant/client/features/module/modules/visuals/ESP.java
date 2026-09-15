@@ -59,6 +59,7 @@ import combatant.client.render.engine.core.CombatantWorldMatrices;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
+import combatant.client.render.engine.postprocess.PostProcessExecutionContext;
 import combatant.client.render.engine.postprocess.PostProcessPass;
 import combatant.client.render.engine.postprocess.PostProcessBackendResourceOwner;
 import combatant.client.render.engine.postprocess.SeparableMaskBlurComputeBackend;
@@ -1601,8 +1602,10 @@ public class ESP extends Module {
         }
 
         @Override
-        public boolean render(GpuTextureView src, GpuTextureView dst, float tickDelta) {
-            return ESP.this.renderShaderEsp(src, dst, tickDelta);
+        public boolean render(PostProcessExecutionContext execution) {
+            if (execution == null || execution.context() == null) return false;
+            return ESP.this.renderShaderEsp(
+                    execution.source(), execution.destination(), execution.context().tickDelta());
         }
 
         @Override

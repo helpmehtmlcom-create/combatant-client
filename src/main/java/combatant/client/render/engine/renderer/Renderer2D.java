@@ -75,10 +75,6 @@ public final class Renderer2D {
      */
     public static final FrameBlurCacheEntry FRAME_BLUR_CACHE = UiBlurResources.frameCache();
 
-    /** @deprecated Use {@link #isWorldGlassSourceReady()}. */
-    @Deprecated
-    public static boolean uiGlassWorldSourceReady;
-
     public enum Deferred2DLayer {
         /** 2D work without a concrete HUD slot; drained before vanilla GuiRenderer.render(). */
         BEFORE_VANILLA_GUI,
@@ -281,7 +277,7 @@ public final class Renderer2D {
      * stay as one analytic GPU quad; larger or concave authoring results use the
      * established polygon fallback without changing the caller-facing API.
      */
-    public void primitive(UiPrimitive primitive, UiPaint paint, UiStroke stroke, boolean fill) {
+    private void primitive(UiPrimitive primitive, UiPaint paint, UiStroke stroke, boolean fill) {
         if (primitive == null || paint == null || primitive.pointCount() < 3) return;
         UiStroke safeStroke = stroke != null ? stroke : UiStroke.NONE;
         UiShape semanticShape = UiShape.polyline(primitive.points(), primitive.pointCount(), true);
@@ -3368,7 +3364,7 @@ public final class Renderer2D {
                 safe.baseAlpha, safe.fresnelMix, safe.distortPx, 0.0f, 0.0f);
     }
 
-    public void liquidGlassPrimitive(UiPrimitive primitive,
+    private void liquidGlassPrimitive(UiPrimitive primitive,
                                      int tintArgb,
                                      float glassAlpha,
                                      float blurAlpha,
@@ -3913,7 +3909,7 @@ public final class Renderer2D {
         boolean wholeBoxSquircle = squirclePower <= -1.5f;
         float shapePower = Math.abs(squirclePower);
         UiShape glassShape = wholeBoxSquircle
-                ? UiShapes.squircle(x, y, w, h, shapePower)
+                ? UiShape.box(UiBoxShape.squircle(x, y, w, h, shapePower))
                 : UiShape.roundedRect(x, y, w, h, radiusTL, radiusTR, radiusBR, radiusBL);
         UiBackdropRequest backdrop = liquidGlassBackdrop(
                 glassShape.bounds(), UiBlurQuality.HIGH, LIQUID_GLASS_KAWASE_OFFSET_PX);
@@ -5054,12 +5050,10 @@ public final class Renderer2D {
 
     public static void captureWorldGlassSource() {
         UiBlurResources.captureWorldSource();
-        uiGlassWorldSourceReady = UiBlurResources.isWorldSourceReady();
     }
 
     public static void invalidateWorldGlassSource() {
         UiBlurResources.invalidateWorldSource();
-        uiGlassWorldSourceReady = false;
     }
 
     public static boolean isWorldGlassSourceReady() {

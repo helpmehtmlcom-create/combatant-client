@@ -138,7 +138,7 @@ public class WorldTweaks extends Module {
         Minecraft client = Minecraft.getInstance();
         if (client != null && client.level != null) {
             long time = client.level.getGameTime() % 24000L;
-            return (time + RenderState.tickDelta) / 20.0f;
+            return (time + RenderState.tickProgress) / 20.0f;
         }
         long nowMs = System.currentTimeMillis();
         return (nowMs % 100000L) / 1000.0f;

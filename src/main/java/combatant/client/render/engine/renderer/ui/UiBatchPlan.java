@@ -20,7 +20,7 @@ import java.util.List;
  */
 public final class UiBatchPlan {
     public static final UiBatchPlan EMPTY = new UiBatchPlan(
-            List.of(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, UiBackdropPlan.EMPTY
+            List.of(), 0, 0, 0, 0, 0, 0, 0, 0, 0, UiBackdropPlan.EMPTY
     );
 
     @FunctionalInterface
@@ -63,9 +63,7 @@ public final class UiBatchPlan {
     private final int commandCount;
     private final int shapeCount;
     private final int pathCount;
-    private final int primitiveCount;
     private final int textureCount;
-    private final int textCount;
     private final int itemCount;
     private final int effectCount;
     private final int orderedBatchCount;
@@ -77,15 +75,13 @@ public final class UiBatchPlan {
                        int commandCount,
                        int shapeCount,
                        int pathCount,
-                       int primitiveCount,
                        int textureCount,
-                       int textCount,
                        int itemCount,
                        int effectCount,
                        int orderedBatchCount,
                        int rhiDrawCommandCount,
                        int backendDrawCallCount) {
-        this(passes, commandCount, shapeCount, pathCount, primitiveCount, textureCount, textCount,
+        this(passes, commandCount, shapeCount, pathCount, textureCount,
                 itemCount, effectCount, orderedBatchCount, rhiDrawCommandCount, backendDrawCallCount,
                 UiBackdropPlan.EMPTY);
     }
@@ -94,9 +90,7 @@ public final class UiBatchPlan {
                        int commandCount,
                        int shapeCount,
                        int pathCount,
-                       int primitiveCount,
                        int textureCount,
-                       int textCount,
                        int itemCount,
                        int effectCount,
                        int orderedBatchCount,
@@ -107,9 +101,7 @@ public final class UiBatchPlan {
         this.commandCount = Math.max(0, commandCount);
         this.shapeCount = Math.max(0, shapeCount);
         this.pathCount = Math.max(0, pathCount);
-        this.primitiveCount = Math.max(0, primitiveCount);
         this.textureCount = Math.max(0, textureCount);
-        this.textCount = Math.max(0, textCount);
         this.itemCount = Math.max(0, itemCount);
         this.effectCount = Math.max(0, effectCount);
         this.orderedBatchCount = Math.max(0, orderedBatchCount);
@@ -134,16 +126,8 @@ public final class UiBatchPlan {
         return pathCount;
     }
 
-    public int primitiveCount() {
-        return primitiveCount;
-    }
-
     public int textureCount() {
         return textureCount;
-    }
-
-    public int textCount() {
-        return textCount;
     }
 
     public int itemCount() {
@@ -185,9 +169,7 @@ public final class UiBatchPlan {
                 commandCount,
                 shapeCount,
                 pathCount,
-                primitiveCount,
                 textureCount,
-                textCount,
                 itemCount,
                 effectCount,
                 orderedBatchCount,

@@ -33,7 +33,7 @@ import org.joml.Matrix4fc;
 
 import java.util.List;
 
-/** Native compute DoF gather. The legacy fullscreen shader remains the capability/runtime fallback. */
+/** Native compute DoF gather. The fullscreen raster shader remains the capability/runtime fallback. */
 public final class DepthOfFieldComputeBackend implements AutoCloseable {
     private static final int LOCAL_SIZE = 8;
     private static final Identifier SHADER = Identifier.fromNamespaceAndPath("combatant", "depth_of_field");

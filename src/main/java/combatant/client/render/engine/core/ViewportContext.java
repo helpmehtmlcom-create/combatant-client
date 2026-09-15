@@ -22,7 +22,7 @@ import combatant.client.render.engine.renderer.Renderer2D;
 /**
  * Unified 2D viewport/projection runtime state.
  * <p>
- * This replaces the old Projection2D ownership model: callers use ViewportContext for
+ * Callers use ViewportContext for
  * projection mode switches, UI scale information, DrawContext tracking and immutable
  * per-frame viewport snapshots.
  */

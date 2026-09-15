@@ -92,7 +92,6 @@ public enum DevRenderFrameProfiler {
             case HUD_EFFECTS -> "2d:hud_effects";
             case SCREEN_TOP -> "2d:screen_top";
             case SCREEN -> "2d:screen";
-            case LEGACY_SHADOW_TERRAIN -> "3d:shadow_terrain_legacy";
             default -> "render:none";
         };
     }

@@ -8,7 +8,7 @@ package combatant.client.render.engine.postprocess;
 
 import combatant.client.render.engine.rhi.CombatantRhi;
 
-/** Optional hook for legacy/module passes that own native backend resources. */
+/** Optional hook for post-process passes that own native backend resources. */
 public interface PostProcessBackendResourceOwner {
     void releaseBackendResources(CombatantRhi owner);
 }

@@ -8,7 +8,6 @@
 package combatant.client.render.engine.renderer.ui.clip;
 
 import combatant.client.render.engine.command.UiCommandBuffer;
-import combatant.client.render.engine.command.UiPrimitiveCommand;
 import combatant.client.render.engine.renderer.ui.draw.UiRect;
 import combatant.client.render.engine.renderer.ui.draw.UiShape;
 import org.junit.jupiter.api.Test;

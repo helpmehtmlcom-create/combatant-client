@@ -18,7 +18,7 @@ import java.util.function.Consumer;
 /**
  * Combatant frame graph front-end.
  *
- * <p>Legacy phase handlers remain valid and are represented as side-effect passes. New renderer
+ * <p>Phase handlers are represented as side-effect passes. New renderer
  * passes should use {@link #add(FrameGraphPassContract, Consumer)} so hazards are explicit before
  * execution. Physical allocation/barrier lowering is intentionally a backend compiler concern.</p>
  */

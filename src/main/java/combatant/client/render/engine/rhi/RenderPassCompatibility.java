@@ -28,16 +28,4 @@ public enum RenderPassCompatibility {
         return true;
     }
 
-    /** Compatibility overload retained for single-target callers. */
-    public static boolean canContinue(Object passColorAttachment,
-                                      Object passDepthAttachment,
-                                      Object nextColorAttachment,
-                                      Object nextDepthAttachment,
-                                      boolean nextClearsColor,
-                                      boolean nextClearsDepth) {
-        return passColorAttachment == nextColorAttachment
-                && passDepthAttachment == nextDepthAttachment
-                && !nextClearsColor
-                && !nextClearsDepth;
-    }
 }

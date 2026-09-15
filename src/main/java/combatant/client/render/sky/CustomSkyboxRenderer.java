@@ -159,10 +159,10 @@ public enum CustomSkyboxRenderer {
         mv.identity();
         MeshRenderer.setProjection(new Matrix4f());
         try {
-            MeshRenderer.begin()
-                    .attachments(framebuffer)
+            FullScreenRenderer.begin("Combatant Reimagined Skybox")
+                    .attachment(framebuffer)
+                    .depthAttachment(framebuffer)
                     .pipeline(CombatantRenderPipelines.WORLD_REIMAGINED_SKYBOX_SHADER)
-                    .mesh(FullScreenRenderer.vbo, FullScreenRenderer.ibo)
                     .uniform("Fog", fog)
                     .uniform("SkyboxShader", SkyboxShaderUniforms.get())
                     .end();

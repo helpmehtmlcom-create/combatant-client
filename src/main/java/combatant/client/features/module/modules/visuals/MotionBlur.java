@@ -93,12 +93,14 @@ public final class MotionBlur extends Module implements PostProcessPass {
     }
 
     @Override
-    public boolean render(GpuTextureView src, GpuTextureView dst, float tickDelta) {
-        return false;
-    }
-
-    @Override
-    public boolean render(PostProcessContext context, GpuTextureView src, GpuTextureView dst) {
+    public boolean render(PostProcessExecutionContext execution) {
+        if (execution == null) {
+            invalidateHistory();
+            return false;
+        }
+        PostProcessContext context = execution.context();
+        GpuTextureView src = execution.source();
+        GpuTextureView dst = execution.destination();
         if (!isActive() || context == null || src == null || dst == null) {
             invalidateHistory();
             return false;

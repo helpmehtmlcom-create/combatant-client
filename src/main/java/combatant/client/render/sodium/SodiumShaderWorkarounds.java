@@ -34,22 +34,4 @@ public final class SodiumShaderWorkarounds {
         return id;
     }
 
-    /**
-     * Legacy entry point kept for older call sites while the port settles.
-     */
-    public String overrideShaderSource(Identifier id) {
-        return null;
-    }
-
-    public long overrideHits() {
-        return overrideHits;
-    }
-
-    public long missingResources() {
-        return 0L;
-    }
-
-    public long readErrors() {
-        return 0L;
-    }
 }

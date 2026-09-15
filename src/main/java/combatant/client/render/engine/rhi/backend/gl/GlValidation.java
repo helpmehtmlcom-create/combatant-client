@@ -15,7 +15,7 @@ import java.util.Locale;
  * <p>Production defaults to {@link Mode#OFF}. Use
  * {@code -Dcombatant.rhi.gl.validation=errors} to drain/report GL errors at explicit
  * native RHI boundaries, or {@code full} to additionally enable expensive framebuffer
- * preflight/completeness checks. The legacy boolean debug flag still maps to ERRORS.</p>
+ * preflight/completeness checks.</p>
  */
 public final class GlValidation {
     public enum Mode {
@@ -35,7 +35,7 @@ public final class GlValidation {
             case "full" -> Mode.FULL;
             case "errors", "error", "on", "true", "1" -> Mode.ERRORS;
             case "off", "false", "0" -> Mode.OFF;
-            default -> Boolean.getBoolean("combatant.render.debug.gl") ? Mode.ERRORS : Mode.OFF;
+            default -> Mode.OFF;
         };
     }
 

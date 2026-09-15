@@ -10,7 +10,7 @@ package combatant.client.render.engine.renderer.ui.draw;
 /**
  * Flexible box primitive: every corner and every edge can have independent
  * geometry. This is the authoring model for Renderer2D and the JS UI runtime;
- * legacy rounded/chamfered/notched methods should normalize into this object.
+ * rounded/chamfered/notched helpers normalize into this object.
  */
 public final class UiBoxShape {
     private final UiRect bounds;

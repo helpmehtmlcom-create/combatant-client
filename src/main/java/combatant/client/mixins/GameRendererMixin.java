@@ -264,7 +264,6 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
                     ? capturedPosition
                     : new Matrix4f().rotation(mainCamera.rotation().conjugate(new org.joml.Quaternionf()));
             RenderState.rendering3D = true;
-            RenderState.tickDelta = tickDelta;
             Vec3 capturedCameraPos = CombatantWorldMatrices.cameraPosition();
             RenderState.cameraPos = capturedCameraPos != null ? capturedCameraPos : mainCamera.position();
             RenderState.cameraRotation.set(mainCamera.rotation());
@@ -660,7 +659,6 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
                     : new Matrix4f().rotation(mainCamera.rotation().conjugate(new org.joml.Quaternionf()));
 
             RenderState.rendering3D = true;
-            RenderState.tickDelta = tickDelta;
             Vec3 capturedCameraPos = CombatantWorldMatrices.cameraPosition();
             RenderState.cameraPos = capturedCameraPos != null ? capturedCameraPos : mainCamera.position();
             RenderState.cameraRotation.set(mainCamera.rotation());

@@ -37,7 +37,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Compute implementation of the shared Dual-Kawase chain. Raster remains the compatibility path. */
+/** Compute implementation of the shared Dual-Kawase chain. Raster remains the capability/runtime fallback. */
 final class UiComputeBlurBackend implements AutoCloseable {
     private static final int LOCAL_SIZE = 8;
     private static final Identifier SHADER = Identifier.fromNamespaceAndPath("combatant", "ui_blur");
