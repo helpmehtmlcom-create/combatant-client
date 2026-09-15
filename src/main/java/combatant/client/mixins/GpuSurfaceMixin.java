@@ -18,6 +18,7 @@ import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.profiler.ProfilerPhase;
 import combatant.client.render.engine.profiler.TracyGpuProfiler;
 import combatant.client.render.engine.renderer.Renderer2D;
+import combatant.client.render.engine.renderer.ui.UiBlurResources;
 import combatant.client.util.FastFps;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -49,7 +50,7 @@ public abstract class GpuSurfaceMixin {
         }
         CombatantRenderSystem.onFramePresented();
         Renderer2D.getBatchStats().onFrameStart();
-        Renderer2D.invalidateWorldGlassSource();
+        UiBlurResources.invalidateWorldSource();
     }
 
     @Redirect(

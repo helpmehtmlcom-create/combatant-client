@@ -433,7 +433,14 @@ public class Crosshair extends Module {
         updateOrbizMotion();
 
         AnimatedRenderColors.Mode mode = danger ? AnimatedRenderColors.Mode.STATIC : orbizColorMode.get();
-        int primary = danger ? colorWithConfigAlpha(RIPTIDE_BLOCK_COLOR, orbizColor.getArgb()) : resolveOrbizPrimary(mode);
+        int configured = orbizColor.getArgb();
+        int targetAware = highlightTarget.get()
+                ? colorWithConfigAlpha(smoothCrosshairColor(resolveCrosshairTargetColor()), configured)
+                : configured;
+        int primary = danger
+                ? colorWithConfigAlpha(RIPTIDE_BLOCK_COLOR, configured)
+                : mode == AnimatedRenderColors.Mode.STATIC ? targetAware : configured;
+        int anchorColor = danger ? primary : targetAware;
         int secondary = danger ? primary : AnimatedRenderColors.angularSecondaryColor(mode, primary, orbizColor2.getArgb());
         primary = AnimatedRenderColors.angularPrimaryColor(mode, primary);
 
@@ -465,6 +472,12 @@ public class Crosshair extends Module {
                 trackGlow,
                 true
         );
+
+        // Dynamic ring motion communicates movement without moving the actual aim reference.
+        // Keep a tiny fixed anchor at the real screen center so Orbiz stays usable as a crosshair.
+        float anchorRadius = Math.max(0.70f * scale, Math.min(1.15f * scale, thicknessPx * 0.42f));
+        float anchorSoftness = Math.max(0.20f * scale, softnessPx * 0.45f);
+        renderer.circle(centerX, centerY, anchorRadius, anchorSoftness, anchorColor);
     }
 
     private float resolveOrbizProgress() {
@@ -508,14 +521,6 @@ public class Crosshair extends Module {
         orbizOffsetY = AnimationUtility.lerp(orbizOffsetY, targetY, t);
         lastOrbizYaw = yaw;
         lastOrbizPitch = pitch;
-    }
-
-    private int resolveOrbizPrimary(AnimatedRenderColors.Mode mode) {
-        int configured = orbizColor.getArgb();
-        if (mode == AnimatedRenderColors.Mode.STATIC && highlightTarget.get()) {
-            return colorWithConfigAlpha(smoothCrosshairColor(resolveCrosshairTargetColor()), configured);
-        }
-        return configured;
     }
 
     private int colorWithConfigAlpha(int rgbSource, int alphaSource) {

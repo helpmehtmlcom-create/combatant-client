@@ -74,6 +74,7 @@ import combatant.client.render.engine.profiler.RenderProfiler3D;
 import combatant.client.render.engine.profiler.TracyGpuProfiler;
 import combatant.client.render.engine.renderer.MeshRenderer;
 import combatant.client.render.engine.renderer.Renderer2D;
+import combatant.client.render.engine.renderer.ui.UiBlurResources;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.iris.IrisCombatantFrameHooks;
@@ -857,7 +858,7 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
         }
         MenuBackgroundRenderer.drainDeferred(minecraft);
         Renderer2D.prepareDeferredUiItems();
-        Renderer2D.captureWorldGlassSource();
+        UiBlurResources.captureWorldSource();
         if (AddonRenderPipelineManager.hasActiveCallbacks(CombatantRenderStage.SCREEN_BEFORE_VANILLA_GUI)) {
             float tickDelta = tickCounter.getGameTimeDeltaPartialTick(true);
             Renderer2D.COLOR.begin();

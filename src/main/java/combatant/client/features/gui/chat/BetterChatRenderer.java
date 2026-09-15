@@ -46,6 +46,7 @@ import combatant.client.mixins.accessors.TextFieldWidgetAccessor;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.renderer.Renderer2D;
+import combatant.client.render.engine.renderer.ui.UiBlurResources;
 import combatant.client.render.engine.svg.SvgRenderOptions;
 import combatant.client.render.engine.text.TextGlyphFallback;
 import combatant.client.render.engine.text.TextRenderer;
@@ -457,7 +458,7 @@ public enum BetterChatRenderer {
         MessageClipBounds clipBounds = frame.messageClipBounds(PADDING);
         if (clipBounds != null) {
             if (!frame.bubbles().isEmpty()) {
-                Renderer2D.requestLiquidGlassBlurBeforeNextShapeClip();
+                UiBlurResources.requestBeforeNextShapeClip();
             }
             float clipRadius = Math.min(RADIUS, clipBounds.h() * 0.5f);
             chatClip = ClipFunction.pushRoundedRectAnalyticRequired(

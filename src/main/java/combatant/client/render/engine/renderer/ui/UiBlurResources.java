@@ -54,10 +54,6 @@ public final class UiBlurResources {
     private UiBlurResources() {
     }
 
-    public static FrameBlurCacheEntry frameCache() {
-        return SURFACE_FRAME_CACHE;
-    }
-
     public static void beginDeferredFrame() {
         liquidGlassBlurRequested = false;
         blurBeforeNextShapeClipRequested = false;
@@ -175,7 +171,7 @@ public final class UiBlurResources {
      * by large UI-native glass surfaces (for example the Map browser) that must refract everything
      * already drawn in the current screen, without depending on replay into the UI-underlay target.</p>
      */
-    public static TextureTarget ensureCurrentTargetSnapshot(Minecraft minecraft) {
+    private static TextureTarget ensureCurrentTargetSnapshot(Minecraft minecraft) {
         if (minecraft == null) return null;
         int width = minecraft.getWindow().getWidth();
         int height = minecraft.getWindow().getHeight();
@@ -222,7 +218,7 @@ public final class UiBlurResources {
         return target.getColorTextureView();
     }
 
-    public static boolean copyMainColor(RenderTarget source, TextureTarget target) {
+    private static boolean copyMainColor(RenderTarget source, TextureTarget target) {
         if (source == null || target == null) return false;
         if (source.getColorTexture() == null || target.getColorTexture() == null) return false;
 
@@ -523,10 +519,6 @@ public final class UiBlurResources {
         SURFACE_FRAME_CACHE.clear();
         CAPTURED_WORLD_FRAME_CACHE.clear();
         UI_UNDERLAY_FRAME_CACHE.clear();
-    }
-
-    public static void shutdownComputeBlur() {
-        COMPUTE_BLUR.close();
     }
 
     private static FrameBlurCacheEntry cacheForSource(@Nullable GpuTextureView sourceView) {

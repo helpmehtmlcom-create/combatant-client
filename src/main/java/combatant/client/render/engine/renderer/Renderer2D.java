@@ -9,7 +9,6 @@ package combatant.client.render.engine.renderer;
 
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.pipeline.RenderTarget;
-import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.textures.GpuSampler;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import combatant.client.render.engine.command.*;
@@ -21,18 +20,14 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
 import combatant.client.render.engine.color.RenderColor;
-import combatant.client.render.engine.core.RenderPhase;
 import combatant.client.render.engine.core.ViewportContext;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.renderer.ui.BlurSource;
-import combatant.client.render.engine.renderer.ui.Deferred2DSubmit;
 import combatant.client.render.engine.renderer.ui.DrawBatch;
-import combatant.client.render.engine.renderer.ui.FrameBlurCacheEntry;
 import combatant.client.render.engine.renderer.ui.ItemBatchRenderer;
 import combatant.client.render.engine.renderer.ui.OrderedUiBatcher;
 import combatant.client.render.engine.renderer.ui.UiBatchStats;
 import combatant.client.render.engine.renderer.ui.UiBatchType;
-import combatant.client.render.engine.renderer.ui.UiBlurResources;
 import combatant.client.render.engine.renderer.ui.UiDeferredScheduler;
 import combatant.client.render.engine.renderer.ui.UiDirectTexturedRenderer;
 import combatant.client.render.engine.renderer.ui.UiItemSubmission;
@@ -64,16 +59,6 @@ public final class Renderer2D {
     public static OrderedUiBatcher UI_BATCHER = new OrderedUiBatcher();
     public static final BatchStats BATCH_STATS = new BatchStats();
     private static int backdropContributionDepth;
-
-    /**
-     * Frame-local blurred framebuffer cache.
-     *
-     * <p>HUD widgets often get split by text, item, scissor or nested compatibility flushes.
-     * The cached texture is a Dual Kawase result for a concrete source, quality and offset.
-     * Liquid glass is a material call and prepares this blur internally; callers no longer need
-     * to draw an extra blur rectangle under it.</p>
-     */
-    public static final FrameBlurCacheEntry FRAME_BLUR_CACHE = UiBlurResources.frameCache();
 
     public enum Deferred2DLayer {
         /** 2D work without a concrete HUD slot; drained before vanilla GuiRenderer.render(). */
@@ -241,7 +226,7 @@ public final class Renderer2D {
         shape(shape, paint, UiStroke.NONE, true);
     }
 
-    public void shapeStroke(UiShape shape, UiPaint paint, UiStroke stroke) {
+    private void shapeStroke(UiShape shape, UiPaint paint, UiStroke stroke) {
         shape(shape, paint, stroke, false);
     }
 
@@ -426,41 +411,6 @@ public final class Renderer2D {
                              @Nullable String stackCountText) {
         float ratio = getUnscaledItemRatio();
         item(stack, x * ratio, y * ratio, scale * ratio, seed, overlayFlags, stackCountText);
-    }
-
-    public void itemPivotUnscaled(ItemStack stack,
-                                  double x,
-                                  double y,
-                                  float scaleX,
-                                  float scaleY,
-                                  float pivotX,
-                                  float pivotY,
-                                  int seed,
-                                  int overlayFlags,
-                                  @Nullable String stackCountText) {
-        float ratio = getUnscaledItemRatio();
-        itemPivot(
-                stack,
-                x * ratio,
-                y * ratio,
-                scaleX * ratio,
-                scaleY * ratio,
-                pivotX * ratio,
-                pivotY * ratio,
-                seed,
-                overlayFlags,
-                stackCountText
-        );
-    }
-
-    public void itemOverlayUnscaled(ItemStack stack,
-                                    double x,
-                                    double y,
-                                    float scale,
-                                    int overlayFlags,
-                                    @Nullable String stackCountText) {
-        float ratio = getUnscaledItemRatio();
-        itemOverlay(stack, x * ratio, y * ratio, scale * ratio, overlayFlags, stackCountText);
     }
 
     public void item(@Nullable LocalPlayer player,
@@ -1099,14 +1049,14 @@ public final class Renderer2D {
                 1.0f, Math.max(0.0f, hashTime));
     }
 
-    public void arcStrokeQuad(double cx, double cy, double radius, double thickness,
+    private void arcStrokeQuad(double cx, double cy, double radius, double thickness,
                               float startAngleDeg, float endAngleDeg, float softness,
                               int cTopLeft, int cTopRight, int cBottomRight, int cBottomLeft) {
         arcStrokeQuad(cx, cy, radius, thickness, startAngleDeg, endAngleDeg, softness, true,
                 cTopLeft, cTopRight, cBottomRight, cBottomLeft);
     }
 
-    public void arcStrokeQuad(double cx, double cy, double radius, double thickness,
+    private void arcStrokeQuad(double cx, double cy, double radius, double thickness,
                               float startAngleDeg, float endAngleDeg, float softness, boolean caps,
                               int cTopLeft, int cTopRight, int cBottomRight, int cBottomLeft) {
         arcStrokeQuadInternal(cx, cy, radius, thickness, startAngleDeg, endAngleDeg, softness, caps,
@@ -1285,7 +1235,7 @@ public final class Renderer2D {
         endAutoBatch(auto);
     }
 
-    public void roundedRectMasked(double x, double y, double w, double h,
+    private void roundedRectMasked(double x, double y, double w, double h,
                                   double maskX, double maskY, double maskW, double maskH,
                                   float radius, float softness, int argb) {
         roundedRectMaskedQuad(x, y, w, h, maskX, maskY, maskW, maskH, radius, softness, argb, argb, argb, argb);
@@ -2087,13 +2037,13 @@ public final class Renderer2D {
         endAutoBatch(auto);
     }
 
-    public void squircleSoftShadow(double x, double y, double w, double h,
+    private void squircleSoftShadow(double x, double y, double w, double h,
                                    UiSquircleProfile profile, float blur, float innerAlpha, int argb) {
         UiSquircleProfile safe = profile != null ? profile : UiSquircleProfile.STANDARD;
         squircleSoftShadow(x, y, w, h, safe.exponent(), blur, innerAlpha, argb);
     }
 
-    public void squircleSoftShadow(double x, double y, double w, double h,
+    private void squircleSoftShadow(double x, double y, double w, double h,
                                    float exponent, float blur, float innerAlpha, int argb) {
         UiBoxShape shape = UiBoxShape.squircle(x, y, w, h, exponent);
         boolean auto = beginAutoBatch();
@@ -2548,7 +2498,7 @@ public final class Renderer2D {
                 thickness, gradientTmp[0], gradientTmp[1], gradientTmp[2], gradientTmp[3]);
     }
 
-    public void chamferedRectQuad(double x, double y, double w, double h,
+    private void chamferedRectQuad(double x, double y, double w, double h,
                                   double chamfer,
                                   int cTopLeft, int cTopRight, int cBottomRight, int cBottomLeft) {
         chamferedRectQuad(x, y, w, h,
@@ -2556,7 +2506,7 @@ public final class Renderer2D {
                 cTopLeft, cTopRight, cBottomRight, cBottomLeft);
     }
 
-    public void chamferedRectQuad(double x, double y, double w, double h,
+    private void chamferedRectQuad(double x, double y, double w, double h,
                                   double chamferTL, double chamferTR, double chamferBR, double chamferBL,
                                   int cTopLeft, int cTopRight, int cBottomRight, int cBottomLeft) {
         normalizeChamfers(w, h,
@@ -2573,7 +2523,7 @@ public final class Renderer2D {
                 cTopLeft, cTopRight, cBottomRight, cBottomLeft);
     }
 
-    public void chamferedRectQuadAxes(double x, double y, double w, double h,
+    private void chamferedRectQuadAxes(double x, double y, double w, double h,
                                       double chamferTLX, double chamferTLY,
                                       double chamferTRX, double chamferTRY,
                                       double chamferBRX, double chamferBRY,
@@ -2633,7 +2583,7 @@ public final class Renderer2D {
         endAutoBatch(auto);
     }
 
-    public void chamferedRectStrokeQuad(double x, double y, double w, double h,
+    private void chamferedRectStrokeQuad(double x, double y, double w, double h,
                                         double chamfer, double thickness,
                                         int cTopLeft, int cTopRight, int cBottomRight, int cBottomLeft) {
         chamferedRectStrokeQuad(x, y, w, h,
@@ -2641,7 +2591,7 @@ public final class Renderer2D {
                 thickness, cTopLeft, cTopRight, cBottomRight, cBottomLeft);
     }
 
-    public void chamferedRectStrokeQuad(double x, double y, double w, double h,
+    private void chamferedRectStrokeQuad(double x, double y, double w, double h,
                                         double chamferTL, double chamferTR, double chamferBR, double chamferBL,
                                         double thickness,
                                         int cTopLeft, int cTopRight, int cBottomRight, int cBottomLeft) {
@@ -2699,26 +2649,6 @@ public final class Renderer2D {
         mesh.quad(i1, i2, i3, i4);
 
         endAutoBatch(auto);
-    }
-
-    public void cutCornerRect(double x, double y, double width, double height, double cut, int argb) {
-        chamferedRect(x, y, width, height, cut, argb);
-    }
-
-    public void cutCornerRectGradient(double x, double y, double width, double height,
-                                      double cut, int startArgb, int endArgb, float angleDeg, float offsetPx) {
-        chamferedRectGradient(x, y, width, height, cut, startArgb, endArgb, angleDeg, offsetPx);
-    }
-
-    public void cutCornerRectStroke(double x, double y, double width, double height,
-                                    double cut, double thickness, int argb) {
-        chamferedRectStroke(x, y, width, height, cut, thickness, argb);
-    }
-
-    public void cutCornerRectStrokeGradient(double x, double y, double width, double height,
-                                            double cut, double thickness,
-                                            int startArgb, int endArgb, float angleDeg, float offsetPx) {
-        chamferedRectStrokeGradient(x, y, width, height, cut, thickness, startArgb, endArgb, angleDeg, offsetPx);
     }
 
     public void notchedRect(double x, double y, double width, double height,
@@ -2804,71 +2734,6 @@ public final class Renderer2D {
         chamferedRectStrokeGradient(x, y, width, height, bevel, thickness, startArgb, endArgb, angleDeg, offsetPx);
     }
 
-    /**
-     * Draws a media-style analytic waveform as one GPU quad. The wave itself is reconstructed
-     * per fragment; this path intentionally does not use {@link UiPathRenderer} or CPU samples.
-     */
-    public void analyticWave(double x1, double x2, double centerY,
-                             double amplitude, double thickness, double wavelength,
-                             double phase, double harmonic, double edgeFadePx,
-                             int argb) {
-        analyticWaveGradient(x1, x2, centerY, amplitude, thickness, wavelength,
-                phase, harmonic, edgeFadePx, argb, argb);
-    }
-
-    /** Analytic waveform with color interpolation along the active timeline span. */
-    public void analyticWaveGradient(double x1, double x2, double centerY,
-                                     double amplitude, double thickness, double wavelength,
-                                     double phase, double harmonic, double edgeFadePx,
-                                     int startArgb, int endArgb) {
-        if (textured) {
-            throw new IllegalStateException("Analytic wave drawing is supported only on Renderer2D.COLOR.");
-        }
-        if (!Double.isFinite(x1) || !Double.isFinite(x2) || !Double.isFinite(centerY)) return;
-
-        double left = Math.min(x1, x2);
-        double right = Math.max(x1, x2);
-        double span = right - left;
-        double t = Math.max(0.0, thickness);
-        if (span < 0.25 || t <= 0.0) return;
-
-        double amp = Math.max(0.0, amplitude);
-        double lambda = Math.max(1.0, wavelength);
-        double h = Math.max(0.0, Math.min(0.45, harmonic));
-        double fade = Math.max(0.0, Math.min(span * 0.5, edgeFadePx));
-
-        // Only the conservative shader support bounds are geometry. Wave curvature is never
-        // tessellated: four vertices cover every frequency/amplitude combination.
-        double guard = 1.5;
-        double half = t * 0.5;
-        double minX = left - half - guard;
-        double maxX = right + half + guard;
-        double extentY = amp + half + guard;
-        double minY = centerY - extentY;
-        double maxY = centerY + extentY;
-
-        boolean auto = beginAutoBatch();
-        DrawBatch batch = UI_BATCHER.getOrCreate(UiBatchType.WAVE, null, null);
-        if (batch == null) {
-            endAutoBatch(auto);
-            return;
-        }
-        MeshBuilder mesh = batch.mesh;
-        mesh.alpha = alpha;
-        mesh.ensureQuadCapacity();
-
-        int i1 = appendAnalyticWaveVertex(mesh, minX, minY, startArgb,
-                left, right, centerY, amp, t, lambda, phase, h, fade);
-        int i2 = appendAnalyticWaveVertex(mesh, minX, maxY, startArgb,
-                left, right, centerY, amp, t, lambda, phase, h, fade);
-        int i3 = appendAnalyticWaveVertex(mesh, maxX, maxY, endArgb,
-                left, right, centerY, amp, t, lambda, phase, h, fade);
-        int i4 = appendAnalyticWaveVertex(mesh, maxX, minY, endArgb,
-                left, right, centerY, amp, t, lambda, phase, h, fade);
-        mesh.quad(i1, i2, i3, i4);
-
-        endAutoBatch(auto);
-    }
 
     public void connector(double x1, double y1, double x2, double y2, double thickness, int argb) {
         connectorTmp[0] = x1;
@@ -2885,15 +2750,6 @@ public final class Renderer2D {
         connectorTmp[2] = x2;
         connectorTmp[3] = y2;
         polylineGradient(connectorTmp, 2, thickness, false, startArgb, endArgb, true);
-    }
-
-    public void wire(double x1, double y1, double x2, double y2, double thickness, int argb) {
-        connector(x1, y1, x2, y2, thickness, argb);
-    }
-
-    public void wireGradient(double x1, double y1, double x2, double y2,
-                             double thickness, int startArgb, int endArgb) {
-        connectorGradient(x1, y1, x2, y2, thickness, startArgb, endArgb);
     }
 
     public void cable(double x1, double y1, double x2, double y2,
@@ -4147,61 +4003,6 @@ public final class Renderer2D {
         }
     }
 
-    public void glassBlurRect(double x, double y, double w, double h,
-                              float radius, float quality, float brightness, float alpha, int ignoredTintRgb) {
-        if (w <= 0.0 || h <= 0.0) return;
-        if (alpha <= 0.001f) return;
-
-        UiShape blurShape = UiShape.roundedRect(x, y, w, h, radius);
-        float blurOffset = legacyKawaseOffset(quality);
-        UiBackdropRequest backdrop = UiBackdropRequest.currentTargetBlur(
-                blurShape.bounds(), UiBlurQuality.HIGH, blurOffset);
-        effect(UiEffectSpec.blur(blurShape, radius, ignoredTintRgb, backdrop));
-        BlurSource source = getBlurSource();
-        if (source == null) return;
-
-        boolean auto = beginAutoBatch();
-        try {
-            DrawBatch batch = UI_BATCHER.getOrCreateBlur(UiBatchType.BLUR_CORNERS, source.view, source.sampler,
-                    BlurQuality.HIGH, blurOffset, backdrop);
-            if (batch == null) return;
-            MeshBuilder mesh = batch.mesh;
-            mesh.alpha = 1.0;
-
-            float finalAlpha = clamp01((float) (alpha * this.alpha));
-            if (finalAlpha <= 0.001f) return;
-
-            int a = Math.max(0, Math.min(255, Math.round(finalAlpha * 255.0f)));
-            float smoothness = 2.0f;
-            float r = Math.max(0.0f, radius);
-
-            mesh.ensureQuadCapacity();
-            int i1 = mesh.vec2(x, y).local2(x, y).color(255, 255, 255, a)
-                    .vec4(x, y, w, h)
-                    .vec4(r, r, r, r)
-                    .vec4(quality, brightness, smoothness, 0.0f)
-                    .next();
-            int i2 = mesh.vec2(x, y + h).local2(x, y + h).color(255, 255, 255, a)
-                    .vec4(x, y, w, h)
-                    .vec4(r, r, r, r)
-                    .vec4(quality, brightness, smoothness, 0.0f)
-                    .next();
-            int i3 = mesh.vec2(x + w, y + h).local2(x + w, y + h).color(255, 255, 255, a)
-                    .vec4(x, y, w, h)
-                    .vec4(r, r, r, r)
-                    .vec4(quality, brightness, smoothness, 0.0f)
-                    .next();
-            int i4 = mesh.vec2(x + w, y).local2(x + w, y).color(255, 255, 255, a)
-                    .vec4(x, y, w, h)
-                    .vec4(r, r, r, r)
-                    .vec4(quality, brightness, smoothness, 0.0f)
-                    .next();
-            mesh.quad(i1, i2, i3, i4);
-        } finally {
-            endAutoBatch(auto);
-        }
-    }
-
     private void blurRect(double x, double y, double w, double h,
                           float radius, float quality, float brightness, float alpha, int ignoredTintRgb,
                           UiBatchType batchType) {
@@ -4622,21 +4423,6 @@ public final class Renderer2D {
                 .vec4(p30, p31, p32, p33).next();
     }
 
-    private static int appendAnalyticWaveVertex(MeshBuilder mesh,
-                                                double x, double y, int argb,
-                                                double left, double right, double centerY,
-                                                double amplitude, double thickness, double wavelength, double phase,
-                                                double harmonic, double edgeFadePx) {
-        int a = (argb >>> 24) & 0xFF;
-        int r = (argb >>> 16) & 0xFF;
-        int g = (argb >>> 8) & 0xFF;
-        int b = argb & 0xFF;
-        return mesh.vec2(x, y).rawLocal2(x, y).color(r, g, b, a)
-                .vec4(left, right, centerY, 0.0)
-                .vec4(amplitude, thickness, wavelength, phase)
-                .vec4(harmonic, edgeFadePx, 0.0, 0.0)
-                .vec4(0.0, 0.0, 0.0, 0.0).next();
-    }
 
     private static void appendGeometryQuad(MeshBuilder mesh,
                                            double x, double y, double width, double height,
@@ -4917,10 +4703,6 @@ public final class Renderer2D {
         UiDeferredScheduler.drain(layer);
     }
 
-    public static boolean shouldDefer2DSubmit() {
-        return UiDeferredScheduler.shouldDefer();
-    }
-
     public static boolean isDeferredExtractRecording() {
         return UiDeferredScheduler.shouldDefer();
     }
@@ -4931,22 +4713,6 @@ public final class Renderer2D {
 
     public static void deferRenderThreadAction(Runnable action) {
         UiDeferredScheduler.deferAction(action);
-    }
-
-    public static void enqueueDeferred2D(Deferred2DSubmit submit) {
-        UiDeferredScheduler.enqueue(submit);
-    }
-
-    public static Deferred2DLayer deferredLayerForCurrentPhase(boolean pureItemOverlaySubmit) {
-        return UiDeferredScheduler.layerForCurrentPhase(pureItemOverlaySubmit);
-    }
-
-    public static OrderedUiBatcher obtainDeferredBatcher() {
-        return UiDeferredScheduler.obtainBatcher();
-    }
-
-    public static void releaseDeferredBatcher(OrderedUiBatcher batcher) {
-        UiDeferredScheduler.releaseBatcher(batcher);
     }
 
     public static ViewportContext snapshotViewport() {
@@ -4975,17 +4741,6 @@ public final class Renderer2D {
 
     public static RenderWarpStack.Scope pushWarp(RenderWarp warp) {
         return RenderWarpStack.push(warp);
-    }
-
-    public static RenderWarpStack.Scope pushAngularWarp(UiAngularPreset preset,
-                                                        float x,
-                                                        float y,
-                                                        float width,
-                                                        float height,
-                                                        float cut) {
-        return RenderWarpStack.push(preset != null
-                ? preset.warp(x, y, width, height, cut)
-                : RenderWarp.IDENTITY);
     }
 
     public static RenderWarpStack.Scope pushPerspectiveWarp(float x,
@@ -5022,107 +4777,6 @@ public final class Renderer2D {
             return 1.0f;
         }
         return ViewportContext.getUiScale() / scaleFactor;
-    }
-
-    public static TextureTarget ensureUiEffects(Minecraft mc) {
-        return UiBlurResources.ensureEffects(mc);
-    }
-
-    public static TextureTarget ensureUiGlassSource(Minecraft mc) {
-        return UiBlurResources.ensureGlassSource(mc);
-    }
-
-    public static boolean copyMainColorToGlassSource(RenderTarget source, TextureTarget target) {
-        return UiBlurResources.copyMainColor(source, target);
-    }
-
-    public static void requestLiquidGlassBlur() {
-        UiBlurResources.requestLiquidGlassBlur();
-    }
-
-    public static void requestLiquidGlassBlurBeforeNextShapeClip() {
-        UiBlurResources.requestBeforeNextShapeClip();
-    }
-
-    public static void prepareLiquidGlassBlurBeforeShapeClipIfRequested() {
-        UiBlurResources.prepareBeforeShapeClipIfRequested();
-    }
-
-    public static void captureWorldGlassSource() {
-        UiBlurResources.captureWorldSource();
-    }
-
-    public static void invalidateWorldGlassSource() {
-        UiBlurResources.invalidateWorldSource();
-    }
-
-    public static boolean isWorldGlassSourceReady() {
-        return UiBlurResources.isWorldSourceReady();
-    }
-
-    public static TextureTarget ensureUiBlurEffects(Minecraft mc) {
-        return UiBlurResources.ensureKawaseDown(mc, 0);
-    }
-
-    public static TextureTarget ensureUiBlurEffectsAlt(Minecraft mc) {
-        return UiBlurResources.ensureKawaseUp(mc, 0);
-    }
-
-    public static TextureTarget ensureUiKawaseDown(Minecraft mc, int level) {
-        return UiBlurResources.ensureKawaseDown(mc, level);
-    }
-
-    public static TextureTarget ensureUiKawaseUp(Minecraft mc, int level) {
-        return UiBlurResources.ensureKawaseUp(mc, level);
-    }
-
-    public static MeshBuilder ensureUiCompositeMesh(int width, int height) {
-        return UiBlurResources.ensureCompositeMesh(width, height);
-    }
-
-    public static long currentFrameBlurFrameId() {
-        return UiBlurResources.currentFrameId();
-    }
-
-    public static RenderPhase currentFrameBlurPhase() {
-        return UiBlurResources.currentPhase();
-    }
-
-    public static int blurScaleBits(float uiScale) {
-        return UiBlurResources.scaleBits(uiScale);
-    }
-
-    public static @Nullable FrameBlurCacheEntry findReusableFrameBlur(
-            long frameId,
-            RenderPhase phase,
-            @Nullable GpuTextureView sourceView,
-            @Nullable GpuSampler sourceSampler,
-            float screenW,
-            float screenH,
-            float uiScale,
-            BlurQuality blurQuality,
-            float offsetPx) {
-        return UiBlurResources.findReusable(
-                frameId, phase, sourceView, sourceSampler, screenW, screenH, uiScale, blurQuality, offsetPx
-        );
-    }
-
-    public static void rememberFrameBlur(
-            long frameId,
-            RenderPhase phase,
-            @Nullable GpuTextureView sourceView,
-            @Nullable GpuSampler sourceSampler,
-            @Nullable GpuTextureView blurredView,
-            @Nullable GpuSampler blurredSampler,
-            float screenW,
-            float screenH,
-            float uiScale,
-            BlurQuality blurQuality,
-            float offsetPx) {
-        UiBlurResources.remember(
-                frameId, phase, sourceView, sourceSampler, blurredView, blurredSampler,
-                screenW, screenH, uiScale, blurQuality, offsetPx
-        );
     }
 
     public enum FlushReason {
