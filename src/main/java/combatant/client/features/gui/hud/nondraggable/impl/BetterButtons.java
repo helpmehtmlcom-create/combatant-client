@@ -512,7 +512,7 @@ public final class BetterButtons extends AbstractHudElement {
         ViewportContext.end(null);
 
         try (RenderWarpStack.Scope ignored = pushParallaxWarp(parallax, x, y, w, h)) {
-            // Deliberately never integer-snap here; slider text follows the exact same continuous warp state.
+            // Never integer-snap here; slider text follows the exact same continuous warp state.
             renderCenteredText(widget.getMessage(), x, y - h * 0.10f, w, h * 0.72f,
                     alpha, widget.isActive(), hover, false);
         }

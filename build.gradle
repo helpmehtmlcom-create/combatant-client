@@ -50,6 +50,7 @@ group = providers.gradleProperty("maven_group").get()
 def combatantModId = providers.gradleProperty("mod_id").get()
 def combatantModName = providers.gradleProperty("mod_name").get()
 def combatantModLicense = providers.gradleProperty("mod_license").get()
+def duplexCourierVersion = providers.gradleProperty("duplex_courier_version").get()
 
 base {
     archivesName = providers.gradleProperty("archives_base_name").get()
@@ -85,6 +86,12 @@ sourceSets {
         compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
         runtimeClasspath += output + compileClasspath
     }
+    duplexCourier {
+        java.srcDir("src/duplexCourier/java")
+        resources.srcDir("src/duplexCourier/resources")
+        compileClasspath += sourceSets.main.compileClasspath
+        runtimeClasspath += output + compileClasspath
+    }
     vulkanDebug {
         java.srcDir("src/vulkanDebug/java")
         resources.srcDir("src/vulkanDebug/resources")
@@ -108,6 +115,8 @@ configurations {
     vulkanDebugImplementation.extendsFrom implementation
     vulkanDebugCompileOnly.extendsFrom compileOnly
     vulkanDebugAnnotationProcessor.extendsFrom annotationProcessor
+    duplexCourierImplementation.extendsFrom implementation
+    duplexCourierCompileOnly.extendsFrom compileOnly
 }
 
 loom {
@@ -358,6 +367,17 @@ tasks.named("processDevResources") {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
+tasks.named("processDuplexCourierResources") {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    inputs.property "version", duplexCourierVersion
+    inputs.property "minecraft_version", providers.gradleProperty("minecraft_version").get()
+    filteringCharset "UTF-8"
+    filesMatching("fabric.mod.json") {
+        expand "version": duplexCourierVersion,
+                "minecraft_version": providers.gradleProperty("minecraft_version").get()
+    }
+}
+
 tasks.withType(JavaCompile).configureEach {
     // ensure that the encoding is set to UTF-8, no matter what the system default is
     // this fixes some edge cases with special characters not displaying correctly
@@ -379,6 +399,32 @@ tasks.named("compileDevJava", JavaCompile) {
 
 tasks.named("compileVulkanDebugJava", JavaCompile) {
     options.compilerArgs.add("-Acombatant.indexName=vulkanDebug")
+}
+
+tasks.named("compileDuplexCourierJava", JavaCompile) {
+    options.compilerArgs.add("-proc:none")
+}
+
+def duplexCourierJar = tasks.register("duplexCourierJar", Jar) {
+    group = "build"
+    description = "Assembles the standalone Duplex Courier Fabric mod."
+    dependsOn tasks.named("duplexCourierClasses")
+    archiveBaseName.set("combatant-duplex-courier")
+    archiveVersion.set(duplexCourierVersion)
+    archiveClassifier.set("")
+    from(sourceSets.duplexCourier.output)
+    manifest {
+        attributes(
+                "Multi-Release": "true",
+                "Fabric-Mapping-Namespace": "official"
+        )
+    }
+}
+
+tasks.register("buildDuplexCourier") {
+    group = "build"
+    description = "Builds only the standalone Duplex Courier mod."
+    dependsOn duplexCourierJar
 }
 
 java {

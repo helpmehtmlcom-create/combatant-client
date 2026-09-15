@@ -502,7 +502,7 @@ void main() {
     );
 
     vec3 tint = clamp(v_Color.rgb, 0.0, 1.0);
-    // Blur is the material base. Clean scene clarity is deliberately tiny for
+    // Blur is the material base. Clean scene clarity is tiny for
     // blur-first presets, otherwise the center turns back into raw refraction.
     // Keep the body blur-first. Stronger clean-scene leakage made large panels look
     // like weak refraction and visually erased the prepared blur layer.

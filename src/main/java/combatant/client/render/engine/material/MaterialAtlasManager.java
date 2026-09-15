@@ -65,6 +65,7 @@ public final class MaterialAtlasManager {
     private final List<AnimatedBinding> animated = new ArrayList<>();
     private int width;
     private int height;
+    private int maxMipLevel;
     private long generation;
 
     public static MaterialAtlasManager global() {
@@ -79,10 +80,16 @@ public final class MaterialAtlasManager {
         return albedo != null && normalHeight != null && surface != null && specular != null;
     }
 
+    public synchronized GpuTextureView albedoView() { return albedo != null ? albedo.view() : null; }
+    public synchronized GpuTextureView normalHeightView() { return normalHeight != null ? normalHeight.view() : null; }
+    public synchronized GpuTextureView surfaceView() { return surface != null ? surface.view() : null; }
+    public synchronized GpuTextureView specularView() { return specular != null ? specular.view() : null; }
+
     public synchronized void rebuild(List<TextureAtlasSprite> sprites,
                                      List<SpriteContents.AnimationState> animationStates,
                                      int atlasWidth,
-                                     int atlasHeight) {
+                                     int atlasHeight,
+                                     int atlasMaxMipLevel) {
         RenderSystem.assertOnRenderThread();
         releaseInternal();
 
@@ -94,6 +101,7 @@ public final class MaterialAtlasManager {
 
         this.width = atlasWidth;
         this.height = atlasHeight;
+        this.maxMipLevel = Math.max(0, atlasMaxMipLevel);
 
         try (NativeImage albedoImage = filled(atlasWidth, atlasHeight, argb(255, 255, 255, 255));
              NativeImage normalHeightImage = filled(atlasWidth, atlasHeight, argb(0, 128, 128, 255));
@@ -111,7 +119,7 @@ public final class MaterialAtlasManager {
                     animationIndex++;
                 }
 
-                MaterialSurfaceDescriptor descriptor = MaterialRegistry.global().resolve(sprite, MaterialDomain.UNKNOWN);
+                MaterialSurfaceDescriptor descriptor = MaterialRegistry.global().resolveAtlas(sprite);
                 PreparedSprite prepared = prepareSprite(resources, sprite, descriptor, baseState);
                 usableBySprite.put(sprite.contents().name(), prepared.usableMask());
                 if (prepared.usableMask() == 0) {
@@ -134,10 +142,10 @@ public final class MaterialAtlasManager {
             }
 
             MaterialRegistry.global().installGpuMapAvailability(usableBySprite);
-            albedo = create("Combatant material albedo atlas", albedoImage);
-            normalHeight = create("Combatant material normal-height atlas", normalHeightImage);
-            surface = create("Combatant material surface atlas", surfaceImage);
-            specular = create("Combatant material specular atlas", specularImage);
+            albedo = create("Combatant material albedo atlas", albedoImage, maxMipLevel, MipKind.COLOR);
+            normalHeight = create("Combatant material normal-height atlas", normalHeightImage, maxMipLevel, MipKind.NORMAL_HEIGHT);
+            surface = create("Combatant material surface atlas", surfaceImage, maxMipLevel, MipKind.SCALAR);
+            specular = create("Combatant material specular atlas", specularImage, maxMipLevel, MipKind.SCALAR);
             generation++;
             DebugLog.renderThread("[Materials] companion block atlases ready: %dx%d, animated=%d, generation=%d",
                     atlasWidth, atlasHeight, animated.size(), generation);
@@ -156,10 +164,10 @@ public final class MaterialAtlasManager {
         for (AnimatedBinding binding : animated) {
             if (!binding.state().needsToDraw()) continue;
             try (FrameSample sample = binding.prepared().sample(binding.state())) {
-                writeFrame(albedo.texture(), sample.albedo(), binding.sprite());
-                writeFrame(normalHeight.texture(), sample.normalHeight(), binding.sprite());
-                writeFrame(surface.texture(), sample.surface(), binding.sprite());
-                writeFrame(specular.texture(), sample.specular(), binding.sprite());
+                writeFrame(albedo, sample.albedo(), binding.sprite());
+                writeFrame(normalHeight, sample.normalHeight(), binding.sprite());
+                writeFrame(surface, sample.surface(), binding.sprite());
+                writeFrame(specular, sample.specular(), binding.sprite());
             } catch (Throwable error) {
                 DebugLog.warnOnChange(
                         "combatant.material.animation." + binding.sprite().contents().name(),
@@ -204,19 +212,98 @@ public final class MaterialAtlasManager {
         specular = null;
         width = 0;
         height = 0;
+        maxMipLevel = 0;
     }
 
-    private static AtlasTexture create(String label, NativeImage image) {
+    private static AtlasTexture create(String label, NativeImage image, int maxMipLevel, MipKind kind) {
+        int mipLevels = Math.max(1, maxMipLevel + 1);
         GpuTexture texture = RenderSystem.getDevice().createTexture(
-                label, USAGE, GpuFormat.RGBA8_UNORM, image.getWidth(), image.getHeight(), 1, 1
+                label, USAGE, GpuFormat.RGBA8_UNORM, image.getWidth(), image.getHeight(), 1, mipLevels
         );
-        RenderSystem.getDevice().createCommandEncoder().writeToTexture(texture, image);
-        return new AtlasTexture(texture, RenderSystem.getDevice().createTextureView(texture));
+        NativeImage level = copyImage(image);
+        try {
+            for (int mip = 0; mip < mipLevels; mip++) {
+                RenderSystem.getDevice().createCommandEncoder().writeToTexture(texture, level, mip, 0, 0, 0);
+                if (mip + 1 < mipLevels) {
+                    NativeImage next = downsample(level, kind);
+                    level.close();
+                    level = next;
+                }
+            }
+        } finally {
+            level.close();
+        }
+        return new AtlasTexture(texture, RenderSystem.getDevice().createTextureView(texture), mipLevels, kind);
     }
 
-    private static void writeFrame(GpuTexture texture, NativeImage frame, TextureAtlasSprite sprite) {
-        RenderSystem.getDevice().createCommandEncoder().writeToTexture(
-                texture, frame, 0, 0, sprite.getX(), sprite.getY()
+    /** Uploads the exact vanilla animation state to every companion mip, not just level zero. */
+    private static void writeFrame(AtlasTexture atlas, NativeImage frame, TextureAtlasSprite sprite) {
+        NativeImage level = copyImage(frame);
+        try {
+            for (int mip = 0; mip < atlas.mipLevels(); mip++) {
+                RenderSystem.getDevice().createCommandEncoder().writeToTexture(
+                        atlas.texture(), level, mip, 0, sprite.getX() >> mip, sprite.getY() >> mip
+                );
+                if (mip + 1 < atlas.mipLevels()) {
+                    NativeImage next = downsample(level, atlas.kind());
+                    level.close();
+                    level = next;
+                }
+            }
+        } finally {
+            level.close();
+        }
+    }
+
+    private static NativeImage copyImage(NativeImage source) {
+        NativeImage copy = new NativeImage(source.getWidth(), source.getHeight(), false);
+        copy.copyRect(source, 0, 0, 0, 0, source.getWidth(), source.getHeight(), false, false);
+        return copy;
+    }
+
+    private static NativeImage downsample(NativeImage source, MipKind kind) {
+        int width = Math.max(1, source.getWidth() >> 1);
+        int height = Math.max(1, source.getHeight() >> 1);
+        NativeImage out = new NativeImage(width, height, false);
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int p0 = source.getPixel(Math.min(source.getWidth() - 1, x * 2), Math.min(source.getHeight() - 1, y * 2));
+                int p1 = source.getPixel(Math.min(source.getWidth() - 1, x * 2 + 1), Math.min(source.getHeight() - 1, y * 2));
+                int p2 = source.getPixel(Math.min(source.getWidth() - 1, x * 2), Math.min(source.getHeight() - 1, y * 2 + 1));
+                int p3 = source.getPixel(Math.min(source.getWidth() - 1, x * 2 + 1), Math.min(source.getHeight() - 1, y * 2 + 1));
+                out.setPixel(x, y, kind == MipKind.NORMAL_HEIGHT
+                        ? averageNormalHeight(p0, p1, p2, p3)
+                        : averageArgb(p0, p1, p2, p3));
+            }
+        }
+        return out;
+    }
+
+    private static int averageArgb(int a, int b, int c, int d) {
+        return argb(
+                (alpha(a) + alpha(b) + alpha(c) + alpha(d) + 2) / 4,
+                (red(a) + red(b) + red(c) + red(d) + 2) / 4,
+                (green(a) + green(b) + green(c) + green(d) + 2) / 4,
+                (blue(a) + blue(b) + blue(c) + blue(d) + 2) / 4
+        );
+    }
+
+    private static int averageNormalHeight(int a, int b, int c, int d) {
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+        int[] pixels = {a, b, c, d};
+        int h = 0;
+        for (int pixel : pixels) {
+            x += red(pixel) / 127.5f - 1.0f;
+            y += green(pixel) / 127.5f - 1.0f;
+            z += blue(pixel) / 127.5f - 1.0f;
+            h += alpha(pixel);
+        }
+        float inv = 1.0f / (float)Math.sqrt(Math.max(1.0e-8f, x * x + y * y + z * z));
+        return argb(
+                (h + 2) / 4,
+                unorm(x * inv * 0.5f + 0.5f),
+                unorm(y * inv * 0.5f + 0.5f),
+                unorm(z * inv * 0.5f + 0.5f)
         );
     }
 
@@ -534,7 +621,8 @@ public final class MaterialAtlasManager {
         try { texture.texture().close(); } catch (Throwable ignored) { }
     }
 
-    private record AtlasTexture(GpuTexture texture, GpuTextureView view) { }
+    private enum MipKind { COLOR, NORMAL_HEIGHT, SCALAR }
+    private record AtlasTexture(GpuTexture texture, GpuTextureView view, int mipLevels, MipKind kind) { }
     private record PixelSet(int albedo, int normalHeight, int surface, int specular) { }
     private record FrameInfo(int index, int time) { }
     private record Timeline(List<FrameInfo> frames, int columns, boolean interpolate) { }

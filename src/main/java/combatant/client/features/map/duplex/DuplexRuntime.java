@@ -58,6 +58,14 @@ public final class DuplexRuntime implements AutoCloseable {
         DuplexLocalTcpTransport current = transport;
         return current == null ? "" : current.lastError();
     }
+    public boolean peerVerified() { return state == DuplexState.READY && peerId != null; }
+    public long peerAgeMs() {
+        long seen = lastPeerAt;
+        return seen <= 0L ? -1L : Math.max(0L, System.currentTimeMillis() - seen);
+    }
+    public int localBearingCount() { return localBearings.size(); }
+    public int remoteBearingCount() { return remoteBearings.size(); }
+    public int estimateCount() { return estimates().size(); }
 
     public Map<UUID, DuplexEstimate> estimates() {
         Map<UUID, DuplexEstimate> current = estimates.get();

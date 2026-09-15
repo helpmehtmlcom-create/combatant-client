@@ -354,6 +354,7 @@ public enum AddonManager {
         for (AddonRegistration registration : ADDONS.values()) {
             if (registration.addon == null || registration.status != AddonStatus.ACTIVE) continue;
             try {
+                suspendRuntimeContributions(registration);
                 if (context.jarReplacement()) {
                     shutdownAddon(registration, context.reason());
                     registration.status = AddonStatus.SHUTDOWN;
@@ -380,6 +381,7 @@ public enum AddonManager {
             }
             resumeAddon(registration, reason);
             if (registration.status != AddonStatus.ERROR) {
+                resumeRuntimeContributions(registration);
                 registration.status = AddonStatus.ACTIVE;
             }
         }

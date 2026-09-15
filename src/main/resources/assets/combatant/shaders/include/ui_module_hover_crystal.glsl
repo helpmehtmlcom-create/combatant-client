@@ -40,7 +40,7 @@ vec4 crystalSurface(vec2 p, float time, float reveal, float seed, vec3 c0, vec3 
 
     vec2 rnd = hash22(cellId + vec2(orientation * 17.0, orientation * 31.0) + seed * 53.0);
 
-    // Flat-facet depth/facing. The large range is deliberate: visible grade
+    // Flat-facet depth/facing. The large range is intentional: visible grade
     // separation is more important here than physically plausible lighting.
     float facing = 0.20 + rnd.x * 0.80;
     float depth = rnd.y;
@@ -59,7 +59,7 @@ vec4 crystalSurface(vec2 p, float time, float reveal, float seed, vec3 c0, vec3 
                     + seed * 1.37;
     float cellPulse = crystalPulse(cellPhase);
 
-    // Slow travelling infection front across the row. This is deliberately a
+    // Slow travelling infection front across the row. This is a
     // broad band so several adjacent facets activate as one spreading region.
     float front = crystalBand(
         p.x * 0.070 - p.y * 0.46 - time * 0.052 + seed * 0.83,

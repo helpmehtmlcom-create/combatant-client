@@ -12,7 +12,7 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Backend-neutral description of the inputs required by a blur/glass material.
  *
- * <p>The request deliberately contains no framebuffer or texture handles. The UI pass compiler
+ * <p>The request contains no framebuffer or texture handles. The UI pass compiler
  * can group compatible requests, while the executor resolves the logical sources to backend
  * resources without leaking GL/Vulkan details into feature code.</p>
  */

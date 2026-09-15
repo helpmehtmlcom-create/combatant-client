@@ -23,6 +23,7 @@ import combatant.client.render.engine.rhi.shader.ShaderResourceLayout;
 import combatant.client.render.engine.rhi.shader.ShaderResourceSlot;
 import combatant.client.render.engine.rhi.shader.StorageAccess;
 import combatant.client.render.engine.rhi.shader.StorageImageBinding;
+import combatant.client.render.sodium.fluid.WaterSurfaceExtractor;
 import net.minecraft.resources.Identifier;
 
 import java.util.ArrayList;
@@ -51,7 +52,9 @@ final class DeferredSceneRadianceSource implements AutoCloseable {
                 .read(DeferredResource.SCENE_COLOR)
                 .write(DeferredResource.SCENE_RADIANCE)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> (context.settings().indirectLightEnabled() || context.settings().reflectionsEnabled())
+                .when(context -> (context.settings().indirectLightEnabled()
+                        || context.settings().reflectionsEnabled()
+                        || WaterSurfaceExtractor.hasWaterPatches())
                         && context.resources().texture(DeferredResource.SCENE_COLOR) != null)
                 .execute(this::capture)
                 .build());

@@ -364,7 +364,7 @@ function renderTree(p, m, colors) {
   }));
 
   // Item tooltips (and explicit generic title/body layouts) retain the richer header.
-  // Compact generic tooltips deliberately remain one continuous body surface.
+  // Compact generic tooltips remain one continuous body surface.
   if (layout.header) {
     children.push(ui.shape({
       key: "header",

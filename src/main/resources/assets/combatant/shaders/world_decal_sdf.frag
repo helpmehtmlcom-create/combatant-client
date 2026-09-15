@@ -67,7 +67,7 @@ void main() {
     float tickWave = 0.5 + 0.5 * cos(angle * tickCount);
     float ticks = tickBand * smoothstep(0.72, 0.94, tickWave);
 
-    // Two deliberately asymmetric broken arcs keep the marker from reading as a generic HUD circle.
+    // Two asymmetric broken arcs keep the marker from reading as a generic HUD circle.
     float accentRing = ringMask(r, radius * 0.885, lineWidth * 1.20, aa);
     float accentWindows = max(
             arcWindow(angle, 0.78, 0.34, 0.035),

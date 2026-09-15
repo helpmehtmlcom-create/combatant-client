@@ -37,7 +37,7 @@ import java.util.List;
 /**
  * Edge-aware spatial resolve for temporally stabilized reflections.
  *
- * <p>This stage deliberately consumes only contracts that already exist: resolved depth,
+ * <p>This stage consumes only contracts that already exist: resolved depth,
  * geometric normal and reflection confidence. Material roughness is not inferred from color or
  * any other rendered result; once the material/G-buffer contract exposes roughness it can be added
  * to this filter explicitly.</p>

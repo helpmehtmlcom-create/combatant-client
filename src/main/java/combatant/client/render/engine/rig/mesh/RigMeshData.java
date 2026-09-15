@@ -12,7 +12,7 @@ import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.util.List;
 
 /**
- * CPU-side rig mesh description/compiler input. It deliberately owns no GPU resource or backend state.
+ * CPU-side rig mesh description/compiler input. It owns no GPU resource or backend state.
  */
 public final class RigMeshData {
     private final RigMeshPart[] parts;

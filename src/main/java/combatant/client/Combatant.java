@@ -95,7 +95,7 @@ import combatant.client.util.time.TimerController;
         value = ClientBoundLevel.FULL,
         packages = "combatant.client",
         resources = "assets/combatant",
-        exposedPackages = "combatant.client.mixins",
+        exposedPackages = {"combatant.client.api", "combatant.client.mixins"},
         isolatedEntrypoints = "combatant.client.runtime.isolated.CombatantIsolatedRuntime",
         isolatedPackages = "combatant.client.runtime.isolated"
 )
@@ -167,6 +167,18 @@ public class Combatant implements ClientModInitializer {
             @Override
             public void shutdown(RuntimeShutdownContext context) {
                 ClickGuiRenderer.shutdownForRuntime();
+            }
+        });
+        ClientRuntime.registerParticipant(new RuntimeShutdownParticipant() {
+            @Override
+            public String id() {
+                return "map-duplex";
+            }
+
+            @Override
+            public void shutdown(RuntimeShutdownContext context) {
+                MapLocationRuntime.get().suspend();
+                context.increment("duplexStopped", 1);
             }
         });
         ClientRuntime.registerParticipant(new RuntimeShutdownParticipant() {

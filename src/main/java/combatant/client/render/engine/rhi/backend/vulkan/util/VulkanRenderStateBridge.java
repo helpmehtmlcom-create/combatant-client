@@ -375,6 +375,14 @@ public enum VulkanRenderStateBridge {
                 && (stencilMode == StencilMode.WRITE || stencilMode == StencilMode.RESTORE);
     }
 
+    public static boolean depthBiasEnabled(boolean original) {
+        if (!vulkanBackendActive) return original;
+        RenderPipeline pipeline = COMPILING_PIPELINE.get();
+        if (pipeline == null || pipeline.getDepthStencilState() == null) return original;
+        var depth = pipeline.getDepthStencilState();
+        return depth.depthBiasConstant() != 0.0f || depth.depthBiasScaleFactor() != 0.0f;
+    }
+
     public static void beginPipelineCompile(RenderPipeline pipeline) {
         COMPILING_PIPELINE.set(pipeline);
     }

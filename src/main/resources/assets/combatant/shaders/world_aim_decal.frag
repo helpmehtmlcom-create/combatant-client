@@ -85,7 +85,7 @@ void main() {
             max(arcWindow(angle, -2.72, 0.20, 0.035), arcWindow(angle, -1.72, 0.10, 0.030))
     );
 
-    // Tiny contact core only; there is deliberately no opaque circular plate.
+    // Tiny contact core only; there is no opaque circular plate.
     float contact = 1.0 - smoothstep(radius * 0.09, radius * (0.28 + pulse * 0.018), r);
 
     float primary = max(outer, max(center * 0.90, accents));

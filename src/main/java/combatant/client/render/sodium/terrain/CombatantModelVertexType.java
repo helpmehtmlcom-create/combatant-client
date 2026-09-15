@@ -14,12 +14,13 @@ import net.caffeinemc.mods.sodium.client.render.chunk.vertex.format.ChunkVertexT
 
 /** Sodium terrain vertex extension used by Combatant deferred materials. */
 public final class CombatantModelVertexType implements ChunkVertexType {
-    public static final int STRIDE = 40;
+    public static final int STRIDE = 44;
     public static final int SURFACE_FLAGS_OFFSET = 20;
     public static final int MATERIAL_DATA_OFFSET = 24;
     public static final int MATERIAL_META_OFFSET = 28;
     public static final int TANGENT_OFFSET = 32;
     public static final int MATERIAL_SURFACE_OFFSET = 36;
+    public static final int BASE_COLOR_OFFSET = 40;
 
     public static final VertexFormat VERTEX_FORMAT = VertexFormat.builder(0)
             .addAttribute("a_Position", GpuFormat.RG32_UINT)
@@ -31,6 +32,7 @@ public final class CombatantModelVertexType implements ChunkVertexType {
             .addAttribute(CombatantChunkMeshAttributes.MATERIAL_META, GpuFormat.R32_UINT)
             .addAttribute(CombatantChunkMeshAttributes.TANGENT, GpuFormat.RGBA8_SNORM)
             .addAttribute(CombatantChunkMeshAttributes.MATERIAL_SURFACE, GpuFormat.R32_UINT)
+            .addAttribute(CombatantChunkMeshAttributes.BASE_COLOR, GpuFormat.RGBA8_UNORM)
             .build();
 
     @Override
@@ -46,7 +48,8 @@ public final class CombatantModelVertexType implements ChunkVertexType {
                 MATERIAL_DATA_OFFSET,
                 MATERIAL_META_OFFSET,
                 TANGENT_OFFSET,
-                MATERIAL_SURFACE_OFFSET
+                MATERIAL_SURFACE_OFFSET,
+                BASE_COLOR_OFFSET
         );
     }
 }

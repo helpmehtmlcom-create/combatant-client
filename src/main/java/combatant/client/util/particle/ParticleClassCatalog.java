@@ -20,8 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Catalog of client particle implementation classes observed by the particle engine.
  *
- * <p>The picker stores class names rather than particle registry ids. This is
- * deliberate: one particle option can resolve to different runtime particle
+ * <p>The picker stores class names rather than particle registry ids. This is intentional: one particle option can resolve to different runtime particle
  * implementations and modded particles do not have to be known to Combatant
  * at compile time. Entries appear as soon as the implementation is used.</p>
  */

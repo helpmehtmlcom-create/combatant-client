@@ -52,7 +52,7 @@ public enum RenderPrewarmManager {
     private static boolean atlasPopulationFailed;
 
     /**
-     * Early entrypoint-safe warmup. This method deliberately performs only CPU-side work until
+     * Early entrypoint-safe warmup. This method performs only CPU-side work until
      * {@link #onClientStarted()} confirms that Blaze3D has created its final GpuDevice.
      *
      * <p>{@code RenderSystem.isOnRenderThread()} is not a device-readiness check: Fabric invokes

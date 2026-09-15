@@ -68,7 +68,7 @@ public enum BetterChatStoreManager {
     }
 
     /**
-     * @return false only when BetterChat anti-spam deliberately suppresses the message.
+     * @return false only when BetterChat anti-spam suppresses the message.
      */
     public static boolean addMessage(Component text) {
         Component converted = LegacyTextUtil.convertLegacyCodes(text);

@@ -709,7 +709,7 @@ public final class CombatantAltManagerScreen extends Screen {
             float blackMix;
             int faceAlpha;
             if (ny > 0.55f) {
-                // Main-menu hexes deliberately keep the lower-right face brighter than lower-left.
+                // Main-menu hexes keep the lower-right face brighter than lower-left.
                 blackMix = nx >= 0f ? 0.59f : 0.78f;
                 faceAlpha = Math.round(alpha * (nx >= 0f ? 224f : 218f));
             } else if (nx > 0.05f) {

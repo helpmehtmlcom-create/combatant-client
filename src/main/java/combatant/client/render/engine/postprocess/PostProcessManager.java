@@ -48,7 +48,7 @@ public enum PostProcessManager {
     }
 
     /**
-     * Runs a deliberately isolated subset of a phase. Preview scenes use this to reuse a feature's
+     * Runs an isolated subset of a phase. Preview scenes use this to reuse a feature's
      * real compositor without pulling unrelated world post effects into the preview framebuffer.
      */
     public static void renderSelected(PostProcessPass.Phase phase,

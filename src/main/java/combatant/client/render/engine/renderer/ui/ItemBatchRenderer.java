@@ -343,7 +343,7 @@ public final class ItemBatchRenderer {
 
     /**
      * Incrementally renders a small slice of item models into the persistent UI atlas. The caller
-     * deliberately controls slice size, so expensive model/feature preparation is spread over
+     * controls slice size, so expensive model/feature preparation is spread over
      * ordinary client ticks instead of one first-open frame.
      */
     public static int prewarmUiItems(List<ItemStack> stacks, int startIndex, int maxItems) {

@@ -1294,7 +1294,7 @@ public enum Themes {
 
     /**
      * Converts a classic two-color client palette into the semantic colors used by
-     * the current ClickGUI/HUD. Backgrounds stay deliberately dark and only pick
+     * the current ClickGUI/HUD. Backgrounds stay dark and only pick
      * up a small amount of hue, while the supplied colors remain exact for the
      * accent pair.
      */

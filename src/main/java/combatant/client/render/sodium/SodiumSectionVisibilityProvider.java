@@ -14,7 +14,7 @@ import combatant.client.render.engine.core.policy.VisibilityQuery;
 /**
  * World-overlay visibility provider backed by Sodium's section visibility graph.
  * <p>
- * It deliberately does not own Sodium runtime access. Runtime access stays in SodiumRenderBridge,
+ * It does not own Sodium runtime access. Runtime access stays in SodiumRenderBridge,
  * so renderers/modules depend only on VisibilityProvider.
  */
 public final class SodiumSectionVisibilityProvider implements VisibilityProvider {

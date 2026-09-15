@@ -24,6 +24,8 @@ public enum DeferredResource {
             DeferredTextureSpec.attachment(GpuFormat.RGBA8_UNORM, MATCH_SCENE)),
     GBUFFER_MATERIAL(FrameGraphResourceKey.transientTexture("world.gbuffer.material"),
             DeferredTextureSpec.attachment(GpuFormat.RGBA8_UNORM, MATCH_SCENE)),
+    GBUFFER_MATERIAL_ID(FrameGraphResourceKey.transientTexture("world.gbuffer.material_id"),
+            DeferredTextureSpec.attachment(GpuFormat.R32_UINT, MATCH_SCENE)),
     VELOCITY(FrameGraphResourceKey.transientTexture("world.velocity"),
             DeferredTextureSpec.computeAttachment(GpuFormat.RG16_FLOAT, DeferredTextureSpec.ResolutionClass.FULL)),
     RESOLVED_DEPTH(FrameGraphResourceKey.transientTexture("world.depth.resolved"),

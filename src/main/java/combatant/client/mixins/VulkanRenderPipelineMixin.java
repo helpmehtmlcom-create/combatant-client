@@ -79,6 +79,15 @@ public abstract class VulkanRenderPipelineMixin {
 
     @ModifyArg(
             method = "compile",
+            at = @At(value = "INVOKE", target = "Lorg/lwjgl/vulkan/VkPipelineRasterizationStateCreateInfo;depthBiasEnable(Z)Lorg/lwjgl/vulkan/VkPipelineRasterizationStateCreateInfo;"),
+            index = 0
+    )
+    private static boolean combatant$fixDepthBiasEnable(boolean original) {
+        return VulkanRenderStateBridge.depthBiasEnabled(original);
+    }
+
+    @ModifyArg(
+            method = "compile",
             at = @At(value = "INVOKE", target = "Lorg/lwjgl/vulkan/VkPipelineDepthStencilStateCreateInfo;depthTestEnable(Z)Lorg/lwjgl/vulkan/VkPipelineDepthStencilStateCreateInfo;"),
             index = 0
     )

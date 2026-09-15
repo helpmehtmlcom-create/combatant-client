@@ -12,7 +12,7 @@ import java.util.Arrays;
 /**
  * Declarative panel primitive used by the fullscreen UI.
  *
- * <p>The builder deliberately separates authoring from lowering: callers choose
+ * <p>The builder separates authoring from lowering: callers choose
  * a reusable preset and only override the corners/sides which are exceptional.
  * The result is a normalized polygon which can be rendered by the analytic GPU
  * path when it is convex and small enough, or by the regular polygon fallback.</p>

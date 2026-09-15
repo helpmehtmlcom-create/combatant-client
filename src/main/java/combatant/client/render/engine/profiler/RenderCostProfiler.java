@@ -12,7 +12,7 @@ import java.util.List;
 /**
  * Named render-cost zones backed by Mojang's profiler/Tracy integration.
  *
- * <p>This class deliberately records durations only. Fine-grained UI-node
+ * <p>This class records durations only. Fine-grained UI-node
  * instrumentation is disabled because it creates excessive Tracy zone volume
  * and can become measurable profiling overhead by itself.</p>
  */

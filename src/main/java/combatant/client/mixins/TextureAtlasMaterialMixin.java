@@ -30,11 +30,12 @@ public abstract class TextureAtlasMaterialMixin {
     @Shadow private List<SpriteContents.AnimationState> animatedTexturesStates;
     @Shadow private int width;
     @Shadow private int height;
+    @Shadow private int maxMipLevel;
 
     @Inject(method = "upload", at = @At("TAIL"))
     private void combatant$buildMaterialAtlases(SpriteLoader.Preparations preparations, CallbackInfo ci) {
         if (!TextureAtlas.LOCATION_BLOCKS.equals(location)) return;
-        MaterialAtlasManager.global().rebuild(sprites, animatedTexturesStates, width, height);
+        MaterialAtlasManager.global().rebuild(sprites, animatedTexturesStates, width, height, maxMipLevel);
     }
 
     @Inject(method = "cycleAnimationFrames", at = @At("TAIL"))

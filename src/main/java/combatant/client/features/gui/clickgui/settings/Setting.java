@@ -368,7 +368,7 @@ public abstract class Setting {
         }
     }
 
-    /** Isolated setting boundary. Renderer/native failures are deliberately propagated. */
+    /** Isolated setting boundary. Renderer/native failures are propagated. */
     public final void renderSafely(float x,float y,float width,float mouseX,float mouseY) {
         if (ErrorHandler.blocked(this)) {
             SettingErrorView.render(this,ErrorHandler.failure(this),x,y,width,mouseX,mouseY);

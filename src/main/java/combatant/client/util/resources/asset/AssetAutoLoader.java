@@ -81,7 +81,7 @@ public enum AssetAutoLoader {
 
     /**
      * Activates a named runtime asset scope. Activation hooks are strict: a failed hook rolls the
-     * scope back. If rollback itself fails, the scope deliberately remains published so ownership
+     * scope back. If rollback itself fails, the scope remains published so ownership
      * can be recovered instead of being disguised as inactive.
      */
     public static synchronized boolean activate(String scope, ResourceManager manager) {

@@ -15,4 +15,5 @@ public enum CombatantChunkMeshAttributes {
     public static final String MATERIAL_META = "a_CombatantMaterialMeta";
     public static final String TANGENT = "a_CombatantTangent";
     public static final String MATERIAL_SURFACE = "a_CombatantMaterialSurface";
+    public static final String BASE_COLOR = "a_CombatantBaseColor";
 }

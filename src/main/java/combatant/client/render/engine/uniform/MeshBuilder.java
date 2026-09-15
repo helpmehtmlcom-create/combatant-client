@@ -408,6 +408,17 @@ public final class MeshBuilder implements AutoCloseable {
         indicesCount += 6;
     }
 
+    /** Writes one four-control-point patch index group without triangulating it. */
+    public void patch4(int i1, int i2, int i3, int i4) {
+        debugIndexWriteCapacity(4, "patch4");
+        long p = indicesPtr + indicesCount * 4L;
+        memPutInt(p, i1);
+        memPutInt(p + 4, i2);
+        memPutInt(p + 8, i3);
+        memPutInt(p + 12, i4);
+        indicesCount += 4;
+    }
+
     public void ensureLineCapacity() {
         ensureCapacity(2, 2);
     }

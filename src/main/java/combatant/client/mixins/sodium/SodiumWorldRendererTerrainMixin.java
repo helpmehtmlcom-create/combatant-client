@@ -50,7 +50,7 @@ public abstract class SodiumWorldRendererTerrainMixin {
                     pass.getTarget().getColorTextureView(),
                     pass.getTarget().getDepthTextureView()
             );
-        } else if (CombatantRenderSystem.deferredWorld().enabled()) {
+        } else {
             CombatantRenderSystem.deferredWorld().beforeTerrainSubmission();
         }
     }

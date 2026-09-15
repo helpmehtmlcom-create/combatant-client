@@ -45,6 +45,7 @@ layout(location = 1) out vec4 combatantGbufferSurface;
 layout(location = 2) out vec4 combatantGbufferGeometry;
 layout(location = 3) out vec4 combatantGbufferAuxiliary;
 layout(location = 4) out vec4 combatantGbufferMaterial;
+layout(location = 5) out uint combatantGbufferMaterialId;
 #endif
 
 const uint COMBATANT_SURFACE_SOFT_FADE = 1u << 0u;
@@ -217,5 +218,6 @@ void main() {
         clamp(dielectricF0, 0.0, 1.0),
         max(emission, 0.0)
     );
+    combatantGbufferMaterialId = v_CombatantMaterialId;
 #endif
 }

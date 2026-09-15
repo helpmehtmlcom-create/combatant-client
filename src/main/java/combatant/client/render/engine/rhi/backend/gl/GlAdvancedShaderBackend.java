@@ -15,6 +15,7 @@ import com.mojang.blaze3d.opengl.GlStateManager;
 import com.mojang.blaze3d.opengl.GlSampler;
 import com.mojang.blaze3d.opengl.GlConst;
 import com.mojang.blaze3d.opengl.GlTextureView;
+import com.mojang.blaze3d.textures.GpuTextureView;
 import combatant.client.mixininterface.IMsaaTexture;
 import combatant.client.mixininterface.IGlBackendInfo;
 import combatant.client.render.engine.rhi.GpuMeshHandle;
@@ -28,6 +29,7 @@ import net.minecraft.resources.Identifier;
 import org.lwjgl.opengl.*;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 
@@ -196,8 +198,32 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
         if (!(command.pipeline() instanceof GlPatchPipeline pipeline) || pipeline.closed) {
             throw new IllegalArgumentException("Patch pipeline does not belong to the active OpenGL backend");
         }
-        if (!(command.colorAttachment() instanceof GlTextureView color) || color.isClosed()) {
-            throw new IllegalArgumentException("OpenGL patch target must be a live GlTextureView");
+        List<GlTextureView> colors = new ArrayList<>(command.colorAttachments().size());
+        for (GpuTextureView view : command.colorAttachments()) {
+            if (!(view instanceof GlTextureView color) || color.isClosed()) {
+                throw new IllegalArgumentException("OpenGL patch targets must be live GlTextureView objects");
+            }
+            colors.add(color);
+        }
+        if (colors.size() != pipeline.descriptor.colorFormats().size()) {
+            throw new IllegalArgumentException("Patch color attachment count mismatch: pipeline="
+                    + pipeline.descriptor.colorFormats().size() + " draw=" + colors.size());
+        }
+        GlTextureView color0 = colors.get(0);
+        for (int i = 0; i < colors.size(); i++) {
+            GlTextureView color = colors.get(i);
+            if (color.texture().getFormat() != pipeline.descriptor.colorFormats().get(i)) {
+                throw new IllegalArgumentException("Patch color format mismatch at attachment " + i + ": expected="
+                        + pipeline.descriptor.colorFormats().get(i) + " actual=" + color.texture().getFormat());
+            }
+            int colorSamples = color.texture() instanceof IMsaaTexture msaa ? Math.max(1, msaa.combatant$getSamples()) : 1;
+            if (colorSamples != pipeline.descriptor.samples()) {
+                throw new IllegalArgumentException("Patch color sample mismatch at attachment " + i + ": expected="
+                        + pipeline.descriptor.samples() + " actual=" + colorSamples);
+            }
+            if (color.getWidth(0) != color0.getWidth(0) || color.getHeight(0) != color0.getHeight(0)) {
+                throw new IllegalArgumentException("Patch color attachments must have identical dimensions");
+            }
         }
         GlTextureView depth = null;
         if (command.depthAttachment() != null) {
@@ -205,6 +231,21 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
                 throw new IllegalArgumentException("OpenGL patch depth target must be a live GlTextureView");
             }
             depth = glDepth;
+        }
+        if (pipeline.descriptor.depthMode() != AdvancedDepthMode.DISABLED) {
+            if (depth == null) throw new IllegalArgumentException("Patch pipeline requires a depth attachment");
+            if (depth.texture().getFormat() != pipeline.descriptor.depthFormat()) {
+                throw new IllegalArgumentException("Patch depth format mismatch: expected="
+                        + pipeline.descriptor.depthFormat() + " actual=" + depth.texture().getFormat());
+            }
+            int depthSamples = depth.texture() instanceof IMsaaTexture msaa ? Math.max(1, msaa.combatant$getSamples()) : 1;
+            if (depthSamples != pipeline.descriptor.samples()) {
+                throw new IllegalArgumentException("Patch depth sample mismatch: expected="
+                        + pipeline.descriptor.samples() + " actual=" + depthSamples);
+            }
+            if (depth.getWidth(0) != color0.getWidth(0) || depth.getHeight(0) != color0.getHeight(0)) {
+                throw new IllegalArgumentException("Patch color/depth dimensions differ");
+            }
         }
         validateBindings(pipeline.resources(), command.storageBindings(), command.sampledTextures(), command.storageImages());
 
@@ -223,12 +264,12 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
         if (backend == null) throw new IllegalStateException("Mojang OpenGL backend is unavailable");
         int fbo = backend.combatant$frameBufferCache().getFbo(
                 backend.combatant$directStateAccess(),
-                List.<FrameBufferAttachment>of(color),
+                new ArrayList<FrameBufferAttachment>(colors),
                 depth);
 
         try {
             GlStateManager._glBindFramebuffer(GL30C.GL_FRAMEBUFFER, fbo);
-            GlStateManager._viewport(0, 0, color.getWidth(0), color.getHeight(0));
+            GlStateManager._viewport(0, 0, color0.getWidth(0), color0.getHeight(0));
             applyRasterState(pipeline.descriptor);
             GlStateManager._glUseProgram(pipeline.program);
             bindStorage(command.storageBindings());
@@ -480,12 +521,22 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
             case READ_ONLY_LEQUAL -> {
                 GlStateManager._enableDepthTest();
                 GlStateManager._depthMask(false);
-                GL11C.glDepthFunc(GL11C.GL_LEQUAL);
+                GlStateManager._depthFunc(GL11C.GL_LEQUAL);
             }
             case READ_WRITE_LEQUAL -> {
                 GlStateManager._enableDepthTest();
                 GlStateManager._depthMask(true);
-                GL11C.glDepthFunc(GL11C.GL_LEQUAL);
+                GlStateManager._depthFunc(GL11C.GL_LEQUAL);
+            }
+            case READ_ONLY_GREATER_EQUAL -> {
+                GlStateManager._enableDepthTest();
+                GlStateManager._depthMask(false);
+                GlStateManager._depthFunc(GL11C.GL_GEQUAL);
+            }
+            case READ_WRITE_GREATER_EQUAL -> {
+                GlStateManager._enableDepthTest();
+                GlStateManager._depthMask(true);
+                GlStateManager._depthFunc(GL11C.GL_GEQUAL);
             }
         }
 

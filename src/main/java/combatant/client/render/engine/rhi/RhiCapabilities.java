@@ -21,7 +21,7 @@ import java.util.Set;
 /**
  * Backend capability snapshot whose primary source of truth is Blaze3D's active {@link DeviceInfo}.
  *
- * <p>Combatant deliberately does not maintain a second copy of Mojang's feature/limit resolver.
+ * <p>Combatant does not maintain a second copy of Mojang's feature/limit resolver.
  * Existing capabilities are delegated to {@link DeviceFeatures}, {@link DeviceLimits} and
  * {@link DeviceInfo#underlyingExtensions()}. Only backend facts that Blaze3D resolved internally but
  * does not expose in {@code DeviceFeatures} are appended here through the backend bridge.</p>

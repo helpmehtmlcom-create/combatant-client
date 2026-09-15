@@ -1,7 +1,7 @@
 /* Shared UI stroke coverage. Distances, thickness and softness are in logical pixels. */
 
 /*
- * Stroke AA deliberately shares the exact same footprint function as shape fills.
+ * Stroke AA shares the exact same footprint function as shape fills.
  * This keeps the 50% contour of a stroke on the source SDF boundary instead of
  * producing a harder, slightly expanded outer rim at rounded corners and flat edges.
  */

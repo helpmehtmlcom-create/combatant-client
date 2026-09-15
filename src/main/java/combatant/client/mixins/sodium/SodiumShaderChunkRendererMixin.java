@@ -171,6 +171,9 @@ public abstract class SodiumShaderChunkRendererMixin {
             index = 0
     )
     private Identifier combatant$useCombatantSodiumVertexShader(Identifier original) {
+        if (!CombatantRenderSystem.deferredWorld().enabled()) {
+            return original;
+        }
         return CombatantRenderSystem.sodium().shaderWorkarounds().overrideShaderIdentifier(original);
     }
 
@@ -183,6 +186,9 @@ public abstract class SodiumShaderChunkRendererMixin {
             index = 0
     )
     private Identifier combatant$useCombatantSodiumFragmentShader(Identifier original) {
+        if (!CombatantRenderSystem.deferredWorld().enabled()) {
+            return original;
+        }
         return CombatantRenderSystem.sodium().shaderWorkarounds().overrideShaderIdentifier(original);
     }
 }

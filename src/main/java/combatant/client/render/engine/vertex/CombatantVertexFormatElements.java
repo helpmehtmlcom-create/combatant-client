@@ -31,5 +31,8 @@ public enum CombatantVertexFormatElements {
     public static final GpuFormat BONE_WEIGHTS = GpuFormat.RGBA8_UNORM;
     public static final GpuFormat DEFORM_COORD = GpuFormat.RGBA32_FLOAT;
     public static final GpuFormat DEFORM_META = GpuFormat.R32_UINT;
+    public static final GpuFormat MATERIAL_ID = GpuFormat.R32_UINT;
+    public static final GpuFormat MATERIAL_MAP_MASK = GpuFormat.R32_UINT;
+    public static final GpuFormat MATERIAL_SURFACE = GpuFormat.R32_UINT;
 
 }

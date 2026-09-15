@@ -330,7 +330,7 @@ public class DropESP extends Module {
         try {
             ScreenSpaceOverlay2D.ScreenRect rect = entry.rect();
             if (frameValue.get()) {
-                // DropESP frames are deliberately hard rectangular quad outlines in every
+                // DropESP frames are hard rectangular quad outlines in every
                 // presentation mode. No rounded/SDF stroke is used here.
                 ScreenSpaceOverlay2D.drawFrame(renderer, rect, entry.color());
             }

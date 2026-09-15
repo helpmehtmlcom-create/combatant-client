@@ -134,7 +134,7 @@ public final class RigSkinBinding {
                     return;
                 }
                 float t = (longitudinal - start) / (end - start);
-                // Smoothstep reduces a visible crease at the edge of a deliberately narrow band.
+                // Smoothstep reduces a visible crease at the edge of a narrow band.
                 t = t * t * (3f - 2f * t);
                 destination.add(bones[joint], 1f - t);
                 destination.add(bones[joint + 1], t);

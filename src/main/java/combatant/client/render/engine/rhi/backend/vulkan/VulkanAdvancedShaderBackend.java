@@ -8,6 +8,7 @@
 package combatant.client.render.engine.rhi.backend.vulkan;
 
 import com.mojang.blaze3d.IndexType;
+import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanCommandEncoder;
@@ -245,12 +246,13 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
                     .sType$Default();
             if (descriptor.depthMode() != AdvancedDepthMode.DISABLED) {
                 depthStencil.depthTestEnable(true)
-                        .depthWriteEnable(descriptor.depthMode() == AdvancedDepthMode.READ_WRITE_LEQUAL)
-                        .depthCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL);
+                        .depthWriteEnable(descriptor.depthMode().writesDepth())
+                        .depthCompareOp(descriptor.depthMode().reversedZ()
+                                ? VK_COMPARE_OP_GREATER_OR_EQUAL : VK_COMPARE_OP_LESS_OR_EQUAL);
             }
 
-            VkPipelineColorBlendAttachmentState.Buffer colorAttachment = VkPipelineColorBlendAttachmentState.calloc(1, stack);
-            configureBlend(colorAttachment.get(0), descriptor.blendMode());
+            VkPipelineColorBlendAttachmentState.Buffer colorAttachment = VkPipelineColorBlendAttachmentState.calloc(descriptor.colorFormats().size(), stack);
+            for (int i = 0; i < descriptor.colorFormats().size(); i++) configureBlend(colorAttachment.get(i), descriptor.blendMode());
             VkPipelineColorBlendStateCreateInfo blend = VkPipelineColorBlendStateCreateInfo.calloc(stack)
                     .sType$Default()
                     .pAttachments(colorAttachment);
@@ -262,11 +264,13 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
                     .sType$Default()
                     .pDynamicStates(stack.ints(VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR));
 
-            int colorVkFormat = VulkanConst.toVk(descriptor.colorFormat());
+            java.nio.IntBuffer colorVkFormats = stack.mallocInt(descriptor.colorFormats().size());
+            for (GpuFormat colorFormat : descriptor.colorFormats()) colorVkFormats.put(VulkanConst.toVk(colorFormat));
+            colorVkFormats.flip();
             VkPipelineRenderingCreateInfoKHR rendering = VkPipelineRenderingCreateInfoKHR.calloc(stack)
                     .sType$Default()
-                    .colorAttachmentCount(1)
-                    .pColorAttachmentFormats(stack.ints(colorVkFormat));
+                    .colorAttachmentCount(descriptor.colorFormats().size())
+                    .pColorAttachmentFormats(colorVkFormats);
             if (descriptor.depthFormat() != null) rendering.depthAttachmentFormat(VulkanConst.toVk(descriptor.depthFormat()));
 
             VkGraphicsPipelineCreateInfo.Buffer pipelineInfo = VkGraphicsPipelineCreateInfo.calloc(1, stack);
@@ -405,9 +409,18 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
         if (!(command.pipeline() instanceof VulkanPatchPipeline pipeline) || pipeline.closed) {
             throw new IllegalArgumentException("Patch pipeline does not belong to the active Vulkan backend");
         }
-        if (!(command.colorAttachment() instanceof VulkanGpuTextureView color) || color.isClosed()) {
-            throw new IllegalArgumentException("Vulkan patch color target must be a live VulkanGpuTextureView");
+        List<VulkanGpuTextureView> colors = new ArrayList<>(command.colorAttachments().size());
+        for (GpuTextureView view : command.colorAttachments()) {
+            if (!(view instanceof VulkanGpuTextureView color) || color.isClosed()) {
+                throw new IllegalArgumentException("Vulkan patch color targets must be live VulkanGpuTextureView objects");
+            }
+            colors.add(color);
         }
+        if (colors.size() != pipeline.descriptor.colorFormats().size()) {
+            throw new IllegalArgumentException("Patch color attachment count mismatch: pipeline="
+                    + pipeline.descriptor.colorFormats().size() + " draw=" + colors.size());
+        }
+        VulkanGpuTextureView color0 = colors.get(0);
         VulkanGpuTextureView depth = null;
         if (command.depthAttachment() != null) {
             if (!(command.depthAttachment() instanceof VulkanGpuTextureView vkDepth) || vkDepth.isClosed()) {
@@ -415,7 +428,7 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
             }
             depth = vkDepth;
         }
-        validatePatchTarget(pipeline.descriptor, color, depth);
+        validatePatchTarget(pipeline.descriptor, colors, depth);
         validateBindings(pipeline.resources(), command.storageBindings(), command.sampledTextures(), command.storageImages());
 
         GpuMeshHandle mesh = command.mesh();
@@ -432,15 +445,17 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
         VulkanCommandEncoder encoder = currentEncoder();
         VkCommandBuffer commandBuffer = commandBuffer(encoder);
         try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkRenderingAttachmentInfo.Buffer colorAttachment = VkRenderingAttachmentInfo.calloc(1, stack);
-            colorAttachment.get(0).sType$Default()
-                    .imageView(color.vkImageView())
-                    .imageLayout(VK_IMAGE_LAYOUT_GENERAL)
-                    .loadOp(VK_ATTACHMENT_LOAD_OP_LOAD)
-                    .storeOp(VK_ATTACHMENT_STORE_OP_STORE);
+            VkRenderingAttachmentInfo.Buffer colorAttachment = VkRenderingAttachmentInfo.calloc(colors.size(), stack);
+            for (int i = 0; i < colors.size(); i++) {
+                colorAttachment.get(i).sType$Default()
+                        .imageView(colors.get(i).vkImageView())
+                        .imageLayout(VK_IMAGE_LAYOUT_GENERAL)
+                        .loadOp(VK_ATTACHMENT_LOAD_OP_LOAD)
+                        .storeOp(VK_ATTACHMENT_STORE_OP_STORE);
+            }
             VkRenderingInfo rendering = VkRenderingInfo.calloc(stack).sType$Default();
             rendering.renderArea().offset().set(0, 0);
-            rendering.renderArea().extent().set(color.getWidth(0), color.getHeight(0));
+            rendering.renderArea().extent().set(color0.getWidth(0), color0.getHeight(0));
             rendering.layerCount(1).pColorAttachments(colorAttachment);
 
             VkRenderingAttachmentInfo depthAttachment = null;
@@ -458,12 +473,12 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
             try {
                 VkViewport.Buffer viewport = VkViewport.calloc(1, stack);
                 viewport.get(0).x(0.0f).y(0.0f)
-                        .width(color.getWidth(0)).height(color.getHeight(0))
+                        .width(color0.getWidth(0)).height(color0.getHeight(0))
                         .minDepth(0.0f).maxDepth(1.0f);
                 vkCmdSetViewport(commandBuffer, 0, viewport);
                 VkRect2D.Buffer scissor = VkRect2D.calloc(1, stack);
                 scissor.get(0).offset().set(0, 0);
-                scissor.get(0).extent().set(color.getWidth(0), color.getHeight(0));
+                scissor.get(0).extent().set(color0.getWidth(0), color0.getHeight(0));
                 vkCmdSetScissor(commandBuffer, 0, scissor);
 
                 vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipeline);
@@ -844,16 +859,27 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
     }
 
     private static void validatePatchTarget(PatchPipelineDescriptor descriptor,
-                                            VulkanGpuTextureView color,
+                                            List<VulkanGpuTextureView> colors,
                                             VulkanGpuTextureView depth) {
-        if (color.texture().getFormat() != descriptor.colorFormat()) {
-            throw new IllegalArgumentException("Patch color format mismatch: expected=" + descriptor.colorFormat()
-                    + " actual=" + color.texture().getFormat());
+        if (colors.size() != descriptor.colorFormats().size()) {
+            throw new IllegalArgumentException("Patch color attachment count mismatch: expected="
+                    + descriptor.colorFormats().size() + " actual=" + colors.size());
         }
-        int colorSamples = color.texture() instanceof IMsaaTexture msaa ? msaa.combatant$getSamples() : 1;
-        if (colorSamples != descriptor.samples()) {
-            throw new IllegalArgumentException("Patch color sample mismatch: expected=" + descriptor.samples()
-                    + " actual=" + colorSamples);
+        VulkanGpuTextureView color0 = colors.get(0);
+        for (int i = 0; i < colors.size(); i++) {
+            VulkanGpuTextureView color = colors.get(i);
+            if (color.texture().getFormat() != descriptor.colorFormats().get(i)) {
+                throw new IllegalArgumentException("Patch color format mismatch at attachment " + i + ": expected="
+                        + descriptor.colorFormats().get(i) + " actual=" + color.texture().getFormat());
+            }
+            int colorSamples = color.texture() instanceof IMsaaTexture msaa ? msaa.combatant$getSamples() : 1;
+            if (colorSamples != descriptor.samples()) {
+                throw new IllegalArgumentException("Patch color sample mismatch at attachment " + i + ": expected="
+                        + descriptor.samples() + " actual=" + colorSamples);
+            }
+            if (color.getWidth(0) != color0.getWidth(0) || color.getHeight(0) != color0.getHeight(0)) {
+                throw new IllegalArgumentException("Patch color attachment dimensions differ");
+            }
         }
         if (descriptor.depthMode() != AdvancedDepthMode.DISABLED) {
             if (depth == null) throw new IllegalArgumentException("Patch pipeline requires depth");
@@ -865,6 +891,9 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
             if (depthSamples != descriptor.samples()) {
                 throw new IllegalArgumentException("Patch depth sample mismatch: expected=" + descriptor.samples()
                         + " actual=" + depthSamples);
+            }
+            if (depth.getWidth(0) != color0.getWidth(0) || depth.getHeight(0) != color0.getHeight(0)) {
+                throw new IllegalArgumentException("Patch color/depth dimensions differ");
             }
         }
     }

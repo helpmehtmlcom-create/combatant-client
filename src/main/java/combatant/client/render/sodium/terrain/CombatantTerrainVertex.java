@@ -12,6 +12,7 @@
 package combatant.client.render.sodium.terrain;
 
 import net.caffeinemc.mods.sodium.client.render.chunk.vertex.format.ChunkVertexEncoder;
+import net.caffeinemc.mods.sodium.api.util.ColorARGB;
 import net.minecraft.util.Mth;
 import org.lwjgl.system.MemoryUtil;
 
@@ -28,19 +29,22 @@ public final class CombatantTerrainVertex implements ChunkVertexEncoder {
     private final int materialMetaOffset;
     private final int tangentOffset;
     private final int materialSurfaceOffset;
+    private final int baseColorOffset;
 
     public CombatantTerrainVertex(int stride,
                                   int surfaceFlagsOffset,
                                   int materialDataOffset,
                                   int materialMetaOffset,
                                   int tangentOffset,
-                                  int materialSurfaceOffset) {
+                                  int materialSurfaceOffset,
+                                  int baseColorOffset) {
         this.stride = stride;
         this.surfaceFlagsOffset = surfaceFlagsOffset;
         this.materialDataOffset = materialDataOffset;
         this.materialMetaOffset = materialMetaOffset;
         this.tangentOffset = tangentOffset;
         this.materialSurfaceOffset = materialSurfaceOffset;
+        this.baseColorOffset = baseColorOffset;
     }
 
     private static int packPositionHi(int x, int y, int z) {
@@ -186,8 +190,8 @@ public final class CombatantTerrainVertex implements ChunkVertexEncoder {
 
             MemoryUtil.memPutInt(ptr, packPositionHi(x, y, z));
             MemoryUtil.memPutInt(ptr + 4L, packPositionLo(x, y, z));
-            // Base/diffuse tint stays unoccluded; AO is a distinct material/lighting signal.
-            MemoryUtil.memPutInt(ptr + 8L, vertex.color);
+            // Keep Sodium's forward vertex color byte-for-byte compatible.
+            MemoryUtil.memPutInt(ptr + 8L, ColorARGB.mulRGB(vertex.color, vertex.ao));
             MemoryUtil.memPutInt(ptr + 12L, packTexture(u, v));
             MemoryUtil.memPutInt(ptr + 16L, packLightAndData(light, materialBits, sectionIndex));
             MemoryUtil.memPutInt(ptr + this.surfaceFlagsOffset, extension.combatant$getSurfaceFlags());
@@ -195,6 +199,8 @@ public final class CombatantTerrainVertex implements ChunkVertexEncoder {
             MemoryUtil.memPutInt(ptr + this.materialMetaOffset, packMaterialMeta(extension, vertex.ao));
             MemoryUtil.memPutInt(ptr + this.tangentOffset, packedTangent);
             MemoryUtil.memPutInt(ptr + this.materialSurfaceOffset, extension.combatant$getPackedScalarSurface());
+            // Deferred needs the unoccluded tint; forward Sodium continues to consume a_Color above.
+            MemoryUtil.memPutInt(ptr + this.baseColorOffset, vertex.color);
 
             ptr += this.stride;
         }

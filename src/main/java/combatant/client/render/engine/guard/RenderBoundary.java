@@ -10,7 +10,7 @@ package combatant.client.render.engine.guard;
 /**
  * Central list of architecture boundary package rules.
  * <p>
- * This is used by debug audits and as documentation in code. The rules are deliberately string-based so they do not
+ * This is used by debug audits and as documentation in code. The rules are string-based so they do not
  * introduce hard dependencies from high-level renderer code to GL/Sodium classes.
  */
 public enum RenderBoundary {

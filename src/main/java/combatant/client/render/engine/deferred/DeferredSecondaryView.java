@@ -14,7 +14,7 @@ import org.joml.Matrix4fc;
 /**
  * Immutable per-frame metadata for one secondary render view/cascade/probe.
  *
- * <p>The target coordinates deliberately describe both array-layer and atlas-backed producers.
+ * <p>The target coordinates describe both array-layer and atlas-backed producers.
  * A zero viewport width/height means "use the complete producer-owned target/layer".</p>
  */
 public record DeferredSecondaryView(

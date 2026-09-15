@@ -45,7 +45,6 @@ import combatant.client.render.engine.uniform.MeshBuilder;
 public class BlockHighlight extends Module {
 
     private static final double RAINBOW_SPATIAL_SCALE = 12.0;
-    private static final double GEOMETRY_EXPAND = 0.0025;
     private final Minecraft mc = Minecraft.getInstance();
     private final BooleanValue outlineEnabled =
             bool(
@@ -281,7 +280,7 @@ public class BlockHighlight extends Module {
     private void renderShapeLines(Renderer3D renderer, VoxelShape worldShape) {
         MeshBuilder mesh = renderer.batch(
                 outlineDepthTest.get()
-                        ? CombatantRenderPipelines.WORLD_COLORED_DEPTH
+                        ? CombatantRenderPipelines.WORLD_COLORED_COPLANAR_DEPTH
                         : CombatantRenderPipelines.WORLD_COLORED,
                 outlineDepthTest.get()
                         ? Renderer3D.DepthMode.PRE_DEPTH
@@ -289,10 +288,6 @@ public class BlockHighlight extends Module {
         );
 
         if (mesh == null) return;
-
-        double overlap = outlineDepthTest.get()
-                ? Math.max(0.0015, outlineThickness.get() * 0.003)
-                : 0.0008;
 
         worldShape.forAllEdges((x1, y1, z1, x2, y2, z2) -> {
             int c1 = getOutlineColor(x1, y1, z1);
@@ -302,7 +297,6 @@ public class BlockHighlight extends Module {
                     mesh,
                     x1, y1, z1,
                     x2, y2, z2,
-                    overlap,
                     c1,
                     c2
             );
@@ -312,7 +306,6 @@ public class BlockHighlight extends Module {
     private void addEdgeRibbon(MeshBuilder mesh,
                                double x1, double y1, double z1,
                                double x2, double y2, double z2,
-                               double overlap,
                                int argb1,
                                int argb2) {
         double mx = (x1 + x2) * 0.5;
@@ -350,17 +343,12 @@ public class BlockHighlight extends Module {
         sideY *= sideInv * halfWidth;
         sideZ *= sideInv * halfWidth;
 
-        double camInv = 1.0 / Math.sqrt(toCamLenSq);
-        double biasX = toCamX * camInv * overlap;
-        double biasY = toCamY * camInv * overlap;
-        double biasZ = toCamZ * camInv * overlap;
-
         addGradientQuad(
                 mesh,
-                x1 - sideX + biasX, y1 - sideY + biasY, z1 - sideZ + biasZ, argb1,
-                x1 + sideX + biasX, y1 + sideY + biasY, z1 + sideZ + biasZ, argb1,
-                x2 + sideX + biasX, y2 + sideY + biasY, z2 + sideZ + biasZ, argb2,
-                x2 - sideX + biasX, y2 - sideY + biasY, z2 - sideZ + biasZ, argb2
+                x1 - sideX, y1 - sideY, z1 - sideZ, argb1,
+                x1 + sideX, y1 + sideY, z1 + sideZ, argb1,
+                x2 + sideX, y2 + sideY, z2 + sideZ, argb2,
+                x2 - sideX, y2 - sideY, z2 - sideZ, argb2
         );
     }
 
@@ -376,7 +364,7 @@ public class BlockHighlight extends Module {
     private void renderShapeBoxes(Renderer3D renderer, VoxelShape worldShape) {
         MeshBuilder mesh = renderer.batch(
                 outlineDepthTest.get()
-                        ? CombatantRenderPipelines.WORLD_COLORED_DEPTH
+                        ? CombatantRenderPipelines.WORLD_COLORED_COPLANAR_DEPTH
                         : CombatantRenderPipelines.WORLD_COLORED,
                 outlineDepthTest.get()
                         ? Renderer3D.DepthMode.PRE_DEPTH
@@ -385,16 +373,8 @@ public class BlockHighlight extends Module {
 
         if (mesh == null) return;
 
-        worldShape.forAllBoxes((minX, minY, minZ, maxX, maxY, maxZ) -> {
-            double x1 = minX - GEOMETRY_EXPAND;
-            double y1 = minY - GEOMETRY_EXPAND;
-            double z1 = minZ - GEOMETRY_EXPAND;
-            double x2 = maxX + GEOMETRY_EXPAND;
-            double y2 = maxY + GEOMETRY_EXPAND;
-            double z2 = maxZ + GEOMETRY_EXPAND;
-
-            addGradientBox(mesh, x1, y1, z1, x2, y2, z2);
-        });
+        worldShape.forAllBoxes((minX, minY, minZ, maxX, maxY, maxZ) ->
+                addGradientBox(mesh, minX, minY, minZ, maxX, maxY, maxZ));
     }
 
     private void addGradientBox(MeshBuilder mesh,

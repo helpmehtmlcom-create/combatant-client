@@ -9,9 +9,7 @@ package combatant.client.config.subsystem;
 
 import combatant.client.config.SettingDef;
 import combatant.client.config.values.BooleanValue;
-import combatant.client.config.values.EnumValue;
 import combatant.client.config.values.NumberValue;
-import combatant.client.config.values.StringValue;
 import combatant.client.features.map.duplex.DuplexRole;
 
 import java.util.List;
@@ -19,18 +17,16 @@ import java.util.List;
 /**
  * Local-only DUPLEX IPC configuration.
  *
- * <p>The transport never exposes a configurable host: PRIMARY binds 127.0.0.1 and SECONDARY
- * connects to 127.0.0.1. The optional session token only authenticates another local process;
- * an empty token is valid because the socket is not reachable from external interfaces.</p>
+ * <p>The Combatant side always owns the PRIMARY endpoint on a fixed loopback port. The standalone
+ * courier is always SECONDARY, so neither artifact needs a second role/port/token configuration
+ * that can drift out of sync.</p>
  */
 @ConfigSubsystem(value = "map/duplex", settingOwner = "duplex")
 public final class DuplexLocalConfig extends SubsystemConfig {
     public static final DuplexLocalConfig INSTANCE = new DuplexLocalConfig();
+    public static final int COURIER_PORT = 28464;
 
     private final BooleanValue enabled = bool("enabled", false);
-    private final EnumValue<DuplexRole> role = enumValue("role", DuplexRole.PRIMARY, DuplexRole.class);
-    private final NumberValue<Integer> port = number("port", 28464, 1024, 65535);
-    private final StringValue sessionToken = value(new StringValue("sessionToken", ""));
     private final NumberValue<Integer> reconnectMs = number("reconnectMs", 1000, 100, 10000);
     private final NumberValue<Integer> heartbeatMs = number("heartbeatMs", 2000, 250, 60000);
     private final NumberValue<Integer> samplePairToleranceMs = number("samplePairToleranceMs", 750, 25, 10000);
@@ -43,10 +39,11 @@ public final class DuplexLocalConfig extends SubsystemConfig {
     }
 
     public static DuplexLocalConfig get() { return INSTANCE; }
+    public BooleanValue enabledValue() { return enabled; }
     public boolean enabled() { return enabled.get(); }
-    public DuplexRole role() { return role.get(); }
-    public int port() { return port.get().intValue(); }
-    public String sessionToken() { return sessionToken.get(); }
+    public DuplexRole role() { return DuplexRole.PRIMARY; }
+    public int port() { return COURIER_PORT; }
+    public String sessionToken() { return ""; }
     public int reconnectMs() { return reconnectMs.get().intValue(); }
     public int heartbeatMs() { return heartbeatMs.get().intValue(); }
     public int samplePairToleranceMs() { return samplePairToleranceMs.get().intValue(); }
@@ -56,7 +53,7 @@ public final class DuplexLocalConfig extends SubsystemConfig {
 
     /** Values that require a new local IPC/session contract when changed. */
     public int runtimeFingerprint() {
-        return java.util.Objects.hash(role.get(), port.get(), sessionToken.get(), reconnectMs.get(), heartbeatMs.get(),
+        return java.util.Objects.hash(reconnectMs.get(), heartbeatMs.get(),
                 samplePairToleranceMs.get(), minCrossingAngleDegrees.get(), bearingNoiseDegrees.get(), estimateStaleMs.get());
     }
 
@@ -64,9 +61,6 @@ public final class DuplexLocalConfig extends SubsystemConfig {
     public List<SettingDef> getSettingDefs() {
         return List.of(
                 SettingDef.bool("enabled", enabled),
-                SettingDef.mode("role", role),
-                SettingDef.number("port", port),
-                SettingDef.text("sessionToken", sessionToken),
                 SettingDef.number("reconnectMs", reconnectMs),
                 SettingDef.number("heartbeatMs", heartbeatMs),
                 SettingDef.number("samplePairToleranceMs", samplePairToleranceMs),

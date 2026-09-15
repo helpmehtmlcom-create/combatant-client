@@ -17,7 +17,7 @@ import java.util.Objects;
 /**
  * Compiles ordered pass contracts into explicit resource hazards.
  *
- * <p>This first graph slice deliberately preserves producer order. It makes resource hazards and
+ * <p>This first graph slice preserves producer order. It makes resource hazards and
  * lifetime declarations explicit now, while later graph lowering can insert barriers, alias
  * transient allocations and cull passes without changing producer contracts.</p>
  */
