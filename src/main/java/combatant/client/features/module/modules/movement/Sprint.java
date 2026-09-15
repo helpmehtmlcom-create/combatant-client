@@ -184,14 +184,32 @@ public final class Sprint extends Module {
             return;
         }
 
-        float moveYaw = getMovementYaw(player, player.getYRot());
-        Vec3 forwardInput = new Vec3(0.0, 0.0, 1.0);
-        Vec3 velocity = EntityInvoker.combatant$movementInputToVelocity(
-                forwardInput,
-                event.getSpeed(),
-                moveYaw
-        );
-        event.setVelocity(velocity);
+        StrafeMode mode = strafeMode.get();
+
+        if (mode == StrafeMode.VANILLA) {
+            // Vanilla: use the real movement input vector and the actual player yaw unchanged.
+            // This makes A/D/W/S all produce correct strafing without rotating the yaw.
+            Vec3 input = event.getMovementInput();
+            double lenSq = input.lengthSqr();
+            if (lenSq < 1.0E-7) return;
+            Vec3 velocity = EntityInvoker.combatant$movementInputToVelocity(
+                    input,
+                    event.getSpeed(),
+                    player.getYRot()
+            );
+            event.setVelocity(velocity);
+        } else {
+            // NCP: redirect all input onto the movement-direction yaw as pure forward,
+            // so the server sees sprint-forward regardless of held keys.
+            float moveYaw = getMovementYaw(player, player.getYRot());
+            Vec3 forwardInput = new Vec3(0.0, 0.0, 1.0);
+            Vec3 velocity = EntityInvoker.combatant$movementInputToVelocity(
+                    forwardInput,
+                    event.getSpeed(),
+                    moveYaw
+            );
+            event.setVelocity(velocity);
+        }
     }
 
     @EventHandler(priority = -50)
@@ -213,7 +231,10 @@ public final class Sprint extends Module {
             return;
         }
 
-        if (RotationManager.INSTANCE.getActiveRotationTarget() != null) {
+        // Allow sync rotation even when a rotation target is active, as long as
+        // it has movement correction OFF (e.g. silent aim that doesn't redirect movement).
+        RotationTarget active = RotationManager.INSTANCE.getActiveRotationTarget();
+        if (active != null && active.movementCorrection != MovementCorrection.OFF) {
             return;
         }
 
