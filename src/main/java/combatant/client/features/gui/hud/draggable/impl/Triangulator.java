@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.hud.draggable.impl;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.config.SettingDef;
 import combatant.client.config.values.*;
 import combatant.client.features.gui.hud.HudElementInfo;
@@ -17,8 +18,6 @@ import combatant.client.features.gui.hud.draggable.DraggableHudElement;
 import combatant.client.features.gui.hud.draggable.DraggableHudElementRegistry;
 import combatant.client.render.engine.math.HudScale;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.util.text.ClipboardUtil;
 import net.minecraft.client.Minecraft;
@@ -465,8 +464,8 @@ public final class Triangulator extends DraggableHudElement {
         visibilityAnim = HudRenderUtil.animateVisibility(visibilityAnim, true);
         float widgetScale = HudRenderUtil.visibilityScale(visibilityAnim);
 
-        TextRenderer headerTextRenderer = Fonts.renderer("Inter", FontInfo.Type.Bold, TextRenderer.get());
-        TextRenderer rowTextRenderer = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, TextRenderer.get());
+        TextRenderer headerTextRenderer = BuiltinFontCatalog.INTER_BOLD.renderer(TextRenderer.get());
+        TextRenderer rowTextRenderer = BuiltinFontCatalog.ONEST_MEDIUM.renderer(TextRenderer.get());
         if (headerTextRenderer == null) headerTextRenderer = textRenderer;
         if (rowTextRenderer == null) rowTextRenderer = textRenderer;
 

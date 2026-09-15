@@ -7,6 +7,7 @@
 
 package combatant.client.features.module.modules.visuals;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.vertex.PoseStack;
 import combatant.client.features.module.*;
@@ -56,8 +57,6 @@ import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.Renderer3D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import combatant.client.render.helpers.MatteHudStyle;
@@ -567,7 +566,7 @@ public class Predictions extends Module {
             );
         }
         if (!plates.isEmpty()) {
-            TextRenderer tr = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, textRenderer);
+            TextRenderer tr = BuiltinFontCatalog.ONEST_MEDIUM.renderer(textRenderer);
             tr.begin(PLATE_TEXT_SCALE);
             for (TimerPlate plate : plates) {
                 tr.render(plate.text(), plate.textX(), plate.textY(), new RenderColor(0xFFFFFFFF), false);
@@ -1102,7 +1101,7 @@ public class Predictions extends Module {
                                 Identifier iconId) {
         if (txt == null || txt.isEmpty()) return;
 
-        TextRenderer tr = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, textRenderer);
+        TextRenderer tr = BuiltinFontCatalog.ONEST_MEDIUM.renderer(textRenderer);
         float textW = (float) tr.getWidth(txt) * PLATE_TEXT_SCALE;
         float contentW = PLATE_ICON_SIZE + PLATE_ICON_TEXT_GAP + textW;
         float plateW = PLATE_PAD_X * 2.0f + contentW;

@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.hud.draggable.impl;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.util.Util;
@@ -25,8 +26,6 @@ import combatant.client.features.module.ModuleManager;
 import combatant.client.render.engine.animation.AnimatedRenderColors;
 import combatant.client.render.engine.math.HudScale;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 
 import java.util.ArrayList;
@@ -147,7 +146,7 @@ public final class ModuleList extends DraggableHudElement implements ConfigValue
             return;
         }
 
-        TextRenderer listRenderer = Fonts.renderer("Comfortaa", FontInfo.Type.Regular, TextRenderer.get());
+        TextRenderer listRenderer = BuiltinFontCatalog.COMFORTAA.renderer(TextRenderer.get());
         if (listRenderer == null) {
             listRenderer = textRenderer;
         }

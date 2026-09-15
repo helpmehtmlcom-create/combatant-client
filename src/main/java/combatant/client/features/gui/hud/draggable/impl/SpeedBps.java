@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.hud.draggable.impl;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.config.values.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -25,8 +26,6 @@ import combatant.client.features.gui.hud.script.ScriptedCompactHudStatRenderer;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.math.HudScale;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.util.player.PlayerSpeedUtil;
 
@@ -189,8 +188,8 @@ public final class SpeedBps extends DraggableHudElement implements ScriptableHud
         updatePalette();
 
         TextRenderer fallback = textRenderer != null ? textRenderer : TextRenderer.get();
-        TextRenderer valueRenderer = Fonts.renderer("Onest", FontInfo.Type.Regular, fallback);
-        TextRenderer metaRenderer = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, valueRenderer);
+        TextRenderer valueRenderer = BuiltinFontCatalog.ONEST_REGULAR.renderer(fallback);
+        TextRenderer metaRenderer = BuiltinFontCatalog.ONEST_MEDIUM.renderer(valueRenderer);
 
         float drawScale = HudScale.scale(screenW, screenH)
                 * (hud.getFontSize() / 18f)

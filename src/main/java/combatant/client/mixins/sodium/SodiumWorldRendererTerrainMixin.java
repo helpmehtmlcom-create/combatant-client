@@ -66,10 +66,16 @@ public abstract class SodiumWorldRendererTerrainMixin {
                                              CallbackInfo ci) {
         if (SodiumSecondaryTerrainContext.active()) return;
         if (pass == DefaultTerrainRenderPasses.CUTOUT && CombatantRenderSystem.deferredWorld().enabled()) {
+            Minecraft minecraft = Minecraft.getInstance();
+            float directional = 0.0f;
+            if (minecraft.level != null) {
+                directional = Math.max(0.0f, Math.min(1.0f, 1.0f - minecraft.level.getSkyDarken() / 15.0f));
+            }
             DeferredWorldPipeline.LightingState lighting = new DeferredWorldPipeline.LightingState(
                     fog.red(), fog.green(), fog.blue(), fog.alpha(),
                     fog.environmentalStart(), fog.environmentalEnd(),
-                    fog.renderStart(), fog.renderEnd()
+                    fog.renderStart(), fog.renderEnd(),
+                    directional, directional, directional
             );
             CombatantRenderSystem.deferredWorld().resolveLighting(
                     pass.getTarget().getColorTextureView(),

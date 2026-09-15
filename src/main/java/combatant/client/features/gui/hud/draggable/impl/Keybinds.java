@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.hud.draggable.impl;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.config.values.*;
 import combatant.client.util.screen.ClientScreen;
 import net.minecraft.client.Minecraft;
@@ -27,8 +28,6 @@ import combatant.client.features.module.ModuleManager;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.math.HudScale;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 
 import java.util.LinkedHashMap;
@@ -288,9 +287,9 @@ public final class Keybinds extends DraggableHudElement {
 
         updatePalette();
 
-        TextRenderer headerIconRenderer = Fonts.renderer("Icons", FontInfo.Type.Regular, TextRenderer.get());
-        TextRenderer headerTextRenderer = Fonts.renderer("Inter", FontInfo.Type.Bold, TextRenderer.get());
-        TextRenderer rowTextRenderer = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, TextRenderer.get());
+        TextRenderer headerIconRenderer = BuiltinFontCatalog.ICONS.renderer(TextRenderer.get());
+        TextRenderer headerTextRenderer = BuiltinFontCatalog.INTER_BOLD.renderer(TextRenderer.get());
+        TextRenderer rowTextRenderer = BuiltinFontCatalog.ONEST_MEDIUM.renderer(TextRenderer.get());
         if (headerIconRenderer == null) headerIconRenderer = textRenderer;
         if (headerTextRenderer == null) headerTextRenderer = textRenderer;
         if (rowTextRenderer == null) rowTextRenderer = textRenderer;

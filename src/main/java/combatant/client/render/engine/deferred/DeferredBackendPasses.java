@@ -94,6 +94,7 @@ final class DeferredBackendPasses implements AutoCloseable {
     private final DeferredDisocclusionSource disocclusion = new DeferredDisocclusionSource();
     private final DeferredTemporalSignalSource temporalSignals = new DeferredTemporalSignalSource();
     private final DeferredReflectionDenoiseSource reflectionDenoise = new DeferredReflectionDenoiseSource();
+    private final DeferredOpaqueCompositeSource opaqueComposite = new DeferredOpaqueCompositeSource();
     private final DeferredTemporalHistorySource temporalHistory = new DeferredTemporalHistorySource();
     private final DeferredPatchSurfaceSource patchSurfaces = new DeferredPatchSurfaceSource();
 
@@ -116,6 +117,14 @@ final class DeferredBackendPasses implements AutoCloseable {
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.resources().texture(DeferredResource.MAIN_DEPTH) != null)
                 .execute(this::resolveDepth)
+                .build());
+        passes.add(DeferredPassSpec.builder("world.gbuffer.depth.capture", DeferredStage.DEPTH_RESOLVE)
+                .priority(100)
+                .read(DeferredResource.RESOLVED_DEPTH)
+                .write(DeferredResource.GBUFFER_DEPTH)
+                .requires(RhiShaderStage.COMPUTE)
+                .when(context -> context.isValid(DeferredResource.RESOLVED_DEPTH))
+                .execute(this::captureGbufferDepth)
                 .build());
         passes.add(DeferredPassSpec.builder("world.velocity.camera", DeferredStage.VELOCITY_RESOLVE)
                 .read(DeferredResource.RESOLVED_DEPTH)
@@ -167,6 +176,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         disocclusion.install(passes);
         temporalSignals.install(passes);
         reflectionDenoise.install(passes);
+        opaqueComposite.install(passes);
         temporalHistory.install(passes);
         patchSurfaces.install(passes);
     }
@@ -188,6 +198,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         disocclusion.prepare(rhi);
         temporalSignals.prepare(rhi);
         reflectionDenoise.prepare(rhi);
+        opaqueComposite.prepare(rhi);
         temporalHistory.prepare(rhi);
         patchSurfaces.prepare(rhi);
     }
@@ -207,6 +218,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         disocclusion.release(releaseOwner);
         temporalSignals.release(releaseOwner);
         reflectionDenoise.release(releaseOwner);
+        opaqueComposite.release(releaseOwner);
         temporalHistory.release(releaseOwner);
         patchSurfaces.release(releaseOwner);
         owner = null;
@@ -228,6 +240,21 @@ final class DeferredBackendPasses implements AutoCloseable {
                 1,
                 List.of(),
                 List.of(new SampledTextureBinding(0, source, sampler)),
+                List.of(new StorageImageBinding(1, output, StorageAccess.WRITE_ONLY))
+        ));
+    }
+
+    private void captureGbufferDepth(DeferredPassContext context) {
+        ensureOwner(context.rhi());
+        GpuTextureView source = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
+        RhiStorageImage output = requireImage(context, DeferredResource.GBUFFER_DEPTH);
+        GpuSampler nearest = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
+        context.advancedShaders().dispatch(new ComputeDispatchCommand(
+                "Combatant G-buffer depth capture",
+                pyramidCopy(),
+                groups(output.descriptor().width()), groups(output.descriptor().height()), 1,
+                List.of(),
+                List.of(new SampledTextureBinding(0, source, nearest)),
                 List.of(new StorageImageBinding(1, output, StorageAccess.WRITE_ONLY))
         ));
     }
@@ -332,7 +359,9 @@ final class DeferredBackendPasses implements AutoCloseable {
             disocclusion.release(previous);
             temporalSignals.release(previous);
             reflectionDenoise.release(previous);
+            opaqueComposite.release(previous);
             temporalHistory.release(previous);
+            patchSurfaces.release(previous);
         }
         owner = rhi;
     }
@@ -423,6 +452,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         disocclusion.close();
         temporalSignals.close();
         reflectionDenoise.close();
+        opaqueComposite.close();
         temporalHistory.close();
         patchSurfaces.close();
         owner = null;

@@ -37,7 +37,7 @@ import java.util.Locale;
 
 /**
  * Backend reflection source: Hi-Z screen trace first, optional off-screen cascade fallback second.
- * Denoising, roughness policy and final artistic composition remain later stages.
+ * Temporal/spatial stabilization and material-aware composition are separate graph stages.
  */
 final class DeferredReflectionSource implements AutoCloseable {
     private static final int LOCAL_SIZE = 8;
@@ -92,7 +92,7 @@ final class DeferredReflectionSource implements AutoCloseable {
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.reflection.prepare", DeferredStage.REFLECTION_PREPARE)
-                .read(DeferredResource.SCENE_RADIANCE, DeferredResource.RESOLVED_DEPTH,
+                .read(DeferredResource.LIGHTING_COLOR, DeferredResource.RESOLVED_DEPTH,
                         DeferredResource.DEPTH_PYRAMID, DeferredResource.GBUFFER_GEOMETRY)
                 .write(DeferredResource.REFLECTION_TRACE_DATA)
                 .requires(RhiShaderStage.COMPUTE)
@@ -100,12 +100,12 @@ final class DeferredReflectionSource implements AutoCloseable {
                         && context.primaryView().current() != null
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
                         && context.isValid(DeferredResource.DEPTH_PYRAMID)
-                        && context.isValid(DeferredResource.SCENE_RADIANCE)
+                        && context.isValid(DeferredResource.LIGHTING_COLOR)
                         && context.resources().texture(DeferredResource.GBUFFER_GEOMETRY) != null)
                 .execute(this::prepareFrame)
                 .build());
         passes.add(DeferredPassSpec.builder("world.reflection.trace", DeferredStage.REFLECTION_TRACE)
-                .read(DeferredResource.SCENE_RADIANCE, DeferredResource.GBUFFER_GEOMETRY,
+                .read(DeferredResource.LIGHTING_COLOR, DeferredResource.GBUFFER_GEOMETRY,
                         DeferredResource.RESOLVED_DEPTH, DeferredResource.DEPTH_PYRAMID,
                         DeferredResource.REFLECTION_TRACE_DATA)
                 .write(DeferredResource.REFLECTION_TRACE_COLOR, DeferredResource.REFLECTION_TRACE_CONFIDENCE)
@@ -182,7 +182,7 @@ final class DeferredReflectionSource implements AutoCloseable {
 
     private void trace(DeferredPassContext context) {
         ensureOwner(context.rhi());
-        GpuTextureView scene = requireTexture(context, DeferredResource.SCENE_RADIANCE);
+        GpuTextureView scene = requireTexture(context, DeferredResource.LIGHTING_COLOR);
         GpuTextureView geometry = requireTexture(context, DeferredResource.GBUFFER_GEOMETRY);
         GpuTextureView depth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
         GpuTextureView pyramid = requireTexture(context, DeferredResource.DEPTH_PYRAMID);

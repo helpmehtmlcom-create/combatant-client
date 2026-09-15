@@ -59,5 +59,53 @@ public enum BuiltinFontCatalog {
     @FontAsset(value = "mediaplayer.ttf", family = "MediaPlayer", prewarm = true, order = 160)
     MEDIA_PLAYER,
     @FontAsset(value = "vanilla_symbols.ttf", family = "VanillaSymbols", prewarm = true, order = 170)
-    VANILLA_SYMBOLS
+    VANILLA_SYMBOLS;
+
+    private volatile FontInfo cachedInfo;
+
+    private FontAsset metadata() {
+        try {
+            FontAsset asset = BuiltinFontCatalog.class.getField(name()).getAnnotation(FontAsset.class);
+            if (asset == null) {
+                throw new IllegalStateException("Missing @FontAsset metadata for " + name());
+            }
+            return asset;
+        } catch (NoSuchFieldException e) {
+            throw new IllegalStateException("Missing enum field for builtin font " + name(), e);
+        }
+    }
+
+    /** Typed runtime descriptor for this builtin face. */
+    public FontInfo info() {
+        FontInfo cached = cachedInfo;
+        if (cached != null) return cached;
+        FontAsset asset = metadata();
+        cached = new FontInfo(asset.family(), asset.type());
+        cachedInfo = cached;
+        return cached;
+    }
+
+    /**
+     * Resolves the renderer for this exact builtin face. Callers should prefer this over string
+     * family names so renames/aliases cannot silently select the wrong font.
+     */
+    public TextRenderer renderer() {
+        return Fonts.renderer(info(), TextRenderer.get());
+    }
+
+    /** Resolves this builtin face, using {@code fallback} only if its resource cannot be loaded. */
+    public TextRenderer renderer(TextRenderer fallback) {
+        return Fonts.renderer(info(), fallback);
+    }
+
+    /** Typed style selector for the complete Iosevka family used by rich-text renderers. */
+    public static BuiltinFontCatalog iosevka(FontInfo.Type type) {
+        FontInfo.Type resolved = type != null ? type : FontInfo.Type.Regular;
+        return switch (resolved) {
+            case Bold -> IOSEVKA_BOLD;
+            case Italic -> IOSEVKA_ITALIC;
+            case BoldItalic -> IOSEVKA_BOLD_ITALIC;
+            default -> IOSEVKA_REGULAR;
+        };
+    }
 }

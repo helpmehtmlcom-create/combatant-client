@@ -384,16 +384,6 @@ public enum VulkanRenderStateBridge {
         COMPILING_PIPELINE.remove();
     }
 
-    public static boolean depthBiasEnabledForCompilingPipeline(boolean original) {
-        if (!vulkanBackendActive || original) return original;
-        RenderPipeline pipeline = COMPILING_PIPELINE.get();
-        if (pipeline == null) return false;
-        var depth = pipeline.getDepthStencilState();
-        return depth != null
-                && (Float.compare(depth.depthBiasScaleFactor(), 0.0f) != 0
-                || Float.compare(depth.depthBiasConstant(), 0.0f) != 0);
-    }
-
     public static boolean needsPipelineVariant(RenderPipeline pipeline) {
         if (!vulkanBackendActive) return false;
         return currentRenderPassHasStencilAttachment() || currentRenderPassSamples() != 1;

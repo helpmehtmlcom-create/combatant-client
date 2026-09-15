@@ -3751,6 +3751,7 @@
   "setting.norender.entity_toggles.option.item_frame_name_tags": "Item frame name tags",
   "setting.norender.entity_toggles.option.player_name_tags": "Vanilla player name tags",
   "setting.norender.particle_toggles": "Particles",
+  "setting.norender.particle_classes": "Particle classes",
   "setting.norender.particle_toggles.option.all_particles": "All particles",
   "setting.norender.particle_toggles.option.rain_splash_particles": "Rain splash particles",
   "setting.norender.particle_toggles.option.block_break_particles": "Block break particles",

@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.hud.draggable.impl;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.config.values.*;
 import combatant.client.util.screen.ClientScreen;
 import net.minecraft.client.Minecraft;
@@ -27,7 +28,6 @@ import combatant.client.render.engine.math.HudScale;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.svg.SvgRenderOptions;
 import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.util.media.MediaInfo;
 import combatant.client.util.media.MediaSessionService;
@@ -151,7 +151,7 @@ public final class MediaPlayer extends DraggableHudElement {
     }
 
     private static TextRenderer getMediaIcons(TextRenderer fallback) {
-        return Fonts.renderer("MediaPlayer", FontInfo.Type.Regular, fallback);
+        return BuiltinFontCatalog.MEDIA_PLAYER.renderer(fallback);
     }
 
     public void onResourceReload() {
@@ -263,9 +263,9 @@ public final class MediaPlayer extends DraggableHudElement {
             return;
         }
 
-        TextRenderer titleRenderer = Fonts.renderer("Inter", FontInfo.Type.Bold, textRenderer);
-        TextRenderer artistRenderer = Fonts.renderer("InterMedium", FontInfo.Type.Regular, textRenderer);
-        TextRenderer metaRenderer = Fonts.renderer("Inter", FontInfo.Type.Regular, textRenderer);
+        TextRenderer titleRenderer = BuiltinFontCatalog.INTER_BOLD.renderer(textRenderer);
+        TextRenderer artistRenderer = BuiltinFontCatalog.INTER_MEDIUM.renderer(textRenderer);
+        TextRenderer metaRenderer = BuiltinFontCatalog.INTER_REGULAR.renderer(textRenderer);
         TextRenderer iconRenderer = getMediaIcons(textRenderer);
 
         float mediaScale = scale.get().floatValue();

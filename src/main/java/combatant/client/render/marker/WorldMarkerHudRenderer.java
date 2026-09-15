@@ -7,11 +7,10 @@
 
 package combatant.client.render.marker;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.svg.SvgRenderOptions;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.util.text.TextRenderUtil;
 
@@ -40,9 +39,9 @@ public enum WorldMarkerHudRenderer {
     public static List<Layout> layout(List<Marker> markers, TextRenderer fallback) {
         if (markers == null || markers.isEmpty() || fallback == null) return List.of();
 
-        TextRenderer titleRegular = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, fallback);
-        TextRenderer titleBold = Fonts.renderer("OnestBold", FontInfo.Type.Regular, titleRegular);
-        TextRenderer metaFont = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, titleRegular);
+        TextRenderer titleRegular = BuiltinFontCatalog.ONEST_MEDIUM.renderer(fallback);
+        TextRenderer titleBold = BuiltinFontCatalog.ONEST_BOLD.renderer(titleRegular);
+        TextRenderer metaFont = BuiltinFontCatalog.ONEST_MEDIUM.renderer(titleRegular);
         List<Layout> layouts = new ArrayList<>(markers.size());
 
         for (Marker marker : markers) {
@@ -124,9 +123,9 @@ public enum WorldMarkerHudRenderer {
 
     public static void renderForeground(TextRenderer fallback, List<Layout> layouts) {
         if (fallback == null || layouts == null || layouts.isEmpty()) return;
-        TextRenderer titleRegular = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, fallback);
-        TextRenderer titleBold = Fonts.renderer("OnestBold", FontInfo.Type.Regular, titleRegular);
-        TextRenderer metaFont = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, titleRegular);
+        TextRenderer titleRegular = BuiltinFontCatalog.ONEST_MEDIUM.renderer(fallback);
+        TextRenderer titleBold = BuiltinFontCatalog.ONEST_BOLD.renderer(titleRegular);
+        TextRenderer metaFont = BuiltinFontCatalog.ONEST_MEDIUM.renderer(titleRegular);
 
         boolean ownDecorationBatch = false;
         boolean hasDecorations = layouts.stream()

@@ -7,9 +7,9 @@
 
 package combatant.client.features.gui.clickgui.util;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.render.engine.animation.AnimationUtility;
-import combatant.client.render.engine.text.FontInfo;
 import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 
@@ -63,7 +63,7 @@ public enum ClickGuiHintOverlay {
             fontGeneration = generation;
         }
         if (comfortaa == null) {
-            comfortaa = Fonts.renderer("Comfortaa", FontInfo.Type.Regular, ClickGuiRenderer.getInterRegular());
+            comfortaa = BuiltinFontCatalog.COMFORTAA.renderer(ClickGuiRenderer.getInterRegular());
         }
         return comfortaa;
     }

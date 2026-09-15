@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.hud.draggable.impl;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 
 import combatant.client.features.theme.Theme;
 import com.mojang.blaze3d.platform.Window;
@@ -34,8 +35,6 @@ import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.math.HudScale;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.svg.SvgRenderOptions;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.runtime.RuntimeGate;
 import combatant.client.util.sound.SoundAsset;
@@ -409,8 +408,8 @@ public final class HudNotifier extends DraggableHudElement implements ModuleStat
         float gap = BASE_GAP * baseScale;
 
         TextRenderer fallback = textRenderer != null ? textRenderer : TextRenderer.get();
-        TextRenderer lineRenderer = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, fallback);
-        TextRenderer iconRenderer = Fonts.renderer("Icons", FontInfo.Type.Regular, fallback);
+        TextRenderer lineRenderer = BuiltinFontCatalog.ONEST_MEDIUM.renderer(fallback);
+        TextRenderer iconRenderer = BuiltinFontCatalog.ICONS.renderer(fallback);
         if (lineRenderer == null) lineRenderer = fallback;
         if (iconRenderer == null) iconRenderer = fallback;
         float lineScale = baseScale * 0.95f;
@@ -569,8 +568,8 @@ public final class HudNotifier extends DraggableHudElement implements ModuleStat
         float cursorY = margin;
 
         TextRenderer fallback = textRenderer != null ? textRenderer : TextRenderer.get();
-        TextRenderer lineRenderer = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, fallback);
-        TextRenderer iconRenderer = Fonts.renderer("Icons", FontInfo.Type.Regular, fallback);
+        TextRenderer lineRenderer = BuiltinFontCatalog.ONEST_MEDIUM.renderer(fallback);
+        TextRenderer iconRenderer = BuiltinFontCatalog.ICONS.renderer(fallback);
         if (lineRenderer == null) lineRenderer = fallback;
         if (iconRenderer == null) iconRenderer = fallback;
         float lineScale = baseScale * 0.95f;

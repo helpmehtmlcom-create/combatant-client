@@ -76,7 +76,6 @@ import combatant.client.render.engine.renderer.MeshRenderer;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.text.TextRenderer;
-import combatant.client.render.engine.visuals.CombatantVisuals;
 import combatant.client.render.iris.IrisCombatantFrameHooks;
 import combatant.client.render.iris.IrisFinalizedSceneRenderer;
 import combatant.client.render.iris.IrisCompatibilityGuards;
@@ -563,10 +562,6 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
                     if (needsResolvedDepth && !capturedMsaaDepth) {
                         WorldSceneDepth.captureResolvedMain(minecraft.gameRenderer.mainRenderTarget());
                     }
-                }
-                try (ProfilerPhase.Scope ignored = ProfilerPhase.scope("3d:visual_stack");
-                     TracyGpuProfiler.Scope ignoredGpu = TracyGpuProfiler.beginZone("3d:visual_stack")) {
-                    CombatantVisuals.renderWorldBase(minecraft, tickCounter.getGameTimeDeltaPartialTick(true));
                 }
                 com.mojang.blaze3d.pipeline.RenderTarget resolvedMain = minecraft.gameRenderer.mainRenderTarget();
                 com.mojang.blaze3d.textures.GpuTextureView resolvedDepth = WorldSceneDepth.hasMain()

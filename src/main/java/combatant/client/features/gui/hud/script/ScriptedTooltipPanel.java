@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.hud.script;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.features.gui.clickgui.layout.screen.settings.SettingsGuiPalette;
 import combatant.client.features.theme.Themes;
 import combatant.client.render.engine.renderer.Renderer2D;
@@ -18,8 +19,6 @@ import combatant.client.render.engine.renderer.ui.runtime.render.UiRenderContext
 import combatant.client.render.engine.renderer.ui.runtime.script.CachedUiScriptRuntime;
 import combatant.client.render.engine.renderer.ui.runtime.script.UiScriptModule;
 import combatant.client.render.engine.renderer.ui.runtime.script.UiScriptModuleHandle;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.RuntimeTextLayout;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.util.resources.asset.UiScriptAsset;
@@ -69,7 +68,7 @@ public final class ScriptedTooltipPanel {
         UiScriptModule module = ensureModule(mc);
         if (module == null) return null;
 
-        TextRenderer layoutText = Fonts.renderer("Iosevka", FontInfo.Type.Regular, fallbackText);
+        TextRenderer layoutText = BuiltinFontCatalog.IOSEVKA_REGULAR.renderer(fallbackText);
         PreparedLines preparedLines = prepareLines(
                 layoutText,
                 lines,

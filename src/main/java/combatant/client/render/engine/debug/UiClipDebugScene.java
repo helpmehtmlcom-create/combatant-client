@@ -7,6 +7,7 @@
 
 package combatant.client.render.engine.debug;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.AbstractTexture;
@@ -18,8 +19,6 @@ import combatant.client.render.engine.core.RenderPhase;
 import combatant.client.render.engine.core.RenderPhaseScope;
 import combatant.client.render.engine.core.ViewportContext;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.engine.svg.SvgRenderOptions;
 import combatant.client.render.engine.renderer.ui.draw.UiShape;
@@ -240,7 +239,7 @@ public enum UiClipDebugScene {
 
     private static void drawLabel(String value, float x, float y, float size, int argb) {
         TextRenderer fallback = TextRenderer.get();
-        TextRenderer text = Fonts.renderer("Inter", FontInfo.Type.Regular, fallback);
+        TextRenderer text = BuiltinFontCatalog.INTER_REGULAR.renderer(fallback);
         if (text == null) return;
         text.begin(Math.max(0.1f, size / 18.0f), false, false);
         try {

@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.mainmenu;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 
 import combatant.client.features.theme.Theme;
 import combatant.client.features.gui.hud.HudRenderUtil;
@@ -17,8 +18,6 @@ import combatant.client.render.engine.core.ViewportContext;
 import combatant.client.render.engine.math.HudScale;
 import combatant.client.render.engine.postprocess.MenuBackgroundRenderer;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.util.proxy.ProxyBackend;
 import combatant.client.util.proxy.ProxyEntry;
@@ -99,8 +98,8 @@ public final class CombatantProxyManagerScreen extends Screen {
 
     @Override
     protected void init() {
-        titleRenderer = Fonts.renderer("Inter", FontInfo.Type.Bold, TextRenderer.get());
-        bodyRenderer = Fonts.renderer("InterMedium", FontInfo.Type.Regular, titleRenderer);
+        titleRenderer = BuiltinFontCatalog.INTER_BOLD.renderer(TextRenderer.get());
+        bodyRenderer = BuiltinFontCatalog.INTER_MEDIUM.renderer(titleRenderer);
         loadProxy();
     }
 

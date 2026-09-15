@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.hud.nondraggable.impl;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.config.SettingDef;
 import combatant.client.config.values.EnumValue;
 import combatant.client.config.values.NumberValue;
@@ -17,8 +18,6 @@ import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.core.ViewportContext;
 import combatant.client.render.engine.math.HudScale;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.runtime.RuntimeGate;
 import net.minecraft.client.Minecraft;
@@ -99,7 +98,7 @@ public final class SwapTooltip extends AbstractHudElement {
             return;
         }
 
-        TextRenderer tr = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, TextRenderer.get());
+        TextRenderer tr = BuiltinFontCatalog.ONEST_MEDIUM.renderer(TextRenderer.get());
         float uiScale = HudScale.scale(mc.getWindow().getWidth(), mc.getWindow().getHeight());
         float textScale = settings.scale.get() * uiScale * 1.1f;
         float padX = PAD_X * uiScale;

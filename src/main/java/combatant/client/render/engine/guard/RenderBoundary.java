@@ -30,7 +30,6 @@ public enum RenderBoundary {
     public static boolean mayUseSodiumInternals(String className) {
         return className.startsWith(SODIUM_BRIDGE_PACKAGE)
                 || className.startsWith("combatant.client.render.sodium.terrain")
-                || className.startsWith("combatant.client.render.engine.visuals.lighting")
                 || className.startsWith("combatant.client.render.helpers");
     }
 }

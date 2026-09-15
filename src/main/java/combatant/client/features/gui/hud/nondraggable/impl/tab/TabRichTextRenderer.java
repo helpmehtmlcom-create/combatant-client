@@ -7,11 +7,10 @@
 
 package combatant.client.features.gui.hud.nondraggable.impl.tab;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.svg.SvgRenderOptions;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextGlyphFallback;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.helpers.ScissorFunction;
@@ -114,13 +113,13 @@ final class TabRichTextRenderer {
 
     private static TextRenderer font(Style style) {
         if (style != null && style.isBold()) {
-            return Fonts.renderer("Onest", FontInfo.Type.Bold, regular());
+            return BuiltinFontCatalog.ONEST_BOLD_FACE.renderer(regular());
         }
-        return Fonts.renderer("OnestMedium", FontInfo.Type.Regular, regular());
+        return BuiltinFontCatalog.ONEST_MEDIUM.renderer(regular());
     }
 
     private static TextRenderer regular() {
-        return Fonts.renderer("Onest", FontInfo.Type.Regular, TextRenderer.get());
+        return BuiltinFontCatalog.ONEST_REGULAR.renderer(TextRenderer.get());
     }
 
     private static int color(Style style, int fallbackColor, float alpha) {

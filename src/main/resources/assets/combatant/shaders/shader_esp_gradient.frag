@@ -23,15 +23,10 @@ layout (std140) uniform ShaderEspGradient {
 
 in vec2 v_TexCoord;
 
-#define NOISE (0.5 / 255.0)
-
 vec3 createMaskGradient(vec2 coords, vec3 baseColor, float darkMultiplier) {
-    vec2 c = clamp(coords, 0.0, 1.0);
-    vec3 top = baseColor;
-    vec3 bottom = baseColor * clamp(darkMultiplier, 0.0, 2.0);
-    vec3 base = mix(top, bottom, c.y);
-    float dither = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
-    return base + mix(NOISE, -NOISE, dither);
+    // Keep the inexpensive vertical shade, but drop the per-fragment sin() dither.
+    float shade = mix(1.0, clamp(darkMultiplier, 0.0, 2.0), clamp(coords.y, 0.0, 1.0));
+    return baseColor * shade;
 }
 
 void main() {
@@ -51,16 +46,20 @@ void main() {
     float intensity = clamp(u_PassParams.z, 0.0, 4.0);
     float passAlpha = clamp(u_PassParams.w, 0.0, 1.0);
 
-    vec3 paletteColor = shaderEspResolveColor(
-        coords,
-        colorMode,
-        baseAngleDeg,
-        spatialSpreadDeg,
-        gradientAngleDeg,
-        u_PrimaryColor.rgb,
-        u_SecondaryColor.rgb
-    );
-
-    vec3 baseColor = mix(mask.rgb, paletteColor, overrideColor) * intensity;
+    vec3 baseColor = mask.rgb;
+    // Relations/entity-color mode is the common path. Avoid HSV conversion, trig and gradient
+    // resolution entirely unless the user explicitly selected a custom animated palette.
+    if (overrideColor > 0.5) {
+        baseColor = shaderEspResolveColor(
+            coords,
+            colorMode,
+            baseAngleDeg,
+            spatialSpreadDeg,
+            gradientAngleDeg,
+            u_PrimaryColor.rgb,
+            u_SecondaryColor.rgb
+        );
+    }
+    baseColor *= intensity;
     color = vec4(createMaskGradient(coords, baseColor, darkMultiplier), mask.a * passAlpha);
 }

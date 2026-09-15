@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.hud.draggable.impl;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.config.values.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -23,8 +24,6 @@ import combatant.client.features.gui.hud.script.ScriptedCompactHudStatRenderer;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.math.HudScale;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 
 import java.time.LocalTime;
@@ -128,7 +127,7 @@ public final class SystemTime extends DraggableHudElement implements ScriptableH
     }
 
     private static TextRenderer getWeatherIcons() {
-        return Fonts.renderer("WeatherIcons", FontInfo.Type.Regular, TextRenderer.get());
+        return BuiltinFontCatalog.WEATHER_ICONS.renderer(TextRenderer.get());
     }
 
     private static String formatTime(LocalTime time, boolean showSeconds) {
@@ -185,7 +184,7 @@ public final class SystemTime extends DraggableHudElement implements ScriptableH
         TextRenderer fallback = textRenderer != null ? textRenderer : TextRenderer.get();
         TextRenderer iconRenderer = getWeatherIcons();
         if (iconRenderer == null) iconRenderer = fallback;
-        TextRenderer valueRenderer = Fonts.renderer("Onest", FontInfo.Type.Regular, fallback);
+        TextRenderer valueRenderer = BuiltinFontCatalog.ONEST_REGULAR.renderer(fallback);
 
         float drawScale = HudScale.scale(screenW, screenH)
                 * (hud.getFontSize() / 18f)

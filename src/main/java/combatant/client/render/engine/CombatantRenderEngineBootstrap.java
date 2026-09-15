@@ -11,7 +11,6 @@ import combatant.client.addon.ClickGuiSectionManager;
 import combatant.client.util.resources.asset.AssetAutoLoader;
 import combatant.client.render.engine.guard.RenderBoundaryAudit;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.visuals.CombatantVisuals;
 import combatant.client.render.iris.IrisRuntime;
 import net.minecraft.client.Minecraft;
 
@@ -28,7 +27,6 @@ public enum CombatantRenderEngineBootstrap {
         IrisRuntime.registerCombatantPipelines();
         Minecraft mc = Minecraft.getInstance();
         AssetAutoLoader.initialize(mc != null ? mc.getResourceManager() : null);
-        CombatantVisuals.init();
     }
 
 }

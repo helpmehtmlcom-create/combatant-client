@@ -7,6 +7,7 @@
 
 package combatant.client.features.module.modules.visuals;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.features.module.*;
 import combatant.client.features.module.Module;
 import combatant.client.render.engine.core.ViewportContext;
@@ -52,8 +53,6 @@ import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.math.ColorMath;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.util.combat.VulcanReachController;
 
@@ -572,7 +571,7 @@ public class Crosshair extends Module {
         String reachText = String.format(Locale.ROOT, "%.1f", snapshot.displayReach());
         String hitsText = Integer.toString(snapshot.longHitsRemaining());
 
-        TextRenderer font = Fonts.renderer("Montserrat", FontInfo.Type.Regular, fallback);
+        TextRenderer font = BuiltinFontCatalog.MONSTERRAT.renderer(fallback);
         float textScale = VULCAN_REACH_FONT_SIZE / 18.0f;
         float x = centerX + gapPx + lengthPx + 7.0f;
         float y = centerY - VULCAN_REACH_FONT_SIZE * 0.95f;

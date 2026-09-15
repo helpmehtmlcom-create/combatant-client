@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.clickgui;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.addon.ClickGuiSectionManager;
 import combatant.client.features.gui.clickgui.settings.*;
 import combatant.client.render.engine.math.HudScale;
@@ -38,7 +39,6 @@ import combatant.client.render.engine.profiler.RenderProfiler2D;
 import combatant.client.render.engine.profiler.TracyGpuProfiler;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.ui.draw.UiMeshGeometry;
-import combatant.client.render.engine.text.FontInfo;
 import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.helpers.ScissorFunction;
@@ -1097,7 +1097,7 @@ public enum ClickGuiRenderer {
     public static TextRenderer getInterRegular() {
         ensureFontBindingsCurrent();
         if (interRegular == null) {
-            interRegular = Fonts.renderer("Inter", FontInfo.Type.Regular, TextRenderer.get());
+            interRegular = BuiltinFontCatalog.INTER_REGULAR.renderer(TextRenderer.get());
         }
         return interRegular;
     }
@@ -1109,7 +1109,7 @@ public enum ClickGuiRenderer {
     public static TextRenderer getInterMedium() {
         ensureFontBindingsCurrent();
         if (interMedium == null) {
-            interMedium = Fonts.renderer("InterMedium", FontInfo.Type.Regular, getInterRegular());
+            interMedium = BuiltinFontCatalog.INTER_MEDIUM.renderer(getInterRegular());
         }
         return interMedium;
     }
@@ -1121,7 +1121,7 @@ public enum ClickGuiRenderer {
     public static TextRenderer getSfMedium() {
         ensureFontBindingsCurrent();
         if (onestMedium == null) {
-            onestMedium = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, TextRenderer.get());
+            onestMedium = BuiltinFontCatalog.ONEST_MEDIUM.renderer(TextRenderer.get());
         }
         return onestMedium;
     }
@@ -1133,7 +1133,7 @@ public enum ClickGuiRenderer {
     public static TextRenderer getSfProDisplaySemibold() {
         ensureFontBindingsCurrent();
         if (onestBold == null) {
-            onestBold = Fonts.renderer("OnestBold", FontInfo.Type.Regular, getInterMedium());
+            onestBold = BuiltinFontCatalog.ONEST_BOLD.renderer(getInterMedium());
         }
         return onestBold;
     }
@@ -1145,7 +1145,7 @@ public enum ClickGuiRenderer {
     public static TextRenderer getMonsterratRegular() {
         ensureFontBindingsCurrent();
         if (monsterratRegular == null) {
-            monsterratRegular = Fonts.renderer("Monsterrat", FontInfo.Type.Regular, TextRenderer.get());
+            monsterratRegular = BuiltinFontCatalog.MONSTERRAT.renderer(TextRenderer.get());
         }
         return monsterratRegular;
     }

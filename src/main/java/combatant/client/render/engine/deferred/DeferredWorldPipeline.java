@@ -34,6 +34,7 @@ import org.joml.Vector4fc;
 
 import java.util.Optional;
 import java.util.OptionalDouble;
+import java.util.Locale;
 import java.util.function.Supplier;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -412,10 +413,34 @@ public final class DeferredWorldPipeline {
                 executeStage(DeferredStage.PRE_LIGHTING);
                 postGeometryExecuted = true;
             }
-            DeferredLightingUniforms.update(state);
+            GpuTextureView resolvedDepth = resourceBindings.texture(DeferredResource.RESOLVED_DEPTH);
+            if (resolvedDepth == null) {
+                throw new IllegalStateException("Deferred lighting requires resolved depth");
+            }
+            boolean shadowValid = resourceBindings.isValid(DeferredResource.SHADOW_COLOR);
+            boolean ambientOcclusionValid = resourceBindings.isValid(DeferredResource.AMBIENT_OCCLUSION);
+            GpuTextureView shadowVisibility = shadowValid
+                    ? resourceBindings.texture(DeferredResource.SHADOW_COLOR) : inputs.surface();
+            GpuTextureView ambientVisibility = ambientOcclusionValid
+                    ? resourceBindings.texture(DeferredResource.AMBIENT_OCCLUSION) : inputs.surface();
+            boolean zeroToOneDepth = CombatantRenderSystem.rhi().capabilities().backendName() != null
+                    && CombatantRenderSystem.rhi().capabilities().backendName().toLowerCase(Locale.ROOT).contains("vulkan");
+            DeferredLightingUniforms.update(
+                    state, primaryView.current(), zeroToOneDepth, shadowValid, ambientOcclusionValid
+            );
+
+            // Keep direct terrain lighting in a Combatant-owned HDR target. Publishing it into the
+            // mutable Minecraft scene target is only a compatibility step for forward opaque draws.
+            resourceBindings.ensureTexture(
+                    DeferredResource.DIRECT_LIGHTING_COLOR, CombatantRenderSystem.rhi(), frameSettings
+            );
+            GpuTextureView directLighting = resourceBindings.texture(DeferredResource.DIRECT_LIGHTING_COLOR);
+            if (directLighting == null) {
+                throw new IllegalStateException("Deferred direct-lighting target is unavailable");
+            }
             CombatantRenderSystem.rhi().drawFullscreen(
                     FullscreenDrawCommand.builder("Combatant Deferred Terrain Lighting")
-                            .colorAttachment(sceneColor)
+                            .colorAttachment(directLighting)
                             .pipeline(DeferredRuntimeAssets.terrainLighting())
                             .uniform("DeferredLighting", DeferredLightingUniforms.get())
                             .sampler("u_GbufferSurface", inputs.surface(), gbufferSampler)
@@ -423,6 +448,21 @@ public final class DeferredWorldPipeline {
                             .sampler("u_GbufferAuxiliary", inputs.auxiliary(), gbufferSampler)
                             .sampler("u_GbufferMaterial", inputs.material(), gbufferSampler)
                             .sampler("u_LightTex", lightmap, lightmapSampler)
+                            .sampler("u_ResolvedDepth", resolvedDepth, gbufferSampler)
+                            .sampler("u_ShadowVisibility", shadowVisibility, lightmapSampler)
+                            .sampler("u_AmbientVisibility", ambientVisibility, lightmapSampler)
+                            .build()
+            );
+            resourceBindings.markWritten(DeferredResource.DIRECT_LIGHTING_COLOR);
+
+            // Forward compatibility rendering still targets Minecraft's scene image. Only terrain
+            // pixels are published here; sky and other non-G-buffer producers remain untouched.
+            CombatantRenderSystem.rhi().drawFullscreen(
+                    FullscreenDrawCommand.builder("Combatant Deferred Terrain Publish")
+                            .colorAttachment(sceneColor)
+                            .pipeline(DeferredRuntimeAssets.terrainPublish())
+                            .sampler("u_Source", directLighting, gbufferSampler)
+                            .sampler("u_GbufferSurface", inputs.surface(), gbufferSampler)
                             .build()
             );
             lightingResolvedThisFrame = true;
@@ -565,6 +605,7 @@ public final class DeferredWorldPipeline {
         executeStage(DeferredStage.INDIRECT_TRACE);
         executeStage(DeferredStage.INDIRECT_TEMPORAL);
         executeStage(DeferredStage.INDIRECT_HISTORY);
+        executeStage(DeferredStage.INDIRECT_COMPOSITE);
         executeStage(DeferredStage.REFLECTION_CAPTURE_PREPARE);
         executeStage(DeferredStage.REFLECTION_CAPTURE);
         executeStage(DeferredStage.REFLECTION_PREPARE);
@@ -788,7 +829,10 @@ public final class DeferredWorldPipeline {
             float environmentalFogStart,
             float environmentalFogEnd,
             float renderFogStart,
-            float renderFogEnd
+            float renderFogEnd,
+            float directionalRed,
+            float directionalGreen,
+            float directionalBlue
     ) {
     }
 }

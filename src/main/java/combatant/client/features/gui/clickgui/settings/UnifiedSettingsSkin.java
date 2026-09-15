@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.clickgui.settings;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 
 import combatant.client.features.theme.Theme;
 import combatant.client.features.gui.clickgui.layout.screen.settings.SettingsGuiPalette;
@@ -15,8 +16,6 @@ import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.theme.Themes;
 import combatant.client.render.engine.svg.SvgRenderOptions;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 
 enum UnifiedSettingsSkin {
@@ -132,19 +131,19 @@ enum UnifiedSettingsSkin {
     }
 
     static TextRenderer fontRegular() {
-        return Fonts.renderer("Onest", FontInfo.Type.Regular, ClickGuiRenderer.getInterRegular());
+        return BuiltinFontCatalog.ONEST_REGULAR.renderer(ClickGuiRenderer.getInterRegular());
     }
 
     static TextRenderer fontMedium() {
-        return Fonts.renderer("OnestMedium", FontInfo.Type.Regular, fontRegular());
+        return BuiltinFontCatalog.ONEST_MEDIUM.renderer(fontRegular());
     }
 
     static TextRenderer fontSemibold() {
-        return Fonts.renderer("OnestBold", FontInfo.Type.Regular, fontMedium());
+        return BuiltinFontCatalog.ONEST_BOLD.renderer(fontMedium());
     }
 
     static TextRenderer fontLight() {
-        return Fonts.renderer("OnestLight", FontInfo.Type.Regular, fontRegular());
+        return BuiltinFontCatalog.ONEST_LIGHT.renderer(fontRegular());
     }
 
     static boolean inside(double mx, double my, float x, float y, float w, float h) {

@@ -30,18 +30,22 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Freezes the opaque-lighting result into a backend-owned radiance source.
+ * Builds the stable opaque-radiance input used by screen-space lighting.
  *
- * <p>Reflection/indirect consumers must not sample the mutable scene target directly: later forward
- * and translucent stages are allowed to keep writing it. This pass gives those consumers one stable
- * full-resolution source with a portable storage-image format.</p>
+ * <p>Terrain pixels come from the Combatant HDR direct-lighting target. Pixels replaced by later
+ * compatibility-forward opaque producers come from the mutable Minecraft scene target. The
+ * original G-buffer depth identifies which producer still owns each pixel.</p>
  */
 final class DeferredSceneRadianceSource implements AutoCloseable {
     private static final int LOCAL_SIZE = 8;
     private static final Identifier SHADER = id("deferred/radiance_capture");
     private static final ShaderResourceLayout LAYOUT = new ShaderResourceLayout(List.of(
             new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
-            new ShaderResourceSlot(1, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY)
+            new ShaderResourceSlot(1, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(2, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(3, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(4, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(5, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY)
     ));
 
     private CombatantRhi owner;
@@ -49,13 +53,18 @@ final class DeferredSceneRadianceSource implements AutoCloseable {
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.radiance.capture", DeferredStage.RADIANCE_CAPTURE)
-                .read(DeferredResource.SCENE_COLOR)
-                .write(DeferredResource.SCENE_RADIANCE)
+                .read(DeferredResource.DIRECT_LIGHTING_COLOR, DeferredResource.SCENE_COLOR,
+                        DeferredResource.GBUFFER_SURFACE, DeferredResource.GBUFFER_DEPTH,
+                        DeferredResource.RESOLVED_DEPTH)
+                .write(DeferredResource.OPAQUE_BASE_RADIANCE)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> (context.settings().indirectLightEnabled()
                         || context.settings().reflectionsEnabled()
                         || WaterSurfaceExtractor.hasWaterPatches())
-                        && context.resources().texture(DeferredResource.SCENE_COLOR) != null)
+                        && context.isValid(DeferredResource.DIRECT_LIGHTING_COLOR)
+                        && context.resources().texture(DeferredResource.SCENE_COLOR) != null
+                        && context.isValid(DeferredResource.GBUFFER_DEPTH)
+                        && context.isValid(DeferredResource.RESOLVED_DEPTH))
                 .execute(this::capture)
                 .build());
     }
@@ -73,17 +82,28 @@ final class DeferredSceneRadianceSource implements AutoCloseable {
 
     private void capture(DeferredPassContext context) {
         ensureOwner(context.rhi());
-        GpuTextureView source = requireTexture(context, DeferredResource.SCENE_COLOR);
-        RhiStorageImage output = requireImage(context, DeferredResource.SCENE_RADIANCE);
+        GpuTextureView directLighting = requireTexture(context, DeferredResource.DIRECT_LIGHTING_COLOR);
+        GpuTextureView compatibilityScene = requireTexture(context, DeferredResource.SCENE_COLOR);
+        GpuTextureView surface = requireTexture(context, DeferredResource.GBUFFER_SURFACE);
+        GpuTextureView gbufferDepth = requireTexture(context, DeferredResource.GBUFFER_DEPTH);
+        GpuTextureView currentDepth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
+        RhiStorageImage output = requireImage(context, DeferredResource.OPAQUE_BASE_RADIANCE);
         GpuSampler linear = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
+        GpuSampler nearest = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
 
         context.advancedShaders().dispatch(new ComputeDispatchCommand(
-                "Combatant scene radiance capture",
+                "Combatant opaque base radiance",
                 pipeline(),
                 groups(output.descriptor().width()), groups(output.descriptor().height()), 1,
                 List.of(),
-                List.of(new SampledTextureBinding(0, source, linear)),
-                List.of(new StorageImageBinding(1, output, StorageAccess.WRITE_ONLY))
+                List.of(
+                        new SampledTextureBinding(0, directLighting, linear),
+                        new SampledTextureBinding(1, compatibilityScene, linear),
+                        new SampledTextureBinding(2, surface, nearest),
+                        new SampledTextureBinding(3, gbufferDepth, nearest),
+                        new SampledTextureBinding(4, currentDepth, nearest)
+                ),
+                List.of(new StorageImageBinding(5, output, StorageAccess.WRITE_ONLY))
         ));
     }
 

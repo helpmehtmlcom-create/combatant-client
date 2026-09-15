@@ -45,7 +45,7 @@ import java.util.List;
  */
 public enum CombatantRenderPipelines {
     ;
-    private static final float COPLANAR_SURFACE_DEPTH_BIAS_SLOPE = 0.0f;
+    private static final float COPLANAR_SURFACE_DEPTH_BIAS_SLOPE = Float.MIN_NORMAL;
     private static final float COPLANAR_SURFACE_DEPTH_BIAS_CONSTANT = 1.0f;
     private static final float COPLANAR_DECAL_DEPTH_BIAS_SLOPE = 1.0f;
     private static final float COPLANAR_DECAL_DEPTH_BIAS_CONSTANT = 1.0f;

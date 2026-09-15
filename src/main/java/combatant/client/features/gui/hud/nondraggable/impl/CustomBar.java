@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.hud.nondraggable.impl;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import com.mojang.authlib.GameProfile;
 import combatant.client.config.subsystem.MapTriangulationConfig;
 import combatant.client.config.values.*;
@@ -39,7 +40,6 @@ import combatant.client.render.engine.core.ViewportContext;
 import combatant.client.render.engine.math.ColorMath;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.helpers.MatteHudStyle;
 import combatant.client.render.helpers.PlayerHeadRenderer;
@@ -675,7 +675,7 @@ public final class CustomBar extends AbstractHudElement {
             }
 
             if (labelsEnabled && labels != null && !labels.isEmpty()) {
-                TextRenderer tr = Fonts.renderer("Iosevka");
+                TextRenderer tr = BuiltinFontCatalog.IOSEVKA_REGULAR.renderer();
                 Renderer2D r2d = Renderer2D.COLOR;
                 float labelScale = LOCATOR_LABEL_SCALE * scale;
                 float rowH = LOCATOR_LABEL_ROW_HEIGHT * scale;

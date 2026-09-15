@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.hud.draggable.impl;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.util.Mth;
 import combatant.client.config.values.BooleanValue;
@@ -23,8 +24,6 @@ import combatant.client.features.module.modules.movement.Timer;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.math.HudScale;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 
 import static combatant.client.features.theme.Theme.theme;
@@ -128,7 +127,7 @@ public final class TimerIndicator extends DraggableHudElement {
 
         String text = percentText(charge);
         TextRenderer fallback = textRenderer != null ? textRenderer : TextRenderer.get();
-        TextRenderer font = Fonts.renderer("Iosevka", FontInfo.Type.Bold, fallback);
+        TextRenderer font = BuiltinFontCatalog.IOSEVKA_BOLD.renderer(fallback);
         float textScale = drawScale * 0.9f;
         font.begin(textScale, false, false);
         float textW = (float) font.getWidth(text, false);

@@ -73,6 +73,10 @@ public enum PickerCatalogFactory {
      * from a later client tick instead of poisoning the cache with an early startup failure.
      */
     public static boolean prewarmAsync() {
+        // Particle classes are classpath metadata, not registry/item data. Start this immediately so
+        // the first NoRender particle picker already has the complete vanilla implementation list.
+        ParticleClassCatalog.prewarm(CATALOG_EXECUTOR);
+
         if (!markRuntimeReadyIfPossible()) return false;
 
         // Highest first-open value first; executor ordering intentionally prioritizes item-backed pickers.

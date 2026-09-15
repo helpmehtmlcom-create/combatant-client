@@ -3521,6 +3521,7 @@
   "setting.norender.entity_toggles.option.item_frame_name_tags": "Подписи рамок предметов",
   "setting.norender.entity_toggles.option.player_name_tags": "Ванильные ники игроков",
   "setting.norender.particle_toggles": "Частицы",
+  "setting.norender.particle_classes": "Классы частиц",
   "setting.norender.particle_toggles.option.all_particles": "Все частицы",
   "setting.norender.particle_toggles.option.rain_splash_particles": "Брызги дождя",
   "setting.norender.particle_toggles.option.block_break_particles": "Частицы разрушения блоков",

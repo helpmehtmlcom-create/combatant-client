@@ -7,6 +7,7 @@
 
 package combatant.client.features.module.modules.combat;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.config.common.CommonSettingSchemas;
 import combatant.client.config.common.impl.TargetFilters;
 import combatant.client.config.values.*;
@@ -20,8 +21,6 @@ import combatant.client.features.module.modules.combat.autobed.*;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.renderer.Renderer3D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.engine.text.WorldTextRenderer;
 import combatant.client.render.engine.world.WorldUiPresentationService;
@@ -907,7 +906,7 @@ public class AutoBed extends Module {
         if (mainText.isEmpty()) return;
 
         int mainArgb = ExplosionRenderUtil.applyOpacity(textColor.getArgb(), alpha);
-        TextRenderer bold = Fonts.renderer("Iosevka", FontInfo.Type.Bold, TextRenderer.get());
+        TextRenderer bold = BuiltinFontCatalog.IOSEVKA_BOLD.renderer(TextRenderer.get());
         WorldTextRenderer.Options baseOptions = WorldTextRenderer.Options.defaults()
                 .withScale(TEXT_SCALE)
                 .withWorldScale(billboardWorldScale)
@@ -927,7 +926,7 @@ public class AutoBed extends Module {
         }
 
         String tailText = " / " + ExplosionRenderUtil.formatDamage(renderSelfDamageValue);
-        TextRenderer medium = Fonts.renderer("Iosevka", FontInfo.Type.Regular, TextRenderer.get());
+        TextRenderer medium = BuiltinFontCatalog.IOSEVKA_REGULAR.renderer(TextRenderer.get());
         double mainWidth = ExplosionRenderUtil.measureWidth(bold, mainText, TEXT_SCALE);
         double tailWidth = ExplosionRenderUtil.measureWidth(medium, tailText, TEXT_GAP_SCALE);
         double startX = -(mainWidth + tailWidth) * 0.5;
