@@ -5,12 +5,11 @@ layout(binding = 1) uniform sampler2D u_AlbedoAtlas;
 layout(binding = 2) uniform sampler2D u_NormalHeightAtlas;
 layout(binding = 3) uniform sampler2D u_SurfaceAtlas;
 layout(binding = 4) uniform sampler2D u_SpecularAtlas;
-layout(binding = 5) uniform sampler2D u_ReflectionColor;
-layout(binding = 6) uniform sampler2D u_ReflectionConfidence;
+layout(binding = 5) uniform sampler2D u_WaterReflectionColor;
+layout(binding = 6) uniform sampler2D u_WaterReflectionConfidence;
 layout(binding = 7) uniform sampler2D u_SceneRadiance;
 layout(binding = 8) uniform sampler2D u_ResolvedDepth;
 layout(binding = 9) uniform sampler2D u_SkySpecular;
-layout(binding = 10) uniform sampler2D u_ReflectionProbe;
 
 layout(std430, binding = 11) readonly buffer WaterFrame {
     mat4 u_CurrentView;
@@ -110,28 +109,27 @@ vec3 resolveNormal(vec3 geometricNormal) {
 }
 
 vec3 reflectionHierarchy(vec2 screenUv, vec3 normal, vec3 viewDir, float roughness) {
-    bool hasSsr = u_MediumReflection.z > 0.5;
+    bool hasWaterReflection = u_MediumReflection.z > 0.5;
     bool hasSky = u_MediumReflection.w > 0.5;
-    bool hasProbe = u_ReflectionMeta.y > 0.5;
 
     vec3 reflectedView = normalize(reflect(-viewDir, normal));
     vec3 reflectedWorld = normalize(mat3(u_CurrentInverseView) * reflectedView);
     vec2 envUv = latLongFromDirection(reflectedWorld);
+
+    // Explicit hierarchy tail. The dedicated water trace pass already resolves its own SSR ray
+    // through the shared off-screen cascade when possible. A confidence miss falls through here.
     vec3 fallback = vec3(0.0); // Explicit material fallback: no invented environment radiance.
     if (hasSky) {
         float mipCount = max(u_ReflectionMeta.x, 1.0);
-        fallback = max(textureLod(u_SkySpecular, envUv, roughness * max(mipCount - 1.0, 0.0)).rgb, vec3(0.0));
+        float skyLod = roughness * max(mipCount - 1.0, 0.0);
+        fallback = max(textureLod(u_SkySpecular, envUv, skyLod).rgb, vec3(0.0));
     }
-    if (hasProbe) {
-        // Slot is reserved now; current renderer publishes no probe resource, so the CPU flag is false.
-        fallback = max(textureLod(u_ReflectionProbe, envUv, 0.0).rgb, vec3(0.0));
-    }
-    if (!hasSsr) return fallback;
+    if (!hasWaterReflection) return fallback;
 
-    vec3 ssr = max(textureLod(u_ReflectionColor, screenUv, 0.0).rgb, vec3(0.0));
-    float confidence = clamp(textureLod(u_ReflectionConfidence, screenUv, 0.0).r, 0.0, 1.0);
-    // Confidence selects hierarchy tiers; it never attenuates radiometric energy by itself.
-    return mix(fallback, ssr, confidence);
+    vec3 traced = max(textureLod(u_WaterReflectionColor, screenUv, 0.0).rgb, vec3(0.0));
+    float confidence = clamp(textureLod(u_WaterReflectionConfidence, screenUv, 0.0).r, 0.0, 1.0);
+    // Confidence selects between semantically valid hierarchy levels; zero never means black hit.
+    return mix(fallback, traced, confidence);
 }
 
 void main() {

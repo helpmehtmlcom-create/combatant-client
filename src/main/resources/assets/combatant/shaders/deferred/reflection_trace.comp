@@ -30,59 +30,25 @@ layout(std430, binding = 8) readonly buffer ReflectionTraceData {
     vec4 traceParams0;
     // x: minimum hit thickness, y: normal bias, z: edge margin, w: Hi-Z mip step scale.
     vec4 traceParams1;
+    vec4 resolveParams;
 } u_Trace;
 
-vec3 decodeOctahedral(vec2 encoded) {
-    vec2 f = encoded * 2.0 - 1.0;
-    vec3 n = vec3(f, 1.0 - abs(f.x) - abs(f.y));
-    if (n.z < 0.0) n.xy = (1.0 - abs(n.yx)) * sign(n.xy);
-    return normalize(n);
-}
-
-vec3 reconstructView(vec2 uv, float depth) {
-    vec2 ndcXY = uv * 2.0 - 1.0;
-    float ndcZ = depth * u_Trace.depthTransform.x + u_Trace.depthTransform.y;
-    vec4 h = u_Trace.inverseProjection * vec4(ndcXY, ndcZ, 1.0);
-    return h.xyz / max(abs(h.w), 1e-7) * sign(h.w);
-}
-
-bool projectView(vec3 viewPosition, out vec2 uv, out float depth) {
-    vec4 clip = u_Trace.projection * vec4(viewPosition, 1.0);
-    if (abs(clip.w) < 1e-7) return false;
-    vec3 ndc = clip.xyz / clip.w;
-    uv = ndc.xy * 0.5 + 0.5;
-    depth = ndc.z * u_Trace.depthTransform.z + u_Trace.depthTransform.w;
-    return clip.w > 0.0;
-}
-
-bool ownsGbufferPixel(vec2 uv, float currentDepth) {
-    float gbufferDepth = textureLod(u_GbufferDepth, uv, 0.0).r;
-    if (gbufferDepth <= 0.0 || currentDepth <= 0.0) return false;
-    float tolerance = max(1.0e-6, abs(gbufferDepth) * 1.0e-5);
-    return abs(gbufferDepth - currentDepth) <= tolerance;
-}
+#moj_import <combatant:deferred_reflection_trace.glsl>
 
 void storeMiss(ivec2 pixel) {
     imageStore(u_ReflectionTrace, pixel, vec4(0.0));
     imageStore(u_ReflectionConfidence, pixel, vec4(0.0));
 }
 
-float coneFootprintPixels(float roughness, float travel, vec3 rayPosition) {
-    float alpha = roughness * roughness;
-    float projectionScale = 0.5 * u_Trace.traceExtentAndFar.y * abs(u_Trace.projection[1][1]);
-    return max(1.0, alpha * travel * projectionScale / max(abs(rayPosition.z), 1.0e-4));
-}
-
-float footprintThickness(vec2 uv, float footprintPixels, float minimumThickness) {
-    vec2 texel = 1.0 / max(u_Trace.traceExtentAndFar.xy, vec2(1.0));
-    vec2 footprint = texel * max(1.0, footprintPixels);
-    vec2 lo = clamp(uv - footprint, vec2(0.0), vec2(1.0));
-    vec2 hi = clamp(uv + footprint, vec2(0.0), vec2(1.0));
-    float dx = abs(textureLod(u_ResolvedDepth, vec2(hi.x, uv.y), 0.0).r
-                 - textureLod(u_ResolvedDepth, vec2(lo.x, uv.y), 0.0).r);
-    float dy = abs(textureLod(u_ResolvedDepth, vec2(uv.x, hi.y), 0.0).r
-                 - textureLod(u_ResolvedDepth, vec2(uv.x, lo.y), 0.0).r);
-    return max(minimumThickness, 0.5 * (dx + dy));
+CombatantReflectionTracePolicy tracePolicy() {
+    CombatantReflectionTracePolicy policy;
+    policy.inverseProjection = u_Trace.inverseProjection;
+    policy.projection = u_Trace.projection;
+    policy.depthTransform = u_Trace.depthTransform;
+    policy.traceExtentAndFar = u_Trace.traceExtentAndFar;
+    policy.traceParams0 = u_Trace.traceParams0;
+    policy.traceParams1 = u_Trace.traceParams1;
+    return policy;
 }
 
 void main() {
@@ -92,87 +58,26 @@ void main() {
 
     vec2 uv = (vec2(pixel) + vec2(0.5)) / vec2(outputSize);
     float surfaceDepth = textureLod(u_ResolvedDepth, uv, 0.0).r;
-    if (!ownsGbufferPixel(uv, surfaceDepth)) {
+    if (!combatantReflectionOwnsGbufferPixel(u_GbufferDepth, uv, surfaceDepth)) {
         storeMiss(pixel);
         return;
     }
 
-    vec3 viewPosition = reconstructView(uv, surfaceDepth);
-    vec3 viewNormal = decodeOctahedral(textureLod(u_GbufferGeometry, uv, 0.0).rg);
+    CombatantReflectionTracePolicy policy = tracePolicy();
+    vec3 viewPosition = combatantReflectionReconstructView(policy, uv, surfaceDepth);
+    vec3 viewNormal = combatantReflectionDecodeOctahedral(textureLod(u_GbufferGeometry, uv, 0.0).rg);
     float roughness = clamp(textureLod(u_GbufferMaterial, uv, 0.0).r, 0.0, 1.0);
-    vec3 incident = normalize(viewPosition);
-    vec3 rayDirection = normalize(reflect(incident, viewNormal));
+    vec3 rayDirection = normalize(reflect(normalize(viewPosition), viewNormal));
 
-    if (dot(rayDirection, viewNormal) <= 0.0) {
+    CombatantReflectionTraceResult hit = combatantTraceScreenReflection(
+            policy, u_ResolvedDepth, u_GbufferDepth, u_DepthPyramid, u_GbufferGeometry,
+            viewPosition, viewNormal, rayDirection, roughness);
+    if (hit.valid < 0.5) {
         storeMiss(pixel);
         return;
     }
 
-    float normalBias = u_Trace.traceParams1.y;
-    vec3 rayPosition = viewPosition + viewNormal * normalBias;
-    float stepLength = max(u_Trace.traceParams0.y, abs(viewPosition.z) * u_Trace.traceParams0.z);
-    float maxDistance = max(1.0, u_Trace.traceExtentAndFar.z * u_Trace.traceExtentAndFar.w);
-    float stepGrowth = u_Trace.traceParams0.w;
-    float minimumThickness = u_Trace.traceParams1.x;
-    float edgeMargin = u_Trace.traceParams1.z;
-    float mipStepScale = u_Trace.traceParams1.w;
-    int maxSteps = clamp(int(u_Trace.traceParams0.x + 0.5), 1, 256);
-    float travelled = 0.0;
-    int mipCount = textureQueryLevels(u_DepthPyramid);
-    vec2 hitUv = vec2(-1.0);
-    float hitAgreement = 0.0;
-    float hitFacing = 0.0;
-
-    for (int stepIndex = 0; stepIndex < 256; ++stepIndex) {
-        if (stepIndex >= maxSteps) break;
-        travelled += stepLength;
-        if (travelled > maxDistance) break;
-        rayPosition += rayDirection * stepLength;
-        stepLength *= stepGrowth;
-
-        vec2 rayUv;
-        float rayDepth;
-        if (!projectView(rayPosition, rayUv, rayDepth)) break;
-        if (any(lessThanEqual(rayUv, vec2(edgeMargin)))
-                || any(greaterThanEqual(rayUv, vec2(1.0 - edgeMargin)))) break;
-        if (rayDepth <= 0.0 || rayDepth > 1.0) continue;
-
-        float footprintPixels = coneFootprintPixels(roughness, travelled, rayPosition);
-        float stepMip = floor(log2(1.0 + float(stepIndex) * mipStepScale));
-        float coneMip = floor(log2(footprintPixels));
-        float mip = clamp(max(stepMip, coneMip), 0.0, float(max(0, mipCount - 1)));
-        float nearestDepth = textureLod(u_DepthPyramid, rayUv, mip).r;
-        if (nearestDepth <= 0.0) continue;
-
-        float effectiveThickness = footprintThickness(rayUv, footprintPixels, minimumThickness);
-        // Reversed-Z: lower depth means farther away. Crossing the nearest stored depth means the
-        // ray entered geometry. Mip 0 then validates both depth and target G-buffer ownership.
-        if (rayDepth <= nearestDepth + effectiveThickness) {
-            float fullDepth = textureLod(u_ResolvedDepth, rayUv, 0.0).r;
-            if (ownsGbufferPixel(rayUv, fullDepth) && rayDepth <= fullDepth + effectiveThickness) {
-                vec3 hitNormal = decodeOctahedral(textureLod(u_GbufferGeometry, rayUv, 0.0).rg);
-                float facing = clamp(dot(hitNormal, -rayDirection), 0.0, 1.0);
-                if (facing <= 0.0) continue;
-                hitUv = rayUv;
-                hitFacing = facing;
-                hitAgreement = 1.0 - clamp(abs(rayDepth - fullDepth) / max(effectiveThickness, 1.0e-7), 0.0, 1.0);
-                break;
-            }
-        }
-    }
-
-    if (hitUv.x < 0.0) {
-        storeMiss(pixel);
-        return;
-    }
-
-    float edgeDistance = min(min(hitUv.x, 1.0 - hitUv.x), min(hitUv.y, 1.0 - hitUv.y));
-    float edgeEnd = max(edgeMargin * 4.0, edgeMargin + 1.0e-4);
-    float edgeConfidence = smoothstep(edgeMargin, edgeEnd, edgeDistance);
-    float travelConfidence = clamp(1.0 - travelled / maxDistance, 0.0, 1.0);
-    float confidence = clamp(edgeConfidence * travelConfidence * hitFacing * hitAgreement, 0.0, 1.0);
-
-    vec3 reflected = textureLod(u_SceneColor, hitUv, 0.0).rgb;
+    vec3 reflected = textureLod(u_SceneColor, hit.hitUv, 0.0).rgb;
     imageStore(u_ReflectionTrace, pixel, vec4(reflected, 1.0));
-    imageStore(u_ReflectionConfidence, pixel, vec4(confidence, 0.0, 0.0, 0.0));
+    imageStore(u_ReflectionConfidence, pixel, vec4(hit.confidence, 0.0, 0.0, 0.0));
 }

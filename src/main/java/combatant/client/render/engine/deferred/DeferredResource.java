@@ -190,6 +190,12 @@ public enum DeferredResource {
             DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.REFLECTION_OUTPUT, false)),
     REFLECTION_CONFIDENCE(FrameGraphResourceKey.transientTexture("world.reflection.confidence"),
             DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.REFLECTION_OUTPUT, false)),
+    /** Water-domain reflection radiance traced from the actual deformed forward surface. */
+    WATER_REFLECTION_COLOR(FrameGraphResourceKey.transientTexture("world.water.reflection_color"),
+            DeferredTextureSpec.computeAttachment(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.FULL)),
+    /** Explicit confidence/source selection for {@link #WATER_REFLECTION_COLOR}. */
+    WATER_REFLECTION_CONFIDENCE(FrameGraphResourceKey.transientTexture("world.water.reflection_confidence"),
+            DeferredTextureSpec.computeAttachment(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.FULL)),
     TRANSLUCENT_COLOR(FrameGraphResourceKey.transientTexture("world.translucent.color"),
             DeferredTextureSpec.computeAttachment(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.FULL)),
     TRANSLUCENT_DEPTH(FrameGraphResourceKey.transientTexture("world.translucent.depth"),
