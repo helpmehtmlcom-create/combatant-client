@@ -37,15 +37,19 @@ public final class OverworldCelestialModel {
         float moonY = -sunY;
         float moonZ = -sunZ;
 
-        DirectionalLightDescriptor sun = sunY > 0.0f
-                ? DirectionalLightDescriptor.of(sunX, sunY, sunZ,
-                SUN_RADIANCE, SUN_RADIANCE, SUN_RADIANCE, SUN_ANGULAR_RADIUS, true)
-                : DirectionalLightDescriptor.NONE;
-        DirectionalLightDescriptor moon = moonY > 0.0f
-                ? DirectionalLightDescriptor.of(moonX, moonY, moonZ,
-                MOON_RADIANCE, MOON_RADIANCE, MOON_RADIANCE, MOON_ANGULAR_RADIUS, true)
-                : DirectionalLightDescriptor.NONE;
-        DirectionalLightDescriptor primary = sun.valid() ? sun : moon;
+        boolean sunAboveHorizon = sunY > 0.0f;
+        boolean moonAboveHorizon = moonY > 0.0f;
+        // Celestial geometry remains valid below the horizon so atmosphere integration can produce
+        // continuous twilight. Only the primary direct-light/shadow contract is horizon-clipped.
+        DirectionalLightDescriptor sun = DirectionalLightDescriptor.of(
+                sunX, sunY, sunZ,
+                SUN_RADIANCE, SUN_RADIANCE, SUN_RADIANCE, SUN_ANGULAR_RADIUS, sunAboveHorizon
+        );
+        DirectionalLightDescriptor moon = DirectionalLightDescriptor.of(
+                moonX, moonY, moonZ,
+                MOON_RADIANCE, MOON_RADIANCE, MOON_RADIANCE, MOON_ANGULAR_RADIUS, moonAboveHorizon
+        );
+        DirectionalLightDescriptor primary = sunAboveHorizon ? sun : (moonAboveHorizon ? moon : DirectionalLightDescriptor.NONE);
         long dayIndex = (long) Math.floor(clock / DAY_TICKS);
         int moonPhase = (int) Math.floorMod(dayIndex, 8L);
         return new CelestialState(ID, clock, fraction, sun, moon, primary, moonPhase, true);

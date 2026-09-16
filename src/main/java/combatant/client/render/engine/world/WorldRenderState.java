@@ -7,6 +7,7 @@
 
 package combatant.client.render.engine.world;
 
+import combatant.client.render.engine.world.environment.AtmosphereState;
 import combatant.client.render.engine.world.environment.BiomeClimateState;
 import combatant.client.render.engine.world.environment.CelestialState;
 import combatant.client.render.engine.world.environment.WeatherState;
@@ -32,6 +33,7 @@ public record WorldRenderState(
         Identifier exposureProfile,
         Identifier postProfile,
         Identifier transitionState,
+        AtmosphereState atmosphereState,
         BiomeClimateState biomeClimate,
         CelestialState celestialState,
         WeatherState weatherState,
@@ -55,6 +57,7 @@ public record WorldRenderState(
         exposureProfile = Objects.requireNonNullElse(exposureProfile, NEUTRAL);
         postProfile = Objects.requireNonNullElse(postProfile, NEUTRAL);
         transitionState = Objects.requireNonNullElse(transitionState, NONE);
+        atmosphereState = Objects.requireNonNullElse(atmosphereState, AtmosphereState.NONE);
         biomeClimate = Objects.requireNonNullElse(biomeClimate, BiomeClimateState.EMPTY);
         celestialState = Objects.requireNonNullElse(celestialState, CelestialState.NONE);
         weatherState = Objects.requireNonNullElse(weatherState, WeatherState.NONE);
@@ -66,7 +69,7 @@ public record WorldRenderState(
                 UNKNOWN_DIMENSION, UNKNOWN_PROFILE,
                 NONE, NONE, NONE, NEUTRAL, NONE,
                 NEUTRAL, NEUTRAL, NEUTRAL, NONE,
-                BiomeClimateState.EMPTY, CelestialState.NONE, WeatherState.NONE,
+                AtmosphereState.NONE, BiomeClimateState.EMPTY, CelestialState.NONE, WeatherState.NONE,
                 DirectionalLightDescriptor.NONE, epoch
         );
     }

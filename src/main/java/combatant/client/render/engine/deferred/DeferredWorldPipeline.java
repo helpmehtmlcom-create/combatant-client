@@ -630,6 +630,7 @@ public final class DeferredWorldPipeline {
         executeStage(DeferredStage.REFLECTION_DENOISE);
         executeStage(DeferredStage.REFLECTION_HISTORY);
         executeStage(DeferredStage.REFLECTION_COMPOSITE);
+        executeStage(DeferredStage.SKY_COMPOSITE);
         executeStage(DeferredStage.WATER_SURFACE);
         executeStage(DeferredStage.PRE_TRANSLUCENCY);
     }

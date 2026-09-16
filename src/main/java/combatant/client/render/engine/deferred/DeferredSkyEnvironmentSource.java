@@ -53,6 +53,12 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
     private static final int SKY_WIDTH = 256;
     private static final int SKY_HEIGHT = 128;
     private static final int SKY_MIPS = 9;
+    private static final int TRANSMITTANCE_WIDTH = 256;
+    private static final int TRANSMITTANCE_HEIGHT = 64;
+    private static final int MULTISCATTER_WIDTH = 32;
+    private static final int MULTISCATTER_HEIGHT = 32;
+    private static final int AERIAL_WIDTH = 512;
+    private static final int AERIAL_HEIGHT = 32;
 
     private static final Identifier CLEAR_SHADER = id("deferred/sky_environment_clear");
     private static final Identifier SH_SHADER = id("deferred/sky_diffuse_sh");
@@ -100,6 +106,9 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
     private CombatantRhi owner;
     private RhiStorageImage skyRadiance;
     private RhiStorageImage skySpecular;
+    private RhiStorageImage atmosphereTransmittance;
+    private RhiStorageImage atmosphereMultiScattering;
+    private RhiStorageImage aerialPerspective;
     private RhiStorageBuffer skyDiffuseSh;
     private RhiStorageBuffer skyState;
     private RhiStorageBuffer specularParams;
@@ -119,7 +128,10 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.environment.sky.prepare", DeferredStage.PRE_LIGHTING)
                 .priority(820)
-                .write(DeferredResource.SKY_RADIANCE, DeferredResource.SKY_ENVIRONMENT_STATE)
+                .write(DeferredResource.SKY_RADIANCE, DeferredResource.SKY_ENVIRONMENT_STATE,
+                        DeferredResource.ATMOSPHERE_TRANSMITTANCE,
+                        DeferredResource.ATMOSPHERE_MULTI_SCATTERING,
+                        DeferredResource.AERIAL_PERSPECTIVE)
                 .requires(RhiShaderStage.COMPUTE)
                 .execute(this::prepareSky)
                 .build());
@@ -166,6 +178,7 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
 
     void release(CombatantRhi currentOwner) {
         if (owner != null && currentOwner != null && owner != currentOwner) return;
+        SkyEnvironmentRegistry.releaseBackendResources(currentOwner != null ? currentOwner : owner);
         closeOwned();
         owner = null;
     }
@@ -194,18 +207,23 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
                 || next.requiresUpdate(renderedVersion);
         if (changed) {
             boolean produced = false;
+            if (provider != renderedProvider) {
+                clearEnvironment(context);
+            }
             if (provider != null && next.valid()) {
                 try {
                     provider.render(new SkyEnvironmentProvider.RenderContext(
                             context.rhi(), context.worldState(), context.primaryView().current(), context.frame().frameId()
-                    ), skyRadiance);
+                    ), new SkyEnvironmentProvider.TargetSet(
+                            skyRadiance, atmosphereTransmittance, atmosphereMultiScattering, aerialPerspective
+                    ));
                     produced = true;
                 } catch (Throwable ignored) {
                     next = SkyEnvironmentDescriptor.NONE;
                     provider = null;
                 }
             }
-            if (!produced) clearSky(context);
+            if (!produced) clearEnvironment(context);
             renderedProvider = provider;
             descriptor = next;
             renderedVersion = next.contentVersion();
@@ -303,12 +321,18 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
         ));
     }
 
-    private void clearSky(DeferredPassContext context) {
+    private void clearEnvironment(DeferredPassContext context) {
+        clearImage(context, "Combatant neutral sky radiance fallback", skyRadiance);
+        clearImage(context, "Combatant neutral atmosphere transmittance", atmosphereTransmittance);
+        clearImage(context, "Combatant neutral atmosphere multiscattering", atmosphereMultiScattering);
+        clearImage(context, "Combatant neutral aerial perspective", aerialPerspective);
+    }
+
+    private void clearImage(DeferredPassContext context, String label, RhiStorageImage image) {
         context.advancedShaders().dispatch(new ComputeDispatchCommand(
-                "Combatant neutral sky radiance fallback",
-                clearPipeline(), groups(SKY_WIDTH), groups(SKY_HEIGHT), 1,
+                label, clearPipeline(), groups(image.descriptor().width()), groups(image.descriptor().height()), 1,
                 List.of(), List.of(),
-                List.of(new StorageImageBinding(0, skyRadiance, StorageAccess.WRITE_ONLY))
+                List.of(new StorageImageBinding(0, image, StorageAccess.WRITE_ONLY))
         ));
     }
 
@@ -323,6 +347,9 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
 
     private void bindResources(DeferredPassContext context) {
         context.resources().bindStorageImage(DeferredResource.SKY_RADIANCE, skyRadiance);
+        context.resources().bindStorageImage(DeferredResource.ATMOSPHERE_TRANSMITTANCE, atmosphereTransmittance);
+        context.resources().bindStorageImage(DeferredResource.ATMOSPHERE_MULTI_SCATTERING, atmosphereMultiScattering);
+        context.resources().bindStorageImage(DeferredResource.AERIAL_PERSPECTIVE, aerialPerspective);
         context.resources().bindBuffer(DeferredResource.SKY_DIFFUSE_SH, skyDiffuseSh);
         context.resources().bindStorageImage(DeferredResource.SKY_SPECULAR_RADIANCE, skySpecular);
         context.resources().bindBuffer(DeferredResource.SKY_ENVIRONMENT_STATE, skyState);
@@ -346,6 +373,24 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
             skySpecular = owner.advancedShaders().createStorageImage(new StorageImageDescriptor(
                     "combatant-sky-specular", SKY_WIDTH, SKY_HEIGHT, GpuFormat.RGBA16_FLOAT,
                     StorageAccess.READ_WRITE, true, false, SKY_MIPS
+            ));
+        }
+        if (atmosphereTransmittance == null) {
+            atmosphereTransmittance = owner.advancedShaders().createStorageImage(new StorageImageDescriptor(
+                    "combatant-atmosphere-transmittance", TRANSMITTANCE_WIDTH, TRANSMITTANCE_HEIGHT,
+                    GpuFormat.RGBA16_FLOAT, StorageAccess.READ_WRITE, true, false, 1
+            ));
+        }
+        if (atmosphereMultiScattering == null) {
+            atmosphereMultiScattering = owner.advancedShaders().createStorageImage(new StorageImageDescriptor(
+                    "combatant-atmosphere-multiscattering", MULTISCATTER_WIDTH, MULTISCATTER_HEIGHT,
+                    GpuFormat.RGBA16_FLOAT, StorageAccess.READ_WRITE, true, false, 1
+            ));
+        }
+        if (aerialPerspective == null) {
+            aerialPerspective = owner.advancedShaders().createStorageImage(new StorageImageDescriptor(
+                    "combatant-atmosphere-aerial-perspective", AERIAL_WIDTH, AERIAL_HEIGHT,
+                    GpuFormat.RGBA16_FLOAT, StorageAccess.READ_WRITE, true, false, 1
             ));
         }
         if (skyDiffuseSh == null) {
@@ -415,6 +460,9 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
         close(diffuseResolvePipeline); diffuseResolvePipeline = null;
         close(skyRadiance); skyRadiance = null;
         close(skySpecular); skySpecular = null;
+        close(atmosphereTransmittance); atmosphereTransmittance = null;
+        close(atmosphereMultiScattering); atmosphereMultiScattering = null;
+        close(aerialPerspective); aerialPerspective = null;
         close(skyDiffuseSh); skyDiffuseSh = null;
         close(skyState); skyState = null;
         close(specularParams); specularParams = null;

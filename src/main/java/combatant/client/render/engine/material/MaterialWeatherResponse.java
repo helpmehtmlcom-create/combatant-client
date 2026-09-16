@@ -8,7 +8,7 @@ package combatant.client.render.engine.material;
 
 /**
  * Explicit material response to persistent weather state. The current deposited amounts are
- * renderer-owned state and are deliberately not reconstructed from rendered color or normals.
+ * renderer-owned state and are not reconstructed from rendered color or normals.
  */
 public record MaterialWeatherResponse(
         float wetLayerStrength,

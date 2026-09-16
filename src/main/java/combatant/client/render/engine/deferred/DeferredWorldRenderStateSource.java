@@ -9,11 +9,13 @@ package combatant.client.render.engine.deferred;
 
 import combatant.client.render.engine.world.DirectionalLightDescriptor;
 import combatant.client.render.engine.world.WorldRenderState;
+import combatant.client.render.engine.world.environment.AtmosphereState;
 import combatant.client.render.engine.world.environment.BiomeClimateSampler;
 import combatant.client.render.engine.world.environment.BiomeClimateState;
 import combatant.client.render.engine.world.environment.CelestialState;
 import combatant.client.render.engine.world.environment.DimensionRenderProfile;
 import combatant.client.render.engine.world.environment.DimensionRenderProfileRegistry;
+import combatant.client.render.engine.world.environment.OverworldAtmosphereModel;
 import combatant.client.render.engine.world.environment.OverworldCelestialModel;
 import combatant.client.render.engine.world.environment.WeatherProvider;
 import combatant.client.render.engine.world.environment.WeatherProviderRegistry;
@@ -51,6 +53,9 @@ final class DeferredWorldRenderStateSource {
         long frameId = view != null ? view.frameId() : Long.MIN_VALUE;
 
         BiomeClimateState climate = biomeClimate.capture(level, camera);
+        AtmosphereState atmosphere = DimensionRenderProfileRegistry.OVERWORLD_ENVIRONMENT.equals(profile.environmentModel())
+                ? OverworldAtmosphereModel.capture()
+                : AtmosphereState.NONE;
         CelestialState celestial = DimensionRenderProfileRegistry.OVERWORLD_CELESTIAL.equals(profile.celestialModel())
                 ? OverworldCelestialModel.capture(level, partialTick)
                 : CelestialState.NONE;
@@ -68,6 +73,9 @@ final class DeferredWorldRenderStateSource {
         DirectionalLightDescriptor directional = celestial.valid()
                 ? celestial.primaryDirectionalLight()
                 : DirectionalLightDescriptor.NONE;
+        if (directional.valid() && atmosphere.valid()) {
+            directional = OverworldAtmosphereModel.attenuateDirectional(atmosphere, directional, camera.y);
+        }
 
         current = new WorldRenderState(
                 dimensionKey,
@@ -81,6 +89,7 @@ final class DeferredWorldRenderStateSource {
                 profile.exposureProfile(),
                 profile.postProfile(),
                 WorldRenderState.NONE,
+                atmosphere,
                 climate,
                 celestial,
                 weather,

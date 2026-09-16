@@ -4,9 +4,10 @@
  *
  * Licensed under the GNU General Public License v3.0.
  */
-
 package combatant.client.render.engine.world;
 
+import combatant.client.render.engine.rhi.CombatantRhi;
+import combatant.client.render.engine.world.environment.OverworldAtmosphereSkyProvider;
 import net.minecraft.resources.Identifier;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -14,6 +15,10 @@ import java.util.concurrent.ConcurrentHashMap;
 /** Registry selected by {@link WorldRenderState#skyProvider()} before graph execution. */
 public final class SkyEnvironmentRegistry {
     private static final ConcurrentHashMap<Identifier, SkyEnvironmentProvider> PROVIDERS = new ConcurrentHashMap<>();
+
+    static {
+        register(OverworldAtmosphereSkyProvider.INSTANCE);
+    }
 
     private SkyEnvironmentRegistry() {
     }
@@ -27,5 +32,14 @@ public final class SkyEnvironmentRegistry {
 
     public static SkyEnvironmentProvider resolve(Identifier id) {
         return id == null ? null : PROVIDERS.get(id);
+    }
+
+    public static void releaseBackendResources(CombatantRhi owner) {
+        for (SkyEnvironmentProvider provider : PROVIDERS.values()) {
+            try {
+                provider.releaseBackendResources(owner);
+            } catch (Throwable ignored) {
+            }
+        }
     }
 }

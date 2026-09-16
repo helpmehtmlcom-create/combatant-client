@@ -42,7 +42,8 @@ import java.util.Locale;
  * Neutral opaque-light composition after the individual lighting producers have finished.
  *
  * <p>{@link DeferredResource#LIGHTING_COLOR} is the pre-reflection HDR result. The final
- * reflection pass writes {@link DeferredResource#SCENE_RADIANCE}; publishing to the mutable
+ * reflection pass writes {@link DeferredResource#OPAQUE_REFLECTED_RADIANCE}; sky composition then
+ * produces {@link DeferredResource#SCENE_RADIANCE}; publishing to the mutable
  * Minecraft scene target happens only after that resource is complete.</p>
  */
 final class DeferredOpaqueCompositeSource implements AutoCloseable {
@@ -119,13 +120,13 @@ final class DeferredOpaqueCompositeSource implements AutoCloseable {
                         DeferredResource.GBUFFER_GEOMETRY, DeferredResource.GBUFFER_MATERIAL,
                         DeferredResource.RESOLVED_DEPTH, DeferredResource.GBUFFER_DEPTH,
                         DeferredResource.SKY_SPECULAR_RADIANCE, DeferredResource.SKY_ENVIRONMENT_STATE)
-                .write(DeferredResource.SCENE_RADIANCE)
+                .write(DeferredResource.OPAQUE_REFLECTED_RADIANCE)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.isValid(DeferredResource.LIGHTING_COLOR))
                 .execute(this::composeReflections)
                 .build());
 
-        passes.add(DeferredPassSpec.builder("world.opaque.publish", DeferredStage.REFLECTION_COMPOSITE)
+        passes.add(DeferredPassSpec.builder("world.opaque.publish", DeferredStage.SKY_COMPOSITE)
                 .priority(100)
                 .read(DeferredResource.SCENE_RADIANCE, DeferredResource.GBUFFER_AUXILIARY,
                         DeferredResource.GBUFFER_DEPTH, DeferredResource.RESOLVED_DEPTH)
@@ -226,7 +227,7 @@ final class DeferredOpaqueCompositeSource implements AutoCloseable {
                 ? requireTexture(context, DeferredResource.SKY_SPECULAR_RADIANCE) : base;
         RhiStorageBuffer skyState = hasSkyResources
                 ? requireBuffer(context, DeferredResource.SKY_ENVIRONMENT_STATE) : fallbackSkyState();
-        RhiStorageImage output = requireImage(context, DeferredResource.SCENE_RADIANCE);
+        RhiStorageImage output = requireImage(context, DeferredResource.OPAQUE_REFLECTED_RADIANCE);
         boolean zeroToOne = isVulkan(context);
 
         Std430Writer writer = new Std430Writer(REFLECTION_DATA_LAYOUT, 1)

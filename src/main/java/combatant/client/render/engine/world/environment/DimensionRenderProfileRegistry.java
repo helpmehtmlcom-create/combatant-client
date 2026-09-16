@@ -21,6 +21,7 @@ public final class DimensionRenderProfileRegistry {
     public static final Identifier END_PROFILE_ID = id("end");
     public static final Identifier OVERWORLD_ENVIRONMENT = id("overworld_environment");
     public static final Identifier OVERWORLD_CELESTIAL = id("overworld_celestial");
+    public static final Identifier OVERWORLD_SKY = id("overworld_atmosphere");
     public static final Identifier OVERWORLD_WEATHER = id("overworld_weather");
 
     private static final DimensionRenderProfile UNKNOWN = new DimensionRenderProfile(
@@ -32,7 +33,7 @@ public final class DimensionRenderProfileRegistry {
 
     static {
         register(Level.OVERWORLD, new DimensionRenderProfile(
-                OVERWORLD_PROFILE_ID, OVERWORLD_ENVIRONMENT, WorldRenderState.NONE,
+                OVERWORLD_PROFILE_ID, OVERWORLD_ENVIRONMENT, OVERWORLD_SKY,
                 OVERWORLD_CELESTIAL, WorldRenderState.NEUTRAL, OVERWORLD_WEATHER,
                 WorldRenderState.NEUTRAL, WorldRenderState.NEUTRAL, WorldRenderState.NEUTRAL
         ));

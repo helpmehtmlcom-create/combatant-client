@@ -101,6 +101,7 @@ final class DeferredBackendPasses implements AutoCloseable {
     private final DeferredTemporalSignalSource temporalSignals = new DeferredTemporalSignalSource();
     private final DeferredReflectionDenoiseSource reflectionDenoise = new DeferredReflectionDenoiseSource();
     private final DeferredOpaqueCompositeSource opaqueComposite = new DeferredOpaqueCompositeSource();
+    private final DeferredSkyCompositeSource skyComposite = new DeferredSkyCompositeSource();
     private final DeferredTemporalHistorySource temporalHistory = new DeferredTemporalHistorySource();
     private final DeferredPatchSurfaceSource patchSurfaces = new DeferredPatchSurfaceSource();
 
@@ -188,6 +189,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         temporalSignals.install(passes);
         reflectionDenoise.install(passes);
         opaqueComposite.install(passes);
+        skyComposite.install(passes);
         temporalHistory.install(passes);
         patchSurfaces.install(passes);
     }
@@ -215,6 +217,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         temporalSignals.prepare(rhi);
         reflectionDenoise.prepare(rhi);
         opaqueComposite.prepare(rhi);
+        skyComposite.prepare(rhi);
         temporalHistory.prepare(rhi);
         patchSurfaces.prepare(rhi);
     }
@@ -242,6 +245,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         temporalSignals.release(releaseOwner);
         reflectionDenoise.release(releaseOwner);
         opaqueComposite.release(releaseOwner);
+        skyComposite.release(releaseOwner);
         temporalHistory.release(releaseOwner);
         patchSurfaces.release(releaseOwner);
         owner = null;
