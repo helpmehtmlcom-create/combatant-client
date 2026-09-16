@@ -3,7 +3,7 @@
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 layout(binding = 0) uniform sampler2D u_CurrentRadiance;
 layout(binding = 1) uniform sampler2D u_CurrentDepth;
-layout(binding = 2) uniform sampler2D u_CurrentFlow;
+layout(binding = 2) uniform sampler2D u_CurrentReprojectionData;
 layout(binding = 3) uniform sampler2D u_HistoryRadiance;
 layout(binding = 4) uniform sampler2D u_HistoryDepth;
 layout(binding = 5) uniform sampler2D u_HistoryConfidence;
@@ -54,11 +54,13 @@ void main() {
     vec2 uv = (vec2(pixel) + 0.5) / vec2(size);
     vec4 current = textureLod(u_CurrentRadiance, uv, 0.0);
     float currentDepth = textureLod(u_CurrentDepth, uv, 0.0).r;
+    vec4 flowData = textureLod(u_CurrentReprojectionData, uv, 0.0);
+    float reprojectionDepth = flowData.z;
     float confidence = currentDepth >= 0.0 ? u_Data.thresholds.y : 0.0;
 
-    if (currentDepth >= 0.0 && u_Data.policy.y > 0.5) {
-        vec3 currentWorldRelative = worldRay(uv) * currentDepth;
-        vec2 flow = textureLod(u_CurrentFlow, uv, 0.0).rg;
+    if (currentDepth >= 0.0 && reprojectionDepth >= 0.0 && u_Data.policy.y > 0.5) {
+        vec3 currentWorldRelative = worldRay(uv) * reprojectionDepth;
+        vec2 flow = flowData.xy;
         vec3 featureMotion = vec3(flow.x, 0.0, flow.y) * u_Data.timing.x;
         vec3 previousWorldRelative = currentWorldRelative + u_Data.cameraDelta.xyz - featureMotion;
         vec4 previousClip = u_Data.previousProjection * u_Data.previousView * vec4(previousWorldRelative, 1.0);

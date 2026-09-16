@@ -16,6 +16,10 @@ public record CloudLayerProfile(
         float detailScaleBlocks,
         float erosion,
         float anisotropy,
+        float singleScatteringAlbedo,
+        float multiScatteringEnergy,
+        float multiScatteringExtinctionFactor,
+        float multiScatteringAnisotropyFactor,
         float humidityResponse,
         float stormResponse,
         float frontResponse,
@@ -34,6 +38,10 @@ public record CloudLayerProfile(
         detailScaleBlocks = clamp(finite(detailScaleBlocks, 64.0f), 2.0f, macroScaleBlocks);
         erosion = clamp(finite(erosion, 0.5f), 0.0f, 1.0f);
         anisotropy = clamp(finite(anisotropy, 0.45f), -0.9f, 0.9f);
+        singleScatteringAlbedo = clamp(finite(singleScatteringAlbedo, 0.985f), 0.0f, 1.0f);
+        multiScatteringEnergy = clamp(finite(multiScatteringEnergy, 0.55f), 0.0f, 0.98f);
+        multiScatteringExtinctionFactor = clamp(finite(multiScatteringExtinctionFactor, 0.35f), 0.01f, 1.0f);
+        multiScatteringAnisotropyFactor = clamp(finite(multiScatteringAnisotropyFactor, 0.5f), 0.0f, 1.0f);
         humidityResponse = clamp(finite(humidityResponse, 1.0f), 0.0f, 4.0f);
         stormResponse = clamp(finite(stormResponse, 0.5f), 0.0f, 4.0f);
         frontResponse = clamp(finite(frontResponse, 0.5f), 0.0f, 4.0f);

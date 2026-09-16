@@ -33,6 +33,7 @@ final class DeferredCloudFieldSource implements AutoCloseable {
             .member("scaleShape", Std430Type.VEC4)
             .member("weatherOptics", Std430Type.VEC4)
             .member("coverageShape", Std430Type.VEC4)
+            .member("scatteringPolicy", Std430Type.VEC4)
             .build();
 
     private final DeferredCloudConfig config = DeferredCloudConfig.current();
@@ -118,7 +119,9 @@ final class DeferredCloudFieldSource implements AutoCloseable {
                     .putVec4(i, "weatherOptics", layer.humidityResponse(), layer.stormResponse(),
                             layer.frontResponse(), layer.extinctionPerBlock())
                     .putVec4(i, "coverageShape", layer.bottomFadeFraction(), layer.topFadeStartFraction(),
-                            layer.clearCoverageThreshold(), layer.overcastCoverageThreshold());
+                            layer.clearCoverageThreshold(), layer.overcastCoverageThreshold())
+                    .putVec4(i, "scatteringPolicy", layer.singleScatteringAlbedo(), layer.multiScatteringEnergy(),
+                            layer.multiScatteringExtinctionFactor(), layer.multiScatteringAnisotropyFactor());
         }
         layerData.upload(writer.buffer(), 0L);
     }
