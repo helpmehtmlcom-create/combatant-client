@@ -126,7 +126,7 @@ final class DeferredOpaqueCompositeSource implements AutoCloseable {
                 .execute(this::composeReflections)
                 .build());
 
-        passes.add(DeferredPassSpec.builder("world.opaque.publish", DeferredStage.SKY_COMPOSITE)
+        passes.add(DeferredPassSpec.builder("world.opaque.publish", DeferredStage.VOLUMETRIC_MEDIA_COMPOSITE)
                 .priority(100)
                 .read(DeferredResource.SCENE_RADIANCE, DeferredResource.GBUFFER_AUXILIARY,
                         DeferredResource.GBUFFER_DEPTH, DeferredResource.RESOLVED_DEPTH)

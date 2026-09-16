@@ -84,6 +84,19 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
     }
 
     @Override
+    public RhiStorageVolume createStorageVolume(StorageVolumeDescriptor descriptor) {
+        requireOpen();
+        if (descriptor == null) throw new IllegalArgumentException("descriptor");
+        if (!RhiCapabilities.current().imageLoadStore()) {
+            throw new UnsupportedOperationException("Native OpenGL 3D image load/store is unavailable");
+        }
+        if (GlConst.toGlInternalId(descriptor.format()) == 0) {
+            throw new UnsupportedOperationException("OpenGL has no sized internal format for " + descriptor.format());
+        }
+        return new GlStorageVolume(descriptor);
+    }
+
+    @Override
     public RhiComputePipeline createComputePipeline(ComputePipelineDescriptor descriptor) {
         requireOpen();
         if (descriptor == null) throw new IllegalArgumentException("descriptor");
@@ -163,7 +176,7 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
         if (!(command.pipeline() instanceof GlComputePipeline pipeline) || pipeline.closed) {
             throw new IllegalArgumentException("Compute pipeline does not belong to the active OpenGL backend");
         }
-        validateBindings(pipeline.resources(), command.storageBindings(), command.sampledTextures(), command.storageImages());
+        validateBindings(pipeline.resources(), command.storageBindings(), command.sampledTextures(), command.storageImages(), command.storageVolumes());
 
         int bound = 0;
         try {
@@ -171,12 +184,14 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
             bound = bindStorage(command.storageBindings());
             bindSampledTextures(command.sampledTextures());
             bindStorageImages(command.storageImages());
+            bindStorageVolumes(command.storageVolumes());
             GL43C.glDispatchCompute(command.groupsX(), command.groupsY(), command.groupsZ());
             stats.computeDispatch(command.groupsX(), command.groupsY(), command.groupsZ(), bound);
         } finally {
             unbindStorage(command.storageBindings());
             unbindSampledTextures(command.sampledTextures());
             unbindStorageImages(command.storageImages());
+            unbindStorageVolumes(command.storageVolumes());
             GlNativeStateTracker.restoreBlaze3dProgram();
         }
     }
@@ -247,7 +262,7 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
                 throw new IllegalArgumentException("Patch color/depth dimensions differ");
             }
         }
-        validateBindings(pipeline.resources(), command.storageBindings(), command.sampledTextures(), command.storageImages());
+        validateBindings(pipeline.resources(), command.storageBindings(), command.sampledTextures(), command.storageImages(), List.of());
 
         GpuMeshHandle mesh = command.mesh();
         mesh.validateForDraw(command.label());
@@ -337,7 +352,8 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
     private static void validateResourceLayout(ShaderResourceLayout layout, String owner) {
         RhiCapabilities caps = RhiCapabilities.current();
         for (ShaderResourceSlot slot : layout.slots()) {
-            if (slot.kind() == ShaderResourceKind.STORAGE_IMAGE && !caps.imageLoadStore()) {
+            if ((slot.kind() == ShaderResourceKind.STORAGE_IMAGE || slot.kind() == ShaderResourceKind.STORAGE_VOLUME)
+                    && !caps.imageLoadStore()) {
                 throw new UnsupportedOperationException(owner + " requires OpenGL image load/store support");
             }
         }
@@ -346,7 +362,8 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
     private static void validateBindings(ShaderResourceLayout layout,
                                          List<StorageBinding> buffers,
                                          List<SampledTextureBinding> sampled,
-                                         List<StorageImageBinding> images) {
+                                         List<StorageImageBinding> images,
+                                         List<StorageVolumeBinding> volumes) {
         for (StorageBinding binding : buffers) {
             ShaderResourceSlot slot = layout.slot(binding.binding());
             if (slot == null || slot.kind() != ShaderResourceKind.STORAGE_BUFFER) {
@@ -367,11 +384,19 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
             }
             validateAccess(slot, binding.access(), binding.binding());
         }
+        for (StorageVolumeBinding binding : volumes) {
+            ShaderResourceSlot slot = layout.slot(binding.binding());
+            if (slot == null || slot.kind() != ShaderResourceKind.STORAGE_VOLUME) {
+                throw new IllegalArgumentException("No STORAGE_VOLUME slot declared at binding " + binding.binding());
+            }
+            validateAccess(slot, binding.access(), binding.binding());
+        }
         for (ShaderResourceSlot slot : layout.slots()) {
             boolean present = switch (slot.kind()) {
                 case STORAGE_BUFFER -> buffers.stream().anyMatch(b -> b.binding() == slot.binding());
                 case SAMPLED_TEXTURE -> sampled.stream().anyMatch(b -> b.binding() == slot.binding());
                 case STORAGE_IMAGE -> images.stream().anyMatch(b -> b.binding() == slot.binding());
+                case STORAGE_VOLUME -> volumes.stream().anyMatch(b -> b.binding() == slot.binding());
             };
             if (!present) throw new IllegalArgumentException("Missing " + slot.kind() + " binding " + slot.binding());
         }
@@ -470,6 +495,23 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
         }
     }
 
+    private static void bindStorageVolumes(List<StorageVolumeBinding> bindings) {
+        for (StorageVolumeBinding binding : bindings) {
+            if (!(binding.volume() instanceof GlStorageVolume volume) || volume.closed()) {
+                throw new IllegalArgumentException("Storage volume does not belong to the active OpenGL backend");
+            }
+            int format = GlConst.toGlInternalId(volume.descriptor().format());
+            GL42C.glBindImageTexture(binding.binding(), volume.id, 0, true, 0,
+                    glImageAccess(binding.access()), format);
+        }
+    }
+
+    private static void unbindStorageVolumes(List<StorageVolumeBinding> bindings) {
+        for (StorageVolumeBinding binding : bindings) {
+            GL42C.glBindImageTexture(binding.binding(), 0, 0, true, 0, GlConst.GL_READ_ONLY, GlConst.GL_RGBA8);
+        }
+    }
+
     private static int glImageAccess(StorageAccess access) {
         return switch (access) {
             case READ_ONLY -> GlConst.GL_READ_ONLY;
@@ -494,7 +536,7 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
             return GL42C.GL_ALL_BARRIER_BITS;
         }
         int bits = GL43C.GL_SHADER_STORAGE_BARRIER_BIT;
-        if (!barrier.images().isEmpty()) {
+        if (!barrier.images().isEmpty() || !barrier.volumes().isEmpty()) {
             bits |= GL42C.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT;
             if (barrier.destinationAccess() != RhiResourceBarrier.Access.WRITE) {
                 // Storage images frequently re-enter compute as sampled textures (ping-pong,

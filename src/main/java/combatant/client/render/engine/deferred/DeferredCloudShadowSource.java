@@ -81,6 +81,18 @@ final class DeferredCloudShadowSource implements AutoCloseable {
     private RhiStorageBuffer mapData;
     private RhiStorageBuffer resolveData;
 
+    record FrameState(float mapOriginRelativeX,
+                      float mapOriginRelativeZ,
+                      float spanBlocks,
+                      float referenceY,
+                      float sunX,
+                      float sunY,
+                      float sunZ,
+                      boolean active,
+                      float minCloudY,
+                      float maxCloudY,
+                      int altitudeSlices) { }
+
     DeferredCloudShadowSource(DeferredCloudFieldSource fieldSource) {
         if (fieldSource == null) throw new IllegalArgumentException("fieldSource");
         this.fieldSource = fieldSource;
@@ -128,8 +140,6 @@ final class DeferredCloudShadowSource implements AutoCloseable {
         DeferredCloudFieldSource.FrameData cloudField = fieldSource.prepareFrame(context);
         WeatherFieldState field = cloudField.field();
         WeatherState weather = cloudField.weather();
-        CloudProfile profile = cloudField.profile();
-        DirectionalLightDescriptor sun = context.worldState().directionalLight();
         Vec3 camera = view.cameraPosition();
 
         float spacing = field.valid() ? Math.max(1, field.spacingBlocks()) : 1.0f;
@@ -138,24 +148,19 @@ final class DeferredCloudShadowSource implements AutoCloseable {
         float originX = field.valid() ? field.originBlockX() : (float) camera.x;
         float originZ = field.valid() ? field.originBlockZ() : (float) camera.z;
         float timeSeconds = weather.valid() ? weather.modelTimeTicks() / 20.0f : 0.0f;
-        float span = config.shadowMapSpanBlocks();
-        float texel = config.shadowTexelBlocks();
-        double snappedWorldX = Math.floor(camera.x / texel) * texel;
-        double snappedWorldZ = Math.floor(camera.z / texel) * texel;
-        float mapOriginRelativeX = (float) (snappedWorldX - camera.x - span * 0.5);
-        float mapOriginRelativeZ = (float) (snappedWorldZ - camera.z - span * 0.5);
-        boolean active = cloudField.active() && sun.valid() && sun.directionY() > 0.02f;
+        FrameState shadow = frameState(context, view, cloudField);
 
         Std430Writer writer = new Std430Writer(MAP_DATA_LAYOUT, 1)
                 .putVec4(0, "cameraTime", (float) (camera.x - originX), (float) camera.y,
                         (float) (camera.z - originZ), timeSeconds)
                 .putVec4(0, "grid", spacing, width, depth, cloudField.weatherCount())
-                .putVec4(0, "counts", cloudField.layerCount(), config.shadowSteps(), active ? 1.0f : 0.0f,
-                        config.shadowAltitudeSlices())
-                .putVec4(0, "sunDirection", sun.directionX(), sun.directionY(), sun.directionZ(), sun.valid() ? 1.0f : 0.0f)
+                .putVec4(0, "counts", cloudField.layerCount(), config.shadowSteps(), shadow.active() ? 1.0f : 0.0f,
+                        shadow.altitudeSlices())
+                .putVec4(0, "sunDirection", shadow.sunX(), shadow.sunY(), shadow.sunZ(), shadow.active() ? 1.0f : 0.0f)
                 .putVec4(0, "noiseDomain", wrapOrigin(field.valid() ? field.originBlockX() : 0),
                         wrapOrigin(field.valid() ? field.originBlockZ() : 0), seedPhase(weather.modelSeed()), 0.0f)
-                .putVec4(0, "mapDomain", mapOriginRelativeX, mapOriginRelativeZ, span, 0.0f);
+                .putVec4(0, "mapDomain", shadow.mapOriginRelativeX(), shadow.mapOriginRelativeZ(),
+                        shadow.spanBlocks(), shadow.referenceY());
         RhiStorageBuffer data = mapData();
         data.upload(writer.buffer(), 0L);
 
@@ -180,27 +185,18 @@ final class DeferredCloudShadowSource implements AutoCloseable {
         DeferredPrimaryViewSource.FrameView view = context.primaryView().current();
         if (view == null) return;
         DeferredCloudFieldSource.FrameData cloudField = fieldSource.prepareFrame(context);
-        CloudProfile profile = cloudField.profile();
-        DirectionalLightDescriptor sun = context.worldState().directionalLight();
         Vec3 camera = view.cameraPosition();
-        float span = config.shadowMapSpanBlocks();
-        float texel = config.shadowTexelBlocks();
-        double snappedWorldX = Math.floor(camera.x / texel) * texel;
-        double snappedWorldZ = Math.floor(camera.z / texel) * texel;
-        float mapOriginRelativeX = (float) (snappedWorldX - camera.x - span * 0.5);
-        float mapOriginRelativeZ = (float) (snappedWorldZ - camera.z - span * 0.5);
-        float minCloudY = minimumCloudAltitude(profile, cloudField.layerCount());
-        float maxCloudY = maximumCloudAltitude(profile, cloudField.layerCount());
-        boolean active = cloudField.active() && sun.valid() && sun.directionY() > 0.02f;
+        FrameState shadow = frameState(context, view, cloudField);
 
         Std430Writer writer = new Std430Writer(RESOLVE_DATA_LAYOUT, 1)
                 .putMat4(0, "inverseProjection", view.inverseProjection())
                 .putMat4(0, "inverseView", view.inverseView())
                 .putVec4(0, "camera", (float) camera.x, (float) camera.y, (float) camera.z, 0.0f)
-                .putVec4(0, "mapDomain", mapOriginRelativeX, mapOriginRelativeZ, span, 0.0f)
-                .putVec4(0, "sunDirection", sun.directionX(), sun.directionY(), sun.directionZ(), active ? 1.0f : 0.0f)
-                .putVec4(0, "cloudBounds", minCloudY, maxCloudY, isVulkan(context) ? 1.0f : 0.0f,
-                        config.shadowAltitudeSlices());
+                .putVec4(0, "mapDomain", shadow.mapOriginRelativeX(), shadow.mapOriginRelativeZ(),
+                        shadow.spanBlocks(), shadow.referenceY())
+                .putVec4(0, "sunDirection", shadow.sunX(), shadow.sunY(), shadow.sunZ(), shadow.active() ? 1.0f : 0.0f)
+                .putVec4(0, "cloudBounds", shadow.minCloudY(), shadow.maxCloudY(), isVulkan(context) ? 1.0f : 0.0f,
+                        shadow.altitudeSlices());
         RhiStorageBuffer data = resolveData();
         data.upload(writer.buffer(), 0L);
 
@@ -219,6 +215,28 @@ final class DeferredCloudShadowSource implements AutoCloseable {
                 ),
                 List.of(new StorageImageBinding(2, visibility, StorageAccess.WRITE_ONLY))
         ));
+    }
+
+    FrameState frameState(DeferredPassContext context,
+                          DeferredPrimaryViewSource.FrameView view,
+                          DeferredCloudFieldSource.FrameData cloudField) {
+        DirectionalLightDescriptor sun = context.worldState().directionalLight();
+        Vec3 camera = view.cameraPosition();
+        float span = config.shadowMapSpanBlocks();
+        float texel = config.shadowTexelBlocks();
+        double snappedWorldX = Math.floor(camera.x / texel) * texel;
+        double snappedWorldZ = Math.floor(camera.z / texel) * texel;
+        float mapOriginRelativeX = (float) (snappedWorldX - camera.x - span * 0.5);
+        float mapOriginRelativeZ = (float) (snappedWorldZ - camera.z - span * 0.5);
+        CloudProfile profile = cloudField.profile();
+        float minCloudY = minimumCloudAltitude(profile, cloudField.layerCount());
+        float maxCloudY = maximumCloudAltitude(profile, cloudField.layerCount());
+        boolean active = cloudField.active() && sun.valid() && sun.directionY() > 0.02f;
+        return new FrameState(
+                mapOriginRelativeX, mapOriginRelativeZ, span, 0.0f,
+                sun.directionX(), sun.directionY(), sun.directionZ(), active,
+                minCloudY, maxCloudY, config.shadowAltitudeSlices()
+        );
     }
 
     private RhiComputePipeline mapPipeline() {

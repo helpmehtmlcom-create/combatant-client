@@ -15,7 +15,8 @@ public record RhiResourceBarrier(Stage sourceStage,
                                  Stage destinationStage,
                                  Access destinationAccess,
                                  List<RhiStorageBuffer> buffers,
-                                 List<RhiStorageImage> images) {
+                                 List<RhiStorageImage> images,
+                                 List<RhiStorageVolume> volumes) {
     public enum Stage { COMPUTE, GRAPHICS, INDIRECT, TRANSFER, ALL }
     public enum Access { READ, WRITE, READ_WRITE }
 
@@ -26,6 +27,15 @@ public record RhiResourceBarrier(Stage sourceStage,
         }
         buffers = buffers == null || buffers.isEmpty() ? List.of() : List.copyOf(buffers);
         images = images == null || images.isEmpty() ? List.of() : List.copyOf(images);
+        volumes = volumes == null || volumes.isEmpty() ? List.of() : List.copyOf(volumes);
     }
 
+    public RhiResourceBarrier(Stage sourceStage,
+                              Access sourceAccess,
+                              Stage destinationStage,
+                              Access destinationAccess,
+                              List<RhiStorageBuffer> buffers,
+                              List<RhiStorageImage> images) {
+        this(sourceStage, sourceAccess, destinationStage, destinationAccess, buffers, images, List.of());
+    }
 }

@@ -19,6 +19,7 @@ import combatant.client.render.engine.rhi.CombatantRhi;
 import combatant.client.render.engine.rhi.shader.RhiResourceBarrier;
 import combatant.client.render.engine.rhi.shader.RhiStorageBuffer;
 import combatant.client.render.engine.rhi.shader.RhiStorageImage;
+import combatant.client.render.engine.rhi.shader.RhiStorageVolume;
 import combatant.client.render.engine.rhi.shader.RhiShaderStage;
 import combatant.client.render.engine.world.WorldRenderState;
 import combatant.client.util.logging.DebugLog;
@@ -253,8 +254,9 @@ public final class DeferredPassGraph {
 
             RhiStorageBuffer buffer = context.resources().buffer(resource);
             RhiStorageImage image = context.resources().storageImage(resource);
-            boolean genericTexture = image == null && context.resources().texture(resource) != null;
-            if (buffer == null && image == null && !genericTexture) continue;
+            RhiStorageVolume volume = context.resources().storageVolume(resource);
+            boolean genericTexture = image == null && volume == null && context.resources().texture(resource) != null;
+            if (buffer == null && image == null && volume == null && !genericTexture) continue;
 
             DeferredPassSpec producer = passes.get(dependency.producerIndex());
             DeferredPassSpec consumer = passes.get(dependency.consumerIndex());
@@ -270,7 +272,7 @@ public final class DeferredPassGraph {
                 ));
             }
 
-            if (buffer == null && image == null) continue;
+            if (buffer == null && image == null && volume == null) continue;
             BarrierKey key = new BarrierKey(
                     barrierStage(producer), sourceAccess,
                     barrierStage(consumer), destinationAccess
@@ -278,6 +280,7 @@ public final class DeferredPassGraph {
             BarrierResources values = grouped.computeIfAbsent(key, ignored -> new BarrierResources());
             if (buffer != null && !values.buffers.contains(buffer)) values.buffers.add(buffer);
             if (image != null && !values.images.contains(image)) values.images.add(image);
+            if (volume != null && !values.volumes.contains(volume)) values.volumes.add(volume);
         }
 
         for (Map.Entry<BarrierKey, BarrierResources> entry : grouped.entrySet()) {
@@ -286,7 +289,7 @@ public final class DeferredPassGraph {
             context.advancedShaders().barrier(new RhiResourceBarrier(
                     key.sourceStage, key.sourceAccess,
                     key.destinationStage, key.destinationAccess,
-                    resources.buffers, resources.images
+                    resources.buffers, resources.images, resources.volumes
             ));
         }
         for (BarrierKey key : genericTextureBarriers) {
@@ -336,5 +339,6 @@ public final class DeferredPassGraph {
     private static final class BarrierResources {
         private final ArrayList<RhiStorageBuffer> buffers = new ArrayList<>();
         private final ArrayList<RhiStorageImage> images = new ArrayList<>();
+        private final ArrayList<RhiStorageVolume> volumes = new ArrayList<>();
     }
 }

@@ -106,7 +106,8 @@ final class DeferredBackendPasses implements AutoCloseable {
     private final DeferredCloudSource clouds = new DeferredCloudSource(cloudField);
     private final DeferredCloudTemporalSource cloudTemporal = new DeferredCloudTemporalSource();
     private final DeferredCloudShadowSource cloudShadows = new DeferredCloudShadowSource(cloudField);
-    private final DeferredAtmosphereCompositeSource atmosphereComposite = new DeferredAtmosphereCompositeSource();
+    private final DeferredFroxelMediaSource froxelMedia = new DeferredFroxelMediaSource(cloudField, cloudShadows);
+    private final DeferredAtmosphereCompositeSource atmosphereComposite = new DeferredAtmosphereCompositeSource(froxelMedia);
     private final DeferredTemporalHistorySource temporalHistory = new DeferredTemporalHistorySource();
     private final DeferredPatchSurfaceSource patchSurfaces = new DeferredPatchSurfaceSource();
 
@@ -198,6 +199,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         cloudShadows.install(passes);
         clouds.install(passes);
         cloudTemporal.install(passes);
+        froxelMedia.install(passes);
         atmosphereComposite.install(passes);
         temporalHistory.install(passes);
         patchSurfaces.install(passes);
@@ -231,6 +233,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         clouds.prepare(rhi);
         cloudTemporal.prepare(rhi);
         cloudShadows.prepare(rhi);
+        froxelMedia.prepare(rhi);
         atmosphereComposite.prepare(rhi);
         temporalHistory.prepare(rhi);
         patchSurfaces.prepare(rhi);
@@ -264,6 +267,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         cloudShadows.release(releaseOwner);
         cloudField.release(releaseOwner);
         cloudTemporal.release(releaseOwner);
+        froxelMedia.release(releaseOwner);
         atmosphereComposite.release(releaseOwner);
         temporalHistory.release(releaseOwner);
         patchSurfaces.release(releaseOwner);
