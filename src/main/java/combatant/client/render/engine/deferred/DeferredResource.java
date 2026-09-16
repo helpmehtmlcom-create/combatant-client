@@ -66,6 +66,8 @@ public enum DeferredResource {
     LOCAL_LIGHT_TILE_COUNTS(FrameGraphResourceKey.transientBuffer("world.local_light.tile_counts"), null),
     LOCAL_LIGHT_TILE_INDICES(FrameGraphResourceKey.transientBuffer("world.local_light.tile_indices"), null),
     LOCAL_LIGHT_CULL_DATA(FrameGraphResourceKey.transientBuffer("world.local_light.cull_data"), null),
+    LOCAL_LIGHT_SHADOW_DEPTH(FrameGraphResourceKey.transientTexture("world.local_light.shadow_depth"), null),
+    LOCAL_LIGHT_SHADOW_DATA(FrameGraphResourceKey.transientBuffer("world.local_light.shadow_data"), null),
     LOCAL_LIGHTING_COLOR(FrameGraphResourceKey.transientTexture("world.local_lighting_color"),
             DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.FULL, false)),
     OPAQUE_BASE_RADIANCE(FrameGraphResourceKey.transientTexture("world.opaque_base_radiance"),

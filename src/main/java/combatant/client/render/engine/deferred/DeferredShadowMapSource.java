@@ -22,8 +22,6 @@ import combatant.client.render.engine.rhi.shader.StorageBufferDescriptor;
 import combatant.client.render.sodium.SodiumSecondaryTerrainContext;
 import combatant.client.render.sodium.SodiumTerrainSubmission;
 import net.caffeinemc.mods.sodium.client.render.SodiumWorldRenderer;
-import net.caffeinemc.mods.sodium.client.render.chunk.ChunkRenderMatrices;
-import net.caffeinemc.mods.sodium.client.render.chunk.terrain.DefaultTerrainRenderPasses;
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
 
@@ -45,11 +43,16 @@ final class DeferredShadowMapSource implements AutoCloseable {
             .member("shadowTexel", Std430Type.VEC4)
             .build();
 
+    private final DeferredSecondaryShadowCasterSource secondaryCasters;
     private TextureTarget atlas;
     private int atlasWidth;
     private int atlasHeight;
     private CombatantRhi bufferOwner;
     private RhiStorageBuffer cascadeData;
+
+    DeferredShadowMapSource(DeferredSecondaryShadowCasterSource secondaryCasters) {
+        this.secondaryCasters = secondaryCasters;
+    }
 
     boolean available(DeferredPassContext context) {
         if (context == null || !context.secondaryViews().has(DeferredViewFamily.SHADOW_CASCADE)) return false;
@@ -84,21 +87,14 @@ final class DeferredShadowMapSource implements AutoCloseable {
         );
 
         for (DeferredSecondaryView view : views) {
-            ChunkRenderMatrices matrices = new ChunkRenderMatrices(view.projection(), view.view());
-            SodiumSecondaryTerrainContext.run(SodiumSecondaryTerrainContext.Purpose.SHADOW_DEPTH, view, target, () -> {
-                renderer.renderLayer(
-                        matrices,
-                        DefaultTerrainRenderPasses.SOLID,
-                        view.origin().x, view.origin().y, view.origin().z,
-                        primarySubmission.fog(), primarySubmission.sampler()
-                );
-                renderer.renderLayer(
-                        matrices,
-                        DefaultTerrainRenderPasses.CUTOUT,
-                        view.origin().x, view.origin().y, view.origin().z,
-                        primarySubmission.fog(), primarySubmission.sampler()
-                );
-            });
+            secondaryCasters.render(
+                    context,
+                    SodiumSecondaryTerrainContext.Purpose.SHADOW_DEPTH,
+                    view,
+                    target,
+                    renderer,
+                    primarySubmission
+            );
         }
 
         RhiStorageBuffer metadata = uploadCascadeMetadata(context.rhi(), views, requiredWidth, requiredHeight);

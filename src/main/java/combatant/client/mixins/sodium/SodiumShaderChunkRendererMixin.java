@@ -71,7 +71,7 @@ public abstract class SodiumShaderChunkRendererMixin {
         SodiumSecondaryTerrainContext.State secondary = SodiumSecondaryTerrainContext.current();
         if (secondary != null) {
             cir.setReturnValue(switch (secondary.purpose()) {
-                case SHADOW_DEPTH -> combatant$shadowPipeline(pass);
+                case SHADOW_DEPTH, LOCAL_LIGHT_SHADOW -> combatant$shadowPipeline(pass);
                 case REFLECTION_CAPTURE -> combatant$reflectionPipeline(pass);
             });
             return;

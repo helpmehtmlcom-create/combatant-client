@@ -8,16 +8,19 @@ struct LocalLight {
     vec4 radianceType;
     vec4 directionOuter;
     vec4 coneArea;
+    vec4 shadowInfo;
 };
 
 layout(std430, binding = 0) readonly buffer LocalLightData { LocalLight lights[]; } u_Lights;
 layout(std430, binding = 1) readonly buffer LocalLightCullData {
     mat4 projection;
     mat4 inverseProjection;
+    mat4 inverseView;
     // x: viewport width, y: viewport height, z: light count, w: tile size.
     vec4 viewportLightCount;
-    // x: tile count x, y: tile count y, z: max lights per tile, w: unused.
+    // x: tile count x, y: tile count y, z: max lights per tile, w: depth NDC convention.
     vec4 tileGrid;
+    vec4 shadowParams;
 } u_Cull;
 layout(std430, binding = 2) writeonly buffer LocalLightTileCounts { uint counts[]; } u_Counts;
 layout(std430, binding = 3) writeonly buffer LocalLightTileIndices { uint indices[]; } u_Indices;

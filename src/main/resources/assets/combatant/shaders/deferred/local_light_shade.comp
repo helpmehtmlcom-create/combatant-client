@@ -1,6 +1,6 @@
 #version 430 core
 
-/* Material-aware neutral GGX/Burley evaluation for analytic local lights. */
+/* Material-aware neutral GGX/Burley evaluation for analytic local lights with explicit shadows. */
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(binding = 0) uniform sampler2D u_GbufferSurface;
@@ -9,12 +9,15 @@ layout(binding = 2) uniform sampler2D u_GbufferMaterial;
 layout(binding = 3) uniform sampler2D u_ResolvedDepth;
 layout(binding = 4) uniform sampler2D u_GbufferDepth;
 layout(binding = 5, rgba16f) writeonly uniform image2D u_LocalLighting;
+layout(binding = 10) uniform sampler2D u_LocalShadowDepth;
 
 struct LocalLight {
     vec4 positionRadius;
     vec4 radianceType;
     vec4 directionOuter;
     vec4 coneArea;
+    // x: first shadow view slot, y: view count, z: producer requests shadows.
+    vec4 shadowInfo;
 };
 layout(std430, binding = 6) readonly buffer LocalLightData { LocalLight lights[]; } u_Lights;
 layout(std430, binding = 7) readonly buffer LocalLightTileCounts { uint counts[]; } u_Counts;
@@ -22,11 +25,45 @@ layout(std430, binding = 8) readonly buffer LocalLightTileIndices { uint indices
 layout(std430, binding = 9) readonly buffer LocalLightCullData {
     mat4 projection;
     mat4 inverseProjection;
+    mat4 inverseView;
     vec4 viewportLightCount;
+    // w: 1 when clip/depth NDC is [0,1], 0 when it is [-1,1].
     vec4 tileGrid;
+    // x: normal offset in shadow texels, y: receiver-plane bias in shadow texels,
+    // z: PCF radius in shadow texels, w: shadow face resolution.
+    vec4 shadowParams;
 } u_Cull;
 
+struct LocalShadowView {
+    mat4 viewProjection;
+    vec4 atlasScaleBias;
+    // xyz: shadow-view origin relative to the primary camera, w: near plane.
+    vec4 originNear;
+    // x: far plane, yz: atlas texel size, w: tan(horizontal FOV / 2).
+    vec4 rangeTexel;
+};
+layout(std430, binding = 11) readonly buffer LocalShadowData {
+    LocalShadowView views[];
+} u_Shadow;
+
 const float PI = 3.14159265358979323846;
+const vec2 POISSON[16] = vec2[](
+    vec2(-0.94201624, -0.39906216), vec2(0.94558609, -0.76890725),
+    vec2(-0.09418410, -0.92938870), vec2(0.34495938, 0.29387760),
+    vec2(-0.91588581, 0.45771432), vec2(-0.81544232, -0.87912464),
+    vec2(-0.38277543, 0.27676845), vec2(0.97484398, 0.75648379),
+    vec2(0.44323325, -0.97511554), vec2(0.53742981, -0.47373420),
+    vec2(-0.26496911, -0.41893023), vec2(0.79197514, 0.19090188),
+    vec2(-0.24188840, 0.99706507), vec2(-0.81409955, 0.91437590),
+    vec2(0.19984126, 0.78641367), vec2(0.14383161, -0.14100790)
+);
+
+struct ShadowProjection {
+    vec2 localUv;
+    vec2 atlasUv;
+    float depth;
+    bool valid;
+};
 
 vec3 decodeOctahedral(vec2 encoded) {
     vec2 f = encoded * 2.0 - 1.0;
@@ -36,9 +73,6 @@ vec3 decodeOctahedral(vec2 encoded) {
 }
 
 vec3 reconstructView(vec2 uv, float depth) {
-    // Runtime depth convention is reconstructed by matching the projection API through the two
-    // candidate NDC ranges. Vulkan uses [0,1], GL uses [-1,1]; the CPU pre-bakes the correct
-    // inverse projection and stores the convention in tileGrid.w (1 = zero-to-one).
     float ndcZ = u_Cull.tileGrid.w > 0.5 ? depth : depth * 2.0 - 1.0;
     vec4 h = u_Cull.inverseProjection * vec4(uv * 2.0 - 1.0, ndcZ, 1.0);
     return h.xyz / max(abs(h.w), 1e-7) * sign(h.w);
@@ -76,6 +110,116 @@ float burleyDiffuse(float ndotv, float ndotl, float ldoth, float roughness) {
     float lightScatter = 1.0 + (fd90 - 1.0) * pow(1.0 - ndotl, 5.0);
     float viewScatter = 1.0 + (fd90 - 1.0) * pow(1.0 - ndotv, 5.0);
     return lightScatter * viewScatter / PI;
+}
+
+float hash12(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+vec2 rotateOffset(vec2 value, float angle) {
+    float c = cos(angle);
+    float s = sin(angle);
+    return vec2(c * value.x - s * value.y, s * value.x + c * value.y);
+}
+
+int cubeFace(vec3 direction) {
+    vec3 a = abs(direction);
+    if (a.x >= a.y && a.x >= a.z) return direction.x >= 0.0 ? 0 : 1;
+    if (a.y >= a.x && a.y >= a.z) return direction.y >= 0.0 ? 2 : 3;
+    return direction.z >= 0.0 ? 4 : 5;
+}
+
+ShadowProjection projectShadow(LocalShadowView shadowView, vec3 cameraRelativeWorld) {
+    ShadowProjection result;
+    vec3 lightRelative = cameraRelativeWorld - shadowView.originNear.xyz;
+    vec4 clip = shadowView.viewProjection * vec4(lightRelative, 1.0);
+    result.valid = clip.w > 1e-7;
+    result.localUv = vec2(0.0);
+    result.atlasUv = vec2(0.0);
+    result.depth = 0.0;
+    if (!result.valid) return result;
+
+    vec3 ndc = clip.xyz / clip.w;
+    result.localUv = ndc.xy * 0.5 + 0.5;
+    result.depth = u_Cull.tileGrid.w > 0.5 ? ndc.z : ndc.z * 0.5 + 0.5;
+    result.valid = all(greaterThanEqual(result.localUv, vec2(0.0)))
+            && all(lessThanEqual(result.localUv, vec2(1.0)))
+            && result.depth >= 0.0 && result.depth <= 1.0;
+    result.atlasUv = result.localUv * shadowView.atlasScaleBias.xy + shadowView.atlasScaleBias.zw;
+    return result;
+}
+
+vec2 clampAtlasUv(LocalShadowView shadowView, vec2 uv) {
+    vec2 halfTexel = shadowView.rangeTexel.yz * 0.5;
+    vec2 minimum = shadowView.atlasScaleBias.zw + halfTexel;
+    vec2 maximum = shadowView.atlasScaleBias.zw + shadowView.atlasScaleBias.xy - halfTexel;
+    return clamp(uv, minimum, maximum);
+}
+
+float receiverPlaneBias(LocalShadowView shadowView,
+                        vec3 receiverWorld,
+                        vec3 normalWorld,
+                        float worldTexel,
+                        float receiverDepth) {
+    vec3 reference = abs(normalWorld.y) < 0.95 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = normalize(cross(reference, normalWorld));
+    vec3 bitangent = normalize(cross(normalWorld, tangent));
+    ShadowProjection tangentProjection = projectShadow(shadowView, receiverWorld + tangent * worldTexel);
+    ShadowProjection bitangentProjection = projectShadow(shadowView, receiverWorld + bitangent * worldTexel);
+    float tangentSlope = tangentProjection.valid ? abs(tangentProjection.depth - receiverDepth) : 0.0;
+    float bitangentSlope = bitangentProjection.valid ? abs(bitangentProjection.depth - receiverDepth) : 0.0;
+    return max(tangentSlope, bitangentSlope) * max(u_Cull.shadowParams.y, 0.0);
+}
+
+bool blockerAt(float storedDepth, float receiverDepth, float bias) {
+    // Reversed-Z: larger depth is geometrically closer to the local light.
+    return storedDepth > 0.0 && storedDepth > receiverDepth + bias;
+}
+
+float localShadowVisibility(LocalLight light,
+                            vec3 viewPosition,
+                            vec3 normalView,
+                            ivec2 pixel,
+                            uint lightIndex) {
+    int baseView = int(floor(light.shadowInfo.x + 0.5));
+    int viewCount = int(floor(light.shadowInfo.y + 0.5));
+    if (baseView < 0 || viewCount <= 0 || light.shadowInfo.z <= 0.5) return 1.0;
+
+    vec3 worldRelative = (u_Cull.inverseView * vec4(viewPosition, 0.0)).xyz;
+    vec3 normalWorld = normalize(mat3(u_Cull.inverseView) * normalView);
+    int shadowIndex = baseView;
+    if (viewCount >= 6) {
+        vec3 fromLightWorld = worldRelative - u_Shadow.views[baseView].originNear.xyz;
+        shadowIndex += cubeFace(fromLightWorld);
+    }
+    LocalShadowView shadowView = u_Shadow.views[shadowIndex];
+
+    vec3 lightRelative = worldRelative - shadowView.originNear.xyz;
+    float distanceValue = max(length(lightRelative), shadowView.originNear.w);
+    float faceResolution = max(u_Cull.shadowParams.w, 1.0);
+    float worldTexel = max(2.0 * distanceValue * max(shadowView.rangeTexel.w, 1e-4) / faceResolution, 1e-5);
+    vec3 receiverWorld = worldRelative + normalWorld * worldTexel * max(u_Cull.shadowParams.x, 0.0);
+    ShadowProjection projected = projectShadow(shadowView, receiverWorld);
+    if (!projected.valid) return 1.0;
+
+    float bias = receiverPlaneBias(shadowView, receiverWorld, normalWorld, worldTexel, projected.depth);
+    float filterRadius = max(u_Cull.shadowParams.z, 0.0);
+    if (filterRadius <= 1e-4) {
+        float storedDepth = textureLod(u_LocalShadowDepth, projected.atlasUv, 0.0).r;
+        return blockerAt(storedDepth, projected.depth, bias) ? 0.0 : 1.0;
+    }
+
+    float rotation = hash12(vec2(pixel) + vec2(float(lightIndex) * 19.0, float(shadowIndex) * 7.0)) * 6.28318530718;
+    float visible = 0.0;
+    for (int i = 0; i < 16; ++i) {
+        vec2 offset = rotateOffset(POISSON[i], rotation) * shadowView.rangeTexel.yz * filterRadius;
+        vec2 sampleUv = clampAtlasUv(shadowView, projected.atlasUv + offset);
+        float storedDepth = textureLod(u_LocalShadowDepth, sampleUv, 0.0).r;
+        visible += blockerAt(storedDepth, projected.depth, bias) ? 0.0 : 1.0;
+    }
+    return visible * (1.0 / 16.0);
 }
 
 void main() {
@@ -117,7 +261,8 @@ void main() {
 
     vec3 result = vec3(0.0);
     for (uint i = 0u; i < count; ++i) {
-        LocalLight light = u_Lights.lights[u_Indices.indices[base + i]];
+        uint lightIndex = u_Indices.indices[base + i];
+        LocalLight light = u_Lights.lights[lightIndex];
         vec3 toLight = light.positionRadius.xyz - position;
         float distanceValue = length(toLight);
         float radius = light.positionRadius.w;
@@ -143,6 +288,9 @@ void main() {
                     : 1.0;
         }
 
+        float shadowVisibility = localShadowVisibility(light, position, normal, pixel, lightIndex);
+        if (shadowVisibility <= 0.0) continue;
+
         vec3 halfVector = normalize(viewDirection + lightDirection);
         float ndoth = max(dot(normal, halfVector), 0.0);
         float vdoth = max(dot(viewDirection, halfVector), 0.0);
@@ -153,7 +301,7 @@ void main() {
         float diffuseTerm = burleyDiffuse(ndotv, ndotl, max(dot(lightDirection, halfVector), 0.0), roughness);
         vec3 diffuseBrdf = (vec3(1.0) - fresnel) * (1.0 - metallic) * albedo * diffuseTerm;
         vec3 intensity = max(light.radianceType.rgb, vec3(0.0));
-        result += (diffuseBrdf + specularBrdf) * intensity * attenuation * ndotl;
+        result += (diffuseBrdf + specularBrdf) * intensity * attenuation * ndotl * shadowVisibility;
     }
 
     imageStore(u_LocalLighting, pixel, vec4(result, 1.0));

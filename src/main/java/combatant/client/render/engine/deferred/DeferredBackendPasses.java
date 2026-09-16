@@ -82,15 +82,16 @@ final class DeferredBackendPasses implements AutoCloseable {
     private RhiComputePipeline pyramidReduce;
     private RhiComputePipeline velocityCamera;
     private RhiStorageBuffer temporalCameraBuffer;
+    private final DeferredSecondaryShadowCasterSource secondaryShadowCasters = new DeferredSecondaryShadowCasterSource();
     private final DeferredShadowCascadeSource shadowCascades = new DeferredShadowCascadeSource();
-    private final DeferredShadowMapSource shadowMaps = new DeferredShadowMapSource();
+    private final DeferredShadowMapSource shadowMaps = new DeferredShadowMapSource(secondaryShadowCasters);
     private final DeferredShadowResolveSource shadowResolve = new DeferredShadowResolveSource();
     private final DeferredContactShadowSource contactShadows = new DeferredContactShadowSource();
     private final DeferredAmbientOcclusionSource ambientOcclusion = new DeferredAmbientOcclusionSource();
     private final DeferredColoredBlockLightSource coloredBlockLight = new DeferredColoredBlockLightSource();
     private final DeferredSkyEnvironmentSource skyEnvironment = new DeferredSkyEnvironmentSource();
     private final DeferredEnvironmentIrradianceSource environmentIrradiance = new DeferredEnvironmentIrradianceSource();
-    private final DeferredDynamicLightSource dynamicLights = new DeferredDynamicLightSource();
+    private final DeferredDynamicLightSource dynamicLights = new DeferredDynamicLightSource(secondaryShadowCasters);
     private final DeferredSceneRadianceSource sceneRadiance = new DeferredSceneRadianceSource();
     private final DeferredIndirectLightSource indirectLight = new DeferredIndirectLightSource();
     private final DeferredReflectionCascadeSource reflectionCascades = new DeferredReflectionCascadeSource();
@@ -220,6 +221,8 @@ final class DeferredBackendPasses implements AutoCloseable {
         closePipelines();
         CombatantRhi releaseOwner = currentOwner != null ? currentOwner : owner;
         shadowMaps.release(releaseOwner);
+        secondaryShadowCasters.close();
+        combatant.client.render.sodium.SodiumSecondaryTerrainSource.invalidate();
         shadowResolve.release(releaseOwner);
         contactShadows.release(releaseOwner);
         ambientOcclusion.release(releaseOwner);
@@ -369,7 +372,9 @@ final class DeferredBackendPasses implements AutoCloseable {
             contactShadows.release(previous);
             ambientOcclusion.release(previous);
             coloredBlockLight.release(previous);
+            skyEnvironment.release(previous);
             environmentIrradiance.release(previous);
+            dynamicLights.release(previous);
             sceneRadiance.release(previous);
             indirectLight.release(previous);
             reflectionCascades.release(previous);
@@ -463,6 +468,10 @@ final class DeferredBackendPasses implements AutoCloseable {
         shadowResolve.close();
         contactShadows.close();
         ambientOcclusion.close();
+        coloredBlockLight.close();
+        skyEnvironment.close();
+        environmentIrradiance.close();
+        dynamicLights.close();
         sceneRadiance.close();
         indirectLight.close();
         reflectionCascades.close();

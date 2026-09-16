@@ -7,6 +7,9 @@
 
 package combatant.client.render.engine.world;
 
+import combatant.client.render.engine.world.environment.BiomeClimateState;
+import combatant.client.render.engine.world.environment.CelestialState;
+import combatant.client.render.engine.world.environment.WeatherState;
 import net.minecraft.resources.Identifier;
 
 import java.util.Objects;
@@ -29,6 +32,9 @@ public record WorldRenderState(
         Identifier exposureProfile,
         Identifier postProfile,
         Identifier transitionState,
+        BiomeClimateState biomeClimate,
+        CelestialState celestialState,
+        WeatherState weatherState,
         DirectionalLightDescriptor directionalLight,
         long epoch
 ) {
@@ -49,6 +55,9 @@ public record WorldRenderState(
         exposureProfile = Objects.requireNonNullElse(exposureProfile, NEUTRAL);
         postProfile = Objects.requireNonNullElse(postProfile, NEUTRAL);
         transitionState = Objects.requireNonNullElse(transitionState, NONE);
+        biomeClimate = Objects.requireNonNullElse(biomeClimate, BiomeClimateState.EMPTY);
+        celestialState = Objects.requireNonNullElse(celestialState, CelestialState.NONE);
+        weatherState = Objects.requireNonNullElse(weatherState, WeatherState.NONE);
         directionalLight = Objects.requireNonNullElse(directionalLight, DirectionalLightDescriptor.NONE);
     }
 
@@ -57,6 +66,7 @@ public record WorldRenderState(
                 UNKNOWN_DIMENSION, UNKNOWN_PROFILE,
                 NONE, NONE, NONE, NEUTRAL, NONE,
                 NEUTRAL, NEUTRAL, NEUTRAL, NONE,
+                BiomeClimateState.EMPTY, CelestialState.NONE, WeatherState.NONE,
                 DirectionalLightDescriptor.NONE, epoch
         );
     }

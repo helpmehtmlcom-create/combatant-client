@@ -152,12 +152,6 @@ public abstract class LevelRendererMixin {
                 );
             }
 
-            LevelRenderState levelState = ((LevelRendererAccessor) (Object) this).combatant$getWorldRenderState();
-            if (levelState != null && levelState.skyRenderState != null) {
-                CombatantRenderSystem.deferredWorld().captureSunAngle(
-                        frame.frameId(), levelState.skyRenderState.sunAngle
-                );
-            }
         }
     }
 

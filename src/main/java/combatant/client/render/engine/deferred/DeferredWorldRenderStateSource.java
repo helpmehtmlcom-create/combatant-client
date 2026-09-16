@@ -9,19 +9,24 @@ package combatant.client.render.engine.deferred;
 
 import combatant.client.render.engine.world.DirectionalLightDescriptor;
 import combatant.client.render.engine.world.WorldRenderState;
+import combatant.client.render.engine.world.environment.BiomeClimateSampler;
+import combatant.client.render.engine.world.environment.BiomeClimateState;
+import combatant.client.render.engine.world.environment.CelestialState;
+import combatant.client.render.engine.world.environment.DimensionRenderProfile;
+import combatant.client.render.engine.world.environment.DimensionRenderProfileRegistry;
+import combatant.client.render.engine.world.environment.OverworldCelestialModel;
+import combatant.client.render.engine.world.environment.WeatherProvider;
+import combatant.client.render.engine.world.environment.WeatherProviderRegistry;
+import combatant.client.render.engine.world.environment.WeatherState;
+import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.resources.Identifier;
-import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 
 /** Builds one explicit renderer-world contract before graph consumers execute. */
 final class DeferredWorldRenderStateSource {
-    private static final float SUN_ANGULAR_RADIUS_RADIANS = 0.00465f;
-
-    private static final Identifier PROFILE_OVERWORLD = id("overworld");
-    private static final Identifier PROFILE_NETHER = id("nether");
-    private static final Identifier PROFILE_END = id("end");
-    private static final Identifier PROFILE_UNKNOWN = id("unknown");
-    private static final Identifier CELESTIAL_VANILLA_SUN = id("vanilla_sun");
+    private final BiomeClimateSampler biomeClimate = new BiomeClimateSampler();
 
     private Object worldOwner;
     private long epoch;
@@ -31,6 +36,8 @@ final class DeferredWorldRenderStateSource {
         if (worldOwner != level) {
             worldOwner = level;
             epoch++;
+            biomeClimate.reset();
+            WeatherProviderRegistry.resetAll();
         }
         if (level == null) {
             current = WorldRenderState.unknown(epoch);
@@ -38,22 +45,45 @@ final class DeferredWorldRenderStateSource {
         }
 
         Identifier dimensionKey = level.dimension().identifier();
-        Identifier profile = explicitProfile(level);
-        boolean overworld = Level.OVERWORLD.equals(level.dimension());
-        DirectionalLightDescriptor directional = overworld ? unitSun(view) : DirectionalLightDescriptor.NONE;
+        DimensionRenderProfile profile = DimensionRenderProfileRegistry.resolve(level.dimension());
+        Vec3 camera = view != null ? view.cameraPosition() : Vec3.ZERO;
+        float partialTick = partialTick();
+        long frameId = view != null ? view.frameId() : Long.MIN_VALUE;
+
+        BiomeClimateState climate = biomeClimate.capture(level, camera);
+        CelestialState celestial = DimensionRenderProfileRegistry.OVERWORLD_CELESTIAL.equals(profile.celestialModel())
+                ? OverworldCelestialModel.capture(level, partialTick)
+                : CelestialState.NONE;
+
+        WeatherState weather = WeatherState.NONE;
+        WeatherProvider weatherProvider = WeatherProviderRegistry.resolve(profile.weatherProvider());
+        if (weatherProvider != null) {
+            try {
+                weather = weatherProvider.capture(level, camera, partialTick, climate, frameId);
+            } catch (Throwable ignored) {
+                weather = WeatherState.NONE;
+            }
+        }
+
+        DirectionalLightDescriptor directional = celestial.valid()
+                ? celestial.primaryDirectionalLight()
+                : DirectionalLightDescriptor.NONE;
 
         current = new WorldRenderState(
                 dimensionKey,
-                profile,
+                profile.id(),
+                profile.environmentModel(),
+                profile.skyProvider(),
+                profile.celestialModel(),
+                profile.mediumProfile(),
+                profile.weatherProvider(),
+                profile.ambientPalette(),
+                profile.exposureProfile(),
+                profile.postProfile(),
                 WorldRenderState.NONE,
-                WorldRenderState.NONE,
-                overworld ? CELESTIAL_VANILLA_SUN : WorldRenderState.NONE,
-                WorldRenderState.NEUTRAL,
-                WorldRenderState.NONE,
-                WorldRenderState.NEUTRAL,
-                WorldRenderState.NEUTRAL,
-                WorldRenderState.NEUTRAL,
-                WorldRenderState.NONE,
+                climate,
+                celestial,
+                weather,
                 directional,
                 epoch
         );
@@ -67,30 +97,16 @@ final class DeferredWorldRenderStateSource {
     void reset() {
         worldOwner = null;
         epoch++;
+        biomeClimate.reset();
+        WeatherProviderRegistry.resetAll();
         current = WorldRenderState.unknown(epoch);
     }
 
-    private static DirectionalLightDescriptor unitSun(DeferredPrimaryViewSource.FrameView view) {
-        if (view == null || !view.hasSunAngle()) return DirectionalLightDescriptor.NONE;
-        float x = (float) -Math.sin(view.sunAngle());
-        float y = (float) Math.cos(view.sunAngle());
-        if (!(y > 0.0f)) return DirectionalLightDescriptor.NONE;
-        return DirectionalLightDescriptor.of(
-                x, y, 0.0f,
-                1.0f, 1.0f, 1.0f,
-                SUN_ANGULAR_RADIUS_RADIANS,
-                true
-        );
-    }
-
-    private static Identifier explicitProfile(ClientLevel level) {
-        if (Level.OVERWORLD.equals(level.dimension())) return PROFILE_OVERWORLD;
-        if (Level.NETHER.equals(level.dimension())) return PROFILE_NETHER;
-        if (Level.END.equals(level.dimension())) return PROFILE_END;
-        return PROFILE_UNKNOWN;
-    }
-
-    private static Identifier id(String path) {
-        return Identifier.fromNamespaceAndPath("combatant", path);
+    private static float partialTick() {
+        Minecraft minecraft = Minecraft.getInstance();
+        DeltaTracker tracker = minecraft != null ? minecraft.getDeltaTracker() : null;
+        if (tracker == null) return 0.0f;
+        float value = tracker.getGameTimeDeltaPartialTick(true);
+        return Float.isFinite(value) ? Math.max(0.0f, Math.min(1.0f, value)) : 0.0f;
     }
 }

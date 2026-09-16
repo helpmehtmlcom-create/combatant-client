@@ -13,7 +13,10 @@ package combatant.client.render.engine.world;
  * <p>Positions are absolute world-space doubles so producers do not lose precision. RGB values are
  * linear-light source intensity. Radius is a finite influence bound used for culling; it is not an
  * artistic brightness multiplier. Consumers convert the position to camera-relative/view space
- * before upload.</p>
+ * before upload. Shadow participation is explicit producer data; the renderer never infers it from
+ * source color, light type or screen-space appearance. Shadow-casting descriptors should provide
+ * a non-zero stable ID; without stable identity the bounded atlas deliberately leaves the light
+ * unshadowed rather than inventing persistence from position/color heuristics.</p>
  */
 public record LightDescriptor(
         Type type,
@@ -30,7 +33,8 @@ public record LightDescriptor(
         float innerConeCos,
         float outerConeCos,
         float areaRadius,
-        long stableId
+        long stableId,
+        boolean castsShadow
 ) {
     public enum Type {
         POINT,
@@ -60,6 +64,17 @@ public record LightDescriptor(
         }
     }
 
+    /** Source-compatible constructor for providers that do not request local shadows. */
+    public LightDescriptor(Type type,
+                           double x, double y, double z,
+                           float directionX, float directionY, float directionZ,
+                           float red, float green, float blue,
+                           float radius, float innerConeCos, float outerConeCos,
+                           float areaRadius, long stableId) {
+        this(type, x, y, z, directionX, directionY, directionZ,
+                red, green, blue, radius, innerConeCos, outerConeCos, areaRadius, stableId, false);
+    }
+
     public boolean valid() {
         return radius > 0.0f && (red > 0.0f || green > 0.0f || blue > 0.0f);
     }
@@ -69,7 +84,7 @@ public record LightDescriptor(
                                         float red, float green, float blue,
                                         float radius) {
         return new LightDescriptor(Type.POINT, x, y, z, 0.0f, -1.0f, 0.0f,
-                red, green, blue, radius, 1.0f, -1.0f, 0.0f, stableId);
+                red, green, blue, radius, 1.0f, -1.0f, 0.0f, stableId, false);
     }
 
     public static LightDescriptor spot(long stableId,
@@ -78,7 +93,7 @@ public record LightDescriptor(
                                        float red, float green, float blue,
                                        float radius, float innerConeCos, float outerConeCos) {
         return new LightDescriptor(Type.SPOT, x, y, z, directionX, directionY, directionZ,
-                red, green, blue, radius, innerConeCos, outerConeCos, 0.0f, stableId);
+                red, green, blue, radius, innerConeCos, outerConeCos, 0.0f, stableId, false);
     }
 
     public static LightDescriptor sphere(long stableId,
@@ -86,7 +101,16 @@ public record LightDescriptor(
                                          float red, float green, float blue,
                                          float radius, float areaRadius) {
         return new LightDescriptor(Type.SPHERE, x, y, z, 0.0f, -1.0f, 0.0f,
-                red, green, blue, radius, 1.0f, -1.0f, areaRadius, stableId);
+                red, green, blue, radius, 1.0f, -1.0f, areaRadius, stableId, false);
+    }
+
+    /** Returns the same physical light with explicit local-shadow participation. */
+    public LightDescriptor withShadowCasting(boolean value) {
+        return new LightDescriptor(type, x, y, z,
+                directionX, directionY, directionZ,
+                red, green, blue, radius,
+                innerConeCos, outerConeCos, areaRadius,
+                stableId, value);
     }
 
     private static float nonNegative(float value) {

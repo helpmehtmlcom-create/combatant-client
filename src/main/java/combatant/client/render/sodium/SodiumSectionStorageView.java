@@ -17,4 +17,10 @@ import net.caffeinemc.mods.sodium.client.render.chunk.RenderSection;
  */
 public interface SodiumSectionStorageView {
     Iterable<RenderSection> combatant$sections();
+
+    /**
+     * Monotonic topology revision. It changes only when the set of section objects changes, not
+     * for ordinary mesh rebuilds, so immutable secondary-cull snapshots can be retained cheaply.
+     */
+    long combatant$structuralRevision();
 }

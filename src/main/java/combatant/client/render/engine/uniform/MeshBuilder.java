@@ -40,8 +40,7 @@ import static org.lwjgl.system.MemoryUtil.*;
  * builder itself is no longer needed to release its native memory.</p>
  */
 public final class MeshBuilder implements AutoCloseable {
-    private static final boolean DEBUG =
-            FabricLoader.getInstance().isDevelopmentEnvironment() || Boolean.getBoolean("combatant.render.debug");
+    private static final boolean DEBUG = developmentEnvironment() || Boolean.getBoolean("combatant.render.debug");
     private static final int DEFAULT_VERTEX_CAPACITY = Integer.getInteger("combatant.render.mesh.defaultVertices", 4096);
     private static final int DEFAULT_INDEX_CAPACITY = Integer.getInteger("combatant.render.mesh.defaultIndices", 8192);
     private static final int MAX_BUFFER_BYTES = Integer.MAX_VALUE - 8;
@@ -60,6 +59,14 @@ public final class MeshBuilder implements AutoCloseable {
     private boolean building;
     private boolean worldCameraAnchored;
     private double cameraX, cameraZ;
+
+    private static boolean developmentEnvironment() {
+        try {
+            return FabricLoader.getInstance().isDevelopmentEnvironment();
+        } catch (RuntimeException | LinkageError ignored) {
+            return false;
+        }
+    }
 
     public MeshBuilder(RenderPipeline pipeline) {
         this(Objects.requireNonNull(pipeline.getVertexFormatBinding(0)), pipeline.getPrimitiveTopology());
