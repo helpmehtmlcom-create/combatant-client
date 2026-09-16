@@ -10,6 +10,7 @@ package combatant.client.render.engine.rhi.shader;
 public enum ShaderResourceKind {
     STORAGE_BUFFER,
     SAMPLED_TEXTURE,
+    SAMPLED_VOLUME,
     STORAGE_IMAGE,
     STORAGE_VOLUME
 }

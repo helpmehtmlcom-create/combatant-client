@@ -9,6 +9,7 @@ package combatant.client.render.engine.deferred;
 
 import combatant.client.render.engine.framegraph.FrameGraphAccess;
 import combatant.client.render.engine.framegraph.FrameGraphPassContract;
+import combatant.client.render.engine.framegraph.FrameGraphExecutionDomain;
 import combatant.client.render.engine.framegraph.FrameGraphResourceUse;
 import combatant.client.render.engine.rhi.shader.RhiShaderStage;
 
@@ -24,6 +25,7 @@ public record DeferredPassSpec(
         DeferredStage stage,
         int priority,
         List<FrameGraphResourceUse> resources,
+        FrameGraphExecutionDomain executionDomain,
         Set<RhiShaderStage> requiredShaderStages,
         boolean externallyDriven,
         DeferredPassCondition condition,
@@ -37,6 +39,13 @@ public record DeferredPassSpec(
         requiredShaderStages = requiredShaderStages == null || requiredShaderStages.isEmpty()
                 ? Set.of()
                 : Set.copyOf(requiredShaderStages);
+        executionDomain = executionDomain == null
+                ? (requiredShaderStages.contains(RhiShaderStage.COMPUTE)
+                ? FrameGraphExecutionDomain.COMPUTE : FrameGraphExecutionDomain.GRAPHICS)
+                : executionDomain;
+        if (executionDomain == FrameGraphExecutionDomain.TRANSFER && !requiredShaderStages.isEmpty()) {
+            throw new IllegalArgumentException("Transfer pass cannot require shader stages: " + id);
+        }
         condition = condition == null ? DeferredPassCondition.ALWAYS : condition;
         if (!externallyDriven && executor == null) {
             throw new IllegalArgumentException("Executable deferred pass requires an executor: " + id);
@@ -48,7 +57,7 @@ public record DeferredPassSpec(
     }
 
     public FrameGraphPassContract contract() {
-        return new FrameGraphPassContract(stage.renderPhase(), id, resources, externallyDriven);
+        return new FrameGraphPassContract(stage.renderPhase(), id, executionDomain, resources, externallyDriven);
     }
 
     public static final class Builder {
@@ -56,6 +65,7 @@ public record DeferredPassSpec(
         private final DeferredStage stage;
         private final EnumMap<DeferredResource, FrameGraphAccess> resources = new EnumMap<>(DeferredResource.class);
         private final EnumSet<RhiShaderStage> requiredStages = EnumSet.noneOf(RhiShaderStage.class);
+        private FrameGraphExecutionDomain executionDomain;
         private int priority;
         private boolean externallyDriven;
         private DeferredPassCondition condition = DeferredPassCondition.ALWAYS;
@@ -81,6 +91,12 @@ public record DeferredPassSpec(
 
         public Builder readWrite(DeferredResource... values) {
             return use(FrameGraphAccess.READ_WRITE, values);
+        }
+
+        /** Declares a native copy/clear/update pass with transfer-stage hazard semantics. */
+        public Builder transfer() {
+            executionDomain = FrameGraphExecutionDomain.TRANSFER;
+            return this;
         }
 
         public Builder requires(RhiShaderStage... stages) {
@@ -114,8 +130,12 @@ public record DeferredPassSpec(
                 FrameGraphAccess access = resources.get(resource);
                 if (access != null) uses.add(new FrameGraphResourceUse(resource.key(), access));
             }
+            FrameGraphExecutionDomain domain = executionDomain != null
+                    ? executionDomain
+                    : (requiredStages.contains(RhiShaderStage.COMPUTE)
+                    ? FrameGraphExecutionDomain.COMPUTE : FrameGraphExecutionDomain.GRAPHICS);
             return new DeferredPassSpec(
-                    id, stage, priority, uses, requiredStages, externallyDriven, condition, executor
+                    id, stage, priority, uses, domain, requiredStages, externallyDriven, condition, executor
             );
         }
 

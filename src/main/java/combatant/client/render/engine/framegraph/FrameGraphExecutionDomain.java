@@ -4,12 +4,11 @@
  *
  * Licensed under the GNU General Public License v3.0.
  */
-
 package combatant.client.render.engine.framegraph;
 
-public enum FrameGraphResourceKind {
-    TEXTURE,
-    VOLUME,
-    BUFFER,
-    EXTERNAL
+/** Logical execution domain used when lowering resource hazards to backend barriers. */
+public enum FrameGraphExecutionDomain {
+    GRAPHICS,
+    COMPUTE,
+    TRANSFER
 }

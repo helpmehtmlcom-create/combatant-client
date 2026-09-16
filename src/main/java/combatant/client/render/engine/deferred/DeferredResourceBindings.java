@@ -104,7 +104,7 @@ public final class DeferredResourceBindings {
     }
 
     public void bindStorageVolume(DeferredResource resource, @Nullable RhiStorageVolume volume) {
-        requireTextureResource(resource);
+        requireVolumeResource(resource);
         if (volume == null) volumes.remove(resource); else volumes.put(resource, volume);
     }
 
@@ -242,8 +242,15 @@ public final class DeferredResourceBindings {
     }
 
     private static void requireTextureResource(DeferredResource resource) {
-        if (resource == null || resource.key().kind() == FrameGraphResourceKind.BUFFER) {
+        if (resource == null || (resource.key().kind() != FrameGraphResourceKind.TEXTURE
+                && resource.key().kind() != FrameGraphResourceKind.EXTERNAL)) {
             throw new IllegalArgumentException("Not a texture/external resource: " + resource);
+        }
+    }
+
+    private static void requireVolumeResource(DeferredResource resource) {
+        if (resource == null || resource.key().kind() != FrameGraphResourceKind.VOLUME) {
+            throw new IllegalArgumentException("Not a volume resource: " + resource);
         }
     }
 }

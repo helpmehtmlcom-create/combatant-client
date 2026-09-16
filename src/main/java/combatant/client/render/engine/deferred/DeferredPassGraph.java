@@ -316,10 +316,11 @@ public final class DeferredPassGraph {
     }
 
     private static RhiResourceBarrier.Stage barrierStage(DeferredPassSpec pass) {
-        if (pass.requiredShaderStages().contains(RhiShaderStage.COMPUTE)) {
-            return RhiResourceBarrier.Stage.COMPUTE;
-        }
-        return RhiResourceBarrier.Stage.GRAPHICS;
+        return switch (pass.executionDomain()) {
+            case GRAPHICS -> RhiResourceBarrier.Stage.GRAPHICS;
+            case COMPUTE -> RhiResourceBarrier.Stage.COMPUTE;
+            case TRANSFER -> RhiResourceBarrier.Stage.TRANSFER;
+        };
     }
 
     private static RhiResourceBarrier.Access barrierAccess(FrameGraphAccess access) {

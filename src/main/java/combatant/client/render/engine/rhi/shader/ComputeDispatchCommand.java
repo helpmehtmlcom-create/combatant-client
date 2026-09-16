@@ -17,7 +17,8 @@ public record ComputeDispatchCommand(String label,
                                      List<StorageBinding> storageBindings,
                                      List<SampledTextureBinding> sampledTextures,
                                      List<StorageImageBinding> storageImages,
-                                     List<StorageVolumeBinding> storageVolumes) {
+                                     List<StorageVolumeBinding> storageVolumes,
+                                     List<SampledVolumeBinding> sampledVolumes) {
     public ComputeDispatchCommand {
         label = label == null || label.isBlank() ? "combatant-compute" : label;
         if (pipeline == null) throw new IllegalArgumentException("pipeline");
@@ -36,6 +37,22 @@ public record ComputeDispatchCommand(String label,
         storageVolumes = storageVolumes == null || storageVolumes.isEmpty()
                 ? List.of()
                 : List.copyOf(storageVolumes);
+        sampledVolumes = sampledVolumes == null || sampledVolumes.isEmpty()
+                ? List.of()
+                : List.copyOf(sampledVolumes);
+    }
+
+    public ComputeDispatchCommand(String label,
+                                  RhiComputePipeline pipeline,
+                                  int groupsX,
+                                  int groupsY,
+                                  int groupsZ,
+                                  List<StorageBinding> storageBindings,
+                                  List<SampledTextureBinding> sampledTextures,
+                                  List<StorageImageBinding> storageImages,
+                                  List<StorageVolumeBinding> storageVolumes) {
+        this(label, pipeline, groupsX, groupsY, groupsZ, storageBindings, sampledTextures,
+                storageImages, storageVolumes, List.of());
     }
 
     public ComputeDispatchCommand(String label,
@@ -46,7 +63,7 @@ public record ComputeDispatchCommand(String label,
                                   List<StorageBinding> storageBindings,
                                   List<SampledTextureBinding> sampledTextures,
                                   List<StorageImageBinding> storageImages) {
-        this(label, pipeline, groupsX, groupsY, groupsZ, storageBindings, sampledTextures, storageImages, List.of());
+        this(label, pipeline, groupsX, groupsY, groupsZ, storageBindings, sampledTextures,
+                storageImages, List.of(), List.of());
     }
-
 }

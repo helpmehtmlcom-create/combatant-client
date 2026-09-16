@@ -16,12 +16,14 @@ import java.util.Objects;
 /** Resource contract for one logical pass. Execution code is kept out of the contract. */
 public record FrameGraphPassContract(RenderPhase phase,
                                      String label,
+                                     FrameGraphExecutionDomain executionDomain,
                                      List<FrameGraphResourceUse> resources,
                                      boolean sideEffect) {
     public FrameGraphPassContract {
         phase = phase == null ? RenderPhase.NONE : phase;
         if (label == null || label.isBlank()) throw new IllegalArgumentException("Frame-graph pass label must not be blank");
         label = label.trim();
+        executionDomain = executionDomain == null ? FrameGraphExecutionDomain.GRAPHICS : executionDomain;
         resources = resources == null ? List.of() : List.copyOf(resources);
         HashMap<FrameGraphResourceKey, FrameGraphAccess> seen = new HashMap<>();
         for (FrameGraphResourceUse use : resources) {
@@ -34,7 +36,14 @@ public record FrameGraphPassContract(RenderPhase phase,
         }
     }
 
+    public FrameGraphPassContract(RenderPhase phase,
+                                  String label,
+                                  List<FrameGraphResourceUse> resources,
+                                  boolean sideEffect) {
+        this(phase, label, FrameGraphExecutionDomain.GRAPHICS, resources, sideEffect);
+    }
+
     public static FrameGraphPassContract sideEffect(RenderPhase phase, String label) {
-        return new FrameGraphPassContract(phase, label, List.of(), true);
+        return new FrameGraphPassContract(phase, label, FrameGraphExecutionDomain.GRAPHICS, List.of(), true);
     }
 }

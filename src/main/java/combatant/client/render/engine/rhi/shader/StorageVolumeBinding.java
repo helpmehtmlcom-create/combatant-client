@@ -15,6 +15,9 @@ public record StorageVolumeBinding(int binding,
         if (binding < 0) throw new IllegalArgumentException("binding");
         if (volume == null) throw new IllegalArgumentException("volume");
         if (volume.isClosed()) throw new IllegalStateException("Storage volume is closed: " + volume.descriptor().label());
+        if (!volume.descriptor().storage()) {
+            throw new IllegalArgumentException("Storage volume binding requires storage usage: " + volume.descriptor().label());
+        }
         access = access == null ? volume.descriptor().access() : access;
         if (!volume.descriptor().access().allows(access)) {
             throw new IllegalArgumentException("Binding access " + access + " exceeds volume access "
@@ -28,5 +31,9 @@ public record StorageVolumeBinding(int binding,
 
     public StorageVolumeBinding(int binding, RhiStorageVolume volume, StorageAccess access) {
         this(binding, volume, access, 0);
+    }
+
+    public RhiVolumeView view() {
+        return volume.storageView(mipLevel);
     }
 }

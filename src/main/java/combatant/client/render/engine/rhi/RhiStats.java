@@ -45,6 +45,11 @@ public final class RhiStats {
     private long storageVolumeDestructions;
     private long storageVolumeLive;
     private long storageVolumeLiveBytes;
+    private long storageVolumeViewsCreated;
+    private long storageVolumeCopies;
+    private long storageVolumeCopyBytes;
+    private long storageVolumeClears;
+    private long storageVolumeClearedMips;
     private long meshUploads;
     private long uploadedVertexBytes;
     private long uploadedIndexBytes;
@@ -83,6 +88,7 @@ public final class RhiStats {
         this.frameId = frameId;
         drawCalls = multiDrawCalls = multiDrawLogicalDraws = renderPasses = renderPassAttachmentSwitches = fullscreenPasses = textureFastCopies = textureShaderCopies = textureGlCopyImages = 0L;
         computeDispatches = computeWorkgroups = computeStorageBindings = storageBufferUploads = storageBufferUploadBytes = advancedShaderBarriers = 0L;
+        storageVolumeCopies = storageVolumeCopyBytes = storageVolumeClears = storageVolumeClearedMips = 0L;
         pipelineBinds = pipelineBindSkips = pipelineSwitches = uniformBinds = samplerBinds = 0L;
         estimatedShaderAluOps = estimatedShaderTranscendentalOps = estimatedShaderTextureOps = 0L;
         estimatedShaderBranchOps = estimatedShaderLoopOps = 0L;
@@ -234,6 +240,32 @@ public final class RhiStats {
         storageVolumeDestructions++;
         storageVolumeLive = Math.max(0L, storageVolumeLive - 1L);
         storageVolumeLiveBytes = Math.max(0L, storageVolumeLiveBytes - Math.max(0L, approximateBytes));
+    }
+
+    public void storageVolumeViewCreated() {
+        storageVolumeViewsCreated++;
+    }
+
+    public void storageVolumeCopy(int width, int height, int depth, int bytesPerTexel) {
+        storageVolumeCopies++;
+        long texels = saturatedMultiply(Math.max(0L, width), Math.max(0L, height));
+        texels = saturatedMultiply(texels, Math.max(0L, depth));
+        long bytes = saturatedMultiply(texels, Math.max(0L, bytesPerTexel));
+        storageVolumeCopyBytes = saturatedAdd(storageVolumeCopyBytes, bytes);
+    }
+
+    public void storageVolumeClear(int mipCount) {
+        storageVolumeClears++;
+        storageVolumeClearedMips = saturatedAdd(storageVolumeClearedMips, Math.max(0L, mipCount));
+    }
+
+    private static long saturatedMultiply(long a, long b) {
+        if (a == 0L || b == 0L) return 0L;
+        return a > Long.MAX_VALUE / b ? Long.MAX_VALUE : a * b;
+    }
+
+    private static long saturatedAdd(long a, long b) {
+        return a > Long.MAX_VALUE - b ? Long.MAX_VALUE : a + b;
     }
 
     public void meshUpload(long vertexBytes, long indexBytes) {
@@ -417,6 +449,11 @@ public final class RhiStats {
     public long storageVolumeDestructions() { return storageVolumeDestructions; }
     public long storageVolumeLive() { return storageVolumeLive; }
     public long storageVolumeLiveBytes() { return storageVolumeLiveBytes; }
+    public long storageVolumeViewsCreated() { return storageVolumeViewsCreated; }
+    public long storageVolumeCopies() { return storageVolumeCopies; }
+    public long storageVolumeCopyBytes() { return storageVolumeCopyBytes; }
+    public long storageVolumeClears() { return storageVolumeClears; }
+    public long storageVolumeClearedMips() { return storageVolumeClearedMips; }
 
     public long meshUploads() {
         return meshUploads;
@@ -457,6 +494,8 @@ public final class RhiStats {
                 computeDispatches, computeWorkgroups, computeStorageBindings,
                 storageBufferUploads, storageBufferUploadBytes, advancedShaderBarriers,
                 storageVolumeAllocations, storageVolumeDestructions, storageVolumeLive, storageVolumeLiveBytes,
+                storageVolumeViewsCreated, storageVolumeCopies, storageVolumeCopyBytes,
+                storageVolumeClears, storageVolumeClearedMips,
                 meshUploads, uploadedVertexBytes, uploadedIndexBytes, ringWraps, ringStalls,
                 dynamicArenaAllocations, dynamicPersistentArenaAllocations, dynamicSpillArenaAllocations,
                 dynamicArenaReuses, dynamicArenaRetires, dynamicFenceChecks, dynamicFenceCompletions,

@@ -19,7 +19,8 @@ public record PatchDrawCommand(String label,
                                GpuMeshHandle mesh,
                                List<StorageBinding> storageBindings,
                                List<SampledTextureBinding> sampledTextures,
-                               List<StorageImageBinding> storageImages) {
+                               List<StorageImageBinding> storageImages,
+                               List<SampledVolumeBinding> sampledVolumes) {
     public PatchDrawCommand {
         label = label == null || label.isBlank() ? "combatant-patches" : label;
         if (pipeline == null || colorAttachments == null || colorAttachments.isEmpty()
@@ -30,6 +31,19 @@ public record PatchDrawCommand(String label,
         storageBindings = storageBindings == null || storageBindings.isEmpty() ? List.of() : List.copyOf(storageBindings);
         sampledTextures = sampledTextures == null || sampledTextures.isEmpty() ? List.of() : List.copyOf(sampledTextures);
         storageImages = storageImages == null || storageImages.isEmpty() ? List.of() : List.copyOf(storageImages);
+        sampledVolumes = sampledVolumes == null || sampledVolumes.isEmpty() ? List.of() : List.copyOf(sampledVolumes);
+    }
+
+    public PatchDrawCommand(String label,
+                            RhiPatchPipeline pipeline,
+                            List<GpuTextureView> colorAttachments,
+                            @Nullable GpuTextureView depthAttachment,
+                            GpuMeshHandle mesh,
+                            List<StorageBinding> storageBindings,
+                            List<SampledTextureBinding> sampledTextures,
+                            List<StorageImageBinding> storageImages) {
+        this(label, pipeline, colorAttachments, depthAttachment, mesh,
+                storageBindings, sampledTextures, storageImages, List.of());
     }
 
     public PatchDrawCommand(String label, RhiPatchPipeline pipeline, GpuTextureView colorAttachment,
@@ -37,13 +51,14 @@ public record PatchDrawCommand(String label,
                             List<StorageBinding> storageBindings, List<SampledTextureBinding> sampledTextures,
                             List<StorageImageBinding> storageImages) {
         this(label, pipeline, List.of(colorAttachment), depthAttachment, mesh,
-                storageBindings, sampledTextures, storageImages);
+                storageBindings, sampledTextures, storageImages, List.of());
     }
 
     public PatchDrawCommand(String label, RhiPatchPipeline pipeline, GpuTextureView colorAttachment,
                             @Nullable GpuTextureView depthAttachment, GpuMeshHandle mesh,
                             List<StorageBinding> storageBindings) {
-        this(label, pipeline, List.of(colorAttachment), depthAttachment, mesh, storageBindings, List.of(), List.of());
+        this(label, pipeline, List.of(colorAttachment), depthAttachment, mesh,
+                storageBindings, List.of(), List.of(), List.of());
     }
 
     public GpuTextureView colorAttachment() {
