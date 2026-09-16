@@ -52,11 +52,11 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-//todo Description
 @ModuleInfo(
         id = "nofall",
         displayName = "NoFall",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Prevents or reduces fall damage using packet spoofing, bucket catches, or clutch placement."
 )
 public class NoFall extends Module {
 

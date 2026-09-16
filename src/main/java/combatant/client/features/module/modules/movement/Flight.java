@@ -34,11 +34,11 @@ import combatant.client.mixins.accessors.LocalPlayerAccessor;
 import combatant.client.mixins.accessors.ServerboundMovePlayerPacketAccessor;
 import combatant.client.util.player.MovementUtil;
 
-//todo Description
 @ModuleInfo(
         id = "flight",
         displayName = "Flight",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Allows flying freely in survival mode using creative flight spoofing or custom velocity impulses."
 )
 public class Flight extends Module {
 

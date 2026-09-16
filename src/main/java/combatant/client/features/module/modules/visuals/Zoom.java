@@ -20,7 +20,8 @@ import combatant.client.render.engine.animation.AnimationUtility;
 @ModuleInfo(
         id = "zoom",
         displayName = "Zoom",
-        category = ModuleCategory.VISUALS
+        category = ModuleCategory.VISUALS,
+        description = "Smoothly magnifies camera vision for scouting distant targets and terrain."
 )
 public final class Zoom extends Module {
     private static final String ACTION_ZOOM_HOLD = "zoom_hold";

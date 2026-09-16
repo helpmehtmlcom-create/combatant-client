@@ -24,6 +24,7 @@ import combatant.client.features.module.ModuleInfo;
 @ModuleInfo(
         id = "automend",
         displayName = "AutoMend",
+        description = "Automatically throws experience bottles to mend damaged armor and held items when durability drops.",
         category = ModuleCategory.PLAYER
 )
 public final class AutoMend extends Module {

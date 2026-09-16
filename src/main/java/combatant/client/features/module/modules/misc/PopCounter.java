@@ -37,7 +37,8 @@ import java.util.UUID;
         id = "popcounter",
         displayName = "PopCounter",
         category = ModuleCategory.MISC,
-        aliases = {"totemcounter", "totempops"}
+        aliases = {"totemcounter", "totempops"},
+        description = "Tracks and announces totem pops of nearby players in chat or notifications."
 )
 public class PopCounter extends Module {
 

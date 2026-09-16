@@ -1,8 +1,14 @@
 /*
  * This file is part of the Combatant Client distribution.
- * Copyright (c) 2026 pivosos2007.
+ * Combatant modifications copyright (c) 2026 pivosos2007.
  *
- * Licensed under the GNU General Public License v3.0.
+ * Portions of this file are based on LiquidBounce
+ * (https://github.com/CCBlueX/LiquidBounce).
+ * Copyright (c) 2015-2026 CCBlueX.
+ *
+ * LiquidBounce portions are licensed under GPLv3-or-later.
+ * Combatant modifications are licensed under GPLv3.
+ * See THIRD_PARTY_NOTICES.md for details.
  */
 
 package combatant.client.features.module.modules.combat;
@@ -20,9 +26,7 @@ import combatant.client.features.relations.CategoryRules;
 import combatant.client.features.relations.CategoryType;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.util.aiming.RotationManager;
-import combatant.client.util.aiming.RotationTarget;
-import combatant.client.util.aiming.data.Rotation;
-import combatant.client.util.aiming.features.MovementCorrection;
+import combatant.client.util.block.placer.BlockPlacer;
 import combatant.client.util.combat.ExplosionRenderUtil;
 import combatant.client.util.player.inventory.InventorySwap;
 import combatant.client.util.target.TargetManager;
@@ -30,10 +34,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
@@ -63,7 +65,6 @@ import java.util.concurrent.ConcurrentHashMap;
 )
 public class HoleFill extends Module {
 
-    private static final int ROTATION_PRIORITY = 30;
     private static final Direction[] HOLE_SURROUND_DIRS = {
             Direction.DOWN,
             Direction.NORTH,
@@ -159,8 +160,8 @@ public class HoleFill extends Module {
                         continue;
                     }
 
-                    // Resolve placement hit result
-                    BlockHitResult hit = resolveHitResult(level, eyes, pos, r);
+                    // Resolve placement hit result via unified BlockPlacer
+                    BlockHitResult hit = BlockPlacer.findOptimalPlacementHit(level, player, pos, r);
                     if (hit == null) continue;
 
                     candidates.add(new HoleTarget(pos, hit, enemyDistSq, hasEntity));
@@ -193,196 +194,113 @@ public class HoleFill extends Module {
 
         // 1. Check offhand first
         if (isHoleFillItem(player.getOffhandItem(), type, entityInHole)) {
-            return performPlace(player, InteractionHand.OFF_HAND, target.hit(), target.pos(), -1);
+            boolean success = BlockPlacer.placeBlock(
+                    this,
+                    target.hit(),
+                    InteractionHand.OFF_HAND,
+                    -1,
+                    rotate.get(),
+                    BlockPlacer.SwingMode.CLIENT_AND_SERVER
+            );
+            if (success) {
+                renderBlocks.put(target.pos(), System.currentTimeMillis());
+            }
+            return success;
         }
 
         // 2. Find in hotbar or inventory
         int slot = findBlockSlot(player, type, entityInHole);
         if (slot < 0) return false;
 
-        return performPlace(player, InteractionHand.MAIN_HAND, target.hit(), target.pos(), slot);
-    }
-
-    private boolean performPlace(LocalPlayer player, InteractionHand hand, BlockHitResult hit,
-                                 BlockPos pos, int hotbarSlot) {
-        if (mc.gameMode == null || hit == null) return false;
-
-        // Rotation
-        if (rotate.get()) {
-            Rotation rot = Rotation.lookingAt(hit.getLocation(), player.getEyePosition()).normalize();
-            RotationTarget rotTarget = new RotationTarget(
-                    rot,
-                    null,
-                    List.of(),
-                    1,
-                    4.0f,
-                    true,
-                    MovementCorrection.SILENT,
-                    null
-            );
-            RotationManager.INSTANCE.setRotationTarget(rotTarget, ROTATION_PRIORITY, this);
-
-            if (mc.getConnection() != null) {
-                mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
-                        rot.yaw(),
-                        rot.pitch(),
-                        player.onGround(),
-                        player.horizontalCollision
-                ));
-            }
+        boolean success = BlockPlacer.placeBlock(
+                this,
+                target.hit(),
+                InteractionHand.MAIN_HAND,
+                slot,
+                rotate.get(),
+                BlockPlacer.SwingMode.CLIENT_AND_SERVER
+        );
+        if (success) {
+            renderBlocks.put(target.pos(), System.currentTimeMillis());
         }
-
-        if (hand == InteractionHand.OFF_HAND) {
-            InteractionResult result = mc.gameMode.useItemOn(player, hand, hit);
-            if (result != InteractionResult.FAIL) {
-                player.swing(hand);
-                renderBlocks.put(pos, System.currentTimeMillis());
-                return true;
-            }
-            return false;
-        }
-
-        // Silent hotbar leasing
-        boolean leased = InventorySwap.INSTANCE.leaseHotbar(this, hotbarSlot, 1);
-        if (!leased) return false;
-
-        try {
-            InteractionResult result = mc.gameMode.useItemOn(player, hand, hit);
-            if (result != InteractionResult.FAIL) {
-                player.swing(hand);
-                renderBlocks.put(pos, System.currentTimeMillis());
-                return true;
-            }
-            return false;
-        } finally {
-            InventorySwap.INSTANCE.releaseHotbar(this);
-        }
-    }
-
-    private BlockHitResult resolveHitResult(Level level, Vec3 eyes, BlockPos pos, double maxRange) {
-        double bestDistSq = Double.MAX_VALUE;
-        BlockHitResult best = null;
-
-        for (Direction dir : HOLE_SURROUND_DIRS) {
-            BlockPos neighbor = pos.relative(dir);
-            if (!level.isInWorldBounds(neighbor)) continue;
-
-            BlockState state = level.getBlockState(neighbor);
-            if (state.isAir() || state.canBeReplaced() || state.getCollisionShape(level, neighbor).isEmpty()) {
-                continue;
-            }
-
-            Direction clickFace = dir.getOpposite();
-            Vec3 normal = Vec3.atLowerCornerOf(clickFace.getUnitVec3i());
-            Vec3 hitVec = Vec3.atCenterOf(neighbor).add(normal.scale(0.5));
-            double distSq = eyes.distanceToSqr(hitVec);
-            if (distSq > maxRange * maxRange) continue;
-
-            if (distSq < bestDistSq) {
-                bestDistSq = distSq;
-                best = new BlockHitResult(hitVec, clickFace, neighbor, false);
-            }
-        }
-
-        return best;
+        return success;
     }
 
     private boolean is1x1Hole(Level level, BlockPos pos) {
-        if (!level.isInWorldBounds(pos)) return false;
-
-        // Position itself must be air or replaceable
-        if (!isReplaceable(level, pos)) return false;
-
-        // Space above must be air or replaceable to be an open hole
-        if (!isReplaceable(level, pos.above())) return false;
-
-        // Floor must be blast-resistant
-        if (!isBlastResistant(level, pos.below())) return false;
-
-        // All 4 horizontal sides must be blast-resistant
-        return isBlastResistant(level, pos.north())
-                && isBlastResistant(level, pos.south())
-                && isBlastResistant(level, pos.east())
-                && isBlastResistant(level, pos.west());
-    }
-
-    private static boolean isBlastResistant(Level level, BlockPos pos) {
-        if (level == null || pos == null || !level.isInWorldBounds(pos)) return false;
+        // Target block itself must be air or replaceable
         BlockState state = level.getBlockState(pos);
-        Block block = state.getBlock();
-        return block == Blocks.BEDROCK
-                || block == Blocks.OBSIDIAN
-                || block == Blocks.CRYING_OBSIDIAN
-                || block == Blocks.RESPAWN_ANCHOR
-                || block == Blocks.NETHERITE_BLOCK
-                || block == Blocks.ENDER_CHEST
-                || block == Blocks.ANVIL
-                || block == Blocks.CHIPPED_ANVIL
-                || block == Blocks.DAMAGED_ANVIL;
-    }
+        if (!state.isAir() && !state.canBeReplaced()) return false;
 
-    private static boolean isReplaceable(Level level, BlockPos pos) {
-        if (level == null || pos == null || !level.isInWorldBounds(pos)) return false;
-        BlockState state = level.getBlockState(pos);
-        return state.isAir() || state.canBeReplaced() || !state.getFluidState().isEmpty();
-    }
+        // Block above hole must also be clear
+        BlockState aboveState = level.getBlockState(pos.above());
+        if (!aboveState.isAir() && !aboveState.canBeReplaced()) return false;
 
-    private boolean isPlayerInHole(LocalPlayer player, BlockPos pos) {
-        if (player == null || pos == null) return false;
-        AABB holeBox = new AABB(pos);
-        if (player.getBoundingBox().intersects(holeBox)) {
-            return true;
-        }
-        if (player.blockPosition().equals(pos)) {
-            return true;
-        }
-        if (selfSafety.get()) {
-            AABB safetyBox = holeBox.expandTowards(0, 1.0, 0);
-            if (player.getBoundingBox().intersects(safetyBox)) {
-                return true;
-            }
-            if (player.blockPosition().equals(pos.above())) {
-                return true;
+        // Check surround 5 sides: bottom, North, South, East, West
+        for (Direction dir : HOLE_SURROUND_DIRS) {
+            BlockPos neighbor = pos.relative(dir);
+            BlockState neighborState = level.getBlockState(neighbor);
+            Block block = neighborState.getBlock();
+
+            // Hole must be surrounded by blast resistant blocks (Bedrock, Obsidian, Crying Obsidian, Ender Chest)
+            boolean isSafeBlock = block == Blocks.BEDROCK
+                    || block == Blocks.OBSIDIAN
+                    || block == Blocks.CRYING_OBSIDIAN
+                    || block == Blocks.ENDER_CHEST
+                    || block == Blocks.RESPAWN_ANCHOR;
+
+            if (!isSafeBlock) {
+                return false;
             }
         }
-        return false;
+
+        return true;
+    }
+
+    private boolean isPlayerInHole(LocalPlayer player, BlockPos holePos) {
+        if (!selfSafety.get()) return false;
+
+        AABB playerBox = player.getBoundingBox();
+        AABB holeBox = new AABB(holePos);
+
+        // Disallow if player intersects the hole or is immediately above it
+        return playerBox.intersects(holeBox) || playerBox.intersects(holeBox.expandTowards(0, 1.5, 0));
     }
 
     private boolean isLivingEntityColliding(Level level, BlockPos pos) {
         AABB box = new AABB(pos);
-        List<Entity> entities = level.getEntitiesOfClass(Entity.class, box);
-        for (Entity entity : entities) {
-            if (entity.isAlive() && !entity.isSpectator()) {
+        List<LivingEntity> entities = level.getEntitiesOfClass(LivingEntity.class, box);
+        for (LivingEntity e : entities) {
+            if (e.isAlive() && !e.isSpectator()) {
                 return true;
             }
         }
         return false;
     }
 
-    private double getMinDistanceToEnemySq(Level level, LocalPlayer player, BlockPos holePos) {
-        Vec3 center = Vec3.atCenterOf(holePos);
-        double minDistSq = Double.MAX_VALUE;
+    private double getMinDistanceToEnemySq(Level level, LocalPlayer player, BlockPos pos) {
+        Vec3 posCenter = Vec3.atCenterOf(pos);
+        double minDistanceSq = Double.MAX_VALUE;
 
-        // Check TargetManager target
-        LivingEntity managed = TargetManager.getTarget();
-        if (managed != null && managed != player && managed.isAlive() && !managed.isSpectator()) {
-            minDistSq = Math.min(minDistSq, managed.position().distanceToSqr(center));
+        // First check primary target from TargetManager
+        LivingEntity currentTarget = TargetManager.getTarget();
+        if (currentTarget != null && currentTarget.isAlive() && currentTarget != player) {
+            return posCenter.distanceToSqr(currentTarget.position());
         }
 
-        // Check all other non-friendly players
+        // Otherwise find closest non-friendly player
         for (Player other : level.players()) {
-            if (other == player || !other.isAlive() || other.isSpectator()) continue;
-            CategoryType type = CategoryRules.determine(other.getGameProfile().name());
-            if (type == CategoryType.FRIEND || type == CategoryType.BEDWARS_SELF) continue;
-
-            minDistSq = Math.min(minDistSq, other.position().distanceToSqr(center));
+            if (!combatant.client.util.target.TargetingUtil.isValidPlayerTarget(player, other, Double.MAX_VALUE)) continue;
+            double distSq = posCenter.distanceToSqr(other.position());
+            if (distSq < minDistanceSq) {
+                minDistanceSq = distSq;
+            }
         }
 
-        return minDistSq;
+        return minDistanceSq;
     }
 
     private int findBlockSlot(LocalPlayer player, HoleBlockType type, boolean entityInHole) {
-        // First check hotbar (0..8)
+        // First check hotbar
         for (int i = 0; i < 9; i++) {
             ItemStack stack = player.getInventory().getItem(i);
             if (isHoleFillItem(stack, type, entityInHole)) {
@@ -390,7 +308,7 @@ public class HoleFill extends Module {
             }
         }
 
-        // If not in hotbar, search main inventory (9..35) and swap to current hotbar slot
+        // Then check main inventory and swap into active slot
         for (int i = 9; i < 36; i++) {
             ItemStack stack = player.getInventory().getItem(i);
             if (isHoleFillItem(stack, type, entityInHole)) {
@@ -405,15 +323,25 @@ public class HoleFill extends Module {
     }
 
     private boolean isHoleFillItem(ItemStack stack, HoleBlockType type, boolean entityInHole) {
-        if (stack.isEmpty()) return false;
+        if (stack == null || stack.isEmpty()) return false;
+
+        boolean isObsidian = stack.is(Items.OBSIDIAN)
+                || stack.is(Items.CRYING_OBSIDIAN)
+                || stack.is(Items.ENDER_CHEST)
+                || stack.is(Blocks.OBSIDIAN.asItem())
+                || stack.is(Blocks.CRYING_OBSIDIAN.asItem())
+                || stack.is(Blocks.ENDER_CHEST.asItem());
+
+        boolean isWeb = stack.is(Items.COBWEB) || stack.is(Blocks.COBWEB.asItem());
+
         if (entityInHole) {
-            // Entities inside the hole block solid placement; cobwebs can still be placed
-            return stack.is(Items.COBWEB) && (type == HoleBlockType.COBWEB || type == HoleBlockType.ANY);
+            return isWeb; // Only web can be placed in entity space
         }
+
         return switch (type) {
-            case OBSIDIAN -> stack.is(Items.OBSIDIAN) || stack.is(Items.CRYING_OBSIDIAN);
-            case COBWEB -> stack.is(Items.COBWEB);
-            case ANY -> stack.is(Items.OBSIDIAN) || stack.is(Items.CRYING_OBSIDIAN) || stack.is(Items.COBWEB);
+            case OBSIDIAN -> isObsidian;
+            case WEB -> isWeb;
+            case BOTH -> isObsidian || isWeb;
         };
     }
 
@@ -430,8 +358,8 @@ public class HoleFill extends Module {
             alpha = Mth.clamp(alpha, 0.0f, 1.0f);
 
             AABB box = new AABB(pos);
-            int fillArgb = ExplosionRenderUtil.applyOpacity(0x4000E5FF, alpha);
-            int lineArgb = ExplosionRenderUtil.applyOpacity(0xFF00E5FF, alpha);
+            int fillArgb = ExplosionRenderUtil.applyOpacity(0x40FFAA00, alpha);
+            int lineArgb = ExplosionRenderUtil.applyOpacity(0xFFFFAA00, alpha);
 
             ExplosionRenderUtil.addFilledBox(renderer, box, fillArgb);
             ExplosionRenderUtil.addOutlineBox(renderer, box, lineArgb);
@@ -443,11 +371,12 @@ public class HoleFill extends Module {
         return WorldPhase.AFTER_POST_PROCESS;
     }
 
-    private record HoleTarget(BlockPos pos, BlockHitResult hit, double enemyDistSq, boolean hasEntity) {}
-
     public enum HoleBlockType {
         OBSIDIAN,
-        COBWEB,
-        ANY
+        WEB,
+        BOTH
+    }
+
+    private record HoleTarget(BlockPos pos, BlockHitResult hit, double enemyDistSq, boolean hasEntity) {
     }
 }

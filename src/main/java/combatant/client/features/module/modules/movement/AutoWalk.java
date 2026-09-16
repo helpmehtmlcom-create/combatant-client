@@ -23,7 +23,8 @@ import combatant.client.features.module.ModuleInfo;
 @ModuleInfo(
         id = "autowalk",
         displayName = "AutoWalk",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Automatically walks forward with options for direction locking and highway alignment."
 )
 public final class AutoWalk extends Module {
 

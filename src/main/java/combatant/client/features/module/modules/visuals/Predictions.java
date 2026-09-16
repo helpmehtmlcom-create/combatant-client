@@ -68,8 +68,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 
-//todo Description
-@ModuleInfo(id = "predictions", displayName = "Predictions", category = ModuleCategory.VISUALS)
+@ModuleInfo(id = "predictions", displayName = "Predictions", category = ModuleCategory.VISUALS, description = "Draws predicted flight arcs and landing positions for arrows, pearls, and throwables.")
 public class Predictions extends Module {
     private static final String SETTING_LINE_COLOR = "line_color";
     private static final String SETTING_PEARL_CUSTOM_COLOR = "pearl_custom_color";

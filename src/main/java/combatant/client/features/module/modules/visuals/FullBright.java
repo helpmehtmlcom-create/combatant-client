@@ -15,11 +15,11 @@ import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 
-//todo Description
 @ModuleInfo(
         id = "fullbright",
         displayName = "FullBright",
-        category = ModuleCategory.VISUALS
+        category = ModuleCategory.VISUALS,
+        description = "Maximizes ambient world brightness to illuminate dark caves and night environments."
 )
 public class FullBright extends Module {
 

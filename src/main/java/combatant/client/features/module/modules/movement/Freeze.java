@@ -11,11 +11,11 @@ import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 
-//todo Description
 @ModuleInfo(
         id = "freeze",
         displayName = "Freeze",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Freezes the player in place client-side and cancels movement packets."
 )
 public final class Freeze extends Module {
 

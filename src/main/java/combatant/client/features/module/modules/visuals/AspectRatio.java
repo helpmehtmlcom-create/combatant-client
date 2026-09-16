@@ -15,11 +15,11 @@ import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.Modules;
 
-//todo Description
 @ModuleInfo(
         id = "aspectratio",
         displayName = "AspectRatio",
-        category = ModuleCategory.VISUALS
+        category = ModuleCategory.VISUALS,
+        description = "Modifies the camera projection aspect ratio for custom ultrawide or stretched screen effects."
 )
 public final class AspectRatio extends Module {
     private static final float EPSILON = 1.0e-4f;

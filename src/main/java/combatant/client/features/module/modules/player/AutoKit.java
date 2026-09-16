@@ -25,6 +25,7 @@ import combatant.client.features.module.Notifier;
         id = "autokit",
         displayName = "AutoKit",
         aliases = {"kitequip", "autokitequip"},
+        description = "Automatically requests and equips saved or command-based PvP kits upon respawning or joining.",
         category = ModuleCategory.PLAYER
 )
 public class AutoKit extends Module {

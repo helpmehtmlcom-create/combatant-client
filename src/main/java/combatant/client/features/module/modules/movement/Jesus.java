@@ -24,7 +24,8 @@ import combatant.client.features.module.ModuleInfo;
 @ModuleInfo(
         id = "jesus",
         displayName = "Jesus",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Allows walking across water and lava as if they were solid surfaces."
 )
 public final class Jesus extends Module {
 

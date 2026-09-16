@@ -1,8 +1,14 @@
 /*
  * This file is part of the Combatant Client distribution.
- * Copyright (c) 2026 pivosos2007.
+ * Combatant modifications copyright (c) 2026 pivosos2007.
  *
- * Licensed under the GNU General Public License v3.0.
+ * Portions of this file are based on LiquidBounce
+ * (https://github.com/CCBlueX/LiquidBounce).
+ * Copyright (c) 2015-2026 CCBlueX.
+ *
+ * LiquidBounce portions are licensed under GPLv3-or-later.
+ * Combatant modifications are licensed under GPLv3.
+ * See THIRD_PARTY_NOTICES.md for details.
  */
 
 package combatant.client.features.module.modules.combat;
@@ -18,7 +24,7 @@ import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.render.engine.renderer.Renderer3D;
-import combatant.client.util.aiming.data.Rotation;
+import combatant.client.util.block.placer.BlockPlacer;
 import combatant.client.util.combat.ExplosionRenderUtil;
 import combatant.client.util.player.inventory.InventorySwap;
 import net.minecraft.client.Minecraft;
@@ -38,7 +44,6 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.Vec3;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -55,13 +60,6 @@ import java.util.concurrent.ConcurrentHashMap;
         description = "Surrounds player feet with blast-resistant blocks."
 )
 public class Surround extends Module {
-
-    private static final Direction[] HORIZONTALS = {
-            Direction.NORTH,
-            Direction.EAST,
-            Direction.SOUTH,
-            Direction.WEST
-    };
 
     private final Minecraft mc = Minecraft.getInstance();
 
@@ -202,9 +200,7 @@ public class Surround extends Module {
         if (antiCity.get()) {
             for (BlockPos feetPos : List.of(east, west, south, north)) {
                 if (miningBlocks.containsKey(feetPos) || isReplaceable(level, feetPos)) {
-                    // Reinforce above to prevent crystal placement
                     targetPositions.add(feetPos.above());
-                    // Reinforce in the outward direction
                     targetPositions.add(new BlockPos(feetPos.getX() + (feetPos.getX() - px), py, feetPos.getZ() + (feetPos.getZ() - pz)));
                 }
             }
@@ -220,12 +216,10 @@ public class Surround extends Module {
 
         // 4. AntiFaceplace: if enemy within 4 blocks, also add (x±1, y+1, z±1)
         if (antiFaceplace.get() && isEnemyWithinRange(player, level, 4.0)) {
-            // Direct upper positions
             targetPositions.add(new BlockPos(px + 1, py + 1, pz));
             targetPositions.add(new BlockPos(px - 1, py + 1, pz));
             targetPositions.add(new BlockPos(px, py + 1, pz + 1));
             targetPositions.add(new BlockPos(px, py + 1, pz - 1));
-            // Corner upper positions
             targetPositions.add(new BlockPos(px + 1, py + 1, pz + 1));
             targetPositions.add(new BlockPos(px + 1, py + 1, pz - 1));
             targetPositions.add(new BlockPos(px - 1, py + 1, pz + 1));
@@ -252,57 +246,29 @@ public class Surround extends Module {
         for (BlockPos pos : missing) {
             if (placed >= maxBlocks) break;
 
-            BlockHitResult hitResult = resolveHitResult(level, player, pos);
+            BlockHitResult hitResult = BlockPlacer.findOptimalPlacementHit(level, player, pos, 6.0);
             if (hitResult == null) {
                 // If no neighbor to click against, check if we need a helper floor block
                 BlockPos floorPos = pos.below();
                 if (isReplaceable(level, floorPos) && !isEntityColliding(player, level, floorPos)) {
-                    BlockHitResult floorHit = resolveHitResult(level, player, floorPos);
+                    BlockHitResult floorHit = BlockPlacer.findOptimalPlacementHit(level, player, floorPos, 6.0);
                     if (floorHit != null) {
-                        if (placeBlock(player, floorHit, floorPos, slot)) {
+                        if (BlockPlacer.placeBlock(this, floorHit, InteractionHand.MAIN_HAND, slot, rotate.get(), BlockPlacer.SwingMode.CLIENT_AND_SERVER)) {
+                            renderBlocks.put(floorPos, System.currentTimeMillis());
                             placed++;
                             if (placed >= maxBlocks) break;
                         }
                     }
                 }
-                hitResult = resolveHitResult(level, player, pos);
+                hitResult = BlockPlacer.findOptimalPlacementHit(level, player, pos, 6.0);
             }
 
             if (hitResult != null) {
-                if (placeBlock(player, hitResult, pos, slot)) {
+                if (BlockPlacer.placeBlock(this, hitResult, InteractionHand.MAIN_HAND, slot, rotate.get(), BlockPlacer.SwingMode.CLIENT_AND_SERVER)) {
+                    renderBlocks.put(pos, System.currentTimeMillis());
                     placed++;
                 }
             }
-        }
-    }
-
-    private boolean placeBlock(LocalPlayer player, BlockHitResult hitResult, BlockPos targetPos, int slot) {
-        if (mc.gameMode == null || hitResult == null) return false;
-
-        // Rotate if enabled
-        if (rotate.get()) {
-            Rotation rot = Rotation.lookingAt(hitResult.getLocation(), player.getEyePosition());
-            if (mc.getConnection() != null) {
-                mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
-                        rot.yaw(),
-                        rot.pitch(),
-                        player.onGround(),
-                        player.horizontalCollision
-                ));
-            }
-        }
-
-        // Lease hotbar slot
-        boolean leased = InventorySwap.INSTANCE.leaseHotbar(this, slot, 1);
-        if (!leased) return false;
-
-        try {
-            mc.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hitResult);
-            player.swing(InteractionHand.MAIN_HAND);
-            renderBlocks.put(targetPos, System.currentTimeMillis());
-            return true;
-        } finally {
-            InventorySwap.INSTANCE.releaseHotbar(this);
         }
     }
 
@@ -368,35 +334,6 @@ public class Surround extends Module {
             if (entity.isAlive()) return true;
         }
         return false;
-    }
-
-    private BlockHitResult resolveHitResult(Level level, LocalPlayer player, BlockPos pos) {
-        Vec3 eyes = player.getEyePosition();
-        double bestDist = Double.MAX_VALUE;
-        BlockHitResult best = null;
-
-        for (Direction dir : Direction.values()) {
-            BlockPos neighbor = pos.relative(dir);
-            if (!level.isInWorldBounds(neighbor)) continue;
-
-            BlockState state = level.getBlockState(neighbor);
-            if (state.isAir() || state.canBeReplaced() || state.getCollisionShape(level, neighbor).isEmpty()) {
-                continue;
-            }
-
-            Direction clickFace = dir.getOpposite();
-            Vec3 normal = Vec3.atLowerCornerOf(clickFace.getUnitVec3i());
-            Vec3 hitVec = Vec3.atCenterOf(neighbor).add(normal.scale(0.5));
-            double distSq = eyes.distanceToSqr(hitVec);
-            if (distSq > 36.0) continue; // max 6 blocks range
-
-            if (distSq < bestDist) {
-                bestDist = distSq;
-                best = new BlockHitResult(hitVec, clickFace, neighbor, false);
-            }
-        }
-
-        return best;
     }
 
     @Override

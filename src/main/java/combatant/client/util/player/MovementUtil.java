@@ -15,11 +15,172 @@ package combatant.client.util.player;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import combatant.client.util.aiming.RotationManager;
 
 public enum MovementUtil {
     ;
+
+    /**
+     * Returns the horizontal velocity magnitude of the player.
+     */
+    public static double getHorizontalMotion(Player player) {
+        if (player == null) return 0.0;
+        Vec3 delta = player.getDeltaMovement();
+        return Math.hypot(delta.x, delta.z);
+    }
+
+    /**
+     * Sets the horizontal velocity of the player based on yaw angle and speed.
+     */
+    public static void setMotion(Player player, double speed, float yaw) {
+        if (player == null) return;
+        double rad = Math.toRadians(yaw);
+        double x = -Math.sin(rad) * speed;
+        double z = Math.cos(rad) * speed;
+        player.setDeltaMovement(x, player.getDeltaMovement().y, z);
+    }
+
+    /**
+     * Sets the horizontal velocity of the player using current movement direction.
+     */
+    public static void setMotion(Player player, double speed) {
+        if (player == null) return;
+        float yaw = player instanceof LocalPlayer localPlayer
+                ? getMovementDirectionYaw(localPlayer, localPlayer.getYRot())
+                : player.getYRot();
+        setMotion(player, speed, yaw);
+    }
+
+    /**
+     * Calculates potion effect multiplier for speed (+20% per level) and slowness (-15% per level).
+     */
+    public static double getSpeedEffectMultiplier(Player player) {
+        if (player == null) return 1.0;
+        double multiplier = 1.0;
+        MobEffectInstance speed = player.getEffect(MobEffects.SPEED);
+        if (speed != null) {
+            multiplier += 0.2 * (speed.getAmplifier() + 1);
+        }
+        MobEffectInstance slowness = player.getEffect(MobEffects.SLOWNESS);
+        if (slowness != null) {
+            multiplier -= 0.15 * (slowness.getAmplifier() + 1);
+        }
+        return Math.max(0.0, multiplier);
+    }
+
+    /**
+     * Scales a base speed according to current speed and slowness potion effects.
+     */
+    public static double applySpeedPotionEffects(Player player, double baseSpeed) {
+        return baseSpeed * getSpeedEffectMultiplier(player);
+    }
+
+    /**
+     * Returns base sprinting speed scaled by potion effects.
+     */
+    public static double getBaseMoveSpeed(Player player) {
+        double base = 0.2873;
+        return applySpeedPotionEffects(player, base);
+    }
+
+    /**
+     * Resolves the block position affecting the player's movement.
+     */
+    public static BlockPos getVelocityAffectingPos(Player player) {
+        if (player == null) return BlockPos.ZERO;
+        return BlockPos.containing(player.getX(), player.getBoundingBox().minY - 0.5000001, player.getZ());
+    }
+
+    /**
+     * Returns the slipperiness / friction of the block beneath the player.
+     */
+    public static float getBlockFriction(Player player) {
+        if (player == null || player.level() == null) return 0.6f;
+        BlockPos pos = getVelocityAffectingPos(player);
+        return player.level().getBlockState(pos).getBlock().getFriction();
+    }
+
+    /**
+     * Checks if the block beneath the player is an ice block.
+     */
+    public static boolean isOnIce(Player player) {
+        if (player == null || player.level() == null) return false;
+        BlockPos pos = getVelocityAffectingPos(player);
+        BlockState state = player.level().getBlockState(pos);
+        return state.is(Blocks.ICE) || state.is(Blocks.PACKED_ICE)
+                || state.is(Blocks.BLUE_ICE) || state.is(Blocks.FROSTED_ICE);
+    }
+
+    /**
+     * Returns effective friction depending on in-water, in-lava, on-ground, and block slipperiness.
+     */
+    public static float getEffectiveFriction(Player player) {
+        if (player == null) return 0.91f;
+        if (player.isInWater()) return 0.8f;
+        if (player.isInLava()) return 0.5f;
+        float slipperiness = getBlockFriction(player);
+        return player.onGround() ? slipperiness * 0.91f : 0.91f;
+    }
+
+    /**
+     * Calculates horizontal motion scaling in water.
+     */
+    public static double calculateInWaterMotion(Player player, double baseSpeed) {
+        if (player == null) return baseSpeed;
+        double speed = baseSpeed * 0.8;
+        if (player.hasEffect(MobEffects.DOLPHINS_GRACE)) {
+            speed *= 1.2;
+        }
+        return speed;
+    }
+
+    /**
+     * Calculates horizontal motion scaling in lava.
+     */
+    public static double calculateInLavaMotion(Player player, double baseSpeed) {
+        if (player == null) return baseSpeed;
+        return baseSpeed * 0.5;
+    }
+
+    /**
+     * Calculates horizontal motion scaling on ice.
+     */
+    public static double calculateOnIceMotion(Player player, double baseSpeed) {
+        if (player == null) return baseSpeed;
+        float friction = getBlockFriction(player);
+        return baseSpeed * (friction / 0.6f);
+    }
+
+    /**
+     * Jump motion calculation (0.42f + jump boost amplifier * 0.1f, scaled by block jump factor).
+     */
+    public static float getJumpMotion(Player player) {
+        return getJumpMotion(player, 0.42f);
+    }
+
+    /**
+     * Jump motion calculation with custom base motion.
+     */
+    public static float getJumpMotion(Player player, float baseJumpMotion) {
+        if (player == null) return baseJumpMotion;
+        float jumpMotion = baseJumpMotion;
+        if (player.level() != null) {
+            BlockPos pos = getVelocityAffectingPos(player);
+            jumpMotion *= player.level().getBlockState(pos).getBlock().getJumpFactor();
+        }
+        MobEffectInstance jumpBoost = player.getEffect(MobEffects.JUMP_BOOST);
+        if (jumpBoost != null) {
+            jumpMotion += (jumpBoost.getAmplifier() + 1) * 0.1f;
+        }
+        return jumpMotion;
+    }
 
     public static boolean isMoving() {
         Minecraft mc = Minecraft.getInstance();

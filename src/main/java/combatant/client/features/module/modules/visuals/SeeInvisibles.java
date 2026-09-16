@@ -16,11 +16,11 @@ import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 
-//todo Description
 @ModuleInfo(
         id = "seeinvisibles",
         displayName = "SeeInvisibles",
-        category = ModuleCategory.VISUALS
+        category = ModuleCategory.VISUALS,
+        description = "Renders invisible entities and players with a translucent colored overlay."
 )
 public class SeeInvisibles extends Module {
 

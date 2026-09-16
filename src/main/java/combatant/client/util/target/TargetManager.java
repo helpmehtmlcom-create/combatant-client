@@ -10,13 +10,15 @@ package combatant.client.util.target;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import combatant.client.events.Events;
 import combatant.client.events.impl.EventTargetChanged;
 
 import java.util.EnumMap;
-
+import java.util.List;
 
 public enum TargetManager {
     ;
@@ -25,6 +27,7 @@ public enum TargetManager {
     private static final EnumMap<Source, TargetState> STATES = new EnumMap<>(Source.class);
     private static LivingEntity current;
     private static Source currentSource;
+    private static long lastCombatTimeMs;
 
     public static void tick() {
         Minecraft mc = Minecraft.getInstance();
@@ -33,9 +36,67 @@ public enum TargetManager {
             return;
         }
 
+        if (current != null || mc.player.hurtTime > 0) {
+            markCombat();
+        }
+
         updateCrosshair(mc);
         purgeInvalids();
         refreshCurrent();
+    }
+
+    public static boolean isInCombat() {
+        return current != null || (System.currentTimeMillis() - lastCombatTimeMs <= 5000L);
+    }
+
+    public static void markCombat() {
+        lastCombatTimeMs = System.currentTimeMillis();
+    }
+
+    public static long getLastCombatTimeMs() {
+        return lastCombatTimeMs;
+    }
+
+    public static boolean isValidPlayerTarget(Player self, Player target, double range) {
+        return TargetingUtil.isValidPlayerTarget(self, target, range);
+    }
+
+    public static boolean isBurrowed(Player player, Level level) {
+        return TargetingUtil.isBurrowed(player, level);
+    }
+
+    public static boolean isSurrounded(Player player, Level level) {
+        return TargetingUtil.isSurrounded(player, level);
+    }
+
+    public static TargetingUtil.HoleStatus getHoleStatus(Player player, Level level) {
+        return TargetingUtil.getHoleStatus(player, level);
+    }
+
+    public static Player findBestTarget(Player self, Level level, double range, TargetingUtil.TargetPriority priority) {
+        return TargetingUtil.findBestTarget(self, level, range, priority);
+    }
+
+    public static List<Player> findTargets(Player self, Level level, double range, TargetingUtil.TargetPriority priority) {
+        return TargetingUtil.findPlayers(self, level, range, priority);
+    }
+
+    /**
+     * Resolves the primary combat target using the unified TargetManager state,
+     * falling back to the best candidate in range if no active target is tracked.
+     */
+    public static LivingEntity resolveTarget(Player self, Level level, double range, TargetingUtil.TargetPriority priority) {
+        LivingEntity active = current;
+        if (active != null && TargetingUtil.isValidCombatTarget(active)) {
+            if (active instanceof Player p) {
+                if (TargetingUtil.isValidPlayerTarget(self, p, range)) {
+                    return active;
+                }
+            } else if (self == null || self.distanceTo(active) <= range) {
+                return active;
+            }
+        }
+        return findBestTarget(self, level, range, priority);
     }
 
     public static LivingEntity getTarget() {
@@ -55,6 +116,7 @@ public enum TargetManager {
     }
 
     public static void onAttack(Entity target) {
+        markCombat();
         if (target instanceof LivingEntity living && TargetingUtil.isValidCombatTarget(living)) {
             push(Source.ATTACK, living, DEFAULT_ATTACK_HOLD_MS);
         }

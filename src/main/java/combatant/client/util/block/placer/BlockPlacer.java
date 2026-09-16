@@ -13,23 +13,6 @@
 
 package combatant.client.util.block.placer;
 
-import combatant.client.util.screen.ClientScreen;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
-import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.core.BlockPos;
-import net.minecraft.world.InteractionHand;
-import net.minecraft.world.InteractionResult;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.item.BlockItem;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.ClipContext;
-import net.minecraft.world.level.block.*;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.HitResult;
-import net.minecraft.world.phys.Vec3;
 import combatant.client.events.EventHandler;
 import combatant.client.events.Events;
 import combatant.client.events.impl.MovementInputEvent;
@@ -43,19 +26,48 @@ import combatant.client.util.aiming.data.Rotation;
 import combatant.client.util.aiming.features.MovementCorrection;
 import combatant.client.util.block.scaffold.ScaffoldPlacementTarget;
 import combatant.client.util.block.scaffold.ScaffoldTargetFinder;
+import combatant.client.util.player.InteractionUtil;
 import combatant.client.util.player.inventory.InventorySwap;
+import combatant.client.util.screen.ClientScreen;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.network.protocol.game.ServerboundSwingPacket;
+import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.*;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BooleanSupplier;
 import java.util.function.DoubleSupplier;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
+/**
+ * Unified, anti-cheat resilient block placement system.
+ * Handles automatic optimal face finding, GrimAC-safe non-centered hit vectors,
+ * silent hotbar leasing, sequence-predicted placement packets, and swing execution.
+ */
 public final class BlockPlacer {
+
+    private static final Direction[] HORIZONTALS = {
+            Direction.DOWN, Direction.UP, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST
+    };
 
     private final Minecraft mc = Minecraft.getInstance();
 
@@ -74,6 +86,7 @@ public final class BlockPlacer {
     private final BooleanSupplier ignoreUsingItemSupplier;
     private final Supplier<RotationMode> rotationModeSupplier;
     private final Supplier<MovementCorrection> movementCorrectionSupplier;
+    private final Supplier<SwingMode> swingModeSupplier;
     private final int rotationPriority;
 
     private final LinkedHashMap<BlockPos, Boolean> blocks = new LinkedHashMap<>();
@@ -103,6 +116,46 @@ public final class BlockPlacer {
             Supplier<RotationMode> rotationModeSupplier,
             Supplier<MovementCorrection> movementCorrectionSupplier
     ) {
+        this(
+                module,
+                requester,
+                rotationPriority,
+                slotFinder,
+                rangeSupplier,
+                wallRangeSupplier,
+                cooldownMinSupplier,
+                cooldownMaxSupplier,
+                slotResetDelayMinSupplier,
+                slotResetDelayMaxSupplier,
+                sneakTicksSupplier,
+                constructFailResultSupplier,
+                ignoreOpenInventorySupplier,
+                ignoreUsingItemSupplier,
+                rotationModeSupplier,
+                movementCorrectionSupplier,
+                () -> SwingMode.CLIENT_AND_SERVER
+        );
+    }
+
+    public BlockPlacer(
+            Module module,
+            Object requester,
+            int rotationPriority,
+            SlotFinder slotFinder,
+            DoubleSupplier rangeSupplier,
+            DoubleSupplier wallRangeSupplier,
+            IntSupplier cooldownMinSupplier,
+            IntSupplier cooldownMaxSupplier,
+            IntSupplier slotResetDelayMinSupplier,
+            IntSupplier slotResetDelayMaxSupplier,
+            IntSupplier sneakTicksSupplier,
+            BooleanSupplier constructFailResultSupplier,
+            BooleanSupplier ignoreOpenInventorySupplier,
+            BooleanSupplier ignoreUsingItemSupplier,
+            Supplier<RotationMode> rotationModeSupplier,
+            Supplier<MovementCorrection> movementCorrectionSupplier,
+            Supplier<SwingMode> swingModeSupplier
+    ) {
         this.module = module;
         this.requester = requester;
         this.rotationPriority = rotationPriority;
@@ -119,6 +172,147 @@ public final class BlockPlacer {
         this.ignoreUsingItemSupplier = ignoreUsingItemSupplier;
         this.rotationModeSupplier = rotationModeSupplier;
         this.movementCorrectionSupplier = movementCorrectionSupplier;
+        this.swingModeSupplier = swingModeSupplier != null ? swingModeSupplier : () -> SwingMode.CLIENT_AND_SERVER;
+    }
+
+    // =========================================================================
+    // Static placement utilities
+    // =========================================================================
+
+    /**
+     * Finds the optimal placement face and hit result for any target BlockPos.
+     * Calculates non-centered hit vectors conforming to strict raytraces.
+     */
+    public static BlockHitResult findOptimalPlacementHit(Level level, LocalPlayer player, BlockPos targetPos, double maxRange) {
+        if (level == null || player == null || targetPos == null) return null;
+
+        Vec3 eyes = player.getEyePosition();
+        double maxRangeSq = maxRange * maxRange;
+
+        BlockHitResult bestHit = null;
+        double bestDistSq = Double.MAX_VALUE;
+
+        for (Direction dir : HORIZONTALS) {
+            BlockPos neighbor = targetPos.relative(dir);
+            if (!level.isInWorldBounds(neighbor)) continue;
+
+            BlockState state = level.getBlockState(neighbor);
+            if (state.isAir() || state.canBeReplaced() || state.getCollisionShape(level, neighbor).isEmpty()) {
+                continue;
+            }
+
+            Direction clickFace = dir.getOpposite();
+
+            // Strict raytrace vector on the neighbor face
+            Vec3 hitVec = calculateStrictHitVec(neighbor, clickFace, eyes);
+            double distSq = eyes.distanceToSqr(hitVec);
+            if (distSq > maxRangeSq) continue;
+
+            // Verify visibility / reach
+            HitResult clip = level.clip(new ClipContext(
+                    eyes, hitVec, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player
+            ));
+
+            if (clip.getType() == HitResult.Type.BLOCK && !neighbor.equals(((BlockHitResult) clip).getBlockPos())) {
+                continue;
+            }
+
+            if (distSq < bestDistSq) {
+                bestDistSq = distSq;
+                bestHit = new BlockHitResult(hitVec, clickFace, neighbor, false);
+            }
+        }
+
+        return bestHit;
+    }
+
+    /**
+     * Calculates a strictly valid hit vector on a block face avoiding center-click flags.
+     * Samples slightly off-center towards the eye line intersection.
+     */
+    public static Vec3 calculateStrictHitVec(BlockPos pos, Direction side, Vec3 eyes) {
+        Vec3 center = Vec3.atCenterOf(pos);
+        double halfX = side.getStepX() * 0.5;
+        double halfY = side.getStepY() * 0.5;
+        double halfZ = side.getStepZ() * 0.5;
+
+        double faceCenterX = center.x + halfX;
+        double faceCenterY = center.y + halfY;
+        double faceCenterZ = center.z + halfZ;
+
+        // Slight offset towards player eye pos bounded within face (0.1 .. 0.9)
+        double clampMargin = 0.38;
+        double dx = Math.max(-clampMargin, Math.min(clampMargin, (eyes.x - faceCenterX) * 0.25));
+        double dy = Math.max(-clampMargin, Math.min(clampMargin, (eyes.y - faceCenterY) * 0.25));
+        double dz = Math.max(-clampMargin, Math.min(clampMargin, (eyes.z - faceCenterZ) * 0.25));
+
+        if (side.getAxis() == Direction.Axis.X) dx = 0.0;
+        if (side.getAxis() == Direction.Axis.Y) dy = 0.0;
+        if (side.getAxis() == Direction.Axis.Z) dz = 0.0;
+
+        return new Vec3(faceCenterX + dx, faceCenterY + dy, faceCenterZ + dz);
+    }
+
+    /**
+     * Direct atomic placement method for modules needing immediate execution.
+     */
+    public static boolean placeBlock(
+            Object owner,
+            BlockHitResult hitResult,
+            InteractionHand hand,
+            int hotbarSlot,
+            boolean rotate,
+            SwingMode swingMode
+    ) {
+        Minecraft client = Minecraft.getInstance();
+        LocalPlayer player = client.player;
+        if (player == null || client.getConnection() == null || client.gameMode == null || hitResult == null) {
+            return false;
+        }
+
+        if (rotate) {
+            Rotation rot = Rotation.lookingAt(hitResult.getLocation(), player.getEyePosition()).normalize();
+            client.getConnection().send(new ServerboundMovePlayerPacket.Rot(
+                    rot.yaw(), rot.pitch(), player.onGround(), player.horizontalCollision
+            ));
+        }
+
+        boolean leased = false;
+        if (hand == InteractionHand.MAIN_HAND && hotbarSlot >= 0 && hotbarSlot < 9) {
+            leased = InventorySwap.INSTANCE.leaseHotbar(owner, hotbarSlot, 1);
+            if (!leased) return false;
+        }
+
+        try {
+            InteractionResult result = client.gameMode.useItemOn(player, hand, hitResult);
+            boolean success = result != null && result.consumesAction();
+
+            // Sequence-predicted placement packet reinforcement
+            InteractionUtil.sendSequencedPacket(sequence ->
+                    new ServerboundUseItemOnPacket(hand, hitResult, sequence)
+            );
+
+            performSwing(player, hand, swingMode != null ? swingMode : SwingMode.CLIENT_AND_SERVER);
+            return success || result != InteractionResult.FAIL;
+        } finally {
+            if (leased) {
+                InventorySwap.INSTANCE.releaseHotbar(owner);
+            }
+        }
+    }
+
+    public static void performSwing(LocalPlayer player, InteractionHand hand, SwingMode swingMode) {
+        if (player == null || hand == null || swingMode == SwingMode.NONE) return;
+
+        Minecraft client = Minecraft.getInstance();
+        if (swingMode == SwingMode.CLIENT || swingMode == SwingMode.CLIENT_AND_SERVER) {
+            player.swing(hand, false);
+        }
+        if (swingMode == SwingMode.SERVER || swingMode == SwingMode.CLIENT_AND_SERVER) {
+            if (client.getConnection() != null) {
+                client.getConnection().send(new ServerboundSwingPacket(hand));
+            }
+        }
     }
 
     private static int randomBetween(int a, int b) {
@@ -128,9 +322,7 @@ public final class BlockPlacer {
     }
 
     private static boolean isInteractable(BlockState state) {
-        if (state == null) {
-            return false;
-        }
+        if (state == null) return false;
 
         Block block = state.getBlock();
         return block instanceof BedBlock
@@ -157,9 +349,7 @@ public final class BlockPlacer {
     }
 
     public void enable() {
-        if (registered) {
-            return;
-        }
+        if (registered) return;
         Events.BUS.register(this);
         registered = true;
     }
@@ -217,13 +407,8 @@ public final class BlockPlacer {
 
     @EventHandler(priority = -20)
     private void onRotationUpdate(RotationUpdateEvent event) {
-        if (event.getType() != RotationUpdateEvent.Type.PRE) {
-            return;
-        }
-
-        if (!registered || !module.isEnabled()) {
-            return;
-        }
+        if (event.getType() != RotationUpdateEvent.Type.PRE) return;
+        if (!registered || !module.isEnabled()) return;
 
         if (ticksToWait > 0) {
             ticksToWait--;
@@ -273,9 +458,7 @@ public final class BlockPlacer {
                     }
 
                     Rotation currentRotation = RotationManager.INSTANCE.getCurrentRotation();
-                    if (currentRotation == null) {
-                        return;
-                    }
+                    if (currentRotation == null) return;
 
                     BlockHitResult currentHit = traceTarget(
                             currentPlayer,
@@ -294,10 +477,7 @@ public final class BlockPlacer {
 
     @EventHandler
     private void onMovementInput(MovementInputEvent event) {
-        if (!registered || !module.isEnabled()) {
-            return;
-        }
-
+        if (!registered || !module.isEnabled()) return;
         if (sneakTimes > 0) {
             sneakTimes--;
             event.setSneak(true);
@@ -306,9 +486,7 @@ public final class BlockPlacer {
 
     @EventHandler
     private void onPostPlayerUpdate(PostPlayerUpdateEvent event) {
-        if (!registered || !module.isEnabled()) {
-            return;
-        }
+        if (!registered || !module.isEnabled()) return;
 
         LocalPlayer player = mc.player;
         if (player == null || mc.level == null || mc.gameMode == null || currentPlacement == null || ticksToWait > 0) {
@@ -335,9 +513,7 @@ public final class BlockPlacer {
                     null,
                     wallRangeSupplier.getAsDouble() > 0.0
             );
-            if (target == null) {
-                continue;
-            }
+            if (target == null) continue;
 
             if (!canReach(player, target.getInteractedBlockPos(), target.getRotation())) {
                 inaccessible.add(pos);
@@ -379,14 +555,9 @@ public final class BlockPlacer {
         blocks.remove(plan.pos());
 
         PlacementSlot slot = slotFinder.find(plan.pos());
-        if (slot == null) {
-            return;
-        }
+        if (slot == null) return;
 
-        // LB verifies normal placements against the rotation that actually got sent to the server,
-        // not the raw planned target rotation.
         Rotation verificationRotation = RotationManager.INSTANCE.getServerRotation();
-
         if (!canReach(player, plan.target().getInteractedBlockPos(), verificationRotation)) {
             return;
         }
@@ -397,37 +568,50 @@ public final class BlockPlacer {
                 verificationRotation,
                 plan.target().getDirection()
         );
-        if (hitResult == null) {
-            return;
-        }
+        if (hitResult == null) return;
 
-        if (slot.hotbarSlot() >= 0) {
-            InventorySwap.INSTANCE.leaseHotbar(
+        boolean leased = false;
+        if (slot.hotbarSlot() >= 0 && slot.hotbarSlot() < 9) {
+            leased = InventorySwap.INSTANCE.leaseHotbar(
                     requester,
                     slot.hotbarSlot(),
                     randomBetween(slotResetDelayMinSupplier.getAsInt(), slotResetDelayMaxSupplier.getAsInt())
             );
         }
 
-        if (slot.stack().getItem() instanceof BlockItem && !player.level().getBlockState(plan.pos()).canBeReplaced()) {
-            return;
-        }
+        try {
+            if (slot.stack().getItem() instanceof BlockItem && !player.level().getBlockState(plan.pos()).canBeReplaced()) {
+                return;
+            }
 
-        InteractionResult result = mc.gameMode.useItemOn(player, slot.hand(), hitResult);
-        if (result != null && result.consumesAction()) {
-            player.swing(slot.hand());
-            ranAction = true;
+            InteractionResult result = mc.gameMode.useItemOn(player, slot.hand(), hitResult);
+
+            // Predict interaction packet sequence
+            InteractionUtil.sendSequencedPacket(sequence ->
+                    new ServerboundUseItemOnPacket(slot.hand(), hitResult, sequence)
+            );
+
+            performSwing(player, slot.hand(), swingModeSupplier.get());
+            if (result != null && result.consumesAction()) {
+                ranAction = true;
+            }
+        } finally {
+            if (leased && (slotResetDelayMaxSupplier.getAsInt() <= 0)) {
+                InventorySwap.INSTANCE.releaseHotbar(requester);
+            }
         }
     }
 
-    private BlockHitResult raytraceTarget(LocalPlayer player, BlockPos interactedPos, Rotation rotation, net.minecraft.core.Direction direction) {
+    private BlockHitResult raytraceTarget(LocalPlayer player, BlockPos interactedPos, Rotation rotation, Direction direction) {
         BlockHitResult hitResult = traceTarget(player, rotation, Math.max(rangeSupplier.getAsDouble(), wallRangeSupplier.getAsDouble()));
         if (hitResult != null && hitResult.getType() == HitResult.Type.BLOCK && interactedPos.equals(hitResult.getBlockPos())) {
-            return new BlockHitResult(hitResult.getLocation(), direction, interactedPos, false);
+            Vec3 strictLocation = calculateStrictHitVec(interactedPos, direction, player.getEyePosition());
+            return new BlockHitResult(strictLocation, direction, interactedPos, false);
         }
 
         if (constructFailResultSupplier.getAsBoolean()) {
-            return new BlockHitResult(Vec3.atCenterOf(interactedPos), direction, interactedPos, false);
+            Vec3 strictLocation = calculateStrictHitVec(interactedPos, direction, player.getEyePosition());
+            return new BlockHitResult(strictLocation, direction, interactedPos, false);
         }
 
         return null;
@@ -471,6 +655,13 @@ public final class BlockPlacer {
     public enum RotationMode {
         NORMAL,
         NO_ROTATION
+    }
+
+    public enum SwingMode {
+        CLIENT,
+        SERVER,
+        CLIENT_AND_SERVER,
+        NONE
     }
 
     @FunctionalInterface

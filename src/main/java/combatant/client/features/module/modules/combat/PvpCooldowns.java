@@ -31,10 +31,10 @@ import java.util.*;
 /**
  * Handles PvP cooldown rendering and optional local rule synthesis.
  */
-//todo Description
 @ModuleInfo(
         id = "pvpcooldowns",
         displayName = "PvpCooldowns",
+        description = "Displays and tracks opponent cooldowns for Totems, Gapples, Chorus Fruit, and Ender Pearls.",
         category = ModuleCategory.MISC
 )
 public class PvpCooldowns extends Module {

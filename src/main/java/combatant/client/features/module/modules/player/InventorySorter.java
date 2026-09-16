@@ -40,7 +40,8 @@ import java.util.*;
         id = "inventorysorter",
         displayName = "InventorySorter",
         aliases = {"autosort", "invsorter", "kitsaver"},
-        category = ModuleCategory.PLAYER
+        category = ModuleCategory.PLAYER,
+        description = "Sorts and rearranges your inventory to match customizable kit layouts with smooth slot swaps."
 )
 public class InventorySorter extends Module {
 

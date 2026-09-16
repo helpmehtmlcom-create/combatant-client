@@ -26,7 +26,8 @@ import combatant.client.features.module.ModuleInfo;
 @ModuleInfo(
         id = "entitycontrol",
         displayName = "EntityControl",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Allows steering and controlling rideable entities such as horses, pigs, and boats even without saddles."
 )
 public final class EntityControl extends Module {
 

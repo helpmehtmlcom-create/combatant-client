@@ -30,7 +30,8 @@ import java.util.UUID;
         id = "visualrange",
         displayName = "VisualRange",
         category = ModuleCategory.MISC,
-        aliases = {"playerdetector", "radaralert"}
+        aliases = {"playerdetector", "radaralert"},
+        description = "Alerts you in chat or notifications when another player enters your visual render distance."
 )
 public class VisualRange extends Module {
 

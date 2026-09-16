@@ -20,11 +20,11 @@ import combatant.client.mixins.accessors.PlayerInventoryAccessor;
 import combatant.client.util.player.ResetAttackCooldown;
 import combatant.client.util.player.inventory.InventorySwap;
 
-//todo Description
 @ModuleInfo(
         id = "clickpearl",
         displayName = "ClickPearl",
-        category = ModuleCategory.PLAYER
+        category = ModuleCategory.PLAYER,
+        description = "Instantly throws an ender pearl from your inventory or hotbar on key press or action trigger."
 )
 public class ClickPearl extends Module {
     private static final String ACTION_CLICKPEARL = "clickpearl";

@@ -29,7 +29,6 @@ import combatant.client.runtime.RuntimeGate;
 
 import java.util.Map;
 
-//todo Description
 @HudElementInfo(
         id = "better_chat",
         displayName = "Better Chat",

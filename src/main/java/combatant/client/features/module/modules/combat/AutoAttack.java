@@ -58,10 +58,10 @@ import combatant.client.util.combat.protocol.ProtocolUtil;
 import java.util.LinkedHashMap;
 
 
-//todo Description
 @ModuleInfo(
         id = "triggerbot",
         displayName = "TriggerBot",
+        description = "Automatically attacks nearby hostile targets or players when weapon attack cooldown is fully charged.",
         category = ModuleCategory.COMBAT
 )
 public class AutoAttack extends Module {

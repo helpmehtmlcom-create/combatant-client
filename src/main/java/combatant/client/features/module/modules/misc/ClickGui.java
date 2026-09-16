@@ -24,7 +24,7 @@ import net.minecraft.client.Minecraft;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-@ModuleInfo(id = "clickgui", displayName = "ClickGUI", aliases = {"menu", "settings"}, category = ModuleCategory.MISC)
+@ModuleInfo(id = "clickgui", displayName = "ClickGUI", aliases = {"menu", "settings"}, category = ModuleCategory.MISC, description = "Opens the graphical configuration menu to adjust client modules, binds, and settings.")
 public class ClickGui extends Module {
     private static boolean suppressScreenClose = false;
 

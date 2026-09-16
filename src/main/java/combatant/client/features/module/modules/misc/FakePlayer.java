@@ -43,11 +43,11 @@ import combatant.client.features.module.ModuleInfo;
 
 import java.util.UUID;
 
-//todo Description
 @ModuleInfo(
         id = "fakeplayer",
         displayName = "FakePlayer",
-        category = ModuleCategory.MISC
+        category = ModuleCategory.MISC,
+        description = "Spawns a client-side dummy player entity for testing combat modules and damage values."
 )
 public class FakePlayer extends Module {
 

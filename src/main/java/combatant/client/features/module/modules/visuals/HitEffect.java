@@ -47,8 +47,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
 
-//todo Description
-@ModuleInfo(id = "hiteffect", displayName = "HitEffect", category = ModuleCategory.VISUALS)
+@ModuleInfo(id = "hiteffect", displayName = "HitEffect", category = ModuleCategory.VISUALS, description = "Spawns customizable visual effects and shockwaves on attacked entities.")
 public class HitEffect extends Module {
 
     private static final String SETTING_EFFECT_MODE = "effect_mode";

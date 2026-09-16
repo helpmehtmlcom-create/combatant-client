@@ -26,7 +26,8 @@ import combatant.client.features.module.ModuleInfo;
 @ModuleInfo(
         id = "fastfall",
         displayName = "FastFall",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Pulls the player rapidly down toward the ground when falling to minimize air time."
 )
 public final class FastFall extends Module {
 

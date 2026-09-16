@@ -26,7 +26,8 @@ import java.util.List;
 @ModuleInfo(
         id = "portalesp",
         displayName = "PortalESP",
-        category = ModuleCategory.VISUALS
+        category = ModuleCategory.VISUALS,
+        description = "Renders bounding boxes and highlights around Nether and End portals."
 )
 public final class PortalESP extends Module {
 

@@ -57,8 +57,7 @@ import java.awt.*;
 import java.util.*;
 import java.util.List;
 
-//todo Description
-@ModuleInfo(id = "killeffect", displayName = "KillEffect", category = ModuleCategory.VISUALS)
+@ModuleInfo(id = "killeffect", displayName = "KillEffect", category = ModuleCategory.VISUALS, description = "Triggers lightning bolts, particle bursts, and screen flashes upon eliminating an opponent.")
 public class KillEffect extends Module implements PostProcessPass {
     private static final int MAX_EMBERS = 26;
     private static final int MIN_EMBERS = 16;

@@ -22,11 +22,11 @@ import combatant.client.features.module.ModuleInfo;
 import combatant.client.util.aiming.RotationManager;
 import combatant.client.util.aiming.data.Rotation;
 
-//todo Description
 @ModuleInfo(
         id = "superfirework",
         displayName = "SuperFirework",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Enhances firework rocket boosts with customizable speed multipliers and infinite boost options."
 )
 public class SuperFirework extends Module {
 

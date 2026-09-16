@@ -29,8 +29,7 @@ import combatant.client.render.effects.area.WorldAreaPreviewDescriptor;
 import combatant.client.render.effects.kernels.TransientAttackKernels;
 import net.minecraft.world.phys.Vec3;
 
-//todo Description
-@ModuleInfo(id = "totemfx", displayName = "TotemFX", category = ModuleCategory.VISUALS)
+@ModuleInfo(id = "totemfx", displayName = "TotemFX", category = ModuleCategory.VISUALS, description = "Plays custom visual distortion, screen shake, and shader effects upon popping a totem of undying.")
 public class TotemFX extends Module implements PostProcessPass {
 
     private static final String SETTING_INTENSITY = "intensity";

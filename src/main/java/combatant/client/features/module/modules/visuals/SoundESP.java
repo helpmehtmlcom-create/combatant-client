@@ -29,8 +29,7 @@ import combatant.client.render.helpers.ScreenProjection;
 import java.util.ArrayList;
 import java.util.List;
 
-//todo Description
-@ModuleInfo(id = "soundesp", displayName = "SoundESP", category = ModuleCategory.VISUALS)
+@ModuleInfo(id = "soundesp", displayName = "SoundESP", category = ModuleCategory.VISUALS, description = "Renders 3D markers and directional indicators at the origin of world sounds and footstep audio.")
 public class SoundESP extends Module {
     private static final String SETTING_NAME_MODE = "name_mode";
     private static final String SETTING_MAX_DISTANCE = "max_distance";

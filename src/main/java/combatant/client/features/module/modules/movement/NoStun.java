@@ -36,11 +36,11 @@ import combatant.client.features.module.ModuleInfo;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-//todo Description
 @ModuleInfo(
         id = "nostun",
         displayName = "NoStun",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Cancels slowness, screen distortion, and movement freeze effects from warden roars and explosions."
 )
 public class NoStun extends Module {
 

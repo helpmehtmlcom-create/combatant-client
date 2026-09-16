@@ -30,8 +30,7 @@ import combatant.client.render.engine.postprocess.PostProcessPass;
 import combatant.client.render.engine.renderer.FullScreenRenderer;
 import combatant.client.render.engine.uniform.impl.DamageTintUniforms;
 
-//todo Description
-@ModuleInfo(id = "damagetint", displayName = "DamageTint", category = ModuleCategory.VISUALS)
+@ModuleInfo(id = "damagetint", displayName = "DamageTint", category = ModuleCategory.VISUALS, description = "Displays a customizable cinematic vignette and desaturation effect when health is low or on taking damage.")
 public class DamageTint extends Module implements PostProcessPass {
 
     private static final String SETTING_START_HP = "start_hp";

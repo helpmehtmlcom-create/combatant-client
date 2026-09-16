@@ -81,8 +81,7 @@ import combatant.client.util.player.PlayerHealthResolver;
 
 import java.util.*;
 
-//todo Description
-@ModuleInfo(id = "esp", displayName = "ESP", aliases = {"wallhack", "wh", "outline"}, category = ModuleCategory.VISUALS)
+@ModuleInfo(id = "esp", displayName = "ESP", aliases = {"wallhack", "wh", "outline"}, category = ModuleCategory.VISUALS, description = "Renders outlines, boxes, and visual highlights around entities through walls.")
 public class ESP extends Module {
 
     private static final String MODE_FULL = "Full";

@@ -22,10 +22,10 @@ import combatant.client.mixins.accessors.PlayerInventoryAccessor;
 import combatant.client.util.player.inventory.InventorySwap;
 import combatant.client.util.block.mining.MiningDamageCalculator;
 
-//todo Description
 @ModuleInfo(
         id = "autotool",
         displayName = "AutoTool",
+        description = "Automatically switches to the optimal tool in your hotbar when mining blocks or attacking.",
         category = ModuleCategory.PLAYER
 )
 public class AutoTool extends Module {

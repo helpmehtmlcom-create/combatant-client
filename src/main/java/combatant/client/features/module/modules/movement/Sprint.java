@@ -43,11 +43,11 @@ import combatant.client.util.combat.CombatStrikeController;
 import combatant.client.util.combat.SprintController;
 import combatant.client.util.player.MovementUtil;
 
-//todo Description
 @ModuleInfo(
         id = "sprint",
         displayName = "Sprint",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Keeps sprint active automatically without having to double-tap or hold the sprint key."
 )
 public final class Sprint extends Module {
 

@@ -14,11 +14,11 @@ import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.combat.KillAura;
 
-//todo Description
 @ModuleInfo(
         id = "nointeract",
         displayName = "NoInteract",
-        category = ModuleCategory.PLAYER
+        category = ModuleCategory.PLAYER,
+        description = "Prevents opening or interacting with unwanted tiles and containers like chests, hoppers, or crafting tables during combat."
 )
 public final class NoInteract extends Module {
     private final BooleanValue onlyKillAura = bool("only_kill_aura", true);

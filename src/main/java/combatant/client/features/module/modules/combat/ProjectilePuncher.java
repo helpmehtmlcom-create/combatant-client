@@ -47,10 +47,10 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
-//todo Description
 @ModuleInfo(
         id = "projectilepuncher",
         displayName = "ProjectilePuncher",
+        description = "Automatically punches away incoming projectiles such as fireballs, arrows, or pearls.",
         category = ModuleCategory.COMBAT
 )
 public final class ProjectilePuncher extends Module {

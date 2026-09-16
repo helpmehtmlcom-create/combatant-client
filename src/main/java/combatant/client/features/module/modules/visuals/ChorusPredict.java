@@ -44,7 +44,8 @@ import java.util.Map;
         id = "choruspredict",
         displayName = "ChorusPredict",
         category = ModuleCategory.VISUALS,
-        aliases = {"chorus"}
+        aliases = {"chorus"},
+        description = "Predicts and highlights the landing destination of players consuming chorus fruits."
 )
 public class ChorusPredict extends Module {
 

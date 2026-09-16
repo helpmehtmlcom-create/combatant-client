@@ -50,7 +50,8 @@ import java.util.concurrent.ConcurrentHashMap;
         id = "logoutspots",
         displayName = "LogoutSpots",
         category = ModuleCategory.VISUALS,
-        aliases = {"loggedplayers", "disconnectspots"}
+        aliases = {"loggedplayers", "disconnectspots"},
+        description = "Marks locations where players logged out with boxes, nametags, and coordinates."
 )
 public class LogoutSpots extends Module {
 

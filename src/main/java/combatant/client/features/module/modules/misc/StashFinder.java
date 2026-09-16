@@ -29,7 +29,8 @@ import java.util.Set;
 @ModuleInfo(
         id = "stashfinder",
         displayName = "StashFinder",
-        category = ModuleCategory.MISC
+        category = ModuleCategory.MISC,
+        description = "Scans loaded chunks for high concentrations of storage blocks to locate bases and stashes."
 )
 public final class StashFinder extends Module {
 

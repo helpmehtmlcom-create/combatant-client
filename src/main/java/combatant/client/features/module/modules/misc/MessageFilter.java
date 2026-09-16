@@ -18,11 +18,11 @@ import combatant.client.features.module.ModuleInfo;
 import java.util.Locale;
 import java.util.Set;
 
-//todo Description
 @ModuleInfo(
         id = "message_filter",
         displayName = "MessageFilter",
-        category = ModuleCategory.MISC
+        category = ModuleCategory.MISC,
+        description = "Hides spam, advertising, and unwanted chat messages matching user-defined filters."
 )
 public class MessageFilter extends Module {
 

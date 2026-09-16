@@ -16,11 +16,11 @@ import combatant.client.features.module.ModuleInfo;
 import java.util.Locale;
 import java.util.Set;
 
-//todo Description
 @ModuleInfo(
         id = "nosound",
         displayName = "NoSound",
-        category = ModuleCategory.MISC
+        category = ModuleCategory.MISC,
+        description = "Mutes specific annoying sound events such as portal hums, bats, and weather audio."
 )
 public class NoSound extends Module {
     private static final String SETTING_SOUND_IDS = "sound_ids";

@@ -20,11 +20,11 @@ import combatant.client.features.module.ModuleInfo;
 
 import java.util.LinkedHashMap;
 
-//todo Description
 @ModuleInfo(
         id = "nopush",
         displayName = "NoPush",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Prevents being pushed by entities, flowing liquids, and moving blocks."
 )
 public class NoPush extends Module {
 

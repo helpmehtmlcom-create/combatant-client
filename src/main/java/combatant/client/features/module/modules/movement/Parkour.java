@@ -15,11 +15,11 @@ import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 
-//todo Description
 @ModuleInfo(
         id = "parkour",
         displayName = "Parkour",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Automatically jumps at the very edge of blocks to execute perfect parkour jumps."
 )
 public final class Parkour extends Module {
 

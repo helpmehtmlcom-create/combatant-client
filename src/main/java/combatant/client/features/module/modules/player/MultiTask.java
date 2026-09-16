@@ -15,7 +15,8 @@ import combatant.client.features.module.ModuleInfo;
 @ModuleInfo(
         id = "multitask",
         displayName = "MultiTask",
-        category = ModuleCategory.PLAYER
+        category = ModuleCategory.PLAYER,
+        description = "Allows simultaneous actions such as eating, mining, and attacking concurrently without interruption."
 )
 public final class MultiTask extends Module {
 

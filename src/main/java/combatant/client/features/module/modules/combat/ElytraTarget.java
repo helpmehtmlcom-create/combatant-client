@@ -50,10 +50,10 @@ import combatant.client.util.world.ExplosionDamageUtil;
 
 import java.util.List;
 
-//todo Description
 @ModuleInfo(
         id = "elytratarget",
         displayName = "ElytraTarget",
+        description = "Tracks and leads targets flying with Elytra to accurately predict and intercept their flight trajectory.",
         category = ModuleCategory.COMBAT
 )
 public final class ElytraTarget extends Module {

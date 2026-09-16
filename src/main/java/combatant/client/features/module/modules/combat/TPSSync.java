@@ -15,10 +15,10 @@ import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 import combatant.client.util.player.NetworkStatsUtil;
 
-//todo Description
 @ModuleInfo(
         id = "tpssync",
         displayName = "TPSSync",
+        description = "Synchronizes client combat and attack timers with the server's effective tick rate (TPS).",
         category = ModuleCategory.COMBAT
 )
 public class TPSSync extends Module {

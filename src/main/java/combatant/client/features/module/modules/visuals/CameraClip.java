@@ -12,11 +12,11 @@ import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 
-//todo Description
 @ModuleInfo(
         id = "cameraclip",
         displayName = "CameraClip",
-        category = ModuleCategory.VISUALS
+        category = ModuleCategory.VISUALS,
+        description = "Allows third-person camera perspective to clip through blocks and adjusts camera distance."
 )
 public final class CameraClip extends Module {
 

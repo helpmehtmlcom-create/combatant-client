@@ -37,11 +37,11 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Random;
 
-//todo Description
 @ModuleInfo(
         id = "tazikhat",
         displayName = "TazikHat",
-        category = ModuleCategory.VISUALS
+        category = ModuleCategory.VISUALS,
+        description = "Renders an animated cosmetic basin hat over the player's head."
 )
 public final class TazikHat extends Module {
 

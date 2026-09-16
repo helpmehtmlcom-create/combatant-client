@@ -37,8 +37,7 @@ import combatant.client.util.logging.DebugLog;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-//todo Description
-@ModuleInfo(id = "reimaginedvisual", displayName = "ReimaginedVisual", category = ModuleCategory.VISUALS)
+@ModuleInfo(id = "reimaginedvisual", displayName = "ReimaginedVisual", category = ModuleCategory.VISUALS, description = "Adds atmospheric shader skies, dynamic sun rendering, wavy foliage, and depth of field.")
 public class ReimaginedVisual extends Module implements PostProcessPass, PostProcessBackendResourceOwner {
 
     private static final String SETTING_EFFECTS = "effects";

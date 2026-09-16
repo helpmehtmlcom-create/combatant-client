@@ -37,7 +37,8 @@ import combatant.client.util.block.mining.MiningDamageCalculator;
 @ModuleInfo(
         id = "speedmine",
         displayName = "SpeedMine",
-        category = ModuleCategory.PLAYER
+        category = ModuleCategory.PLAYER,
+        description = "Accelerates block breaking with custom packet speeds, instant rebreaking, and damage modifiers."
 )
 public final class SpeedMine extends Module {
 

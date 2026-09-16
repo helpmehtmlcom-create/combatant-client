@@ -34,10 +34,10 @@ import combatant.client.util.network.BacktrackController;
 /**
  * Backtrack module front-end for the shared BlinkManager-backed incoming packet controller.
  */
-//todo Description
 @ModuleInfo(
         id = "backtrack",
         displayName = "Backtrack",
+        description = "Delays incoming player positions within anti-cheat thresholds to allow hitting targets where they previously were.",
         category = ModuleCategory.COMBAT
 )
 public final class Backtrack extends Module {

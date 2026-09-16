@@ -24,11 +24,11 @@ import combatant.client.render.engine.renderer.FullScreenRenderer;
 import combatant.client.render.engine.uniform.impl.MotionBlurUniforms;
 import combatant.client.util.logging.DebugLog;
 
-//todo Description
 @ModuleInfo(
         id = "motionblur",
         displayName = "MotionBlur",
-        category = ModuleCategory.VISUALS
+        category = ModuleCategory.VISUALS,
+        description = "Applies realistic velocity-based motion blur post-processing to camera movement."
 )
 public final class MotionBlur extends Module implements PostProcessPass {
     private static final float TARGET_FRAME_SECONDS = 1.0f / 60.0f;

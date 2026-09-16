@@ -26,7 +26,8 @@ import combatant.client.util.network.TransferOrigin;
 @ModuleInfo(
         id = "blink",
         displayName = "Blink",
-        category = ModuleCategory.PLAYER
+        category = ModuleCategory.PLAYER,
+        description = "Suspends outgoing movement packets to simulate severe lag and teleport across distances upon release."
 )
 public final class Blink extends Module {
 

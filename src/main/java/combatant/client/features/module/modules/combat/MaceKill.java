@@ -30,10 +30,10 @@ import combatant.client.features.module.ModuleInfo;
 
 //Такая хуйня на более менее ач работать не будет
 // thx liquidbounce
-//todo Description
 @ModuleInfo(
         id = "macekill",
         displayName = "MaceKill",
+        description = "Calculates and executes fall-distance smash attacks with the Mace for lethal one-shot damage.",
         category = ModuleCategory.COMBAT
 )
 public final class MaceKill extends Module {

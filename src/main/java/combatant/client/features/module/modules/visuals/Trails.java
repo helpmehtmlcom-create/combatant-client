@@ -39,8 +39,7 @@ import java.awt.*;
 import java.util.*;
 import java.util.List;
 
-//todo Description
-@ModuleInfo(id = "trails", displayName = "Trails", category = ModuleCategory.VISUALS)
+@ModuleInfo(id = "trails", displayName = "Trails", category = ModuleCategory.VISUALS, description = "Draws smooth custom particle and ribbon trails behind the player while moving.")
 public class Trails extends Module {
     private static final String SETTING_ONLY_SELF = "only_self";
     private static final String SETTING_HIDE_FIRST_PERSON = "hide_first_person";

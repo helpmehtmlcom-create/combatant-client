@@ -25,8 +25,8 @@ import java.util.Arrays;
         id = "autoreplenish",
         displayName = "AutoReplenish",
         aliases = {"replenish", "refill"},
-        category = ModuleCategory.PLAYER,
-        description = "Automatically replenishes stacks in your hotbar when depleted or low."
+        description = "Refills depleted hotbar stacks, totems, crystals, and consumables from main inventory automatically.",
+        category = ModuleCategory.PLAYER
 )
 public class AutoReplenish extends Module {
 

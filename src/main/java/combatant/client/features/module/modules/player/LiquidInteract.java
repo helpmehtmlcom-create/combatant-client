@@ -39,7 +39,7 @@ public final class LiquidInteract extends Module {
 
     private final BooleanValue water = bool("liquidinteract_water", "water", true);
     private final BooleanValue lava = bool("liquidinteract_lava", "lava", true);
-    private final BooleanValue flowing = bool("liquidinteract_flowing", "flowing", false);
+    private final BooleanValue flowing = bool("liquidinteract_flowing", "flowing", true);
 
     private final Minecraft mc = Minecraft.getInstance();
 

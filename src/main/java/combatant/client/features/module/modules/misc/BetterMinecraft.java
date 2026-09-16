@@ -13,11 +13,11 @@ import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 import combatant.client.runtime.RuntimeGate;
 
-//todo Description
 @ModuleInfo(
         id = "betterminecraft",
         displayName = "BetterMinecraft",
-        category = ModuleCategory.MISC
+        category = ModuleCategory.MISC,
+        description = "Enhances client quality-of-life with fast item dropping, sound controls, and interface improvements."
 )
 public final class BetterMinecraft extends Module {
 

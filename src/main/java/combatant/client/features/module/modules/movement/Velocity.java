@@ -73,11 +73,11 @@ import java.util.concurrent.ThreadLocalRandom;
 /**
  * Velocity modes ported from LiquidBounce's ModuleVelocity.
  */
-//todo Description
 @ModuleInfo(
         id = "velocity",
         displayName = "Velocity",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Reduces or eliminates knockback and explosion impulse from attacks."
 )
 public final class Velocity extends Module {
 

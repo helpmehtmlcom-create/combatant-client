@@ -32,7 +32,8 @@ import org.lwjgl.glfw.GLFW;
         id = "autoreconnect",
         displayName = "AutoReconnect",
         category = ModuleCategory.MISC,
-        aliases = {"reconnect", "queueconnect"}
+        aliases = {"reconnect", "queueconnect"},
+        description = "Automatically attempts to reconnect to the server after being disconnected or kicked."
 )
 public class AutoReconnect extends Module {
 

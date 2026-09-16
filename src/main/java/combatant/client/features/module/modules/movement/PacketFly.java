@@ -35,7 +35,8 @@ import java.util.concurrent.ConcurrentHashMap;
         id = "packetfly",
         displayName = "PacketFly",
         category = ModuleCategory.MOVEMENT,
-        aliases = {"pfly"}
+        aliases = {"pfly"},
+        description = "Flies through blocks and voids by sending small phase packets and spoofing server positions."
 )
 public class PacketFly extends Module {
 

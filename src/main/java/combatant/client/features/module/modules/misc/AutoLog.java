@@ -21,7 +21,8 @@ import combatant.client.features.module.ModuleInfo;
 @ModuleInfo(
         id = "autolog",
         displayName = "AutoLog",
-        category = ModuleCategory.MISC
+        category = ModuleCategory.MISC,
+        description = "Automatically disconnects from the server when health drops below a critical threshold."
 )
 public final class AutoLog extends Module {
 

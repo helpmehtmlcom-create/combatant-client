@@ -36,11 +36,11 @@ import combatant.client.util.player.MovementUtil;
 import combatant.client.util.player.inventory.InventorySwap;
 import combatant.client.util.player.simulation.PlayerSimulationCache;
 
-//todo Description
 @ModuleInfo(
         id = "windjump",
         displayName = "WindJump",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Uses wind charges or burst mechanics to perform high or repeated vertical jumps."
 )
 public class WindJump extends Module {
 

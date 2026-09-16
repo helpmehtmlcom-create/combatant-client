@@ -22,7 +22,8 @@ import combatant.client.runtime.RuntimeDiagnostics;
         id = "panic",
         displayName = "Panic", aliases = {"selfdestruct"},
         category = ModuleCategory.MISC,
-        enabledByDefault = true
+        enabledByDefault = true,
+        description = "Instantly disables all active client modules to hide modifications during server checks."
 )
 public final class Panic extends Module implements RuntimeControlModule {
     private final FunctionBindSetting disableRestoreBind =

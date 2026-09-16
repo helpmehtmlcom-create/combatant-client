@@ -52,8 +52,7 @@ import combatant.client.util.item.RarityColorUtil;
 import combatant.client.util.item.TopEnchantUtil;
 import combatant.client.util.text.TextRenderUtil;
 
-//todo Description
-@ModuleInfo(id = "dropesp", displayName = "DropESP", category = ModuleCategory.VISUALS)
+@ModuleInfo(id = "dropesp", displayName = "DropESP", category = ModuleCategory.VISUALS, description = "Renders bounding boxes, names, and rarity outlines around dropped items in the world.")
 public class DropESP extends Module {
 
     private static final String SETTING_LIMIT_COMMON_DISTANCE = "limit_common_distance";

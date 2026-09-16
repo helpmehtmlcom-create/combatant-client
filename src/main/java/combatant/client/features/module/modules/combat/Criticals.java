@@ -40,10 +40,10 @@ import combatant.client.mixins.accessors.ServerboundMovePlayerPacketAccessor;
 import combatant.client.util.click.ClickScheduler;
 import combatant.client.util.target.TargetManager;
 
-//todo Description
 @ModuleInfo(
         id = "criticals",
         displayName = "Criticals",
+        description = "Forces critical hits on every attack by manipulating micro-packets or jump offsets without jumping.",
         category = ModuleCategory.COMBAT
 )
 public final class Criticals extends Module {

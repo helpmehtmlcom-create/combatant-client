@@ -34,11 +34,11 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
-//todo Description
 @ModuleInfo(
         id = "reversestep",
         displayName = "ReverseStep",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Instantly pulls the player down ledges and stairs instead of slowly falling."
 )
 public final class ReverseStep extends Module {
 

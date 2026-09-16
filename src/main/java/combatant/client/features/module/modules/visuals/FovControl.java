@@ -16,11 +16,11 @@ import combatant.client.features.module.ModuleInfo;
 
 import java.util.LinkedHashMap;
 
-//todo Description
 @ModuleInfo(
         id = "fovcontrol",
         displayName = "FovControl",
-        category = ModuleCategory.VISUALS
+        category = ModuleCategory.VISUALS,
+        description = "Customizes field of view settings, overriding vanilla sprinting, flying, and potion FOV modifiers."
 )
 public class FovControl extends Module {
     private static final String SETTING_USE_CUSTOM_FOV = "use_custom_fov";

@@ -33,11 +33,11 @@ import combatant.client.util.time.Timer;
 import java.util.*;
 import java.util.List;
 
-//todo Description
 @ModuleInfo(
         id = "jumpcircles",
         displayName = "JumpCircles",
-        category = ModuleCategory.VISUALS
+        category = ModuleCategory.VISUALS,
+        description = "Spawns animated expanding circle rings on the ground whenever the player jumps."
 )
 public class JumpCircles extends Module {
     private final Minecraft mc = Minecraft.getInstance();

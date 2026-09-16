@@ -7,7 +7,6 @@
 
 package combatant.client.features.module.modules.player;
 
-import combatant.client.config.values.EnumValue;
 import combatant.client.config.values.NumberValue;
 import combatant.client.events.EventHandler;
 import combatant.client.events.impl.GameTickEvent;
@@ -25,22 +24,16 @@ import net.minecraft.world.item.Items;
         id = "fastplace",
         displayName = "FastPlace",
         category = ModuleCategory.PLAYER,
-        aliases = {"fastuse"}
+        aliases = {"fastuse"},
+        description = "Removes or customizes placement delays for blocks, crystals, experience bottles, and fireworks."
 )
 public final class FastPlace extends Module {
-
-    private final EnumValue<FastPlaceMode> mode =
-            enumSetting("fastplaceMode", "mode", FastPlaceMode.CRYSTALS, FastPlaceMode.values());
     private final NumberValue<Integer> delay =
             num("fastplaceDelay", "delay", 0, 0, 4);
 
     private final Minecraft mc = Minecraft.getInstance();
 
     public FastPlace() {
-    }
-
-    public EnumValue<FastPlaceMode> getMode() {
-        return mode;
     }
 
     public NumberValue<Integer> getDelay() {
@@ -81,51 +74,25 @@ public final class FastPlace extends Module {
             accessor.combatant$setItemUseCooldown(0);
         }
     }
-
     private boolean isHoldingTargetItem() {
         if (mc.player == null) {
             return false;
         }
-        FastPlaceMode currentMode = mode.get() != null ? mode.get() : FastPlaceMode.CRYSTALS;
-        return matchesItem(mc.player.getMainHandItem(), currentMode)
-                || matchesItem(mc.player.getOffhandItem(), currentMode);
+        return isFastPlaceItem(mc.player.getMainHandItem())
+                || isFastPlaceItem(mc.player.getOffhandItem());
     }
 
-    private boolean matchesItem(ItemStack stack, FastPlaceMode currentMode) {
+    /**
+     * Automatically detects blocks, crystals, experience bottles, and fireworks.
+     */
+    public static boolean isFastPlaceItem(ItemStack stack) {
         if (stack == null || stack.isEmpty()) {
             return false;
         }
         Item item = stack.getItem();
-        return switch (currentMode) {
-            case ALL -> true;
-            case CRYSTALS -> item == Items.END_CRYSTAL;
-            case EXP -> item == Items.EXPERIENCE_BOTTLE;
-            case FIREWORKS -> item == Items.FIREWORK_ROCKET;
-            case BLOCKS -> item instanceof BlockItem;
-        };
-    }
-
-    public enum FastPlaceMode implements EnumValue.IdProvider {
-        ALL("all"),
-        CRYSTALS("crystals"),
-        EXP("exp"),
-        FIREWORKS("fireworks"),
-        BLOCKS("blocks");
-
-        private final String id;
-
-        FastPlaceMode(String id) {
-            this.id = id;
-        }
-
-        @Override
-        public String getId() {
-            return id;
-        }
-
-        @Override
-        public String id() {
-            return id;
-        }
+        return item instanceof BlockItem
+                || item == Items.END_CRYSTAL
+                || item == Items.EXPERIENCE_BOTTLE
+                || item == Items.FIREWORK_ROCKET;
     }
 }

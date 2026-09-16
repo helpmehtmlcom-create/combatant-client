@@ -32,8 +32,7 @@ import combatant.client.render.engine.RenderState;
 import java.time.LocalTime;
 import java.util.LinkedHashMap;
 
-//todo Description
-@ModuleInfo(id = "worldtweaks", displayName = "WorldTweaks", category = ModuleCategory.VISUALS)
+@ModuleInfo(id = "worldtweaks", displayName = "WorldTweaks", category = ModuleCategory.VISUALS, description = "Customizes client-side world time, weather, fog distance, and sky ambience.")
 public class WorldTweaks extends Module {
 
     private static final long DAY_TICKS = 24000L;

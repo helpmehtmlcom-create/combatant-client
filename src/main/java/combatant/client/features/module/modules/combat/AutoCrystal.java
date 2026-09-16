@@ -63,11 +63,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-//todo Description
 @ModuleInfo(
         id = "autocrystal",
         displayName = "AutoCrystal",
         aliases = "CrystalAura",
+        description = "High-performance End Crystal placement, breaking, and positioning system for Crystal PvP.",
         category = ModuleCategory.COMBAT
 )
 public class AutoCrystal extends Module {

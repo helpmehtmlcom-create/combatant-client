@@ -63,10 +63,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 
-//todo Description
 @ModuleInfo(
         id = "killaura",
         displayName = "KillAura",
+        description = "Advanced combat aura that automatically rotates, targets, and strikes entities within configured range.",
         category = ModuleCategory.COMBAT
 )
 public class KillAura extends Module {
@@ -598,6 +598,18 @@ public class KillAura extends Module {
                 );
 
                 List<LivingEntity> targets = filterDynamicReachTargets(filterAntiBotTargets(TargetingUtil.findTargets(mc, settings)));
+                // Prioritize external high-priority managed target (e.g. from FORCE, ELYTRA, or other modules)
+                LivingEntity managed = TargetManager.getTarget();
+                if (managed != null && TargetingUtil.isValidCombatTarget(managed)) {
+                    double acquireDist = getAcquireRange();
+                    if (TargetingUtil.distanceToEntityBoxSq(mc.player.getEyePosition(), managed) <= acquireDist * acquireDist) {
+                        if (targets.isEmpty() || targets.getFirst().getId() != managed.getId()) {
+                            targets = new ArrayList<>(targets);
+                            targets.removeIf(e -> e.getId() == managed.getId());
+                            targets.add(0, managed);
+                        }
+                    }
+                }
                 syncPredictionTarget(targets);
                 boolean currentTargetCandidate = isCurrentTargetCandidate(targets);
                 if (CombatRotationModeUtil.isNoRotations(attackMode)) {
@@ -709,6 +721,7 @@ public class KillAura extends Module {
         }
 
         lastAttackExecutionAge = mc.player.tickCount;
+        TargetManager.markCombat();
 
         AttributeSwap.tryBreakShieldPostAttack(
                 target,

@@ -39,11 +39,11 @@ import combatant.client.util.player.MovementUtil;
 
 import java.util.List;
 
-//todo Description
 @ModuleInfo(
         id = "strafe",
         displayName = "Strafe",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Grants full mid-air strafe control and maintains speed while turning."
 )
 public final class Strafe extends Module {
 

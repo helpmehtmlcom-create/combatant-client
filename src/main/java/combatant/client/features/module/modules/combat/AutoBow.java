@@ -61,10 +61,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
-//todo Description
 @ModuleInfo(
         id = "autobow",
         displayName = "AutoBow",
+        description = "Automatically charges and releases bows or crossbows at optimal draw times for maximum projectile velocity.",
         category = ModuleCategory.COMBAT
 )
 public class AutoBow extends Module {

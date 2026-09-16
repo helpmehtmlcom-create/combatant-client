@@ -35,8 +35,7 @@ import combatant.client.util.text.ChatNameUtil;
  * - Players: friend/enemy/staff
  * - Non-players: toggle ignored entities (EntityFilters)
  */
-//todo Description
-@ModuleInfo(id = "definetarget", displayName = "DefineTarget", aliases = {"clickfriend"}, category = ModuleCategory.MISC)
+@ModuleInfo(id = "definetarget", displayName = "DefineTarget", aliases = {"clickfriend"}, category = ModuleCategory.MISC, description = "Allows middle-clicking players to quickly add or remove them from friends and target lists.")
 public class DefineTarget extends Module {
 
     private static final String SETTING_MODE = "mode";

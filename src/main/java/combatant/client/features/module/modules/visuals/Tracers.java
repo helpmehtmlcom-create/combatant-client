@@ -40,8 +40,7 @@ import combatant.client.render.engine.uniform.MeshBuilder;
 
 import java.util.List;
 
-//todo Description
-@ModuleInfo(id = "tracers", displayName = "Tracers", aliases = {"arrows", "lines"}, category = ModuleCategory.VISUALS)
+@ModuleInfo(id = "tracers", displayName = "Tracers", aliases = {"arrows", "lines"}, category = ModuleCategory.VISUALS, description = "Draws 3D tracer lines from the crosshair or screen center to nearby entities.")
 public class Tracers extends Module {
 
     private static final String SETTING_TRACE_FRIENDS = "trace_friends";

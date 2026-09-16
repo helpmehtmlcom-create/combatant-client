@@ -31,7 +31,8 @@ import java.util.function.Predicate;
         id = "offhand",
         displayName = "Offhand",
         aliases = {"autototem", "totem"},
-        category = ModuleCategory.PLAYER
+        category = ModuleCategory.PLAYER,
+        description = "Automatically manages offhand items, equipping totems, golden apples, crystals, or shields based on context."
 )
 public class Offhand extends Module {
 

@@ -41,7 +41,7 @@ import java.util.Map;
         displayName = "NoDelay",
         aliases = {"FastUse", "FastBreak", "FastPlace"},
         category = ModuleCategory.PLAYER,
-        description = "module.nodelay.description"
+        description = "Removes or reduces delays for item usage, block breaking, clicking, and jumping."
 )
 public final class NoDelay extends Module {
 

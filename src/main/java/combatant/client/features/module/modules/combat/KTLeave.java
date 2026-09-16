@@ -29,10 +29,10 @@ import combatant.client.features.module.modules.player.Offhand;
 import combatant.client.util.network.BlinkManager;
 import combatant.client.util.pvp.client.CooldownsState;
 
-//todo Description
 @ModuleInfo(
         id = "ktleave",
         displayName = "KTLeave",
+        description = "Automatically logs out or disconnects when Totems are depleted or lethal damage is imminent.",
         category = ModuleCategory.COMBAT
 )
 public final class KTLeave extends Module {

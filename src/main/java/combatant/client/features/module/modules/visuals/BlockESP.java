@@ -33,12 +33,12 @@ import combatant.client.util.logging.DebugLog;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-//todo Description
 @ModuleInfo(
         id = "blockesp",
         displayName = "BlockESP",
         aliases = {"xray", "oreesp", "blocks"},
-        category = ModuleCategory.VISUALS
+        category = ModuleCategory.VISUALS,
+        description = "Highlights selected blocks and ores through walls with customizable outline and box styles."
 )
 public class BlockESP extends Module {
 

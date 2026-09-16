@@ -70,10 +70,10 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 
-//todo Description
 @ModuleInfo(
         id = "attributeswap",
         displayName = "AttributeSwap",
+        description = "Swaps weapon or armor attributes dynamically during combat to optimize attack speed, armor, or damage.",
         category = ModuleCategory.COMBAT
 )
 public class AttributeSwap extends Module {

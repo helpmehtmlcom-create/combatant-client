@@ -26,10 +26,10 @@ import combatant.client.util.combat.VulcanReachController;
 import java.util.List;
 import java.util.Optional;
 
-//todo Description
 @ModuleInfo(
         id = "reach",
         displayName = "Reach",
+        description = "Extends entity attack reach and block interaction distance within configured or bypass thresholds.",
         category = ModuleCategory.COMBAT
 )
 public class Reach extends Module {

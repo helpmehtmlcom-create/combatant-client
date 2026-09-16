@@ -25,11 +25,11 @@ import combatant.client.features.module.ModuleInfo;
 import combatant.client.util.input.KeyManager;
 import combatant.client.util.player.MovementUtil;
 
-//todo Description
 @ModuleInfo(
         id = "timer",
         displayName = "Timer",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Modifies the client-side game tick speed to speed up or slow down world actions."
 )
 public class Timer extends Module {
 

@@ -26,39 +26,34 @@ import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.combat.KillAura;
 import combatant.client.util.aiming.RotationManager;
+import combatant.client.util.aiming.RotationUtil;
 import combatant.client.util.combat.SprintController;
-
-//todo Description
+import combatant.client.util.player.MovementUtil;
 @ModuleInfo(
         id = "targetstrafe",
         displayName = "TargetStrafe",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Automatically circles and strafes around your combat target while maintaining optimal distance."
 )
 public final class TargetStrafe extends Module {
 
     private final Minecraft mc = Minecraft.getInstance();
     private final EnumValue<StrafeMode> mode =
-            enumMode("mode", StrafeMode.MATRIX, StrafeMode.MATRIX, StrafeMode.GRIM);
-    private final EnumValue<PointType> grimPointType =
-            visibleWhen(enumMode("grim_point_type", PointType.CUBE, PointType.CUBE, PointType.CENTER, PointType.CIRCLE), this::isGrimMode);
-    private final NumberValue<Float> grimRadius =
-            visibleWhen(num("grim_radius", 0.87f, 0.1f, 1.5f), this::usesGrimRadius);
-    private final EnumValue<PointType> matrixPointType =
-            visibleWhen(enumMode("matrix_point_type", PointType.CIRCLE, PointType.CUBE, PointType.CIRCLE), this::isMatrixMode);
+            enumMode("mode", StrafeMode.MATRIX, StrafeMode.MATRIX, StrafeMode.GRIM, StrafeMode.ADAPTIVE);
     private final NumberValue<Float> radius =
-            visibleWhen(num("radius", 2.5f, 0.1f, 7.0f), this::isMatrixMode);
+            num("radius", 2.5f, 0.5f, 6.0f);
     private final NumberValue<Float> speed =
-            visibleWhen(num("speed", 0.3f, 0.1f, 1.0f), this::isMatrixMode);
+            num("speed", 0.28f, 0.1f, 1.0f);
+    private final EnumValue<DirectionMode> directionMode =
+            enumMode("direction_mode", DirectionMode.SMART,
+                    DirectionMode.SMART, DirectionMode.CLOCKWISE, DirectionMode.COUNTERCLOCKWISE, DirectionMode.RANDOM);
     private final BooleanValue autoJump =
             bool("auto_jump", true);
     private final BooleanValue onlyKeyPressed =
             bool("only_key_pressed", false);
-    private final BooleanValue inFrontOfTarget =
-            bool("in_front_of_target", false);
-    private final EnumValue<DirectionMode> directionMode =
-            enumMode("direction_mode", DirectionMode.CLOCKWISE,
-                    DirectionMode.CLOCKWISE, DirectionMode.COUNTERCLOCKWISE, DirectionMode.RANDOM);
-    private int pointIndex;
+
+    private int currentDirection = 1;
+    private long lastDirectionSwitchTime = 0;
 
     private static float resolveControlYaw() {
         var rotation = RotationManager.INSTANCE.getCurrentRotation();
@@ -70,26 +65,18 @@ public final class TargetStrafe extends Module {
         return player != null ? player.getYRot() : 0.0f;
     }
 
-    private static void setHorizontalVelocity(LocalPlayer player, float yaw, double speed) {
-        player.setDeltaMovement(
-                -Math.sin(Math.toRadians(yaw)) * speed,
-                player.getDeltaMovement().y,
-                Math.cos(Math.toRadians(yaw)) * speed
-        );
-    }
-
     private static boolean hasForwardMovement(float angleDiff) {
         return angleDiff > -67.5f && angleDiff < 67.5f;
     }
-
     @Override
     public void onEnable() {
-        pointIndex = 0;
+        currentDirection = 1;
+        lastDirectionSwitchTime = 0;
     }
 
     @EventHandler
     private void onMovementInput(MovementInputEvent event) {
-        if (!isEnabled() || !isGrimMode()) return;
+        if (!isEnabled() || (!isGrimMode() && !isAdaptiveMode())) return;
 
         LocalPlayer player = mc.player;
         LivingEntity target = currentTarget();
@@ -98,33 +85,12 @@ public final class TargetStrafe extends Module {
 
         Vec3 playerPos = player.position();
         Vec3 targetPos = target.position();
-        double r = grimRadius.get();
-        int directionMultiplier = resolveDirectionMultiplier();
+        double r = radius.get();
+        int dirMultiplier = resolveDirectionMultiplier(player);
 
-        Vec3 nextPoint;
-        if (inFrontOfTarget.get()) {
-            float targetYaw = target.getYRot();
-            if (grimPointType.get() == PointType.CENTER) {
-                nextPoint = targetPos.add(
-                        -Math.sin(Math.toRadians(targetYaw)) * r * directionMultiplier,
-                        0.0,
-                        Math.cos(Math.toRadians(targetYaw)) * r * directionMultiplier
-                );
-            } else {
-                double offset = Math.cos(System.currentTimeMillis() / 500.0) * r * directionMultiplier;
-                nextPoint = targetPos.add(
-                        -Math.sin(Math.toRadians(targetYaw)) * r + Math.cos(Math.toRadians(targetYaw)) * offset,
-                        0.0,
-                        Math.cos(Math.toRadians(targetYaw)) * r + Math.sin(Math.toRadians(targetYaw)) * offset
-                );
-            }
-        } else {
-            nextPoint = switch (grimPointType.get()) {
-                case CUBE -> nextCubePoint(playerPos, targetPos, r, directionMultiplier);
-                case CIRCLE -> nextCirclePoint(playerPos, targetPos, r, directionMultiplier);
-                case CENTER -> new Vec3(targetPos.x, playerPos.y, targetPos.z);
-            };
-        }
+        // Calculate next orbit target point
+        Vec3 nextPoint = calculateOrbitPoint(playerPos, targetPos, r, dirMultiplier);
+        checkObstacleAvoidance(player);
 
         Vec3 direction = nextPoint.subtract(playerPos);
         if (direction.lengthSqr() < 1.0E-6) return;
@@ -132,7 +98,7 @@ public final class TargetStrafe extends Module {
 
         float yaw = resolveControlYaw();
         float movementAngle = (float) Math.toDegrees(Math.atan2(direction.z, direction.x)) - 90.0f;
-        float angleDiff = Mth.wrapDegrees(movementAngle - yaw);
+        float angleDiff = RotationUtil.wrapDegrees(movementAngle - yaw);
 
         boolean forward = false;
         boolean backward = false;
@@ -175,7 +141,7 @@ public final class TargetStrafe extends Module {
 
     @EventHandler
     private void onTick(GameTickEvent event) {
-        if (!isEnabled() || !isMatrixMode()) return;
+        if (!isEnabled() || (!isMatrixMode() && !isAdaptiveMode())) return;
 
         LocalPlayer player = mc.player;
         LivingEntity target = currentTarget();
@@ -186,42 +152,35 @@ public final class TargetStrafe extends Module {
         Vec3 targetPos = target.position();
         double r = radius.get();
 
+        // Automatic obstacle avoidance jump
         if (autoJump.get() && player.onGround()) {
-            player.jumpFromGround();
+            float jumpMotion = MovementUtil.getJumpMotion(player);
+            player.setDeltaMovement(player.getDeltaMovement().x, jumpMotion, player.getDeltaMovement().z);
         }
 
-        int directionMultiplier = resolveDirectionMultiplier();
+        int dirMultiplier = resolveDirectionMultiplier(player);
+        checkObstacleAvoidance(player);
 
-        if (inFrontOfTarget.get()) {
-            float targetYaw = target.getYRot();
-            double x = targetPos.x - Math.sin(Math.toRadians(targetYaw)) * r * directionMultiplier;
-            double z = targetPos.z + Math.cos(Math.toRadians(targetYaw)) * r * directionMultiplier;
-
-            float yaw = (float) Math.toDegrees(Math.atan2(z - playerPos.z, x - playerPos.x)) - 90.0f;
-            setHorizontalVelocity(player, yaw, speed.get());
-            requestSprintForMovementYaw(player, yaw);
-            return;
-        }
-
-        if (matrixPointType.get() == PointType.CUBE) {
-            Vec3 nextPoint = nextCubePoint(playerPos, targetPos, r, directionMultiplier);
-            Vec3 dirVec = nextPoint.subtract(playerPos);
-            if (dirVec.lengthSqr() < 1.0E-6) return;
-            dirVec = dirVec.normalize();
-
-            float yaw = (float) Math.toDegrees(Math.atan2(dirVec.z, dirVec.x)) - 90.0f;
-            setHorizontalVelocity(player, yaw, speed.get());
-            requestSprintForMovementYaw(player, yaw);
-            return;
+        // Automatic friction and potion scaling
+        double effectiveSpeed = speed.get();
+        effectiveSpeed = MovementUtil.applySpeedPotionEffects(player, effectiveSpeed);
+        if (MovementUtil.isOnIce(player)) {
+            float friction = MovementUtil.getBlockFriction(player);
+            effectiveSpeed *= (0.6f / Math.max(0.6f, friction));
         }
 
         double angle = Math.atan2(playerPos.z - targetPos.z, playerPos.x - targetPos.x);
         double dist = Math.max(0.001, Math.max(playerPos.distanceTo(targetPos), r));
-        angle += directionMultiplier * speed.get() / dist;
+        angle += dirMultiplier * effectiveSpeed / dist;
         double x = targetPos.x + r * Math.cos(angle);
         double z = targetPos.z + r * Math.sin(angle);
-        float yaw = (float) Math.toDegrees(Math.atan2(z - playerPos.z, x - playerPos.x)) - 90.0f;
-        setHorizontalVelocity(player, yaw, speed.get());
+
+        // Calculate rotation yaw towards tangent orbit point using RotationUtil
+        float[] rots = RotationUtil.calculateRotations(playerPos, new Vec3(x, playerPos.y, z));
+        float yaw = rots[0];
+
+        // Apply motion using unified MovementUtil
+        MovementUtil.setMotion(player, effectiveSpeed, yaw);
         requestSprintForMovementYaw(player, yaw);
     }
 
@@ -237,36 +196,39 @@ public final class TargetStrafe extends Module {
         return isEnabled() && isGrimMode() && currentTarget() != null;
     }
 
-    private int resolveDirectionMultiplier() {
+    private int resolveDirectionMultiplier(LocalPlayer player) {
         return switch (directionMode.get()) {
             case COUNTERCLOCKWISE -> -1;
-            case RANDOM -> ((System.currentTimeMillis() / 3000L) % 2L == 0L) ? 1 : -1;
             case CLOCKWISE -> 1;
+            case RANDOM -> ((System.currentTimeMillis() / 3000L) % 2L == 0L) ? 1 : -1;
+            case SMART -> currentDirection;
         };
     }
 
-    private Vec3 nextCubePoint(Vec3 playerPos, Vec3 targetPos, double radius, int directionMultiplier) {
-        Vec3[] points = new Vec3[]{
-                new Vec3(targetPos.x - radius, playerPos.y, targetPos.z - radius),
-                new Vec3(targetPos.x - radius, playerPos.y, targetPos.z + radius),
-                new Vec3(targetPos.x + radius, playerPos.y, targetPos.z + radius),
-                new Vec3(targetPos.x + radius, playerPos.y, targetPos.z - radius)
-        };
+    private void checkObstacleAvoidance(LocalPlayer player) {
+        if (player.horizontalCollision) {
+            // Auto-jump over low obstacles if on ground
+            if (autoJump.get() && player.onGround()) {
+                float jumpMotion = MovementUtil.getJumpMotion(player);
+                player.setDeltaMovement(player.getDeltaMovement().x, jumpMotion, player.getDeltaMovement().z);
+            }
 
-        if (playerPos.distanceTo(points[pointIndex]) < 0.5) {
-            pointIndex = (pointIndex + directionMultiplier + points.length) % points.length;
+            // Auto-reverse direction if stuck against an obstacle
+            long now = System.currentTimeMillis();
+            if (now - lastDirectionSwitchTime > 350L) {
+                currentDirection = -currentDirection;
+                lastDirectionSwitchTime = now;
+            }
         }
-
-        return points[pointIndex];
     }
 
-    private Vec3 nextCirclePoint(Vec3 playerPos, Vec3 targetPos, double radius, int directionMultiplier) {
-        double baseAngle = (System.currentTimeMillis() % 3600L) / 3600.0 * 4.0 * Math.PI;
-        double angle = directionMultiplier > 0 ? baseAngle : (2.0 * Math.PI - baseAngle);
+    private Vec3 calculateOrbitPoint(Vec3 playerPos, Vec3 targetPos, double radius, int directionMultiplier) {
+        double currentAngle = Math.atan2(playerPos.z - targetPos.z, playerPos.x - targetPos.x);
+        double nextAngle = currentAngle + directionMultiplier * 0.45;
         return new Vec3(
-                targetPos.x + Math.cos(angle) * radius,
+                targetPos.x + Math.cos(nextAngle) * radius,
                 playerPos.y,
-                targetPos.z + Math.sin(angle) * radius
+                targetPos.z + Math.sin(nextAngle) * radius
         );
     }
 
@@ -292,25 +254,16 @@ public final class TargetStrafe extends Module {
         return mode.get() == StrafeMode.GRIM;
     }
 
-    private boolean usesGrimRadius() {
-        return isGrimMode() && (grimPointType.get() == PointType.CUBE || grimPointType.get() == PointType.CIRCLE);
+    private boolean isAdaptiveMode() {
+        return mode.get() == StrafeMode.ADAPTIVE;
     }
 
     @Getter
     @RequiredArgsConstructor
     private enum StrafeMode implements EnumValue.IdProvider {
         MATRIX("Matrix"),
-        GRIM("Grim");
-
-        private final String id;
-    }
-
-    @Getter
-    @RequiredArgsConstructor
-    private enum PointType implements EnumValue.IdProvider {
-        CUBE("Cube"),
-        CENTER("Center"),
-        CIRCLE("Circle");
+        GRIM("Grim"),
+        ADAPTIVE("Adaptive");
 
         private final String id;
     }
@@ -318,6 +271,7 @@ public final class TargetStrafe extends Module {
     @Getter
     @RequiredArgsConstructor
     private enum DirectionMode implements EnumValue.IdProvider {
+        SMART("Smart"),
         CLOCKWISE("Clockwise"),
         COUNTERCLOCKWISE("Counterclockwise"),
         RANDOM("Random");

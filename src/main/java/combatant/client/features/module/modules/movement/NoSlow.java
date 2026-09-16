@@ -20,7 +20,8 @@ import net.minecraft.world.phys.Vec3;
         id = "noslow",
         displayName = "NoSlow",
         category = ModuleCategory.MOVEMENT,
-        aliases = {"noslowdown"}
+        aliases = {"noslowdown"},
+        description = "Prevents movement slowdown while using items, webs, soul sand, or sneaking."
 )
 public final class NoSlow extends Module {
 

@@ -37,7 +37,8 @@ import java.util.UUID;
         id = "autoez",
         displayName = "AutoEZ",
         category = ModuleCategory.MISC,
-        aliases = {"ez", "autotoxic"}
+        aliases = {"ez", "autotoxic"},
+        description = "Automatically sends customizable defeat messages in chat after winning a fight."
 )
 public class AutoEZ extends Module {
 

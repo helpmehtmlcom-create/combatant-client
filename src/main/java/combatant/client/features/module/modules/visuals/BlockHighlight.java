@@ -36,11 +36,11 @@ import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.uniform.MeshBuilder;
 
 
-//todo Description
 @ModuleInfo(
         id = "blockhighlight",
         displayName = "BlockHighlight",
-        category = ModuleCategory.VISUALS
+        category = ModuleCategory.VISUALS,
+        description = "Renders animated outlines and glowing overlays over the currently targeted block."
 )
 public class BlockHighlight extends Module {
 

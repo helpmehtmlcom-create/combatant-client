@@ -27,11 +27,11 @@ import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.visuals.Freecam;
 
-//todo Description
 @ModuleInfo(
         id = "airjump",
         displayName = "AirJump",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Allows jumping repeatedly while in mid-air as if standing on solid ground."
 )
 public class AirJump extends Module {
 

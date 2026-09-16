@@ -38,11 +38,11 @@ import combatant.client.util.logging.DebugLog;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-//todo Description
 @ModuleInfo(
         id = "bedwarsesp",
         displayName = "BedwarsESP",
-        category = ModuleCategory.VISUALS
+        category = ModuleCategory.VISUALS,
+        description = "Highlights enemy beds, team upgrades, and resource generators in Bedwars minigames."
 )
 public class BedwarsESP extends Module {
 //todo не доделан

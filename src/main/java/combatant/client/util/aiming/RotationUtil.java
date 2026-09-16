@@ -14,10 +14,14 @@
 package combatant.client.util.aiming;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Input;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 
@@ -36,7 +40,11 @@ public enum RotationUtil {
         return f * f * f * 8.0 * 0.15;
     }
 
-    public static float[] getRotations(Vec3 from, Vec3 to) {
+    /**
+     * Accurate yaw/pitch calculation between two 3D points.
+     */
+    public static float[] calculateRotations(Vec3 from, Vec3 to) {
+        if (from == null || to == null) return new float[]{0.0f, 0.0f};
         double dx = to.x - from.x;
         double dy = to.y - from.y;
         double dz = to.z - from.z;
@@ -45,6 +53,85 @@ public enum RotationUtil {
         float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
         float pitch = (float) (-Math.toDegrees(Math.atan2(dy, distXZ)));
         return new float[]{wrapDegrees(yaw), Mth.clamp(wrapDegrees(pitch), -90.0f, 90.0f)};
+    }
+
+    public static float[] getRotations(Vec3 from, Vec3 to) {
+        return calculateRotations(from, to);
+    }
+
+    /**
+     * Accurate yaw/pitch calculation towards a block position or block face.
+     */
+    public static float[] calculateRotations(Vec3 from, BlockPos pos, Direction face) {
+        if (pos == null) return new float[]{0.0f, 0.0f};
+        Vec3 target;
+        if (face == null) {
+            target = new Vec3(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+        } else {
+            target = new Vec3(
+                    pos.getX() + 0.5 + face.getStepX() * 0.5,
+                    pos.getY() + 0.5 + face.getStepY() * 0.5,
+                    pos.getZ() + 0.5 + face.getStepZ() * 0.5
+            );
+        }
+        return calculateRotations(from, target);
+    }
+
+    public static float[] calculateRotations(Vec3 from, BlockPos pos) {
+        return calculateRotations(from, pos, null);
+    }
+
+    /**
+     * Interpolates rotation angles smoothly towards a target with a maximum turn delta.
+     */
+    public static float[] smoothRotation(float[] current, float[] target, float maxDelta) {
+        if (current == null || target == null) return target != null ? target : new float[]{0.0f, 0.0f};
+        if (maxDelta <= 0.0f) return current;
+
+        float yawDiff = angleDifference(target[0], current[0]);
+        float pitchDiff = angleDifference(target[1], current[1]);
+
+        float deltaYaw = Math.abs(yawDiff) > maxDelta ? Math.signum(yawDiff) * maxDelta : yawDiff;
+        float deltaPitch = Math.abs(pitchDiff) > maxDelta ? Math.signum(pitchDiff) * maxDelta : pitchDiff;
+
+        float newYaw = wrapDegrees(current[0] + deltaYaw);
+        float newPitch = Mth.clamp(current[1] + deltaPitch, -90.0f, 90.0f);
+
+        return new float[]{newYaw, newPitch};
+    }
+
+    public static float[] smoothRotation(float currentYaw, float currentPitch,
+                                         float targetYaw, float targetPitch,
+                                         float maxDelta) {
+        return smoothRotation(new float[]{currentYaw, currentPitch}, new float[]{targetYaw, targetPitch}, maxDelta);
+    }
+
+    /**
+     * Raytrace angle validation checking if player's gaze is pointing towards point within maxAngleDiff degrees.
+     */
+    public static boolean isLookingAt(Player player, Vec3 point, double maxAngleDiff) {
+        if (player == null || point == null) return false;
+        Vec3 eyes = player.getEyePosition();
+        Vec3 dir = point.subtract(eyes);
+        double len = dir.length();
+        if (len < 1.0E-6) return true;
+        dir = dir.scale(1.0 / len);
+
+        Vec3 look;
+        if (player instanceof LocalPlayer && RotationManager.INSTANCE != null) {
+            var rot = RotationManager.INSTANCE.getCurrentRotation();
+            if (rot != null) {
+                look = getRotationVector(rot.pitch(), rot.yaw()).normalize();
+            } else {
+                look = player.getViewVector(1.0f);
+            }
+        } else {
+            look = player.getViewVector(1.0f);
+        }
+
+        double dot = Mth.clamp(look.dot(dir), -1.0, 1.0);
+        double angle = Math.toDegrees(Math.acos(dot));
+        return angle <= maxAngleDiff;
     }
 
     public static float[] getRotationsToEntity(Entity from, Entity target) {

@@ -28,7 +28,8 @@ import net.minecraft.world.level.block.Blocks;
         id = "portalgodmode",
         displayName = "PortalGodMode",
         category = ModuleCategory.PLAYER,
-        aliases = {"portalchat", "portalgod"}
+        aliases = {"portalchat", "portalgod"},
+        description = "Cancels portal teleportation confirmation packets to grant temporary godmode and GUI access inside portals."
 )
 public final class PortalGodMode extends Module {
 

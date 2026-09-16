@@ -8,30 +8,48 @@
 package combatant.client.util.target;
 
 import combatant.client.config.values.EnumValue;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.player.AbstractClientPlayer;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.Vec3;
 import combatant.client.features.relations.CategoryRules;
 import combatant.client.features.relations.CategoryType;
 import combatant.client.features.relations.EntityFilters;
 import combatant.client.util.aiming.RotationUtil;
 import combatant.client.util.player.PlayerHealthResolver;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.MaceItem;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
 /**
- * Centralized target selection helpers.
+ * Centralized target selection and scoring helpers.
  */
 public enum TargetingUtil {
     ;
+
+    public enum HoleStatus {
+        OPEN,
+        OBSIDIAN,
+        BEDROCK,
+        BURROWED
+    }
 
     public static LivingEntity findBestTarget(Minecraft mc, TargetingSettings settings) {
         List<LivingEntity> list = findTargets(mc, settings);
@@ -80,8 +98,7 @@ public enum TargetingUtil {
 
             if (living instanceof Player p) {
                 CategoryType type = CategoryRules.determine(p.getGameProfile().name());
-                if (type == CategoryType.BEDWARS_SELF) continue;
-                if (settings.ignoreFriends() && type == CategoryType.FRIEND) continue;
+                if (type == CategoryType.BEDWARS_SELF || type == CategoryType.FRIEND) continue;
                 if (settings.ignoreStaff() && type == CategoryType.STAFF) continue;
                 if (settings.ignoreEnemies() && (type == CategoryType.ENEMY || type == CategoryType.BEDWARS_ENEMY))
                     continue;
@@ -104,6 +121,51 @@ public enum TargetingUtil {
         return out;
     }
 
+    /**
+     * Finds the single highest-priority player target matching criteria.
+     */
+    public static Player findBestTarget(Player self, Level level, double range, TargetPriority priority) {
+        List<Player> players = findPlayers(self, level, range, priority);
+        return players.isEmpty() ? null : players.get(0);
+    }
+
+    /**
+     * Finds and sorts candidate players within range using centralized filtering and scoring.
+     */
+    public static List<Player> findPlayers(Player self, Level level, double range, TargetPriority priority) {
+        if (level == null) return List.of();
+        List<Player> valid = new ArrayList<>();
+        for (Player other : level.players()) {
+            if (!isValidPlayerTarget(self, other, range)) continue;
+            valid.add(other);
+        }
+        if (valid.isEmpty()) return valid;
+        valid.sort(buildPlayerComparator(priority, self, level));
+        return valid;
+    }
+
+    /**
+     * Centralized player candidate filtering:
+     * - Alive and not removed
+     * - Not spectator, not self, not sleeping, not invulnerable
+     * - Within specified distance
+     * - Automatically ignores friends and teammates via CategoryRules
+     */
+    public static boolean isValidPlayerTarget(Player self, Player target, double range) {
+        if (target == null || target == self) return false;
+        if (!isValidCombatTarget(target)) return false;
+        if (self != null && self.distanceTo(target) > range) return false;
+        return true;
+    }
+
+    public static boolean isValidPlayerTarget(Player target) {
+        return target != null && isValidCombatTarget(target);
+    }
+
+    /**
+     * Centralized combat target validation.
+     * Integrates CategoryRules.determine automatically to ignore friends and teammates.
+     */
     public static boolean isValidCombatTarget(LivingEntity living) {
         if (living == null) return false;
         if (living instanceof AbstractClientPlayer) {
@@ -114,7 +176,206 @@ public enum TargetingUtil {
         if (living.isSpectator()) return false;
         if (!living.isPickable()) return false;
         if (!living.isAttackable() || living.isInvulnerable()) return false;
-        return !(living instanceof Player player) || !player.isSleeping();
+
+        if (living instanceof Player player) {
+            if (player.isSleeping()) return false;
+            CategoryType type = CategoryRules.determine(player.getGameProfile().name());
+            if (type == CategoryType.FRIEND || type == CategoryType.BEDWARS_SELF) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Checks if a player is burrowed (feet block inside a solid or blast-resistant block).
+     */
+    public static boolean isBurrowed(Player player, Level level) {
+        if (player == null || level == null) return false;
+        BlockPos feet = player.blockPosition();
+        BlockState state = level.getBlockState(feet);
+        if (state.isAir() || state.canBeReplaced()) return false;
+        return isBlastResistant(state) || state.blocksMotion();
+    }
+
+    /**
+     * Checks if all 4 horizontal blocks surrounding the player's feet are blast resistant.
+     */
+    public static boolean isSurrounded(Player player, Level level) {
+        if (player == null || level == null) return false;
+        BlockPos feet = player.blockPosition();
+        for (Direction dir : Direction.Plane.HORIZONTAL) {
+            BlockPos surround = feet.relative(dir);
+            BlockState state = level.getBlockState(surround);
+            if (!isBlastResistant(state)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Determines whether a block state is blast-resistant (unbreakable or obsidian-grade).
+     */
+    public static boolean isBlastResistant(BlockState state) {
+        if (state == null || state.isAir()) return false;
+        return state.is(Blocks.OBSIDIAN)
+                || state.is(Blocks.CRYING_OBSIDIAN)
+                || state.is(Blocks.ENDER_CHEST)
+                || state.is(Blocks.BEDROCK)
+                || state.is(Blocks.RESPAWN_ANCHOR)
+                || state.is(Blocks.NETHERITE_BLOCK)
+                || state.is(Blocks.ANVIL)
+                || state.is(Blocks.CHIPPED_ANVIL)
+                || state.is(Blocks.DAMAGED_ANVIL)
+                || state.getBlock().getExplosionResistance() >= 600.0f;
+    }
+
+    /**
+     * Resolves the player's defensive hole status (burrowed, bedrock hole, obsidian hole, open).
+     */
+    public static HoleStatus getHoleStatus(Player player, Level level) {
+        if (player == null || level == null) return HoleStatus.OPEN;
+        if (isBurrowed(player, level)) return HoleStatus.BURROWED;
+
+        BlockPos feet = player.blockPosition();
+        boolean allBedrock = true;
+        boolean allSafe = true;
+
+        for (Direction dir : Direction.Plane.HORIZONTAL) {
+            BlockPos surround = feet.relative(dir);
+            BlockState state = level.getBlockState(surround);
+            if (state.is(Blocks.BEDROCK)) {
+                continue;
+            }
+            allBedrock = false;
+            if (!isBlastResistant(state)) {
+                allSafe = false;
+                break;
+            }
+        }
+
+        if (!allSafe) return HoleStatus.OPEN;
+        BlockState downState = level.getBlockState(feet.below());
+        if (allBedrock && downState.is(Blocks.BEDROCK)) {
+            return HoleStatus.BEDROCK;
+        }
+        return HoleStatus.OBSIDIAN;
+    }
+
+    /**
+     * Returns an integer vulnerability score for hole status (0 = open/vulnerable, 3 = burrowed).
+     */
+    public static int getHoleStatusScore(LivingEntity entity, Level level) {
+        if (!(entity instanceof Player player) || level == null) return 0;
+        return switch (getHoleStatus(player, level)) {
+            case OPEN -> 0;
+            case OBSIDIAN -> 1;
+            case BEDROCK -> 2;
+            case BURROWED -> 3;
+        };
+    }
+
+    /**
+     * Computes the remaining total durability of all equipped armor pieces.
+     * Lower durability indicates lower protection (higher priority target).
+     */
+    public static double getArmorDurabilityScore(LivingEntity entity) {
+        if (entity == null) return 0.0;
+        double totalDurability = 0.0;
+        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET}) {
+            ItemStack stack = entity.getItemBySlot(slot);
+            if (stack.isEmpty()) continue;
+            if (stack.isDamageableItem()) {
+                totalDurability += Math.max(0, stack.getMaxDamage() - stack.getDamageValue());
+            } else {
+                totalDurability += 500.0;
+            }
+        }
+        return totalDurability;
+    }
+
+    /**
+     * Calculates an intelligent threat score for a target:
+     * - Proximity and facing local player
+     * - Movement towards local player
+     * - Held weapons (crystals, anchors, swords, axes, maces, bows)
+     * - Armor tier and quantity
+     * - Active combat state (hurt time, swinging)
+     */
+    public static double calculateThreat(Player self, LivingEntity target) {
+        if (target == null) return 0.0;
+        double threat = 0.0;
+
+        // Proximity (closer is more immediate danger)
+        if (self != null) {
+            double dist = self.distanceTo(target);
+            threat += Math.max(0.0, 30.0 - dist * 3.0);
+
+            // Facing self
+            Vec3 lookVec = target.getViewVector(1.0f).normalize();
+            Vec3 toSelf = self.getEyePosition().subtract(target.getEyePosition()).normalize();
+            double dot = lookVec.dot(toSelf);
+            if (dot > 0.7) {
+                threat += dot * 20.0;
+            }
+
+            // Movement towards self
+            Vec3 delta = target.getDeltaMovement();
+            if (delta.lengthSqr() > 0.01) {
+                double moveDot = delta.normalize().dot(toSelf);
+                if (moveDot > 0.5) {
+                    threat += moveDot * 10.0;
+                }
+            }
+        }
+
+        // Entity type
+        if (target instanceof Player player) {
+            threat += 25.0;
+
+            // Held weapons
+            ItemStack main = player.getMainHandItem();
+            if (!main.isEmpty()) {
+                Item item = main.getItem();
+                if (main.is(ItemTags.SWORDS) || main.is(ItemTags.AXES) || item instanceof MaceItem) {
+                    threat += 25.0;
+                } else if (item == Items.END_CRYSTAL || item == Items.RESPAWN_ANCHOR) {
+                    threat += 30.0;
+                } else if (item == Items.BOW || item == Items.CROSSBOW || item == Items.TRIDENT) {
+                    threat += 15.0;
+                }
+            }
+
+            ItemStack off = player.getOffhandItem();
+            if (!off.isEmpty()) {
+                Item item = off.getItem();
+                if (item == Items.TOTEM_OF_UNDYING) {
+                    threat += 5.0;
+                } else if (item == Items.END_CRYSTAL || item == Items.RESPAWN_ANCHOR) {
+                    threat += 20.0;
+                }
+            }
+
+            // Armor pieces
+            int armorPieces = 0;
+            for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET}) {
+                if (!player.getItemBySlot(slot).isEmpty()) armorPieces++;
+            }
+            threat += armorPieces * 3.0;
+        } else if (target instanceof Monster) {
+            threat += 10.0;
+        }
+
+        // Combat activity
+        if (target.hurtTime > 0) {
+            threat += 5.0;
+        }
+        if (target.swinging) {
+            threat += 10.0;
+        }
+
+        return threat;
     }
 
     public static boolean isNaked(Player player) {
@@ -130,6 +391,12 @@ public enum TargetingUtil {
         switch (priority) {
             case HEALTH:
                 return Comparator.comparingDouble(PlayerHealthResolver::totalHealth);
+            case ARMOR:
+                return Comparator.comparingDouble(TargetingUtil::getArmorDurabilityScore);
+            case THREAT:
+                return (a, b) -> Double.compare(calculateThreat(mc.player, b), calculateThreat(mc.player, a));
+            case HOLE:
+                return Comparator.comparingInt(e -> getHoleStatusScore(e, mc.level));
             case HURT_TIME:
                 return Comparator.comparingInt(e -> e.hurtTime);
             case ANGLE:
@@ -139,6 +406,29 @@ public enum TargetingUtil {
             case DISTANCE:
             default:
                 return Comparator.comparingDouble(e -> distanceToEntityBoxSq(mc.player.getEyePosition(), e));
+        }
+    }
+
+    private static Comparator<Player> buildPlayerComparator(TargetPriority priority, Player self, Level level) {
+        if (priority == null) priority = TargetPriority.DISTANCE;
+        switch (priority) {
+            case HEALTH:
+                return Comparator.comparingDouble(PlayerHealthResolver::totalHealth);
+            case ARMOR:
+                return Comparator.comparingDouble(TargetingUtil::getArmorDurabilityScore);
+            case THREAT:
+                return (a, b) -> Double.compare(calculateThreat(self, b), calculateThreat(self, a));
+            case HOLE:
+                return Comparator.comparingInt(p -> getHoleStatusScore(p, level));
+            case HURT_TIME:
+                return Comparator.comparingInt(p -> p.hurtTime);
+            case ANGLE:
+                return Comparator.comparingDouble(p -> self != null ? RotationUtil.directionAngleTo(self, p) : 0.0);
+            case AGE:
+                return Comparator.comparingInt(p -> -p.tickCount);
+            case DISTANCE:
+            default:
+                return Comparator.comparingDouble(p -> self != null ? self.distanceToSqr(p) : 0.0);
         }
     }
 
@@ -170,6 +460,9 @@ public enum TargetingUtil {
     public enum TargetPriority implements EnumValue.IdProvider {
         DISTANCE("distance"),
         HEALTH("health"),
+        ARMOR("armor"),
+        THREAT("threat"),
+        HOLE("hole"),
         HURT_TIME("hurt_time"),
         ANGLE("angle"),
         AGE("age");

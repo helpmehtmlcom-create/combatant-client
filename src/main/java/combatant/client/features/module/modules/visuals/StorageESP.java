@@ -39,7 +39,8 @@ import java.util.List;
         id = "storageesp",
         displayName = "StorageESP",
         category = ModuleCategory.VISUALS,
-        aliases = {"chestesp"}
+        aliases = {"chestesp"},
+        description = "Highlights chests, shulker boxes, barrels, and hoppers with customizable color themes."
 )
 public class StorageESP extends Module {
 

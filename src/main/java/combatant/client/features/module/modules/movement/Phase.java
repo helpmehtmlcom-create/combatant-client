@@ -46,13 +46,12 @@ import combatant.client.util.player.MovementUtil;
 import combatant.client.util.player.inventory.InventorySwap;
 
 @Deprecated
-//todo Description
-//работает только на ванилах без ач
 @ModuleInfo(
         id = "phase",
         displayName = "Phase",
         aliases = {"pearlphase", "wallphase", "noclip"},
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Glitches through solid walls and closed doors using packet manipulation."
 )
 public class Phase extends Module {
 

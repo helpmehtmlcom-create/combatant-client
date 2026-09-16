@@ -56,11 +56,11 @@ import java.util.Set;
  * Credit:
  * Behavior design and feature scope were adapted from the InvMove mod by pieking1215.
  */
-//todo Description
 @ModuleInfo(
         id = "inventorymove",
         displayName = "InventoryMove",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Allows walking, sprinting, and looking around while inventory screens and GUIs are open."
 )
 public class InventoryMove extends Module {
 

@@ -29,11 +29,11 @@ import combatant.client.features.gui.clickgui.settings.TextListSetting;
 
 import java.util.Optional;
 
-//todo Description
 @ModuleInfo(
         id = "norender",
         displayName = "NoRender",
-        category = ModuleCategory.VISUALS
+        category = ModuleCategory.VISUALS,
+        description = "Disables rendering of annoying visual elements such as fire, fog, hurt cam, and explosions."
 )
 public class NoRender extends Module {
 

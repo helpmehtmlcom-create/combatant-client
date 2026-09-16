@@ -39,10 +39,10 @@ import combatant.client.util.player.inventory.InventorySwap;
 import java.util.List;
 import java.util.Set;
 
-//todo Description
 @ModuleInfo(
         id = "autoarmor",
         displayName = "AutoArmor",
+        description = "Automatically equips the best armor pieces in your inventory and switches to Elytra when required.",
         category = ModuleCategory.PLAYER
 )
 public class AutoArmor extends Module {

@@ -28,11 +28,11 @@ import java.util.EnumSet;
 /**
  * FakeLag module front-end for the shared BlinkManager-backed controller.
  */
-//todo Description
 @ModuleInfo(
         id = "fakelag",
         displayName = "FakeLag",
-        category = ModuleCategory.PLAYER
+        category = ModuleCategory.PLAYER,
+        description = "Simulates network latency and packet buffering to desync your visible position from opponents."
 )
 public final class FakeLag extends Module {
     private final NumberValue<Float> minRange = numCommon(

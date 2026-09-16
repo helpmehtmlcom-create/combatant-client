@@ -38,7 +38,7 @@ import java.util.List;
         displayName = "HoleESP",
         aliases = {"holes"},
         category = ModuleCategory.VISUALS,
-        description = "module.holeesp.description"
+        description = "Highlights safe obsidian, bedrock, and void holes for crystal combat positioning."
 )
 public final class HoleESP extends Module {
     private static final Direction[] HORIZONTAL = {

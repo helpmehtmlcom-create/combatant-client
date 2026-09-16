@@ -14,10 +14,10 @@ import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 
-//todo Description
 @ModuleInfo(
         id = "spearassist",
         displayName = "SpearAssist",
+        description = "Assists with spear thrust timing, targeting alignment, and charge efficiency.",
         category = ModuleCategory.COMBAT
 )
 public class SpearAssist extends Module {

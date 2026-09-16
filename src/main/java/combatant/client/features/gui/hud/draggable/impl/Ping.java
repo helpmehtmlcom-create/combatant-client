@@ -30,7 +30,6 @@ import combatant.client.util.player.NetworkStatsUtil;
 
 import static combatant.client.features.theme.Theme.theme;
 
-//todo Description
 @HudElementInfo(
         id = "ping",
         displayName = "Ping",

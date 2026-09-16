@@ -64,11 +64,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-//todo Description
 @ModuleInfo(
         id = "autododge",
         displayName = "AutoDodge",
-        category = ModuleCategory.MOVEMENT
+        category = ModuleCategory.MOVEMENT,
+        description = "Automatically predicts and dodges incoming projectiles, attacks, or hazardous entities."
 )
 public final class AutoDodge extends Module {
 

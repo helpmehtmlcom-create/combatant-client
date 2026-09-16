@@ -29,7 +29,8 @@ import java.util.Locale;
 @ModuleInfo(
         id = "autorespawn",
         displayName = "AutoRespawn",
-        category = ModuleCategory.MISC
+        category = ModuleCategory.MISC,
+        description = "Automatically respawns immediately upon dying to bypass the death screen."
 )
 public class AutoRespawn extends Module {
 

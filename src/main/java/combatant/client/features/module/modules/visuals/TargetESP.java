@@ -44,8 +44,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.IntFunction;
 
-//todo Description
-@ModuleInfo(id = "targetesp", displayName = "TargetESP", aliases = {"target", "targetrender"}, category = ModuleCategory.VISUALS)
+@ModuleInfo(id = "targetesp", displayName = "TargetESP", aliases = {"target", "targetrender"}, category = ModuleCategory.VISUALS, description = "Displays dynamic targeting animations, rings, and ESP outlines around your current combat target.")
 public class TargetESP extends Module {
 
     private static final String SETTING_MODE = "mode";

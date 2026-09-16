@@ -30,10 +30,10 @@ import combatant.client.features.module.WorldPhase;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.renderer.Renderer3D;
 
-//todo Description
 @ModuleInfo(
         id = "airplace",
         displayName = "AirPlace",
+        description = "Allows placing blocks against open air or distant faces without requiring an adjacent block surface.",
         category = ModuleCategory.PLAYER
 )
 public class AirPlace extends Module {

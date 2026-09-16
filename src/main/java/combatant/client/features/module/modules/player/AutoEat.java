@@ -28,10 +28,10 @@ import combatant.client.mixins.accessors.PlayerInventoryAccessor;
 import combatant.client.util.item.FoodUtil;
 import combatant.client.util.player.inventory.InventorySwap;
 
-//todo Description
 @ModuleInfo(
         id = "autoeat",
         displayName = "AutoEat",
+        description = "Automatically eats food or golden apples when hunger or health falls below configurable thresholds.",
         category = ModuleCategory.PLAYER
 )
 public class AutoEat extends Module {
