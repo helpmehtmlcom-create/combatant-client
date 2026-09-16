@@ -14,6 +14,7 @@
 package combatant.client.util.projectile;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -24,6 +25,7 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import combatant.client.util.aiming.data.Rotation;
 import combatant.client.util.entity.simulation.MountedEntityPrediction;
+import combatant.client.util.player.NetworkStatsUtil;
 import combatant.client.util.player.simulation.PlayerSimulationCache;
 
 import java.util.ArrayList;
@@ -32,6 +34,202 @@ import java.util.function.Predicate;
 
 public enum ProjectilePredictionUtil {
     ;
+
+    public static final double ARROW_GRAVITY = 0.05;
+    public static final double PEARL_GRAVITY = 0.03;
+    public static final double DEFAULT_DRAG = 0.99;
+
+    /**
+     * Calculates initial bow velocity based on pull ticks: Math.min(ticks / 20.0f, 1.0f) * 3.0f.
+     */
+    public static float getBowVelocity(int ticks) {
+        return Math.min(ticks / 20.0f, 1.0f) * 3.0f;
+    }
+
+    /**
+     * Calculates initial bow velocity based on pull ticks: Math.min(ticks / 20.0f, 1.0f) * 3.0f.
+     */
+    public static float getBowVelocity(float ticks) {
+        return Math.min(ticks / 20.0f, 1.0f) * 3.0f;
+    }
+
+    /**
+     * Normalizes charge input (either fractional 0.0-1.0 or tick count) to initial velocity.
+     */
+    public static float getBowVelocityForCharge(float charge) {
+        if (charge <= 0.0f) {
+            return 0.1f * 3.0f;
+        }
+        if (charge <= 1.0f) {
+            return Math.min(charge, 1.0f) * 3.0f;
+        }
+        return getBowVelocity(charge);
+    }
+
+    /**
+     * Unified 3D parabolic trajectory prediction considering gravity and drag.
+     */
+    public static List<Vec3> predictTrajectory(Vec3 startPos, Vec3 initialVelocity, double gravity, double drag, int maxTicks) {
+        List<Vec3> path = new ArrayList<>(maxTicks + 1);
+        Vec3 pos = startPos;
+        Vec3 vel = initialVelocity;
+        path.add(pos);
+        for (int i = 0; i < maxTicks; i++) {
+            pos = pos.add(vel);
+            vel = vel.scale(drag).subtract(0.0, gravity, 0.0);
+            path.add(pos);
+        }
+        return path;
+    }
+
+    /**
+     * Predicts arrow trajectory from eye position, rotation angle, and bow charge.
+     */
+    public static List<Vec3> predictArrowTrajectory(Vec3 eyePos, Rotation rotation, float charge, int maxTicks) {
+        float velocity = getBowVelocityForCharge(charge);
+        double yawRad = Math.toRadians(rotation.yaw());
+        double pitchRad = Math.toRadians(rotation.pitch());
+        double vX = -Math.sin(yawRad) * Math.cos(pitchRad) * velocity;
+        double vY = -Math.sin(pitchRad) * velocity;
+        double vZ = Math.cos(yawRad) * Math.cos(pitchRad) * velocity;
+        return predictTrajectory(eyePos, new Vec3(vX, vY, vZ), ARROW_GRAVITY, DEFAULT_DRAG, maxTicks);
+    }
+
+    /**
+     * Predicts ender pearl trajectory from eye position and rotation angle.
+     */
+    public static List<Vec3> predictPearlTrajectory(Vec3 eyePos, Rotation rotation, int maxTicks) {
+        double velocity = 1.5;
+        double yawRad = Math.toRadians(rotation.yaw());
+        double pitchRad = Math.toRadians(rotation.pitch());
+        double vX = -Math.sin(yawRad) * Math.cos(pitchRad) * velocity;
+        double vY = -Math.sin(pitchRad) * velocity;
+        double vZ = Math.cos(yawRad) * Math.cos(pitchRad) * velocity;
+        return predictTrajectory(eyePos, new Vec3(vX, vY, vZ), PEARL_GRAVITY, DEFAULT_DRAG, maxTicks);
+    }
+
+    /**
+     * Predicts target position with lead compensation factoring in target velocity and ping interpolation.
+     */
+    public static Vec3 predictTargetLead(Entity target, double flightTicks, double pingMs) {
+        if (target == null) {
+            return Vec3.ZERO;
+        }
+        double pingTicks = Math.max(0.0, pingMs) / 50.0;
+        double totalLeadTicks = flightTicks + (pingTicks * 0.5);
+
+        if (target.isPassenger()) {
+            return MountedEntityPrediction.predictMountedPosition(target, (int) Math.round(totalLeadTicks));
+        }
+
+        if (target instanceof Player player) {
+            var sim = PlayerSimulationCache.getSimulationForOtherPlayers(player);
+            if (sim != null) {
+                var snapshot = sim.getSnapshotAt((int) Math.round(totalLeadTicks));
+                if (snapshot != null && snapshot.pos() != null) {
+                    return snapshot.pos();
+                }
+            }
+        }
+
+        Vec3 velocity = target.getDeltaMovement();
+        return target.position().add(velocity.scale(totalLeadTicks));
+    }
+
+    /**
+     * Predicts target position with lead compensation using current player's ping.
+     */
+    public static Vec3 predictTargetLead(Entity target, double flightTicks) {
+        Minecraft mc = Minecraft.getInstance();
+        int ping = NetworkStatsUtil.getPing(mc);
+        return predictTargetLead(target, flightTicks, ping > 0 ? ping : 0.0);
+    }
+
+    /**
+     * Helper returning optimal pitch and yaw (Rotation) to hit target with a bow,
+     * factoring in arrow gravity (0.05), drag (0.99), pull velocity, target velocity, and ping interpolation.
+     */
+    public static Rotation calculateBowAngle(Vec3 eyePos, Entity target, float charge) {
+        if (eyePos == null || target == null) {
+            return null;
+        }
+
+        float velocity = getBowVelocityForCharge(charge);
+        if (velocity <= 0.05f) {
+            velocity = 0.1f;
+        }
+
+        TrajectoryInfo info = TrajectoryInfo.BOW_FULL_PULL
+                .withInitialVelocity(velocity)
+                .withGravity(ARROW_GRAVITY)
+                .withDrag(DEFAULT_DRAG);
+
+        Minecraft mc = Minecraft.getInstance();
+        int ping = NetworkStatsUtil.getPing(mc);
+        double pingMs = ping > 0 ? ping : 0.0;
+
+        ProjectileTarget projTarget = createLeadTarget(target, pingMs);
+        Rotation rotation = SituationalProjectileAngleCalculator.INSTANCE.calculateAngleFor(info, eyePos, projTarget);
+        if (rotation != null) {
+            return rotation;
+        }
+
+        // Direct analytical ballistic fallback with lead estimation
+        double directDist = eyePos.distanceTo(target.position());
+        double estTicks = directDist / velocity;
+        Vec3 leadPos = predictTargetLead(target, estTicks, pingMs);
+        Vec3 aimPos = leadPos.add(0.0, target.getBbHeight() * 0.5, 0.0);
+        Vec3 diff = aimPos.subtract(eyePos);
+        double hDist = Math.hypot(diff.x, diff.z);
+        if (hDist < 0.001) {
+            return new Rotation(0.0f, diff.y < 0 ? 90.0f : -90.0f);
+        }
+
+        double vel2 = velocity * velocity;
+        double vel4 = vel2 * vel2;
+        double y = diff.y;
+        double sqrtVal = vel4 - ARROW_GRAVITY * (ARROW_GRAVITY * hDist * hDist + 2.0 * y * vel2);
+        float pitch;
+        if (sqrtVal >= 0.0) {
+            double pitchRad = Math.atan((vel2 - Math.sqrt(sqrtVal)) / (ARROW_GRAVITY * hDist));
+            pitch = (float) -Math.toDegrees(pitchRad);
+        } else {
+            pitch = -45.0f;
+        }
+        float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
+        return new Rotation(Mth.wrapDegrees(yaw), Mth.clamp(pitch, -90.0f, 90.0f));
+    }
+
+    private static ProjectileTarget createLeadTarget(Entity target, double pingMs) {
+        double pingTicks = Math.max(0.0, pingMs) / 50.0;
+        double pingOffset = pingTicks * 0.5;
+
+        return new ProjectileTarget() {
+            @Override
+            public Vec3 getPositionInTicks(double ticks) {
+                double total = ticks + pingOffset;
+                if (target.isPassenger()) {
+                    return MountedEntityPrediction.predictMountedPosition(target, (int) Math.round(total));
+                }
+                if (target instanceof Player player) {
+                    var sim = PlayerSimulationCache.getSimulationForOtherPlayers(player);
+                    if (sim != null) {
+                        var snap = sim.getSnapshotAt((int) Math.round(total));
+                        if (snap != null && snap.pos() != null) {
+                            return snap.pos();
+                        }
+                    }
+                }
+                return target.position().add(target.getDeltaMovement().scale(total));
+            }
+
+            @Override
+            public AABB getBoxInTicks(double ticks) {
+                Vec3 predicted = getPositionInTicks(ticks);
+                return target.getBoundingBox().move(predicted.subtract(target.position()));
+            }
+        };
+    }
 
     public static Rotation calculateForHeldItem(Player player, LivingEntity target, boolean alwaysShowBow) {
         if (player == null || target == null) {

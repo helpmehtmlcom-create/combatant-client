@@ -13,10 +13,6 @@ import net.minecraft.world.entity.boss.enderdragon.EndCrystal;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.tags.ItemTags;
-import net.minecraft.world.item.MaceItem;
-import combatant.client.config.common.CommonSettingSchemas;
-import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.EnumValue;
 import combatant.client.config.values.NumberValue;
 import combatant.client.features.gui.hud.draggable.impl.Itemizer;
@@ -24,6 +20,9 @@ import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 import combatant.client.util.player.inventory.InventorySwap;
+import combatant.client.util.player.inventory.manager.InventoryManager;
+import combatant.client.util.player.inventory.manager.InventoryPriority;
+import combatant.client.util.world.ExplosionDamageUtil;
 
 import java.util.function.Predicate;
 
@@ -32,7 +31,7 @@ import java.util.function.Predicate;
         displayName = "Offhand",
         aliases = {"autototem", "totem"},
         category = ModuleCategory.PLAYER,
-        description = "Automatically manages offhand items, equipping totems, golden apples, crystals, or shields based on context."
+        description = "Manages offhand items with guaranteed critical-priority totem swaps during danger or low health."
 )
 public class Offhand extends Module {
 
@@ -49,142 +48,58 @@ public class Offhand extends Module {
             enumSetting("offhandMode", "mode", Mode.TOTEM, Mode.values());
 
     private final NumberValue<Float> healthThreshold =
-            numCommon(
-                    "offhand_threshold",
-                    "health_threshold",
-                    CommonSettingSchemas.PLAYER_HEALTH_THRESHOLD,
-                    10.0f,
-                    1.0f,
-                    40.0f
-            );
+            num("health_threshold", "health_threshold", 10.0f, 1.0f, 36.0f);
 
-    private final NumberValue<Float> elytraHealth =
-            numCommon(
-                    "offhand_elytra_health",
-                    "elytra_health",
-                    CommonSettingSchemas.PLAYER_ELYTRA_HEALTH,
-                    8.5f,
-                    1.0f,
-                    40.0f
-            );
-
-    private final NumberValue<Float> crystalDistance =
-            numCommon(
-                    "offhand_crystal_distance",
-                    "crystal_distance",
-                    CommonSettingSchemas.COMBAT_CRYSTAL_DISTANCE,
-                    4.0f,
-                    1.0f,
-                    10.0f
-            );
-
-    private final BooleanValue fallCheck =
-            boolCommon(
-                    "offhand_fall_check",
-                    "fall_check",
-                    CommonSettingSchemas.PLAYER_FALL_CHECK,
-                    true
-            );
-
-    private final BooleanValue lethalCheck =
-            bool("offhandLethalCheck", "lethal_check", true);
-
-    private final BooleanValue rightClickGapple =
-            bool("offhandRightClickGapple", "rc_gapple", true);
-
-    private final BooleanValue swordGapple =
-            bool("offhandSwordGapple", "sword_gapple", true);
-
-    private final BooleanValue rightClickCrystal =
-            bool("offhandRightClickCrystal", "rc_crystal", false);
-
-    private final BooleanValue saveTaliks =
-            boolCommon(
-                    "offhand_save_taliks",
-                    "save_taliks",
-                    CommonSettingSchemas.ITEMS_SAVE_UNENCHANTED,
-                    true
-            );
-
-    private final BooleanValue returnItem =
-            boolCommon(
-                    "offhand_return_item",
-                    "return_item",
-                    CommonSettingSchemas.INVENTORY_RESTORE_ITEM,
-                    true
-            );
-
-    private ItemStack previousOffhand = ItemStack.EMPTY;
-    private int previousOffhandSlot = -1;
-    private boolean usingTotemOverride = false;
     private boolean offhandSwapPending = false;
 
     @Override
     public void onTick() {
         if (!isEnabled()) return;
-
-        if (mc.player == null || mc.level == null || mc.isPaused()) {
+        if (mc.player == null || mc.level == null || mc.isPaused() || !mc.player.isAlive()) {
             offhandSwapPending = false;
             return;
         }
 
-        if (offhandSwapPending) {
+        // Process inventory transactions
+        InventoryManager.INSTANCE.tick();
+
+        if (offhandSwapPending && InventoryManager.INSTANCE.hasPending(InventoryPriority.CRITICAL)) {
             return;
         }
+        offhandSwapPending = false;
 
         LocalPlayer player = mc.player;
         float health = player.getHealth() + player.getAbsorptionAmount();
 
-        // 1. Critical safety override: Totem
+        // 1. Critical safety override: Totem during low health or combat danger
         boolean needTotem = shouldHoldTotem(player, health);
         if (needTotem) {
             if (!isHoldingItem(player, Items.TOTEM_OF_UNDYING)) {
-                equipItem(player, Items.TOTEM_OF_UNDYING, true);
+                equipTotemCritical(player);
             }
             return;
         }
 
-        // If emergency totem override ended and returnItem is true
-        if (usingTotemOverride && returnItem.get()) {
-            restorePrevious(player);
-            return;
-        }
-
-        // 2. Right click context triggers
-        if (shouldHoldGappleContext(player)) {
-            if (!isHoldingGapple(player)) {
-                equipGapple(player, false);
-            }
-            return;
-        }
-
-        if (shouldHoldCrystalContext(player)) {
-            if (!isHoldingItem(player, Items.END_CRYSTAL)) {
-                equipItem(player, Items.END_CRYSTAL, false);
-            }
-            return;
-        }
-
-        // 3. Default Mode item
+        // 2. Normal mode item
         switch (mode.get()) {
             case TOTEM -> {
                 if (!isHoldingItem(player, Items.TOTEM_OF_UNDYING)) {
-                    equipItem(player, Items.TOTEM_OF_UNDYING, false);
+                    equipTotemCritical(player);
                 }
             }
             case GAPPLE -> {
                 if (!isHoldingGapple(player)) {
-                    equipGapple(player, false);
+                    equipGapple(player);
                 }
             }
             case CRYSTAL -> {
                 if (!isHoldingItem(player, Items.END_CRYSTAL)) {
-                    equipItem(player, Items.END_CRYSTAL, false);
+                    equipItemNormal(player, Items.END_CRYSTAL);
                 }
             }
             case SHIELD -> {
                 if (!isHoldingItem(player, Items.SHIELD)) {
-                    equipItem(player, Items.SHIELD, false);
+                    equipItemNormal(player, Items.SHIELD);
                 }
             }
         }
@@ -193,59 +108,40 @@ public class Offhand extends Module {
     @Override
     public void onDisable() {
         offhandSwapPending = false;
-        clearRestoreState();
+        InventoryManager.INSTANCE.clear(this);
     }
 
+    /**
+     * Determines whether player requires a Totem due to health threshold, lethal crystal danger, or fall danger.
+     */
     private boolean shouldHoldTotem(LocalPlayer player, float health) {
-        if (player.isFallFlying() && health <= elytraHealth.get()) {
-            return true;
-        }
-
         if (health <= healthThreshold.get()) {
             return true;
         }
 
-        if (fallCheck.get() && (player.fallDistance > 10.0f || (player.fallDistance > 3.0f && health <= 14.0f))) {
+        // Fall danger safety
+        if (player.fallDistance > 10.0f || (player.fallDistance > 3.0f && health <= 14.0f)
+                || (player.isFallFlying() && health <= 10.0f)) {
             return true;
         }
 
-        double closestCrystal = getClosestCrystalDistance(player);
-        if (closestCrystal <= crystalDistance.get()) {
-            return true;
-        }
-
-        if (lethalCheck.get() && closestCrystal <= 6.0 && health <= 12.0f) {
-            return true;
+        // Crystal danger check: nearby crystals with lethal or high burst damage
+        for (EndCrystal crystal : mc.level.getEntitiesOfClass(
+                EndCrystal.class,
+                player.getBoundingBox().inflate(8.0),
+                c -> c != null && !c.isRemoved()
+        )) {
+            float crystalDist = (float) player.position().distanceTo(crystal.position());
+            if (crystalDist <= 4.0f) {
+                return true;
+            }
+            float damage = ExplosionDamageUtil.calculateCrystalDamage(crystal.position(), player);
+            if (damage >= health - 2.0f || damage >= 10.0f) {
+                return true;
+            }
         }
 
         return false;
-    }
-
-    private boolean shouldHoldGappleContext(LocalPlayer player) {
-        if (!rightClickGapple.get() && !swordGapple.get()) return false;
-        if (mc.options == null || !mc.options.keyUse.isDown()) return false;
-
-        ItemStack mainHand = player.getMainHandItem();
-        if (mainHand.isEmpty()) return false;
-
-        if (swordGapple.get() && mainHand.is(ItemTags.SWORDS)) {
-            return true;
-        }
-
-        if (rightClickGapple.get()) {
-            return mainHand.is(ItemTags.SWORDS) || mainHand.is(ItemTags.AXES)
-                    || mainHand.is(ItemTags.PICKAXES) || mainHand.getItem() instanceof MaceItem;
-        }
-
-        return false;
-    }
-
-    private boolean shouldHoldCrystalContext(LocalPlayer player) {
-        if (!rightClickCrystal.get()) return false;
-        if (mc.options == null || !mc.options.keyUse.isDown()) return false;
-
-        ItemStack mainHand = player.getMainHandItem();
-        return !mainHand.isEmpty() && mainHand.is(Items.OBSIDIAN);
     }
 
     public boolean shouldHoldTotemNow(LocalPlayer player) {
@@ -254,131 +150,64 @@ public class Offhand extends Module {
     }
 
     public boolean canProvideTotemNow(LocalPlayer player) {
-        if (!isEnabled()) return false;
-        if (player == null || mc.gameMode == null) return false;
+        if (!isEnabled() || player == null) return false;
         if (isHoldingItem(player, Items.TOTEM_OF_UNDYING)) return true;
-        if (offhandSwapPending) return false;
         return findTotemSlot(player) != -1;
     }
 
     public boolean ensureTotemForDanger(LocalPlayer player) {
         if (!canProvideTotemNow(player)) return false;
         if (isHoldingItem(player, Items.TOTEM_OF_UNDYING)) return true;
-
-        int slot = findTotemSlot(player);
-        if (slot == -1) return false;
-
-        rememberPreviousOffhand(player, slot, true);
-        return swapToOffhand(player, slot, true);
+        return equipTotemCritical(player);
     }
 
     public boolean isTotemSwapPending() {
-        return offhandSwapPending;
+        return offhandSwapPending || InventoryManager.INSTANCE.hasPending(InventoryPriority.CRITICAL);
     }
 
-    private void equipItem(LocalPlayer player, Item item, boolean isTotemOverride) {
-        if (player == null || mc.gameMode == null) return;
-        int slot = item == Items.TOTEM_OF_UNDYING ? findTotemSlot(player) : find(player, item);
-        if (slot == -1) return;
+    private boolean equipTotemCritical(LocalPlayer player) {
+        int slot = findTotemSlot(player);
+        if (slot == -1) return false;
 
-        rememberPreviousOffhand(player, slot, isTotemOverride);
-        swapToOffhand(player, slot, isTotemOverride);
+        int screenSlot = InventorySwap.mapInventoryToScreenSlot(slot);
+        if (screenSlot == -1) return false;
+
+        offhandSwapPending = true;
+        ItemStack stack = player.getInventory().getItem(slot).copy();
+        InventoryManager.INSTANCE.submitHotbarSwap(InventoryPriority.CRITICAL, screenSlot, 40, this);
+        Itemizer.showAutoTotem(stack);
+        return true;
     }
 
-    private void equipGapple(LocalPlayer player, boolean isTotemOverride) {
-        if (player == null || mc.gameMode == null) return;
+    private void equipGapple(LocalPlayer player) {
         int slot = find(player, stack -> stack.is(Items.ENCHANTED_GOLDEN_APPLE));
         if (slot == -1) {
             slot = find(player, stack -> stack.is(Items.GOLDEN_APPLE));
         }
         if (slot == -1) return;
 
-        rememberPreviousOffhand(player, slot, isTotemOverride);
-        swapToOffhand(player, slot, isTotemOverride);
+        int screenSlot = InventorySwap.mapInventoryToScreenSlot(slot);
+        if (screenSlot != -1) {
+            InventoryManager.INSTANCE.submitHotbarSwap(InventoryPriority.NORMAL, screenSlot, 40, this);
+        }
     }
 
-    private boolean swapToOffhand(LocalPlayer player, int slot, boolean isTotemOverride) {
-        if (player == null || mc.gameMode == null || offhandSwapPending) return false;
+    private void equipItemNormal(LocalPlayer player, Item item) {
+        int slot = find(player, item);
+        if (slot == -1) return;
 
-        offhandSwapPending = true;
-        ItemStack displayStack = player.getInventory().getItem(slot).copy();
-        boolean accepted = InventorySwap.INSTANCE.swapInventoryToOffhand(slot, () -> {
-            if (isTotemOverride) {
-                usingTotemOverride = true;
-            }
-            offhandSwapPending = false;
-            Itemizer.showAutoTotem(displayStack);
-        });
-        if (!accepted) {
-            offhandSwapPending = false;
+        int screenSlot = InventorySwap.mapInventoryToScreenSlot(slot);
+        if (screenSlot != -1) {
+            InventoryManager.INSTANCE.submitHotbarSwap(InventoryPriority.NORMAL, screenSlot, 40, this);
         }
-        return accepted;
-    }
-
-    private void restorePrevious(LocalPlayer player) {
-        if (player == null || mc.gameMode == null) return;
-
-        if (previousOffhand.isEmpty()) {
-            clearRestoreState();
-            return;
-        }
-
-        if (!player.getOffhandItem().is(Items.TOTEM_OF_UNDYING)) {
-            clearRestoreState();
-            return;
-        }
-
-        int restoreSlot = resolveRestoreSlot(player);
-        if (restoreSlot == -1) {
-            clearRestoreState();
-            return;
-        }
-
-        requestOffhandSwap(restoreSlot, this::clearRestoreState);
-    }
-
-    private void rememberPreviousOffhand(LocalPlayer player, int newSlot, boolean isTotemOverride) {
-        if (player == null) return;
-        if (usingTotemOverride) return;
-
-        ItemStack offhand = player.getOffhandItem();
-        if (offhand.isEmpty()) {
-            previousOffhand = ItemStack.EMPTY;
-            previousOffhandSlot = -1;
-            return;
-        }
-
-        previousOffhand = offhand.copy();
-        previousOffhandSlot = newSlot;
-    }
-
-    private boolean requestOffhandSwap(int slot, Runnable afterSwap) {
-        if (offhandSwapPending) return false;
-
-        offhandSwapPending = true;
-        boolean accepted = InventorySwap.INSTANCE.swapInventoryToOffhand(slot, () -> {
-            if (afterSwap != null) {
-                afterSwap.run();
-            }
-            offhandSwapPending = false;
-        });
-        if (!accepted) {
-            offhandSwapPending = false;
-        }
-        return accepted;
     }
 
     private int findTotemSlot(LocalPlayer player) {
-        if (saveTaliks.get()) {
-            int nonEnchanted = find(player, stack ->
-                    stack.is(Items.TOTEM_OF_UNDYING) && !stack.isEnchanted()
-            );
-
-            if (nonEnchanted != -1) {
-                return nonEnchanted;
-            }
+        // Prioritize non-enchanted totems first to save custom enchanted talismans/totems
+        int nonEnchanted = find(player, stack -> stack.is(Items.TOTEM_OF_UNDYING) && !stack.isEnchanted());
+        if (nonEnchanted != -1) {
+            return nonEnchanted;
         }
-
         return find(player, Items.TOTEM_OF_UNDYING);
     }
 
@@ -388,61 +217,13 @@ public class Offhand extends Module {
 
     private int find(LocalPlayer player, Predicate<ItemStack> predicate) {
         if (player == null || predicate == null) return -1;
-
         for (int i = 0; i < 36; i++) {
             ItemStack stack = player.getInventory().getItem(i);
             if (!stack.isEmpty() && predicate.test(stack)) {
                 return i;
             }
         }
-
         return -1;
-    }
-
-    private int findItem(LocalPlayer player, ItemStack target) {
-        if (player == null || target == null || target.isEmpty()) return -1;
-
-        for (int i = 0; i < 36; i++) {
-            ItemStack stack = player.getInventory().getItem(i);
-            if (!stack.isEmpty() && ItemStack.isSameItemSameComponents(stack, target)) {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
-    private int resolveRestoreSlot(LocalPlayer player) {
-        if (previousOffhandSlot >= 0 && previousOffhandSlot < 36) {
-            ItemStack stack = player.getInventory().getItem(previousOffhandSlot);
-            if (!stack.isEmpty() && ItemStack.isSameItemSameComponents(stack, previousOffhand)) {
-                return previousOffhandSlot;
-            }
-        }
-
-        return findItem(player, previousOffhand);
-    }
-
-    private double getClosestCrystalDistance(LocalPlayer player) {
-        if (player == null || mc.level == null) {
-            return Double.MAX_VALUE;
-        }
-
-        double minDist = Double.MAX_VALUE;
-        double range = crystalDistance.get();
-
-        for (EndCrystal crystal : mc.level.getEntitiesOfClass(
-                EndCrystal.class,
-                player.getBoundingBox().inflate(range),
-                crystal -> crystal != null && !crystal.isRemoved()
-        )) {
-            double dist = player.position().distanceTo(crystal.position());
-            if (dist < minDist) {
-                minDist = dist;
-            }
-        }
-
-        return minDist;
     }
 
     private boolean isHoldingItem(LocalPlayer player, Item item) {
@@ -453,11 +234,5 @@ public class Offhand extends Module {
         if (player == null) return false;
         ItemStack offhand = player.getOffhandItem();
         return offhand.is(Items.GOLDEN_APPLE) || offhand.is(Items.ENCHANTED_GOLDEN_APPLE);
-    }
-
-    private void clearRestoreState() {
-        previousOffhand = ItemStack.EMPTY;
-        previousOffhandSlot = -1;
-        usingTotemOverride = false;
     }
 }

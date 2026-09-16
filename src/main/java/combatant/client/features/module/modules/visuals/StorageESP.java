@@ -9,7 +9,6 @@ package combatant.client.features.module.modules.visuals;
 
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.NumberValue;
-import combatant.client.config.values.RGBAColorValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
@@ -40,53 +39,28 @@ import java.util.List;
         displayName = "StorageESP",
         category = ModuleCategory.VISUALS,
         aliases = {"chestesp"},
-        description = "Highlights chests, shulker boxes, barrels, and hoppers with customizable color themes."
+        description = "Intelligently highlights chests, ender chests, shulker boxes, and furnaces/barrels."
 )
 public class StorageESP extends Module {
+
+    // Intelligent container color constants
+    private static final int COLOR_CHEST = 0xFFFFB300;           // Warm Gold
+    private static final int COLOR_ENDER_CHEST = 0xFFAA00FF;     // Vibrant Purple
+    private static final int COLOR_SHULKER = 0xFFFF0099;         // Distinct Rose/Magenta
+    private static final int COLOR_FURNACE_BARREL = 0xFFCD853F;  // Warm Amber / Bronze
 
     private final Minecraft mc = Minecraft.getInstance();
 
     private final NumberValue<Double> range =
             num("range", 64.0, 8.0, 128.0);
-
     private final BooleanValue chests =
             bool("chests", true);
-    private final RGBAColorValue chestColor =
-            visibleWhen(color("chestColor", "#FFFF9900"), chests::get);
-
     private final BooleanValue enderChests =
-            bool("enderChests", true);
-    private final RGBAColorValue enderChestColor =
-            visibleWhen(color("enderChestColor", "#FF9900FF"), enderChests::get);
-
+            bool("ender_chests", true);
     private final BooleanValue shulkers =
             bool("shulkers", true);
-    private final RGBAColorValue shulkerColor =
-            visibleWhen(color("shulkerColor", "#FFFF0099"), shulkers::get);
-
-    private final BooleanValue barrels =
-            bool("barrels", true);
-    private final RGBAColorValue barrelColor =
-            visibleWhen(color("barrelColor", "#FF996633"), barrels::get);
-
-    private final BooleanValue furnaces =
-            bool("furnaces", true);
-    private final RGBAColorValue furnaceColor =
-            visibleWhen(color("furnaceColor", "#FF777777"), furnaces::get);
-
-    private final BooleanValue hoppers =
-            bool("hoppers", true);
-    private final RGBAColorValue hopperColor =
-            visibleWhen(color("hopperColor", "#FF555555"), hoppers::get);
-
-    private final BooleanValue fill =
-            bool("fill", true);
-    private final NumberValue<Integer> fillAlpha =
-            visibleWhen(num("fillAlpha", 40, 0, 255), fill::get);
-
-    private final BooleanValue outline =
-            bool("outline", true);
-
+    private final BooleanValue furnacesBarrels =
+            bool("furnaces_barrels", true);
     private final BooleanValue tracers =
             bool("tracers", false);
 
@@ -151,23 +125,15 @@ public class StorageESP extends Module {
             return;
         }
 
-        // Render Fill and Outline
-        boolean doFill = fill.get();
-        boolean doOutline = outline.get();
-        int customFillAlpha = fillAlpha.get();
+        Renderer3D target = depthRenderer != null ? depthRenderer : renderer;
 
+        // Render Fill and Outline with frustum culling
         for (StorageEntry entry : targets) {
             AABB box = entry.box();
-            int baseColor = entry.argb();
-
-            if (doFill) {
-                int fillColor = (baseColor & 0x00FFFFFF) | ((customFillAlpha & 0xFF) << 24);
-                drawFilledBox(renderer, box, fillColor);
+            if (!Renderer3D.Culling.isInFrustum(box)) {
+                continue;
             }
-
-            if (doOutline) {
-                drawOutlineBox(renderer, box, baseColor);
-            }
+            drawStorageBox(target, box, entry.argb());
         }
 
         // Render Tracers
@@ -176,52 +142,48 @@ public class StorageESP extends Module {
             for (StorageEntry entry : targets) {
                 Vec3 center = entry.box().getCenter();
                 int argb = entry.argb();
-                int a = (argb >>> 24) & 0xFF;
+                int a = 180;
                 int r = (argb >>> 16) & 0xFF;
                 int g = (argb >>> 8) & 0xFF;
                 int b = argb & 0xFF;
-                renderer.line(camPos.x, camPos.y, camPos.z, center.x, center.y, center.z, r, g, b, a);
+                target.line(camPos.x, camPos.y, camPos.z, center.x, center.y, center.z, r, g, b, a);
             }
         }
     }
 
     private Integer resolveBlockEntityColor(BlockEntity be) {
         if (be instanceof ChestBlockEntity && chests.get()) {
-            return chestColor.getArgb();
+            return COLOR_CHEST;
         }
         if (be instanceof EnderChestBlockEntity && enderChests.get()) {
-            return enderChestColor.getArgb();
+            return COLOR_ENDER_CHEST;
         }
         if (be instanceof ShulkerBoxBlockEntity && shulkers.get()) {
-            return shulkerColor.getArgb();
+            return COLOR_SHULKER;
         }
-        if (be instanceof BarrelBlockEntity && barrels.get()) {
-            return barrelColor.getArgb();
-        }
-        if (be instanceof AbstractFurnaceBlockEntity && furnaces.get()) {
-            return furnaceColor.getArgb();
-        }
-        if (be instanceof HopperBlockEntity && hoppers.get()) {
-            return hopperColor.getArgb();
+        if ((be instanceof AbstractFurnaceBlockEntity || be instanceof BarrelBlockEntity || be instanceof HopperBlockEntity)
+                && furnacesBarrels.get()) {
+            return COLOR_FURNACE_BARREL;
         }
         return null;
     }
 
     private Integer resolveEntityColor(Entity entity) {
         if (entity instanceof MinecartChest && chests.get()) {
-            return chestColor.getArgb();
+            return COLOR_CHEST;
         }
-        if (entity instanceof MinecartHopper && hoppers.get()) {
-            return hopperColor.getArgb();
+        if (entity instanceof MinecartHopper && furnacesBarrels.get()) {
+            return COLOR_FURNACE_BARREL;
         }
         return null;
     }
 
-    private static void drawFilledBox(Renderer3D renderer, AABB box, int argb) {
-        int a = (argb >>> 24) & 0xFF;
+    private static void drawStorageBox(Renderer3D renderer, AABB box, int argb) {
         int r = (argb >>> 16) & 0xFF;
         int g = (argb >>> 8) & 0xFF;
         int b = argb & 0xFF;
+        int fillA = 45;
+        int lineA = 220;
 
         double minX = box.minX;
         double minY = box.minY;
@@ -230,47 +192,33 @@ public class StorageESP extends Module {
         double maxY = box.maxY;
         double maxZ = box.maxZ;
 
-        // Bottom & Top
-        renderer.quad(minX, minY, minZ, maxX, minY, minZ, maxX, minY, maxZ, minX, minY, maxZ, r, g, b, a);
-        renderer.quad(minX, maxY, minZ, minX, maxY, maxZ, maxX, maxY, maxZ, maxX, maxY, minZ, r, g, b, a);
+        // Bottom & Top faces
+        renderer.quad(minX, minY, minZ, maxX, minY, minZ, maxX, minY, maxZ, minX, minY, maxZ, r, g, b, fillA);
+        renderer.quad(minX, maxY, minZ, minX, maxY, maxZ, maxX, maxY, maxZ, maxX, maxY, minZ, r, g, b, fillA);
 
-        // Sides
-        renderer.quad(minX, minY, maxZ, maxX, minY, maxZ, maxX, maxY, maxZ, minX, maxY, maxZ, r, g, b, a);
-        renderer.quad(minX, minY, minZ, minX, maxY, minZ, maxX, maxY, minZ, maxX, minY, minZ, r, g, b, a);
-        renderer.quad(maxX, minY, minZ, maxX, maxY, minZ, maxX, maxY, maxZ, maxX, minY, maxZ, r, g, b, a);
-        renderer.quad(minX, minY, minZ, minX, minY, maxZ, minX, maxY, maxZ, minX, maxY, minZ, r, g, b, a);
-    }
+        // Side faces
+        renderer.quad(minX, minY, maxZ, maxX, minY, maxZ, maxX, maxY, maxZ, minX, maxY, maxZ, r, g, b, fillA);
+        renderer.quad(minX, minY, minZ, minX, maxY, minZ, maxX, maxY, minZ, maxX, minY, minZ, r, g, b, fillA);
+        renderer.quad(maxX, minY, minZ, maxX, maxY, minZ, maxX, maxY, maxZ, maxX, minY, maxZ, r, g, b, fillA);
+        renderer.quad(minX, minY, minZ, minX, minY, maxZ, minX, maxY, maxZ, minX, maxY, minZ, r, g, b, fillA);
 
-    private static void drawOutlineBox(Renderer3D renderer, AABB box, int argb) {
-        int a = (argb >>> 24) & 0xFF;
-        int r = (argb >>> 16) & 0xFF;
-        int g = (argb >>> 8) & 0xFF;
-        int b = argb & 0xFF;
+        // Bottom outline
+        renderer.line(minX, minY, minZ, maxX, minY, minZ, r, g, b, lineA);
+        renderer.line(maxX, minY, minZ, maxX, minY, maxZ, r, g, b, lineA);
+        renderer.line(maxX, minY, maxZ, minX, minY, maxZ, r, g, b, lineA);
+        renderer.line(minX, minY, maxZ, minX, minY, minZ, r, g, b, lineA);
 
-        double minX = box.minX;
-        double minY = box.minY;
-        double minZ = box.minZ;
-        double maxX = box.maxX;
-        double maxY = box.maxY;
-        double maxZ = box.maxZ;
-
-        // Bottom
-        renderer.line(minX, minY, minZ, maxX, minY, minZ, r, g, b, a);
-        renderer.line(maxX, minY, minZ, maxX, minY, maxZ, r, g, b, a);
-        renderer.line(maxX, minY, maxZ, minX, minY, maxZ, r, g, b, a);
-        renderer.line(minX, minY, maxZ, minX, minY, minZ, r, g, b, a);
-
-        // Top
-        renderer.line(minX, maxY, minZ, maxX, maxY, minZ, r, g, b, a);
-        renderer.line(maxX, maxY, minZ, maxX, maxY, maxZ, r, g, b, a);
-        renderer.line(maxX, maxY, maxZ, minX, maxY, maxZ, r, g, b, a);
-        renderer.line(minX, maxY, maxZ, minX, maxY, minZ, r, g, b, a);
+        // Top outline
+        renderer.line(minX, maxY, minZ, maxX, maxY, minZ, r, g, b, lineA);
+        renderer.line(maxX, maxY, minZ, maxX, maxY, maxZ, r, g, b, lineA);
+        renderer.line(maxX, maxY, maxZ, minX, maxY, maxZ, r, g, b, lineA);
+        renderer.line(minX, maxY, maxZ, minX, maxY, minZ, r, g, b, lineA);
 
         // Verticals
-        renderer.line(minX, minY, minZ, minX, maxY, minZ, r, g, b, a);
-        renderer.line(maxX, minY, minZ, maxX, maxY, minZ, r, g, b, a);
-        renderer.line(maxX, minY, maxZ, maxX, maxY, maxZ, r, g, b, a);
-        renderer.line(minX, minY, maxZ, minX, maxY, maxZ, r, g, b, a);
+        renderer.line(minX, minY, minZ, minX, maxY, minZ, r, g, b, lineA);
+        renderer.line(maxX, minY, minZ, maxX, maxY, minZ, r, g, b, lineA);
+        renderer.line(maxX, minY, maxZ, maxX, maxY, maxZ, r, g, b, lineA);
+        renderer.line(minX, minY, maxZ, minX, maxY, maxZ, r, g, b, lineA);
     }
 
     private record StorageEntry(AABB box, int argb) {

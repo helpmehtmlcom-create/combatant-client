@@ -7,7 +7,7 @@
 
 package combatant.client.features.module.modules.visuals;
 
-import combatant.client.config.values.BooleanValue;
+import combatant.client.config.values.EnumValue;
 import combatant.client.config.values.NumberValue;
 import combatant.client.config.values.RGBAColorValue;
 import combatant.client.features.module.Module;
@@ -38,53 +38,72 @@ import java.util.List;
         displayName = "HoleESP",
         aliases = {"holes"},
         category = ModuleCategory.VISUALS,
-        description = "Highlights safe obsidian, bedrock, and void holes for crystal combat positioning."
+        description = "Highlights safe obsidian, bedrock, 2x1, and void holes for crystal combat positioning."
 )
 public final class HoleESP extends Module {
+
+    public enum RenderMode {
+        BOX,
+        OUTLINE,
+        FLAT
+    }
+
+    public enum HoleType {
+        BEDROCK,
+        OBSIDIAN,
+        TWO_BY_ONE,
+        VOID
+    }
+
     private static final Direction[] HORIZONTAL = {
             Direction.NORTH,
             Direction.SOUTH,
             Direction.EAST,
             Direction.WEST
     };
-    private static final int RESCAN_TICKS = 10;
+
+    private static final int RESCAN_TICKS = 8;
     private static final int BASE_FILL_ALPHA = 60;
 
     private final Minecraft mc = Minecraft.getInstance();
 
-    private final NumberValue<Integer> rangeXZ =
-            num("holeesp_range_xz", "range_xz", 10, 1, 128);
-    private final NumberValue<Integer> rangeY =
-            num("holeesp_range_y", "range_y", 5, 1, 128);
-    private final NumberValue<Float> height =
-            num("holeesp_height", "height", 1.0f, 0.01f, 5.0f);
-    private final NumberValue<Float> lineWidth =
-            num("holeesp_line_width", "line_width", 0.5f, 0.01f, 5.0f);
-    private final BooleanValue culling =
-            bool("holeesp_culling", "culling", true);
-    private final RGBAColorValue indestructibleColor =
-            color("holeesp_indestructible_color", "indestructible_color", "#FF7A00FF");
+    private final NumberValue<Integer> range =
+            num("range", 10, 2, 32);
+    private final EnumValue<RenderMode> mode =
+            enumMode("mode", RenderMode.BOX);
     private final RGBAColorValue bedrockColor =
-            color("holeesp_bedrock_color", "bedrock_color", "#FF00FF51");
+            color("bedrock_color", "#FF00FF51");
+    private final RGBAColorValue obsidianColor =
+            color("obsidian_color", "#FF7A00FF");
+    private final RGBAColorValue voidColor =
+            color("void_color", "#FFFF0033");
 
-    private List<Hole> holes = List.of();
+    private List<Hole> cachedHoles = List.of();
+    private BlockPos lastPlayerPos;
+    private int lastScanTick;
     private int ticks;
 
     @Override
     public void onDisable() {
-        holes = List.of();
+        cachedHoles = List.of();
+        lastPlayerPos = null;
+        lastScanTick = 0;
         ticks = 0;
     }
 
     @Override
     public void onTick() {
         if (!isEnabled() || mc.level == null || mc.player == null) {
-            holes = List.of();
+            cachedHoles = List.of();
             return;
         }
 
-        if (ticks++ % RESCAN_TICKS == 0) {
-            holes = scanHoles(mc.level, mc.player.position());
+        ticks++;
+        BlockPos currentPos = mc.player.blockPosition();
+        if (lastPlayerPos == null || !lastPlayerPos.equals(currentPos) || (ticks - lastScanTick) >= RESCAN_TICKS) {
+            cachedHoles = scanHoles(mc.level, mc.player.position());
+            lastPlayerPos = currentPos;
+            lastScanTick = ticks;
         }
     }
 
@@ -95,56 +114,69 @@ public final class HoleESP extends Module {
 
     @Override
     public void onRenderWorldEngine(Renderer3D renderer, Renderer3D depthRenderer, float tickDelta) {
-        if (!isEnabled() || renderer == null || mc.level == null || mc.player == null || holes.isEmpty()) {
+        if (!isEnabled() || renderer == null || mc.level == null || mc.player == null || cachedHoles.isEmpty()) {
             return;
         }
 
+        Renderer3D target = depthRenderer != null ? depthRenderer : renderer;
         float previousLineWidth = RenderState.lineWidth;
-        RenderState.lineWidth = Math.max(0.01f, lineWidth.get());
+        RenderState.lineWidth = 1.5f;
         try {
-            for (Hole hole : holes) {
-                if (culling.get() && !shouldRender(hole.box())) {
+            RenderMode currentMode = mode.get();
+            for (Hole hole : cachedHoles) {
+                if (!Renderer3D.Culling.isInFrustum(hole.box())) {
                     continue;
                 }
-                renderFade(renderer, hole);
+                renderHole(target, hole, currentMode);
             }
         } finally {
             RenderState.lineWidth = previousLineWidth;
         }
     }
 
+    private void renderHole(Renderer3D renderer, Hole hole, RenderMode currentMode) {
+        AABB box = hole.box();
+        int color = hole.argb();
+        int line = colorForDistance(box, color, (color >>> 24) & 0xFF);
+        int fillBottom = colorForDistance(box, color, BASE_FILL_ALPHA);
+        int fillTop = colorForDistance(box, color, 0);
+
+        switch (currentMode) {
+            case BOX -> {
+                addVerticalFadeBox(renderer, box, fillBottom, fillTop);
+                addFullOutline(renderer, box, line);
+            }
+            case OUTLINE -> addFullOutline(renderer, box, line);
+            case FLAT -> {
+                addFlatFloor(renderer, box, fillBottom);
+                addBottomOutline(renderer, box, line);
+            }
+        }
+    }
+
     private List<Hole> scanHoles(ClientLevel level, Vec3 center) {
-        int xz = rangeXZ.get();
-        int y = rangeY.get();
+        int r = range.get();
+        int rY = Math.min(r, 6);
         List<Hole> found = new ArrayList<>();
         List<AABB> acceptedBoxes = new ArrayList<>();
         LongOpenHashSet consumed = new LongOpenHashSet();
 
-        int minX = Mth.floor(center.x - xz);
-        int minY = Math.max(level.getMinY(), Mth.floor(center.y - y));
-        int minZ = Mth.floor(center.z - xz);
-        int maxX = Mth.floor(center.x + xz);
-        int maxY = Math.min(level.getMaxY() - 1, Mth.floor(center.y + y));
-        int maxZ = Mth.floor(center.z + xz);
+        int minX = Mth.floor(center.x - r);
+        int minY = Math.max(level.getMinY(), Mth.floor(center.y - rY));
+        int minZ = Mth.floor(center.z - r);
+        int maxX = Mth.floor(center.x + r);
+        int maxY = Math.min(level.getMaxY() - 1, Mth.floor(center.y + rY));
+        int maxZ = Mth.floor(center.z + r);
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
-        BlockPos.MutableBlockPos floor = new BlockPos.MutableBlockPos();
 
-        /*
-         * Do not materialize the whole search cuboid as BlockPos + entry objects. Most
-         * positions are impossible candidates because their floor is not a safe block, so
-         * reject those using two reusable cursors before allocating an immutable position.
-         */
         for (int x = minX; x <= maxX; x++) {
-            if (Math.abs((x + 0.5) - center.x) > xz) continue;
+            if (Math.abs((x + 0.5) - center.x) > r) continue;
             for (int z = minZ; z <= maxZ; z++) {
-                if (Math.abs((z + 0.5) - center.z) > xz) continue;
+                if (Math.abs((z + 0.5) - center.z) > r) continue;
                 for (int scanY = minY; scanY <= maxY; scanY++) {
-                    if (Math.abs((scanY + 0.5) - center.y) > y) continue;
+                    if (Math.abs((scanY + 0.5) - center.y) > rY) continue;
                     cursor.set(x, scanY, z);
                     if (!isReplaceable(level.getBlockState(cursor))) continue;
-
-                    floor.set(x, scanY - 1, z);
-                    if (!isSafeBlock(level, floor)) continue;
 
                     long packed = cursor.asLong();
                     if (consumed.contains(packed)) continue;
@@ -166,144 +198,67 @@ public final class HoleESP extends Module {
     }
 
     private Hole resolveHole(ClientLevel level, BlockPos pos) {
-        if (validIndestructible(level, pos)) {
-            return new Hole(box(pos, 1, 1), indestructibleColor.getArgb(), List.of(pos));
-        }
-        if (validBedrock(level, pos)) {
-            return new Hole(box(pos, 1, 1), bedrockColor.getArgb(), List.of(pos));
+        if (!isReplaceable(level, pos)
+                || !isReplaceable(level, pos.above())
+                || !isReplaceable(level, pos.above(2))) {
+            return null;
         }
 
+        // 1. Check for Void hole
+        if (isVoidHole(level, pos)) {
+            return new Hole(box(pos, 1, 1), voidColor.getArgb(), HoleType.VOID, List.of(pos));
+        }
+
+        // 2. Check 1x1 Bedrock hole
+        if (validBedrock(level, pos)) {
+            return new Hole(box(pos, 1, 1), bedrockColor.getArgb(), HoleType.BEDROCK, List.of(pos));
+        }
+
+        // 3. Check 1x1 Obsidian / Indestructible hole
+        if (validIndestructible(level, pos)) {
+            return new Hole(box(pos, 1, 1), obsidianColor.getArgb(), HoleType.OBSIDIAN, List.of(pos));
+        }
+
+        // 4. Check 2x1 hole
         List<BlockPos> two = twoBlockShape(level, pos);
         if (two != null) {
             if (validBedrockShape(level, two)) {
-                return new Hole(box(two), bedrockColor.getArgb(), two);
+                return new Hole(box(two), bedrockColor.getArgb(), HoleType.TWO_BY_ONE, two);
             }
             if (validIndestructibleShape(level, two)) {
-                return new Hole(box(two), indestructibleColor.getArgb(), two);
-            }
-        }
-
-        List<BlockPos> quad = quadShape(level, pos);
-        if (quad != null) {
-            if (validBedrockShape(level, quad)) {
-                return new Hole(box(quad), bedrockColor.getArgb(), quad);
-            }
-            if (validIndestructibleShape(level, quad)) {
-                return new Hole(box(quad), indestructibleColor.getArgb(), quad);
+                return new Hole(box(two), obsidianColor.getArgb(), HoleType.TWO_BY_ONE, two);
             }
         }
 
         return null;
     }
 
-    private void renderFade(Renderer3D renderer, Hole hole) {
-        AABB box = hole.box();
-        int fillBottom = colorForDistance(box, hole.argb(), BASE_FILL_ALPHA);
-        int fillTop = colorForDistance(box, hole.argb(), 0);
-        int line = colorForDistance(box, hole.argb(), (hole.argb() >>> 24) & 0xFF);
+    private boolean isVoidHole(ClientLevel level, BlockPos pos) {
+        // Void hole: surrounded horizontally by safe blocks, but opens directly into the void below
+        boolean voidBelow = false;
+        if (pos.getY() <= level.getMinY()) {
+            voidBelow = true;
+        } else {
+            boolean allAirBelow = true;
+            for (int y = pos.getY() - 1; y >= level.getMinY(); y--) {
+                if (!isReplaceable(level, new BlockPos(pos.getX(), y, pos.getZ()))) {
+                    allAirBelow = false;
+                    break;
+                }
+            }
+            voidBelow = allAirBelow;
+        }
 
-        addVerticalFadeBox(renderer, box, fillBottom, fillTop);
-        addBottomOutline(renderer, box, line);
-    }
+        if (!voidBelow) {
+            return false;
+        }
 
-    private int colorForDistance(AABB box, int argb, int alpha) {
-        if (box == null || mc.player == null) return argb;
-        Vec3 center = box.getCenter();
-        double dx = center.x - mc.player.getX();
-        double dz = center.z - mc.player.getZ();
-        double distSqr = dx * dx + dz * dz;
-        if (!Double.isFinite(distSqr) || distSqr < 0.0) return argb;
-        double maxSqr = Math.max(1.0, (double) rangeXZ.get() * rangeXZ.get());
-        float factor = (float) (distSqr / maxSqr);
-        factor = 1.0f - easeOutExpo(factor);
-        factor = Mth.clamp(factor, 0.0f, 1.0f);
-
-        int baseAlpha = (argb >>> 24) & 0xFF;
-        int outAlpha = Mth.clamp((int) (factor * Math.min(alpha, baseAlpha)), 0, 255);
-        return (outAlpha << 24) | (argb & 0x00FFFFFF);
-    }
-
-    private static float easeOutExpo(float x) {
-        return x >= 1.0f ? 1.0f : (float) (1.0f - Math.pow(2.0, -10.0f * x));
-    }
-
-    private static boolean shouldRender(AABB box) {
-        return Renderer3D.Culling.isInFrustum(box) && Renderer3D.Culling.isSectionVisible(box);
-    }
-
-    private static boolean intersectsAny(AABB box, List<AABB> boxes) {
-        for (AABB other : boxes) {
-            if (other.intersects(box)) {
-                return true;
+        for (Direction dir : HORIZONTAL) {
+            if (!isSafeBlock(level, pos.relative(dir))) {
+                return false;
             }
         }
-        return false;
-    }
-
-    private AABB box(BlockPos pos, int widthX, int widthZ) {
-        return new AABB(
-                pos.getX(),
-                pos.getY(),
-                pos.getZ(),
-                pos.getX() + widthX,
-                pos.getY() + height.get(),
-                pos.getZ() + widthZ
-        );
-    }
-
-    private AABB box(List<BlockPos> positions) {
-        int minX = Integer.MAX_VALUE;
-        int minY = Integer.MAX_VALUE;
-        int minZ = Integer.MAX_VALUE;
-        int maxX = Integer.MIN_VALUE;
-        int maxZ = Integer.MIN_VALUE;
-
-        for (BlockPos pos : positions) {
-            minX = Math.min(minX, pos.getX());
-            minY = Math.min(minY, pos.getY());
-            minZ = Math.min(minZ, pos.getZ());
-            maxX = Math.max(maxX, pos.getX());
-            maxZ = Math.max(maxZ, pos.getZ());
-        }
-
-        return new AABB(minX, minY, minZ, maxX + 1, minY + height.get(), maxZ + 1);
-    }
-
-    private static List<BlockPos> twoBlockShape(ClientLevel level, BlockPos pos) {
-        if (!isReplaceable(level, pos)) {
-            return null;
-        }
-        for (Direction direction : HORIZONTAL) {
-            BlockPos other = pos.relative(direction);
-            if (isReplaceable(level, other)) {
-                return List.of(pos, other);
-            }
-        }
-        return null;
-    }
-
-    private static List<BlockPos> quadShape(ClientLevel level, BlockPos pos) {
-        if (!isReplaceable(level, pos)) {
-            return null;
-        }
-
-        List<BlockPos> eastSouth = quadIfReplaceable(level, pos, pos.east(), pos.south(), pos.east().south());
-        if (eastSouth != null) return eastSouth;
-
-        List<BlockPos> westNorth = quadIfReplaceable(level, pos, pos.west(), pos.north(), pos.west().north());
-        if (westNorth != null) return westNorth;
-
-        List<BlockPos> eastNorth = quadIfReplaceable(level, pos, pos.east(), pos.north(), pos.east().north());
-        if (eastNorth != null) return eastNorth;
-
-        return quadIfReplaceable(level, pos, pos.west(), pos.south(), pos.west().south());
-    }
-
-    private static List<BlockPos> quadIfReplaceable(ClientLevel level, BlockPos a, BlockPos b, BlockPos c, BlockPos d) {
-        if (isReplaceable(level, b) && isReplaceable(level, c) && isReplaceable(level, d)) {
-            return List.of(a, b, c, d);
-        }
-        return null;
+        return true;
     }
 
     private static boolean validBedrock(ClientLevel level, BlockPos pos) {
@@ -311,29 +266,31 @@ public final class HoleESP extends Module {
                 && isBedrock(level, pos.east())
                 && isBedrock(level, pos.west())
                 && isBedrock(level, pos.south())
-                && isBedrock(level, pos.north())
-                && isReplaceable(level, pos)
-                && isReplaceable(level, pos.above())
-                && isReplaceable(level, pos.above(2));
+                && isBedrock(level, pos.north());
     }
 
     private static boolean validIndestructible(ClientLevel level, BlockPos pos) {
-        // resolveHole() has already rejected the all-bedrock variant.
         return isSafeBlock(level, pos.below())
                 && isSafeBlock(level, pos.east())
                 && isSafeBlock(level, pos.west())
                 && isSafeBlock(level, pos.south())
-                && isSafeBlock(level, pos.north())
-                && isReplaceable(level, pos)
-                && isReplaceable(level, pos.above())
-                && isReplaceable(level, pos.above(2));
+                && isSafeBlock(level, pos.north());
+    }
+
+    private static List<BlockPos> twoBlockShape(ClientLevel level, BlockPos pos) {
+        for (Direction direction : HORIZONTAL) {
+            BlockPos other = pos.relative(direction);
+            if (isReplaceable(level, other)
+                    && isReplaceable(level, other.above())
+                    && isReplaceable(level, other.above(2))) {
+                return List.of(pos, other);
+            }
+        }
+        return null;
     }
 
     private static boolean validBedrockShape(ClientLevel level, List<BlockPos> positions) {
         for (BlockPos check : positions) {
-            if (!isReplaceable(level, check) || !isReplaceable(level, check.above()) || !isReplaceable(level, check.above(2))) {
-                return false;
-            }
             if (!isBedrock(level, check.below())) {
                 return false;
             }
@@ -350,10 +307,6 @@ public final class HoleESP extends Module {
     private static boolean validIndestructibleShape(ClientLevel level, List<BlockPos> positions) {
         boolean hasIndestructible = false;
         for (BlockPos check : positions) {
-            if (!isReplaceable(level, check) || !isReplaceable(level, check.above()) || !isReplaceable(level, check.above(2))) {
-                return false;
-            }
-
             BlockPos below = check.below();
             if (isIndestructible(level, below)) {
                 hasIndestructible = true;
@@ -410,6 +363,65 @@ public final class HoleESP extends Module {
         return level.getBlockState(pos).getBlock();
     }
 
+    private int colorForDistance(AABB box, int argb, int alpha) {
+        if (box == null || mc.player == null) return argb;
+        Vec3 center = box.getCenter();
+        double dx = center.x - mc.player.getX();
+        double dz = center.z - mc.player.getZ();
+        double distSqr = dx * dx + dz * dz;
+        if (!Double.isFinite(distSqr) || distSqr < 0.0) return argb;
+        double maxSqr = Math.max(1.0, (double) range.get() * range.get());
+        float factor = (float) (distSqr / maxSqr);
+        factor = 1.0f - easeOutExpo(factor);
+        factor = Mth.clamp(factor, 0.0f, 1.0f);
+
+        int baseAlpha = (argb >>> 24) & 0xFF;
+        int outAlpha = Mth.clamp((int) (factor * Math.min(alpha, baseAlpha)), 0, 255);
+        return (outAlpha << 24) | (argb & 0x00FFFFFF);
+    }
+
+    private static float easeOutExpo(float x) {
+        return x >= 1.0f ? 1.0f : (float) (1.0f - Math.pow(2.0, -10.0f * x));
+    }
+
+    private static boolean intersectsAny(AABB box, List<AABB> boxes) {
+        for (AABB other : boxes) {
+            if (other.intersects(box)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static AABB box(BlockPos pos, int widthX, int widthZ) {
+        return new AABB(
+                pos.getX(),
+                pos.getY(),
+                pos.getZ(),
+                pos.getX() + widthX,
+                pos.getY() + 1.0,
+                pos.getZ() + widthZ
+        );
+    }
+
+    private static AABB box(List<BlockPos> positions) {
+        int minX = Integer.MAX_VALUE;
+        int minY = Integer.MAX_VALUE;
+        int minZ = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE;
+        int maxZ = Integer.MIN_VALUE;
+
+        for (BlockPos pos : positions) {
+            minX = Math.min(minX, pos.getX());
+            minY = Math.min(minY, pos.getY());
+            minZ = Math.min(minZ, pos.getZ());
+            maxX = Math.max(maxX, pos.getX());
+            maxZ = Math.max(maxZ, pos.getZ());
+        }
+
+        return new AABB(minX, minY, minZ, maxX + 1, minY + 1.0, maxZ + 1);
+    }
+
     private static void addVerticalFadeBox(Renderer3D renderer, AABB box, int bottomArgb, int topArgb) {
         MeshBuilder mesh = renderer.batch(CombatantRenderPipelines.WORLD_COLORED, Renderer3D.DepthMode.MAIN);
         if (mesh == null) {
@@ -437,6 +449,20 @@ public final class HoleESP extends Module {
         addGradientQuad(mesh, box.minX, box.minY, box.minZ, box.minX, box.minY, box.maxZ,
                 box.minX, box.maxY, box.maxZ, box.minX, box.maxY, box.minZ,
                 bottomR, bottomG, bottomB, bottomA, topR, topG, topB, topA);
+    }
+
+    private static void addFlatFloor(Renderer3D renderer, AABB box, int argb) {
+        int a = (argb >>> 24) & 0xFF;
+        if (a <= 0) return;
+        int r = (argb >>> 16) & 0xFF;
+        int g = (argb >>> 8) & 0xFF;
+        int b = argb & 0xFF;
+
+        renderer.quad(box.minX, box.minY, box.minZ,
+                box.maxX, box.minY, box.minZ,
+                box.maxX, box.minY, box.maxZ,
+                box.minX, box.minY, box.maxZ,
+                r, g, b, a);
     }
 
     private static void addGradientQuad(MeshBuilder mesh,
@@ -474,9 +500,7 @@ public final class HoleESP extends Module {
 
     private static void addBottomOutline(Renderer3D renderer, AABB box, int argb) {
         int a = (argb >>> 24) & 0xFF;
-        if (a <= 0) {
-            return;
-        }
+        if (a <= 0) return;
         int r = (argb >>> 16) & 0xFF;
         int g = (argb >>> 8) & 0xFF;
         int b = argb & 0xFF;
@@ -487,6 +511,32 @@ public final class HoleESP extends Module {
         renderer.line(box.minX, box.minY, box.maxZ, box.minX, box.minY, box.minZ, r, g, b, a);
     }
 
-    private record Hole(AABB box, int argb, List<BlockPos> positions) {
+    private static void addFullOutline(Renderer3D renderer, AABB box, int argb) {
+        int a = (argb >>> 24) & 0xFF;
+        if (a <= 0) return;
+        int r = (argb >>> 16) & 0xFF;
+        int g = (argb >>> 8) & 0xFF;
+        int b = argb & 0xFF;
+
+        // Bottom
+        renderer.line(box.minX, box.minY, box.minZ, box.maxX, box.minY, box.minZ, r, g, b, a);
+        renderer.line(box.maxX, box.minY, box.minZ, box.maxX, box.minY, box.maxZ, r, g, b, a);
+        renderer.line(box.maxX, box.minY, box.maxZ, box.minX, box.minY, box.maxZ, r, g, b, a);
+        renderer.line(box.minX, box.minY, box.maxZ, box.minX, box.minY, box.minZ, r, g, b, a);
+
+        // Top
+        renderer.line(box.minX, box.maxY, box.minZ, box.maxX, box.maxY, box.minZ, r, g, b, a);
+        renderer.line(box.maxX, box.maxY, box.minZ, box.maxX, box.maxY, box.maxZ, r, g, b, a);
+        renderer.line(box.maxX, box.maxY, box.maxZ, box.minX, box.maxY, box.maxZ, r, g, b, a);
+        renderer.line(box.minX, box.maxY, box.maxZ, box.minX, box.maxY, box.minZ, r, g, b, a);
+
+        // Verticals
+        renderer.line(box.minX, box.minY, box.minZ, box.minX, box.maxY, box.minZ, r, g, b, a);
+        renderer.line(box.maxX, box.minY, box.minZ, box.maxX, box.maxY, box.minZ, r, g, b, a);
+        renderer.line(box.maxX, box.minY, box.maxZ, box.maxX, box.maxY, box.maxZ, r, g, b, a);
+        renderer.line(box.minX, box.minY, box.maxZ, box.minX, box.maxY, box.maxZ, r, g, b, a);
+    }
+
+    private record Hole(AABB box, int argb, HoleType type, List<BlockPos> positions) {
     }
 }

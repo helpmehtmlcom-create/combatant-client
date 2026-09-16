@@ -34,6 +34,8 @@ public final class SettingDef {
     private final List<String> commonI18nKeys = new ArrayList<>();
     private boolean i18nNameEnabled = true;
     private boolean i18nOptionsEnabled = true;
+    private String description;
+    private String tooltip;
     private SettingDef(Kind kind, String id, ConfigValue<?> value) {
         this(kind, id, value, null, null);
     }
@@ -279,6 +281,23 @@ public final class SettingDef {
         return i18nOptionsEnabled;
     }
 
+    public SettingDef description(String description) {
+        this.description = description;
+        return this;
+    }
+
+    public String description() {
+        return description;
+    }
+
+    public SettingDef tooltip(String tooltip) {
+        this.tooltip = tooltip;
+        return this;
+    }
+
+    public String tooltip() {
+        return tooltip != null ? tooltip : description;
+    }
     public SettingDef visibleWhen(Supplier<Boolean> supplier) {
         this.visibility = supplier;
         return this;

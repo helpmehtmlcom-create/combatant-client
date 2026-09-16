@@ -21,10 +21,12 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
+import net.minecraft.network.protocol.game.ClientboundRespawnPacket;
 import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.phys.AABB;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -35,7 +37,7 @@ import java.util.Set;
         displayName = "NewChunks",
         aliases = {"chunkdetect", "basefinder"},
         category = ModuleCategory.VISUALS,
-        description = "Detects and highlights newly generated world chunks"
+        description = "Accurately detects and highlights newly generated world chunks vs old chunks."
 )
 public final class NewChunks extends Module {
 
@@ -44,16 +46,14 @@ public final class NewChunks extends Module {
 
     private final Minecraft mc = Minecraft.getInstance();
 
-    private final NumberValue<Double> renderY =
-            num("render_y", "render_y", 0.0, -64.0, 320.0);
     private final RGBAColorValue newChunkColor =
-            color("new_chunk_color", "new_chunk_color", "#88FF0000");
+            color("new_chunk_color", "#80FF0000");
     private final RGBAColorValue oldChunkColor =
-            color("old_chunk_color", "old_chunk_color", "#880000FF");
+            color("old_chunk_color", "#800066FF");
     private final BooleanValue renderOld =
-            bool("render_old", "render_old", false);
-    private final NumberValue<Double> gridHeight =
-            num("grid_height", "grid_height", 1.0, 0.0, 16.0);
+            bool("render_old", false);
+    private final NumberValue<Double> renderY =
+            num("render_y", 0.0, -64.0, 320.0);
 
     private final Set<ChunkPos> newChunks = Collections.synchronizedSet(new HashSet<>());
     private final Set<ChunkPos> oldChunks = Collections.synchronizedSet(new HashSet<>());
@@ -80,7 +80,10 @@ public final class NewChunks extends Module {
 
         Object packet = event.getPacket();
 
-        if (packet instanceof ClientboundSectionBlocksUpdatePacket sectionPacket) {
+        if (packet instanceof ClientboundRespawnPacket) {
+            newChunks.clear();
+            oldChunks.clear();
+        } else if (packet instanceof ClientboundSectionBlocksUpdatePacket sectionPacket) {
             sectionPacket.runUpdates((pos, state) -> handleBlockUpdate(pos, state));
         } else if (packet instanceof ClientboundBlockUpdatePacket blockPacket) {
             handleBlockUpdate(blockPacket.getPos(), blockPacket.getBlockState());
@@ -99,7 +102,7 @@ public final class NewChunks extends Module {
 
         FluidState fluid = state.getFluidState();
         if (!fluid.isEmpty() && !fluid.isSource()) {
-            // Unflowing/flowing liquid update occurs immediately upon generation when liquids calculate flow
+            // Flowing liquid update occurs immediately upon generation when liquids calculate flow
             ChunkPos chunkPos = ChunkPos.containing(pos);
             newChunks.add(chunkPos);
             oldChunks.remove(chunkPos);
@@ -131,12 +134,13 @@ public final class NewChunks extends Module {
 
         double playerX = mc.player != null ? mc.player.getX() : 0.0;
         double playerZ = mc.player != null ? mc.player.getZ() : 0.0;
+        Renderer3D target = depthRenderer != null ? depthRenderer : renderer;
 
         int newColor = newChunkColor.getArgb();
         synchronized (newChunks) {
             for (ChunkPos chunk : newChunks) {
                 if (isWithinRenderDistance(chunk, playerX, playerZ)) {
-                    renderChunk(renderer, chunk, newColor);
+                    renderChunkGrid(target, chunk, newColor);
                 }
             }
         }
@@ -146,7 +150,7 @@ public final class NewChunks extends Module {
             synchronized (oldChunks) {
                 for (ChunkPos chunk : oldChunks) {
                     if (!newChunks.contains(chunk) && isWithinRenderDistance(chunk, playerX, playerZ)) {
-                        renderChunk(renderer, chunk, oldColor);
+                        renderChunkGrid(target, chunk, oldColor);
                     }
                 }
             }
@@ -161,7 +165,7 @@ public final class NewChunks extends Module {
         return (dx * dx + dz * dz) <= MAX_RENDER_DISTANCE_SQ;
     }
 
-    private void renderChunk(Renderer3D renderer, ChunkPos chunk, int argb) {
+    private void renderChunkGrid(Renderer3D renderer, ChunkPos chunk, int argb) {
         int a = (argb >>> 24) & 0xFF;
         if (a <= 0) {
             return;
@@ -176,51 +180,24 @@ public final class NewChunks extends Module {
         double maxZ = minZ + 16.0;
 
         double minY = renderY.get();
-        double height = Math.max(0.0, gridHeight.get());
-        double maxY = minY + height;
+        double maxY = minY + 1.0;
 
-        // Bottom horizontal quad (two-sided)
-        renderer.quad(minX, minY, minZ, maxX, minY, minZ, maxX, minY, maxZ, minX, minY, maxZ, r, g, b, a);
-        renderer.quad(minX, minY, maxZ, maxX, minY, maxZ, maxX, minY, minZ, minX, minY, minZ, r, g, b, a);
-
-        if (height > 0.001) {
-            // Top horizontal quad (two-sided)
-            renderer.quad(minX, maxY, minZ, maxX, maxY, minZ, maxX, maxY, maxZ, minX, maxY, maxZ, r, g, b, a);
-            renderer.quad(minX, maxY, maxZ, maxX, maxY, maxZ, maxX, maxY, minZ, minX, maxY, minZ, r, g, b, a);
-
-            // Side quads with lower alpha
-            int sideAlpha = Math.min(a, 40);
-            if (sideAlpha > 0) {
-                renderer.quad(minX, minY, minZ, minX, maxY, minZ, maxX, maxY, minZ, maxX, minY, minZ, r, g, b, sideAlpha);
-                renderer.quad(maxX, minY, minZ, maxX, maxY, minZ, maxX, maxY, maxZ, maxX, minY, maxZ, r, g, b, sideAlpha);
-                renderer.quad(maxX, minY, maxZ, maxX, maxY, maxZ, minX, maxY, maxZ, minX, minY, maxZ, r, g, b, sideAlpha);
-                renderer.quad(minX, minY, maxZ, minX, maxY, maxZ, minX, maxY, minZ, minX, minY, minZ, r, g, b, sideAlpha);
-            }
-
-            // Outline box lines
-            int lineAlpha = Math.min(255, a + 40);
-            // Bottom outline
-            renderer.line(minX, minY, minZ, maxX, minY, minZ, r, g, b, lineAlpha);
-            renderer.line(maxX, minY, minZ, maxX, minY, maxZ, r, g, b, lineAlpha);
-            renderer.line(maxX, minY, maxZ, minX, minY, maxZ, r, g, b, lineAlpha);
-            renderer.line(minX, minY, maxZ, minX, minY, minZ, r, g, b, lineAlpha);
-            // Top outline
-            renderer.line(minX, maxY, minZ, maxX, maxY, minZ, r, g, b, lineAlpha);
-            renderer.line(maxX, maxY, minZ, maxX, maxY, maxZ, r, g, b, lineAlpha);
-            renderer.line(maxX, maxY, maxZ, minX, maxY, maxZ, r, g, b, lineAlpha);
-            renderer.line(minX, maxY, maxZ, minX, maxY, minZ, r, g, b, lineAlpha);
-            // Vertical corner pillars
-            renderer.line(minX, minY, minZ, minX, maxY, minZ, r, g, b, lineAlpha);
-            renderer.line(maxX, minY, minZ, maxX, maxY, minZ, r, g, b, lineAlpha);
-            renderer.line(maxX, minY, maxZ, maxX, maxY, maxZ, r, g, b, lineAlpha);
-            renderer.line(minX, minY, maxZ, minX, maxY, maxZ, r, g, b, lineAlpha);
-        } else {
-            // Flat horizontal outline
-            int lineAlpha = Math.min(255, a + 40);
-            renderer.line(minX, minY, minZ, maxX, minY, minZ, r, g, b, lineAlpha);
-            renderer.line(maxX, minY, minZ, maxX, minY, maxZ, r, g, b, lineAlpha);
-            renderer.line(maxX, minY, maxZ, minX, minY, maxZ, r, g, b, lineAlpha);
-            renderer.line(minX, minY, maxZ, minX, minY, minZ, r, g, b, lineAlpha);
+        AABB box = new AABB(minX, minY, minZ, maxX, maxY, maxZ);
+        if (!Renderer3D.Culling.isInFrustum(box)) {
+            return;
         }
+
+        int fillAlpha = Math.min(a, 35);
+        int lineAlpha = Math.min(255, a + 40);
+
+        // Horizontal bottom grid plane
+        renderer.quad(minX, minY, minZ, maxX, minY, minZ, maxX, minY, maxZ, minX, minY, maxZ, r, g, b, fillAlpha);
+        renderer.quad(minX, minY, maxZ, maxX, minY, maxZ, maxX, minY, minZ, minX, minY, minZ, r, g, b, fillAlpha);
+
+        // Clean border grid outline
+        renderer.line(minX, minY, minZ, maxX, minY, minZ, r, g, b, lineAlpha);
+        renderer.line(maxX, minY, minZ, maxX, minY, maxZ, r, g, b, lineAlpha);
+        renderer.line(maxX, minY, maxZ, minX, minY, maxZ, r, g, b, lineAlpha);
+        renderer.line(minX, minY, maxZ, minX, minY, minZ, r, g, b, lineAlpha);
     }
 }

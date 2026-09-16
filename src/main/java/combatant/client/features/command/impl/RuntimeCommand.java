@@ -66,7 +66,7 @@ public final class RuntimeCommand implements ClientCommand {
                     + ClientRuntime.loaderBridge().describeClassSource("combatant.client.Combatant"));
             return true;
         }
-        CommandOutput.send("Usage: " + metadata().usage());
+        CommandOutput.warning("Unknown action '" + action + "'. Usage: " + metadata().usage());
         return true;
     }
 

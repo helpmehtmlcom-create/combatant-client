@@ -7,8 +7,8 @@
 
 package combatant.client.features.module.modules.misc;
 
+import combatant.client.config.DisableSettingI18n;
 import combatant.client.config.values.EnumValue;
-import combatant.client.config.values.NumberValue;
 import combatant.client.config.values.StringValue;
 import combatant.client.events.EventHandler;
 import combatant.client.events.impl.AttackEntityEvent;
@@ -18,18 +18,25 @@ import combatant.client.features.command.CommandOutput;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.relations.CategoryRules;
+import combatant.client.features.relations.CategoryType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundDamageEventPacket;
 import net.minecraft.network.protocol.game.ClientboundEntityEventPacket;
+import net.minecraft.network.protocol.game.ClientboundExplodePacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerCombatKillPacket;
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.boss.enderdragon.EndCrystal;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -42,19 +49,49 @@ import java.util.UUID;
 )
 public class AutoEZ extends Module {
 
-    public enum EZMode {
-        PUBLIC,
-        DIRECT,
-        CLIENT_ONLY
+    public enum EZMode implements EnumValue.IdProvider {
+        PUBLIC("Public"),
+        DIRECT("Direct"),
+        CLIENT_ONLY("Client-Only");
+
+        private final String displayName;
+
+        EZMode(String displayName) {
+            this.displayName = displayName;
+        }
+
+        @Override
+        public String id() {
+            return name().toLowerCase(Locale.ROOT);
+        }
+
+        @Override
+        public String toString() {
+            return displayName;
+        }
     }
 
-    private final EnumValue<EZMode> mode = enumSetting("mode", "mode", EZMode.PUBLIC, EZMode.values());
-    private final StringValue customMessage = text("customMessage", "custom_message", "GG {player}, Combatant owns you and all!");
-    private final NumberValue<Integer> delay = num("delay", "delay", 10, 0, 40);
+    private static final String SETTING_MODE = "mode";
+    private static final String SETTING_SUFFIX = "suffix";
+
+    @DisableSettingI18n(name = false, options = true)
+    private final EnumValue<EZMode> mode = enumSetting(
+            "autoez_mode",
+            SETTING_MODE,
+            EZMode.PUBLIC,
+            EZMode.values()
+    );
+
+    private final StringValue suffix = text(
+            "autoez_suffix",
+            SETTING_SUFFIX,
+            "Combatant owns you and all!"
+    );
 
     private final Minecraft mc = Minecraft.getInstance();
 
     private static final long TARGET_TIMEOUT_MS = 15000L;
+    private static final int DISPATCH_DELAY_TICKS = 8;
 
     private static class TrackedTarget {
         final UUID uuid;
@@ -78,12 +115,8 @@ public class AutoEZ extends Module {
         return mode;
     }
 
-    public StringValue getCustomMessage() {
-        return customMessage;
-    }
-
-    public NumberValue<Integer> getDelay() {
-        return delay;
+    public StringValue getSuffix() {
+        return suffix;
     }
 
     @Override
@@ -100,22 +133,58 @@ public class AutoEZ extends Module {
         currentTick = 0;
     }
 
+    private boolean isIgnored(Player player) {
+        if (player == null || mc.player == null || player.getUUID().equals(mc.player.getUUID())) return true;
+        String name = player.getName().getString();
+        CategoryType type = CategoryRules.determine(name);
+        return type == CategoryType.FRIEND || type == CategoryType.BEDWARS_SELF;
+    }
+
+    private void trackTarget(Player player) {
+        if (player == null || isIgnored(player)) return;
+        UUID uuid = player.getUUID();
+        String name = player.getName().getString();
+        targets.put(uuid, new TrackedTarget(uuid, name, System.currentTimeMillis()));
+    }
+
     @EventHandler
     private void onAttack(AttackEntityEvent event) {
-        if (!isEnabled() || mc.player == null) return;
-        if (event.getTarget() instanceof Player targetPlayer && targetPlayer != mc.player) {
-            UUID uuid = targetPlayer.getUUID();
-            String name = targetPlayer.getName().getString();
-            targets.put(uuid, new TrackedTarget(uuid, name, System.currentTimeMillis()));
+        if (!isEnabled() || mc.player == null || event == null) return;
+        Entity target = event.getTarget();
+        if (target instanceof Player targetPlayer) {
+            trackTarget(targetPlayer);
+        } else if (target instanceof EndCrystal crystal && mc.level != null) {
+            Vec3 pos = crystal.position();
+            for (Player player : mc.level.players()) {
+                if (player != mc.player && player.distanceToSqr(pos) <= 144.0) {
+                    trackTarget(player);
+                }
+            }
         }
     }
 
     @EventHandler
     private void onPacketReceive(PacketEvent.Receive event) {
-        if (!isEnabled() || mc.level == null || targets.isEmpty()) return;
+        if (!isEnabled() || mc.level == null || mc.player == null) return;
 
-        if (event.getPacket() instanceof ClientboundEntityEventPacket packet) {
-            if (packet.getEventId() == 3) { // Entity death status
+        if (event.getPacket() instanceof ClientboundDamageEventPacket damagePacket) {
+            if (damagePacket.sourceCauseId() == mc.player.getId() || damagePacket.sourceDirectId() == mc.player.getId()) {
+                Entity victim = mc.level.getEntity(damagePacket.entityId());
+                if (victim instanceof Player victimPlayer) {
+                    trackTarget(victimPlayer);
+                }
+            }
+        } else if (event.getPacket() instanceof ClientboundExplodePacket explodePacket) {
+            Vec3 center = explodePacket.center();
+            if (center != null && mc.player.distanceToSqr(center) <= 144.0) {
+                for (Player player : mc.level.players()) {
+                    if (player != mc.player && player.distanceToSqr(center) <= 144.0) {
+                        trackTarget(player);
+                    }
+                }
+            }
+        } else if (event.getPacket() instanceof ClientboundEntityEventPacket packet) {
+            if (packet.getEventId() == 3) { // Death event
                 Entity entity = packet.getEntity(mc.level);
                 if (entity instanceof Player player && player != mc.player) {
                     checkTargetDeath(player.getUUID(), player.getName().getString());
@@ -153,11 +222,9 @@ public class AutoEZ extends Module {
 
         currentTick++;
 
-        // Clean up expired tracked targets
         long now = System.currentTimeMillis();
         targets.entrySet().removeIf(entry -> now - entry.getValue().lastAttackedTime > TARGET_TIMEOUT_MS);
 
-        // Check if any tracked player is dead in the world
         if (!targets.isEmpty()) {
             Iterator<Map.Entry<UUID, TrackedTarget>> it = targets.entrySet().iterator();
             while (it.hasNext()) {
@@ -171,7 +238,6 @@ public class AutoEZ extends Module {
             }
         }
 
-        // Process message queue
         while (!messageQueue.isEmpty()) {
             PendingMessage pending = messageQueue.peek();
             if (pending != null && currentTick >= pending.dispatchTick()) {
@@ -191,21 +257,21 @@ public class AutoEZ extends Module {
         }
     }
 
+    private String formatMessage(String targetName) {
+        String customSuffix = suffix.get();
+        if (customSuffix == null || customSuffix.isBlank()) {
+            customSuffix = "Combatant owns you and all!";
+        }
+        if (customSuffix.contains("{player}")) {
+            return customSuffix.replace("{player}", targetName);
+        }
+        return "GG " + targetName + ", " + customSuffix;
+    }
+
     private void queueKillMessage(String targetName) {
         if (targetName == null || targetName.isBlank()) return;
-
-        String template = customMessage.get();
-        if (template == null || template.isBlank()) {
-            template = "GG {player}, Combatant owns you and all!";
-        }
-        String formatted = template.replace("{player}", targetName);
-
-        int delayTicks = delay.get();
-        if (delayTicks <= 0) {
-            sendMessage(targetName, formatted);
-        } else {
-            messageQueue.add(new PendingMessage(targetName, formatted, currentTick + delayTicks));
-        }
+        String formatted = formatMessage(targetName);
+        messageQueue.add(new PendingMessage(targetName, formatted, currentTick + DISPATCH_DELAY_TICKS));
     }
 
     private void sendMessage(String targetName, String message) {

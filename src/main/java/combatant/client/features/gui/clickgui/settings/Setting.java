@@ -45,7 +45,8 @@ public abstract class Setting {
     private final List<String> commonI18nKeys = new ArrayList<>();
     private boolean i18nNameEnabled = true;
     private boolean i18nOptionsEnabled = true;
-
+    private String description;
+    private String tooltip;
     public Setting(String name, ConfigValue<?> value) {
         this.name = name;
         this.value = value;
@@ -485,6 +486,40 @@ public abstract class Setting {
      */
     public ConfigValue<?> getConfigValue() {
         return value;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setTooltip(String tooltip) {
+        this.tooltip = tooltip;
+    }
+
+    public String getTooltip() {
+        return tooltip != null ? tooltip : description;
+    }
+
+    public String getResolvedTooltip() {
+        if (tooltip != null && !tooltip.isBlank()) {
+            return tooltip;
+        }
+        if (description != null && !description.isBlank()) {
+            return description;
+        }
+        String key = getTranslationKey();
+        if (key != null && !key.isBlank()) {
+            String descKey = key + ".desc";
+            String translated = I18n.get(descKey);
+            if (!translated.equals(descKey)) {
+                return translated;
+            }
+        }
+        return null;
     }
 
     // ======================================================

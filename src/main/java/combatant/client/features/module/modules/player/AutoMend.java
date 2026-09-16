@@ -9,34 +9,51 @@ package combatant.client.features.module.modules.player;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.Holder;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import combatant.client.config.values.BooleanValue;
+import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.item.enchantment.Enchantments;
 import combatant.client.config.values.NumberValue;
 import combatant.client.events.EventHandler;
 import combatant.client.events.impl.GameTickEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.util.player.inventory.InventorySwap;
+import combatant.client.util.player.inventory.SlotResult;
 
 @ModuleInfo(
         id = "automend",
         displayName = "AutoMend",
-        description = "Automatically throws experience bottles to mend damaged armor and held items when durability drops.",
+        description = "Automatically scans armor and held items for Mending, silently throwing experience bottles until fully repaired.",
         category = ModuleCategory.PLAYER
 )
 public final class AutoMend extends Module {
 
-    private static final EquipmentSlot[] ARMOR_SLOTS = {
-            EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET
+    private static final EquipmentSlot[] SCAN_SLOTS = {
+            EquipmentSlot.HEAD,
+            EquipmentSlot.CHEST,
+            EquipmentSlot.LEGS,
+            EquipmentSlot.FEET,
+            EquipmentSlot.MAINHAND,
+            EquipmentSlot.OFFHAND
     };
 
-    private final NumberValue<Integer> minDurabilityPct = num("min_durability_pct", 80, 10, 99);
-    private final BooleanValue silent = bool("silent", true);
+    private final NumberValue<Integer> repairThreshold =
+            num("repair_threshold", "repair_threshold", 90, 10, 100);
 
     private final Minecraft mc = Minecraft.getInstance();
+
+    @Override
+    public void onDisable() {
+        InventorySwap.INSTANCE.releaseHotbar(this);
+    }
 
     @EventHandler
     public void onTick(GameTickEvent event) {
@@ -44,35 +61,58 @@ public final class AutoMend extends Module {
         LocalPlayer player = mc.player;
 
         boolean needsRepair = false;
-        for (EquipmentSlot slot : ARMOR_SLOTS) {
-            ItemStack armor = player.getItemBySlot(slot);
-            if (!armor.isEmpty() && armor.isDamageableItem()) {
-                double pct = 100.0 * (armor.getMaxDamage() - armor.getDamageValue()) / armor.getMaxDamage();
-                if (pct < minDurabilityPct.get()) {
+        boolean allFullDurability = true;
+
+        for (EquipmentSlot slot : SCAN_SLOTS) {
+            ItemStack stack = player.getItemBySlot(slot);
+            if (stack.isEmpty() || !stack.isDamageableItem() || !hasMending(stack)) continue;
+
+            int maxDamage = stack.getMaxDamage();
+            int currentDamage = stack.getDamageValue();
+            if (currentDamage > 0) {
+                allFullDurability = false;
+                double duraPct = 100.0 * (maxDamage - currentDamage) / (double) maxDamage;
+                if (duraPct < repairThreshold.get()) {
                     needsRepair = true;
-                    break;
                 }
             }
         }
 
-        if (!needsRepair) return;
-
-        int expSlot = -1;
-        for (int i = 0; i < 9; i++) {
-            if (player.getInventory().getItem(i).is(Items.EXPERIENCE_BOTTLE)) {
-                expSlot = i;
-                break;
-            }
+        // Automatically stop throwing when all equipment reaches full durability or meets threshold
+        if (!needsRepair || allFullDurability) {
+            InventorySwap.INSTANCE.releaseHotbar(this);
+            return;
         }
 
-        if (expSlot == -1) return;
-
-        int prev = player.getInventory().getSelectedSlot();
-        player.getInventory().setSelectedSlot(expSlot);
-        mc.gameMode.useItem(player, InteractionHand.MAIN_HAND);
-        player.swing(InteractionHand.MAIN_HAND);
-        if (silent.get()) {
-            player.getInventory().setSelectedSlot(prev);
+        // Check if offhand already has exp bottles
+        if (player.getOffhandItem().is(Items.EXPERIENCE_BOTTLE)) {
+            mc.gameMode.useItem(player, InteractionHand.OFF_HAND);
+            player.swing(InteractionHand.OFF_HAND);
+            return;
         }
+
+        // Find exp bottle in hotbar or inventory
+        SlotResult hotbarExp = InventorySwap.INSTANCE.findHotbar(s -> s.is(Items.EXPERIENCE_BOTTLE));
+        if (!hotbarExp.found()) {
+            InventorySwap.INSTANCE.releaseHotbar(this);
+            return;
+        }
+
+        // Silently lease hotbar slot and throw
+        boolean leased = InventorySwap.INSTANCE.leaseHotbar(this, hotbarExp.slot(), 1);
+        if (leased) {
+            mc.gameMode.useItem(player, InteractionHand.MAIN_HAND);
+            player.swing(InteractionHand.MAIN_HAND);
+            InventorySwap.INSTANCE.releaseHotbar(this);
+        }
+    }
+
+    private boolean hasMending(ItemStack stack) {
+        if (mc.level == null || stack == null || stack.isEmpty()) return false;
+        Registry<Enchantment> registry = mc.level.registryAccess().lookupOrThrow(Registries.ENCHANTMENT);
+        Enchantment mending = registry.getValue(Enchantments.MENDING);
+        if (mending == null) return false;
+        Holder<Enchantment> holder = registry.wrapAsHolder(mending);
+        return EnchantmentHelper.getItemEnchantmentLevel(holder, stack) > 0;
     }
 }

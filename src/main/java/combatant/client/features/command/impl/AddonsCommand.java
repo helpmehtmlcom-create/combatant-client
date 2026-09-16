@@ -55,17 +55,19 @@ public final class AddonsCommand implements ClientCommand {
         if ("enable".equalsIgnoreCase(action) || "disable".equalsIgnoreCase(action)) {
             String id = ctx.arg(1);
             if (id == null || id.isBlank()) {
-                CommandOutput.send("Usage: " + metadata().usage());
+                CommandOutput.warning("Usage: @addons " + action.toLowerCase(Locale.ROOT) + " <id>");
                 return true;
             }
             boolean enabled = "enable".equalsIgnoreCase(action);
             boolean ok = AddonManager.setEnabled(id, enabled);
-            CommandOutput.send(ok
-                    ? "Addon " + id + " " + (enabled ? "enabled" : "disabled")
-                    : "Addon not found: " + id);
+            if (ok) {
+                CommandOutput.info("Addon " + id + " " + (enabled ? "enabled" : "disabled") + ".");
+            } else {
+                CommandOutput.error("Addon not found: " + id);
+            }
             return true;
         }
-        CommandOutput.send("Usage: " + metadata().usage());
+        CommandOutput.warning("Unknown action '" + action + "'. Usage: " + metadata().usage());
         return true;
     }
 

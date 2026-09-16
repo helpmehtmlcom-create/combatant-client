@@ -68,6 +68,108 @@ public final class SoundSystem {
     public static SoundSystem get() {
         return INSTANCE;
     }
+    public static void playCombatEffect(String effectName, float volume, float pitch) {
+        if (effectName == null || effectName.isBlank()) return;
+        Minecraft mc = Minecraft.getInstance();
+        float master = 1.0f;
+        float players = 1.0f;
+        if (mc != null && mc.options != null) {
+            try {
+                master = mc.options.getSoundSourceVolume(net.minecraft.sounds.SoundSource.MASTER);
+                players = mc.options.getSoundSourceVolume(net.minecraft.sounds.SoundSource.PLAYERS);
+            } catch (Throwable ignored) {
+            }
+        }
+        if (master <= 0.001f || players <= 0.001f || volume <= 0.001f) return;
+
+        float effectiveVol = Math.max(0.0f, Math.min(1.0f, volume * players));
+        float effectivePitch = pitch <= 0.01f ? 1.0f : pitch;
+        String key = effectName.trim().toLowerCase(java.util.Locale.ROOT);
+
+        SoundSystem sys = INSTANCE;
+        if (Math.abs(sys.masterGain - master) > 0.01f) {
+            sys.setMasterGain(master);
+        }
+
+        switch (key) {
+            case "bell" -> {
+                Identifier res = Identifier.fromNamespaceAndPath("combatant", "sounds/hitsounds/bell.wav");
+                if (sys.isReady()) {
+                    sys.play(res, SoundOptions.gain(effectiveVol).withPitch(effectivePitch));
+                } else if (mc != null && mc.getSoundManager() != null) {
+                    mc.getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
+                            net.minecraft.sounds.SoundEvents.ARROW_HIT_PLAYER, effectivePitch, effectiveVol));
+                }
+            }
+            case "ding" -> {
+                if (mc != null && mc.getSoundManager() != null) {
+                    mc.getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
+                            net.minecraft.sounds.SoundEvents.EXPERIENCE_ORB_PICKUP, effectivePitch, effectiveVol));
+                }
+            }
+            case "cod" -> {
+                if (mc != null && mc.getSoundManager() != null) {
+                    mc.getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
+                            net.minecraft.sounds.SoundEvents.ARROW_HIT_PLAYER, effectivePitch * 1.2f, effectiveVol));
+                }
+            }
+            case "rust" -> {
+                Identifier res = Identifier.fromNamespaceAndPath("combatant", "sounds/hitsounds/critical.wav");
+                if (sys.isReady()) {
+                    sys.play(res, SoundOptions.gain(effectiveVol).withPitch(effectivePitch));
+                } else if (mc != null && mc.getSoundManager() != null) {
+                    mc.getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
+                            net.minecraft.sounds.SoundEvents.SHIELD_BLOCK.value(), effectivePitch, effectiveVol));
+                }
+            }
+            case "metallic" -> {
+                Identifier res = Identifier.fromNamespaceAndPath("combatant", "sounds/hitsounds/bonk.wav");
+                if (sys.isReady()) {
+                    sys.play(res, SoundOptions.gain(effectiveVol).withPitch(effectivePitch));
+                } else if (mc != null && mc.getSoundManager() != null) {
+                    mc.getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
+                            net.minecraft.sounds.SoundEvents.ANVIL_LAND, effectivePitch, effectiveVol));
+                }
+            }
+            case "bubble" -> {
+                Identifier res = Identifier.fromNamespaceAndPath("combatant", "sounds/hitsounds/bubble.wav");
+                if (sys.isReady()) {
+                    sys.play(res, SoundOptions.gain(effectiveVol).withPitch(effectivePitch));
+                } else if (mc != null && mc.getSoundManager() != null) {
+                    mc.getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
+                            net.minecraft.sounds.SoundEvents.BUBBLE_COLUMN_UPWARDS_INSIDE, effectivePitch, effectiveVol));
+                }
+            }
+            case "pop" -> {
+                Identifier res = Identifier.fromNamespaceAndPath("combatant", "sounds/gui/popenable.wav");
+                if (sys.isReady()) {
+                    sys.play(res, SoundOptions.gain(effectiveVol).withPitch(effectivePitch));
+                } else if (mc != null && mc.getSoundManager() != null) {
+                    mc.getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
+                            net.minecraft.sounds.SoundEvents.ITEM_PICKUP, effectivePitch, effectiveVol));
+                }
+            }
+            case "mojang", "crit" -> {
+                if (mc != null && mc.getSoundManager() != null) {
+                    mc.getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
+                            net.minecraft.sounds.SoundEvents.PLAYER_ATTACK_CRIT, effectivePitch, effectiveVol));
+                }
+            }
+            default -> {
+                if (key.startsWith("combatant:") || key.contains("/")) {
+                    Identifier res = Identifier.tryParse(key);
+                    if (res != null && sys.isReady()) {
+                        sys.play(res, SoundOptions.gain(effectiveVol).withPitch(effectivePitch));
+                        return;
+                    }
+                }
+                if (mc != null && mc.getSoundManager() != null) {
+                    mc.getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
+                            net.minecraft.sounds.SoundEvents.ARROW_HIT_PLAYER, effectivePitch, effectiveVol));
+                }
+            }
+        }
+    }
 
     public SoundInstance play(SoundKey key) {
         return play(key.soundDefinition(), SoundOptions.DEFAULT);
@@ -182,6 +284,16 @@ public final class SoundSystem {
     public float getMasterGain() { return masterGain; }
 
     public void tick() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc != null && mc.options != null) {
+            try {
+                float mcMaster = mc.options.getSoundSourceVolume(net.minecraft.sounds.SoundSource.MASTER);
+                if (Float.isFinite(mcMaster) && Math.abs(masterGain - mcMaster) > 0.01f) {
+                    setMasterGain(mcMaster);
+                }
+            } catch (Throwable ignored) {
+            }
+        }
         if (!audio.isReady() || !reapQueued.compareAndSet(false, true)) return;
         audio.execute(() -> {
             try { reapFinished(); }
