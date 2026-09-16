@@ -16,15 +16,22 @@ import combatant.client.render.engine.rhi.shader.*;
 import combatant.client.render.engine.world.AerialPerspectiveLayout;
 import combatant.client.render.engine.world.DirectionalLightDescriptor;
 import combatant.client.render.engine.world.environment.CloudProfile;
+import combatant.client.render.engine.world.environment.LocalFogVolumeDescriptor;
+import combatant.client.render.engine.world.environment.LocalFogVolumeProvider;
+import combatant.client.render.engine.world.environment.LocalFogVolumeRegistry;
+import combatant.client.render.engine.world.environment.LocalFogVolumeShape;
 import combatant.client.render.engine.world.environment.ParticipatingMediaRange;
 import combatant.client.render.engine.world.environment.ParticipatingMediumProfile;
 import combatant.client.render.engine.world.environment.ParticipatingMediumProfileRegistry;
 import combatant.client.render.engine.world.environment.WeatherFieldState;
 import combatant.client.render.engine.world.environment.WeatherState;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /** Builds, lights and integrates the view-aligned participating-media froxel volume. */
@@ -63,6 +70,14 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
             .member("directionalRadiance", Std430Type.VEC4)
             .build();
 
+    private static final Std430StructLayout LOCAL_FOG_VOLUME_LAYOUT = Std430StructLayout.builder()
+            .member("centerShape", Std430Type.VEC4)
+            .member("extentDensity", Std430Type.VEC4)
+            .member("scatteringG", Std430Type.VEC4)
+            .member("absorptionEdge", Std430Type.VEC4)
+            .member("emission", Std430Type.VEC4)
+            .build();
+
     private static final ShaderResourceLayout INJECT_LAYOUT = new ShaderResourceLayout(List.of(
             new ShaderResourceSlot(0, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(1, ShaderResourceKind.STORAGE_VOLUME, StorageAccess.WRITE_ONLY),
@@ -72,7 +87,8 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
             new ShaderResourceSlot(5, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(6, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(7, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
-            new ShaderResourceSlot(11, ShaderResourceKind.STORAGE_VOLUME, StorageAccess.WRITE_ONLY)
+            new ShaderResourceSlot(11, ShaderResourceKind.STORAGE_VOLUME, StorageAccess.WRITE_ONLY),
+            new ShaderResourceSlot(12, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
     ));
     private static final ShaderResourceLayout LIGHT_LAYOUT = new ShaderResourceLayout(List.of(
             new ShaderResourceSlot(0, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
@@ -123,6 +139,9 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
     private RhiComputePipeline localLightPipeline;
     private RhiComputePipeline integratePipeline;
     private RhiStorageBuffer data;
+    private RhiStorageBuffer localFogVolumeData;
+    private long localFogFrameId = Long.MIN_VALUE;
+    private int localFogVolumeCount;
     private RhiStorageVolume segmentRadiance;
     private RhiStorageVolume segmentTransmittance;
     private RhiStorageVolume mediaProperties;
@@ -208,6 +227,7 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
         localLightPipeline();
         integratePipeline();
         data();
+        localFogVolumeData();
     }
 
     void release(CombatantRhi currentOwner) {
@@ -236,6 +256,7 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
         DeferredFroxelConfig.Grid grid = config.grid(depth.getWidth(0), depth.getHeight(0), mediaRange);
         frameGrid = grid;
         ensureTransportVolumes(grid);
+        prepareLocalFogVolumes(context, view);
 
         Std430Writer writer = writer(context, view, grid, cloud, shadow);
         RhiStorageBuffer dataBuffer = data();
@@ -253,7 +274,9 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
                         new StorageBinding(5, cloudField.weatherData(), 0L,
                                 cloudField.weatherData().descriptor().byteSize(), StorageAccess.READ_ONLY),
                         new StorageBinding(6, cloudField.layerData(), 0L,
-                                cloudField.layerData().descriptor().byteSize(), StorageAccess.READ_ONLY)
+                                cloudField.layerData().descriptor().byteSize(), StorageAccess.READ_ONLY),
+                        new StorageBinding(12, localFogVolumeData(), 0L,
+                                localFogVolumeData().descriptor().byteSize(), StorageAccess.READ_ONLY)
                 ),
                 List.of(
                         new SampledTextureBinding(3, aerialRadiance, nearest),
@@ -396,7 +419,7 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
                 .putVec4(0, "cameraTime", (float) (camera.x - originX), (float) camera.y,
                         (float) (camera.z - originZ), timeSeconds)
                 .putVec4(0, "grid", spacing, width, depth, cloud.weatherCount())
-                .putVec4(0, "counts", cloud.layerCount(), cloudProfile.maxRayDistanceBlocks(), 0.0f,
+                .putVec4(0, "counts", cloud.layerCount(), cloudProfile.maxRayDistanceBlocks(), localFogVolumeCount,
                         cloud.active() ? 1.0f : 0.0f)
                 .putVec4(0, "noiseDomain",
                         wrapOrigin(field.valid() ? field.originBlockX() : 0),
@@ -438,7 +461,8 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
                 || !context.isValid(DeferredResource.FROXEL_MEDIA_PROPERTIES)) {
             return false;
         }
-        return ParticipatingMediumProfileRegistry.resolve(context.worldState().mediumProfile()).valid();
+        return localFogVolumeCount > 0
+                || ParticipatingMediumProfileRegistry.resolve(context.worldState().mediumProfile()).valid();
     }
 
     private boolean mediumLightingAvailable(DeferredPassContext context) {
@@ -544,6 +568,67 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
         return data;
     }
 
+    private RhiStorageBuffer localFogVolumeData() {
+        if (localFogVolumeData == null) localFogVolumeData = owner.advancedShaders().createStorageBuffer(
+                new StorageBufferDescriptor(
+                        "combatant-local-fog-volumes", LOCAL_FOG_VOLUME_LAYOUT,
+                        config.maxLocalFogVolumes(), StorageAccess.READ_ONLY, false
+                )
+        );
+        return localFogVolumeData;
+    }
+
+    private void prepareLocalFogVolumes(DeferredPassContext context,
+                                        DeferredPrimaryViewSource.FrameView view) {
+        long frameId = context.frame().frameId();
+        if (localFogFrameId == frameId) return;
+
+        ArrayList<LocalFogVolumeDescriptor> volumes = new ArrayList<>();
+        Minecraft minecraft = Minecraft.getInstance();
+        ClientLevel level = minecraft == null ? null : minecraft.level;
+        Vec3 camera = view.cameraPosition();
+        LocalFogVolumeRegistry.collect(new LocalFogVolumeProvider.Context(
+                level, context.worldState(), camera, frameId
+        ), descriptor -> {
+            if (descriptor != null && descriptor.valid()) volumes.add(descriptor);
+        });
+
+        volumes.sort(Comparator
+                .comparingDouble((LocalFogVolumeDescriptor volume) -> -volume.priority())
+                .thenComparingDouble(volume -> volume.distanceToBoundsSquared(camera.x, camera.y, camera.z))
+                .thenComparingLong(LocalFogVolumeDescriptor::stableId));
+        if (volumes.size() > config.maxLocalFogVolumes()) {
+            volumes.subList(config.maxLocalFogVolumes(), volumes.size()).clear();
+        }
+
+        localFogVolumeCount = volumes.size();
+        if (localFogVolumeCount > 0) {
+            Std430Writer writer = new Std430Writer(LOCAL_FOG_VOLUME_LAYOUT, localFogVolumeCount);
+            for (int i = 0; i < localFogVolumeCount; i++) {
+                LocalFogVolumeDescriptor volume = volumes.get(i);
+                writer.putVec4(i, "centerShape",
+                                (float) (volume.centerX() - camera.x),
+                                (float) (volume.centerY() - camera.y),
+                                (float) (volume.centerZ() - camera.z),
+                                volume.shape() == LocalFogVolumeShape.BOX ? 1.0f : 0.0f)
+                        .putVec4(i, "extentDensity",
+                                volume.extentX(), volume.extentY(), volume.extentZ(), volume.density())
+                        .putVec4(i, "scatteringG",
+                                volume.scatteringRed(), volume.scatteringGreen(),
+                                volume.scatteringBlue(), volume.anisotropy())
+                        .putVec4(i, "absorptionEdge",
+                                volume.absorptionRed(), volume.absorptionGreen(),
+                                volume.absorptionBlue(), volume.edgeFadeBlocks())
+                        .putVec4(i, "emission",
+                                volume.emissionRed(), volume.emissionGreen(), volume.emissionBlue(), 1.0f);
+            }
+            localFogVolumeData().upload(writer.buffer(), 0L);
+        } else {
+            localFogVolumeData();
+        }
+        localFogFrameId = frameId;
+    }
+
     private void closeOwned() {
         close(injectPipeline); injectPipeline = null;
         close(lightPipeline); lightPipeline = null;
@@ -551,6 +636,9 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
         close(localLightPipeline); localLightPipeline = null;
         close(integratePipeline); integratePipeline = null;
         close(data); data = null;
+        close(localFogVolumeData); localFogVolumeData = null;
+        localFogFrameId = Long.MIN_VALUE;
+        localFogVolumeCount = 0;
         close(segmentRadiance); segmentRadiance = null;
         close(segmentTransmittance); segmentTransmittance = null;
         close(mediaProperties); mediaProperties = null;

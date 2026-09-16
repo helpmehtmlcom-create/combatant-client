@@ -40,7 +40,7 @@ public record ParticipatingMediumProfile(
             0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
             0.0f, 0.0f, 0.0f,
             0.0f, 0.0f, 0.0f,
-            0.0f, 0.0f, 0.0f, false
+            0.0f, 1.0f, 1.0f, false
     );
 
     public ParticipatingMediumProfile {

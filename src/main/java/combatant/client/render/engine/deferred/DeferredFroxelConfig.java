@@ -12,10 +12,11 @@ record DeferredFroxelConfig(
         int tileSizePixels,
         int depthSlices,
         float depthExponent,
-        float minimumMaxDistanceBlocks
+        float minimumMaxDistanceBlocks,
+        int maxLocalFogVolumes
 ) {
     private static final DeferredFroxelConfig DEFAULT = new DeferredFroxelConfig(
-            true, 16, 48, 2.0f, 64.0f
+            true, 16, 48, 2.0f, 64.0f, 128
     );
 
     DeferredFroxelConfig {
@@ -23,6 +24,7 @@ record DeferredFroxelConfig(
         depthSlices = clamp(depthSlices, 8, 128);
         depthExponent = clamp(depthExponent, 1.0f, 4.0f);
         minimumMaxDistanceBlocks = clamp(minimumMaxDistanceBlocks, 16.0f, 4096.0f);
+        maxLocalFogVolumes = clamp(maxLocalFogVolumes, 1, 1024);
     }
 
     static DeferredFroxelConfig current() {
