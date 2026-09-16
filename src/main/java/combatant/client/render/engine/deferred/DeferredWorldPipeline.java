@@ -21,6 +21,7 @@ import net.minecraft.client.Minecraft;
 import combatant.client.mixininterface.IMsaaTexture;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.material.MaterialAtlasManager;
+import combatant.client.render.engine.profiler.TracyGpuProfiler;
 import combatant.client.render.sodium.fluid.SurfacePatchRouting;
 import combatant.client.render.engine.rhi.FullscreenDrawCommand;
 import combatant.client.render.engine.rhi.resource.RenderResourceManager;
@@ -457,36 +458,38 @@ public final class DeferredWorldPipeline {
             if (directLighting == null) {
                 throw new IllegalStateException("Deferred direct-lighting target is unavailable");
             }
-            CombatantRenderSystem.rhi().drawFullscreen(
-                    FullscreenDrawCommand.builder("Combatant Deferred Terrain Lighting")
-                            .colorAttachment(directLighting)
-                            .pipeline(DeferredRuntimeAssets.terrainLighting())
-                            .uniform("DeferredLighting", DeferredLightingUniforms.get())
-                            .sampler("u_GbufferSurface", inputs.surface(), gbufferSampler)
-                            .sampler("u_GbufferGeometry", inputs.geometry(), gbufferSampler)
-                            .sampler("u_GbufferMaterial", inputs.material(), gbufferSampler)
-                            .sampler("u_GbufferDepth", gbufferDepth, gbufferSampler)
-                            .sampler("u_EnvironmentIrradiance", environmentIrradiance, gbufferSampler)
-                            .sampler("u_ResolvedDepth", resolvedDepth, gbufferSampler)
-                            .sampler("u_ShadowVisibility", shadowVisibility, gbufferSampler)
-                            .sampler("u_CloudShadowVisibility", cloudShadowVisibility, gbufferSampler)
-                            .sampler("u_AmbientVisibility", ambientVisibility, gbufferSampler)
-                            .build()
-            );
-            CombatantRenderSystem.deferredGraph().completeExternalPass("world.lighting.neutral", resourceBindings);
+            FullscreenDrawCommand lightingCommand = FullscreenDrawCommand.builder("Combatant Deferred Terrain Lighting")
+                    .colorAttachment(directLighting)
+                    .pipeline(DeferredRuntimeAssets.terrainLighting())
+                    .uniform("DeferredLighting", DeferredLightingUniforms.get())
+                    .sampler("u_GbufferSurface", inputs.surface(), gbufferSampler)
+                    .sampler("u_GbufferGeometry", inputs.geometry(), gbufferSampler)
+                    .sampler("u_GbufferMaterial", inputs.material(), gbufferSampler)
+                    .sampler("u_GbufferDepth", gbufferDepth, gbufferSampler)
+                    .sampler("u_EnvironmentIrradiance", environmentIrradiance, gbufferSampler)
+                    .sampler("u_ResolvedDepth", resolvedDepth, gbufferSampler)
+                    .sampler("u_ShadowVisibility", shadowVisibility, gbufferSampler)
+                    .sampler("u_CloudShadowVisibility", cloudShadowVisibility, gbufferSampler)
+                    .sampler("u_AmbientVisibility", ambientVisibility, gbufferSampler)
+                    .build();
 
             // Forward compatibility rendering still targets Minecraft's scene image. Only terrain
             // pixels are published here; sky and other non-G-buffer producers remain untouched.
-            CombatantRenderSystem.rhi().drawFullscreen(
-                    FullscreenDrawCommand.builder("Combatant Deferred Terrain Publish")
-                            .colorAttachment(sceneColor)
-                            .pipeline(DeferredRuntimeAssets.terrainPublish())
-                            .uniform("DeferredLighting", DeferredLightingUniforms.get())
-                            .sampler("u_Source", directLighting, gbufferSampler)
-                            .sampler("u_GbufferAuxiliary", inputs.auxiliary(), gbufferSampler)
-                            .sampler("u_GbufferDepth", gbufferDepth, gbufferSampler)
-                            .build()
-            );
+            FullscreenDrawCommand publishCommand = FullscreenDrawCommand.builder("Combatant Deferred Terrain Publish")
+                    .colorAttachment(sceneColor)
+                    .pipeline(DeferredRuntimeAssets.terrainPublish())
+                    .uniform("DeferredLighting", DeferredLightingUniforms.get())
+                    .sampler("u_Source", directLighting, gbufferSampler)
+                    .sampler("u_GbufferAuxiliary", inputs.auxiliary(), gbufferSampler)
+                    .sampler("u_GbufferDepth", gbufferDepth, gbufferSampler)
+                    .build();
+
+            try (TracyGpuProfiler.Scope ignoredGpu = TracyGpuProfiler.beginZone(
+                    "deferred/lighting/world.lighting.neutral")) {
+                CombatantRenderSystem.rhi().drawFullscreen(lightingCommand);
+                CombatantRenderSystem.rhi().drawFullscreen(publishCommand);
+            }
+            CombatantRenderSystem.deferredGraph().completeExternalPass("world.lighting.neutral", resourceBindings);
             lightingResolvedThisFrame = true;
             resourceBindings.bindTexture(DeferredResource.SCENE_COLOR, sceneColor);
             executeStage(DeferredStage.POST_LIGHTING);

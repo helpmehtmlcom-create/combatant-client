@@ -10,6 +10,8 @@ import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.core.RenderFrameContext;
 import combatant.client.render.engine.core.RenderPhase;
 import combatant.client.render.engine.core.RenderPhaseScope;
+import combatant.client.render.engine.profiler.TracyGpuProfiler;
+import combatant.client.render.engine.profiler.TracyProfiler;
 import combatant.client.render.engine.rhi.CombatantRhi;
 import combatant.client.render.engine.rhi.resource.FrameGraphPhysicalResource;
 import combatant.client.render.engine.rhi.resource.FrameGraphPhysicalResourcePool;
@@ -22,6 +24,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
@@ -112,7 +115,11 @@ public final class CombatantFrameGraph implements AutoCloseable {
         }
         if (!hasPhaseNode) return;
 
-        CompiledFrameGraph compiled = scheduler.compile(nodes, framePhysicalPlanning ? resources.snapshot() : null);
+        CompiledFrameGraph compiled;
+        try (TracyProfiler.Scope ignored = TracyProfiler.beginZone(
+                "framegraph/compile/" + resolvedPhase.name().toLowerCase(Locale.ROOT))) {
+            compiled = scheduler.compile(nodes, framePhysicalPlanning ? resources.snapshot() : null);
+        }
         CombatantRhi rhi = CombatantRenderSystem.rhi();
         if (physicalOwner != null && physicalOwner != rhi) {
             try {
@@ -125,7 +132,10 @@ public final class CombatantFrameGraph implements AutoCloseable {
         FrameGraphPhysicalResourcePool physicalPool = rhi.resources().frameGraphResources();
         boolean physicalPlanning = !compiled.physicalPlan().physicalAllocations().isEmpty();
         if (physicalPlanning) {
-            physicalPool.materialize(this, compiled.physicalPlan(), rhi);
+            try (TracyProfiler.Scope ignored = TracyProfiler.beginZone(
+                    "framegraph/materialize/" + resolvedPhase.name().toLowerCase(Locale.ROOT))) {
+                physicalPool.materialize(this, compiled.physicalPlan(), rhi);
+            }
             physicalOwner = rhi;
         }
 
@@ -143,7 +153,10 @@ public final class CombatantFrameGraph implements AutoCloseable {
                     lowerBarriers(passIndex, compiled, physicalPool, rhi);
                 }
                 try (RenderPhaseScope nodeScope = CombatantRenderSystem.phase(phase, "pass:" + node.label())) {
-                    node.execute(CombatantRenderSystem.currentContext());
+                    try (TracyGpuProfiler.Scope ignoredGpu = TracyGpuProfiler.beginZone(
+                            "framegraph/" + resolvedPhase.name().toLowerCase(Locale.ROOT) + "/" + node.label())) {
+                        node.execute(CombatantRenderSystem.currentContext());
+                    }
                 }
                 if (physicalPlanning) markWrites(node.contract(), physicalPool);
             }
