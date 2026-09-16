@@ -50,6 +50,8 @@ final class DeferredDisocclusionSource implements AutoCloseable {
             new ShaderResourceSlot(5, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
     ));
 
+    private static final float FINAL_TEMPORAL_DEPTH_THRESHOLD = 0.006f;
+
     private CombatantRhi owner;
     private RhiComputePipeline pipeline;
     private RhiStorageBuffer params;
@@ -64,7 +66,7 @@ final class DeferredDisocclusionSource implements AutoCloseable {
                         DeferredResource.RESOLVED_DEPTH))
                 .execute(context -> render(context, DeferredResource.VELOCITY, DeferredResource.MOTION_VALIDITY,
                         DeferredResource.RESOLVED_DEPTH, DeferredResource.DISOCCLUSION_MASK,
-                        "Combatant temporal disocclusion mask"))
+                        "Combatant temporal disocclusion mask", sharedDepthThreshold(context.settings())))
                 .build());
 
         passes.add(DeferredPassSpec.builder("world.temporal.final-disocclusion", DeferredStage.POST_TRANSLUCENCY)
@@ -77,7 +79,8 @@ final class DeferredDisocclusionSource implements AutoCloseable {
                         DeferredResource.FINAL_MOTION_VALIDITY, DeferredResource.FINAL_RESOLVED_DEPTH))
                 .execute(context -> render(context, DeferredResource.FINAL_VELOCITY,
                         DeferredResource.FINAL_MOTION_VALIDITY, DeferredResource.FINAL_RESOLVED_DEPTH,
-                        DeferredResource.FINAL_DISOCCLUSION_MASK, "Combatant final temporal disocclusion mask"))
+                        DeferredResource.FINAL_DISOCCLUSION_MASK, "Combatant final temporal disocclusion mask",
+                        FINAL_TEMPORAL_DEPTH_THRESHOLD))
                 .build());
     }
 
@@ -112,7 +115,8 @@ final class DeferredDisocclusionSource implements AutoCloseable {
                         DeferredResource validityResource,
                         DeferredResource depthResource,
                         DeferredResource outputResource,
-                        String label) {
+                        String label,
+                        float depthThreshold) {
         ensureOwner(context.rhi());
         GpuTextureView velocity = requireTexture(context, velocityResource);
         GpuTextureView motionValidity = requireTexture(context, validityResource);
@@ -120,7 +124,6 @@ final class DeferredDisocclusionSource implements AutoCloseable {
         GpuTextureView historyDepth = requireTexture(context, DeferredResource.HISTORY_DEPTH);
         RhiStorageImage output = requireImage(context, outputResource);
 
-        float depthThreshold = sharedDepthThreshold(context.settings());
         float pixelScale = 1.0f / Math.max(1.0f, Math.min(output.descriptor().width(), output.descriptor().height()));
         Std430Writer writer = new Std430Writer(PARAMS_LAYOUT, 1)
                 .putVec4(0, "params", depthThreshold, pixelScale, 1.5f, 0.0f);

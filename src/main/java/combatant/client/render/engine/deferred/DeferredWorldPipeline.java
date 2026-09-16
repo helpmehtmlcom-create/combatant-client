@@ -74,6 +74,8 @@ public final class DeferredWorldPipeline {
     private long temporalScaleSignature = Long.MIN_VALUE;
     private int temporalWidth = -1;
     private int temporalHeight = -1;
+    private int temporalOutputWidth = -1;
+    private int temporalOutputHeight = -1;
     private int temporalSamples = -1;
     private final AtomicReference<DeferredHistoryResetReason> pendingExternalHistoryReset =
             new AtomicReference<>(DeferredHistoryResetReason.NONE);
@@ -553,6 +555,8 @@ public final class DeferredWorldPipeline {
             targetOwner = null;
             temporalWidth = -1;
             temporalHeight = -1;
+            temporalOutputWidth = -1;
+            temporalOutputHeight = -1;
             temporalSamples = -1;
         }
 
@@ -598,17 +602,29 @@ public final class DeferredWorldPipeline {
                 && targets.width() == width && targets.height() == height && targets.samples() == samples) {
             return targets;
         }
-        if (temporalWidth >= 0 && (temporalWidth != width || temporalHeight != height || temporalSamples != samples)) {
-            primaryView.invalidateHistory(frameId, DeferredHistoryResetReason.RESIZE);
-        }
-        temporalWidth = width;
-        temporalHeight = height;
-        temporalSamples = samples;
         Minecraft minecraft = Minecraft.getInstance();
         int outputWidth = minecraft != null && minecraft.getWindow() != null
                 ? Math.max(1, minecraft.getWindow().getWidth()) : width;
         int outputHeight = minecraft != null && minecraft.getWindow() != null
                 ? Math.max(1, minecraft.getWindow().getHeight()) : height;
+        if (temporalWidth >= 0) {
+            boolean outputChanged = temporalOutputWidth != outputWidth || temporalOutputHeight != outputHeight;
+            boolean renderExtentChanged = temporalWidth != width || temporalHeight != height;
+            boolean samplePolicyChanged = temporalSamples != samples;
+            if (outputChanged) {
+                primaryView.invalidateHistory(frameId, DeferredHistoryResetReason.RESIZE);
+            } else if (renderExtentChanged) {
+                primaryView.invalidateHistory(frameId, DeferredHistoryResetReason.RENDER_SCALE_CHANGE);
+            } else if (samplePolicyChanged) {
+                primaryView.invalidateHistory(frameId, DeferredHistoryResetReason.POLICY_CHANGE);
+            }
+        }
+        temporalWidth = width;
+        temporalHeight = height;
+        temporalOutputWidth = outputWidth;
+        temporalOutputHeight = outputHeight;
+        temporalSamples = samples;
+        resourceBindings.setOutputResolution(outputWidth, outputHeight);
         primaryView.updateResolutions(frameId, width, height, outputWidth, outputHeight);
 
         RenderTarget surface = acquire(resources, "world-gbuffer-surface", width, height, samples, SURFACE_FORMAT);
@@ -653,11 +669,9 @@ public final class DeferredWorldPipeline {
         executeStage(DeferredStage.REFLECTION_HISTORY);
         executeStage(DeferredStage.REFLECTION_COMPOSITE);
         executeStage(DeferredStage.SKY_COMPOSITE);
-        executeStage(DeferredStage.WATER_MEDIUM_BOUNDARY);
         executeStage(DeferredStage.VOLUMETRIC_MEDIA_INJECT);
         executeStage(DeferredStage.VOLUMETRIC_MEDIA_INTEGRATE);
         executeStage(DeferredStage.VOLUMETRIC_MEDIA_COMPOSITE);
-        executeStage(DeferredStage.WATER_REFLECTION_TRACE);
         executeStage(DeferredStage.WATER_SURFACE);
         executeStage(DeferredStage.PRE_TRANSLUCENCY);
     }
@@ -668,6 +682,14 @@ public final class DeferredWorldPipeline {
         resourceBindings.bindTexture(DeferredResource.MAIN_DEPTH, resolvedDepth);
         executeStage(DeferredStage.POST_TRANSLUCENCY);
         executeStage(DeferredStage.TEMPORAL_RESOLVE);
+        // The temporal result is the canonical scene input for Combatant post-processing. At
+        // 1:1 resolution the TAA source has also published it back into Minecraft's scene target;
+        // at TAAU resolution this logical handoff preserves the full output-resolution result for
+        // the future exposure/bloom/post chain without downsampling it back to render resolution.
+        if (resourceBindings.isValid(DeferredResource.TAA_RESOLVED_COLOR)) {
+            GpuTextureView temporalScene = resourceBindings.texture(DeferredResource.TAA_RESOLVED_COLOR);
+            if (temporalScene != null) resourceBindings.bindTexture(DeferredResource.SCENE_COLOR, temporalScene);
+        }
         executeStage(DeferredStage.PRE_POST_PROCESS);
     }
 
@@ -698,6 +720,12 @@ public final class DeferredWorldPipeline {
         return resourceBindings;
     }
 
+    /** Output-resolution final temporal scene, if the TAA/TAAU consumer ran this frame. */
+    public @Nullable GpuTextureView finalTemporalSceneColor() {
+        return resourceBindings.isValid(DeferredResource.TAA_RESOLVED_COLOR)
+                ? resourceBindings.texture(DeferredResource.TAA_RESOLVED_COLOR) : null;
+    }
+
     /** Frame-local cascade/probe registry exposed to deferred extension producers. */
     public DeferredSecondaryViewRegistry secondaryViews() {
         return secondaryViews;
@@ -719,6 +747,8 @@ public final class DeferredWorldPipeline {
         temporalScaleSignature = Long.MIN_VALUE;
         temporalWidth = -1;
         temporalHeight = -1;
+        temporalOutputWidth = -1;
+        temporalOutputHeight = -1;
         temporalSamples = -1;
         pendingExternalHistoryReset.set(DeferredHistoryResetReason.NONE);
         frameSetupExecuted = false;

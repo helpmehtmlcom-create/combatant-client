@@ -195,7 +195,7 @@ public final class DeferredTemporalHistoryRegistry {
     private void registerDefaults() {
         register(new Definition(
                 DeferredTemporalHistoryId.SCENE,
-                List.of(DeferredResource.SCENE_COLOR, DeferredResource.MAIN_DEPTH),
+                List.of(DeferredResource.SCENE_COLOR, DeferredResource.FINAL_RESOLVED_DEPTH),
                 List.of(DeferredResource.HISTORY_COLOR, DeferredResource.HISTORY_DEPTH),
                 null, 1, DeferredHistoryProducer.SCENE_CAPTURE, "world.history.capture",
                 DeferredHistoryStorageMode.STORE_AFTER_CONSUME
@@ -225,6 +225,16 @@ public final class DeferredTemporalHistoryRegistry {
                         DeferredResource.HISTORY_CLOUD_CONFIDENCE),
                 DeferredResource.HISTORY_CLOUD_CONFIDENCE,
                 1, DeferredHistoryProducer.CLOUDS, "world.cloud.history",
+                DeferredHistoryStorageMode.STORE_AFTER_CONSUME
+        ));
+        register(new Definition(
+                DeferredTemporalHistoryId.TAA,
+                List.of(DeferredResource.TAA_RESOLVED_COLOR, DeferredResource.TAA_CONFIDENCE,
+                        DeferredResource.TAA_LOCK),
+                List.of(DeferredResource.HISTORY_TAA_COLOR, DeferredResource.HISTORY_TAA_CONFIDENCE,
+                        DeferredResource.HISTORY_TAA_LOCK),
+                DeferredResource.HISTORY_TAA_CONFIDENCE,
+                1, DeferredHistoryProducer.TAA, "world.temporal.taa.history",
                 DeferredHistoryStorageMode.STORE_AFTER_CONSUME
         ));
     }

@@ -26,6 +26,8 @@ public record DeferredTextureSpec(
      */
     public enum ResolutionClass {
         FULL,
+        /** Final presentation/output resolution; may differ from the world render resolution. */
+        OUTPUT,
         SHADOW_OUTPUT,
         CONTACT_SHADOW_TRACE,
         AMBIENT_OCCLUSION,
@@ -38,7 +40,7 @@ public record DeferredTextureSpec(
         public float scale(DeferredRuntimeConfig.Snapshot settings) {
             if (settings == null) settings = DeferredRuntimeConfig.current();
             return switch (this) {
-                case FULL -> 1.0f;
+                case FULL, OUTPUT -> 1.0f;
                 case SHADOW_OUTPUT -> settings.shadowOutputScale();
                 case CONTACT_SHADOW_TRACE -> settings.contactShadowScale();
                 case AMBIENT_OCCLUSION -> settings.ambientOcclusionScale();
@@ -50,16 +52,26 @@ public record DeferredTextureSpec(
             };
         }
 
+        public int width(int renderWidth, int outputWidth, DeferredRuntimeConfig.Snapshot settings) {
+            if (this == OUTPUT) return Math.max(1, outputWidth > 0 ? outputWidth : renderWidth);
+            return scaledExtent(renderWidth, scale(settings));
+        }
+
         public int width(int fullWidth, DeferredRuntimeConfig.Snapshot settings) {
-            return scaledExtent(fullWidth, scale(settings));
+            return width(fullWidth, fullWidth, settings);
         }
 
         public int width(int fullWidth) {
             return width(fullWidth, DeferredRuntimeConfig.current());
         }
 
+        public int height(int renderHeight, int outputHeight, DeferredRuntimeConfig.Snapshot settings) {
+            if (this == OUTPUT) return Math.max(1, outputHeight > 0 ? outputHeight : renderHeight);
+            return scaledExtent(renderHeight, scale(settings));
+        }
+
         public int height(int fullHeight, DeferredRuntimeConfig.Snapshot settings) {
-            return scaledExtent(fullHeight, scale(settings));
+            return height(fullHeight, fullHeight, settings);
         }
 
         public int height(int fullHeight) {
@@ -95,12 +107,20 @@ public record DeferredTextureSpec(
         }
     }
 
+    public int width(int renderWidth, int outputWidth, DeferredRuntimeConfig.Snapshot settings) {
+        return fixedWidth > 0 ? fixedWidth : resolution.width(renderWidth, outputWidth, settings);
+    }
+
     public int width(int fullWidth, DeferredRuntimeConfig.Snapshot settings) {
-        return fixedWidth > 0 ? fixedWidth : resolution.width(fullWidth, settings);
+        return width(fullWidth, fullWidth, settings);
+    }
+
+    public int height(int renderHeight, int outputHeight, DeferredRuntimeConfig.Snapshot settings) {
+        return fixedHeight > 0 ? fixedHeight : resolution.height(renderHeight, outputHeight, settings);
     }
 
     public int height(int fullHeight, DeferredRuntimeConfig.Snapshot settings) {
-        return fixedHeight > 0 ? fixedHeight : resolution.height(fullHeight, settings);
+        return height(fullHeight, fullHeight, settings);
     }
 
     public boolean fixedExtent() {

@@ -1,0 +1,195 @@
+#version 430 core
+
+/*
+ * This file is part of the Combatant Client distribution.
+ * Copyright (c) 2026 pivosos2007.
+ *
+ * Licensed under the GNU General Public License v3.0.
+ */
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0) uniform sampler2D u_CurrentColor;
+layout(binding = 1) uniform sampler2D u_FinalVelocity;
+layout(binding = 2) uniform sampler2D u_MotionValidity;
+layout(binding = 3) uniform sampler2D u_ReactiveMask;
+layout(binding = 4) uniform sampler2D u_DisocclusionMask;
+layout(binding = 5) uniform sampler2D u_CurrentDepth;
+layout(binding = 6) uniform sampler2D u_HistoryDepth;
+layout(binding = 7) uniform sampler2D u_HistoryColor;
+layout(binding = 8) uniform sampler2D u_HistoryConfidence;
+layout(binding = 9) uniform sampler2D u_HistoryLock;
+layout(binding = 10, rgba16f) writeonly uniform image2D u_OutputColor;
+layout(binding = 11, r8) writeonly uniform image2D u_OutputConfidence;
+layout(binding = 12, r8) writeonly uniform image2D u_OutputLock;
+layout(binding = 13, r8) writeonly uniform image2D u_HistoryWeight;
+layout(binding = 14, r8) writeonly uniform image2D u_RejectionMask;
+
+layout(std430, binding = 15) readonly buffer TaaParams {
+    vec4 jitterPixels;       // xy=current, zw=previous; +X right, +Y down
+    vec4 extents;            // xy=render extent, zw=output extent
+    vec4 policy;             // x=max history weight, y=history age norm, z=depth base threshold, w=lock growth
+    vec4 response;           // x=motion falloff, y=reactive floor, z=variance gamma, w=variance reactive gamma
+} u_Taa;
+
+float catmullWeight(float x) {
+    x = abs(x);
+    if (x <= 1.0) return 1.5 * x * x * x - 2.5 * x * x + 1.0;
+    if (x < 2.0) return -0.5 * x * x * x + 2.5 * x * x - 4.0 * x + 2.0;
+    return 0.0;
+}
+
+vec4 sampleCatmullRom(sampler2D tex, vec2 uv) {
+    ivec2 size = textureSize(tex, 0);
+    vec2 position = uv * vec2(size) - 0.5;
+    ivec2 base = ivec2(floor(position));
+    vec2 fraction = position - floor(position);
+    vec4 sum = vec4(0.0);
+    float weightSum = 0.0;
+    for (int y = -1; y <= 2; ++y) {
+        float wy = catmullWeight(float(y) - fraction.y);
+        for (int x = -1; x <= 2; ++x) {
+            float wx = catmullWeight(float(x) - fraction.x);
+            float w = wx * wy;
+            ivec2 samplePixel = clamp(base + ivec2(x, y), ivec2(0), size - ivec2(1));
+            sum += texelFetch(tex, samplePixel, 0) * w;
+            weightSum += w;
+        }
+    }
+    return sum / max(weightSum, 1e-6);
+}
+
+vec3 rgbToYCoCg(vec3 c) {
+    return vec3(
+        c.r * 0.25 + c.g * 0.5 + c.b * 0.25,
+        c.r * 0.5 - c.b * 0.5,
+        -c.r * 0.25 + c.g * 0.5 - c.b * 0.25
+    );
+}
+
+vec3 yCoCgToRgb(vec3 c) {
+    float y = c.x;
+    float co = c.y;
+    float cg = c.z;
+    return vec3(y + co - cg, y + cg, y - co - cg);
+}
+
+float currentDepthAt(ivec2 pixel, ivec2 size) {
+    return texelFetch(u_CurrentDepth, clamp(pixel, ivec2(0), size - ivec2(1)), 0).r;
+}
+
+void neighborhoodStatistics(vec2 currentUv, out vec3 lo, out vec3 hi, out vec3 mean, out vec3 sigma) {
+    ivec2 size = textureSize(u_CurrentColor, 0);
+    vec2 position = currentUv * vec2(size) - 0.5;
+    ivec2 center = ivec2(floor(position + 0.5));
+    lo = vec3(1e30);
+    hi = vec3(-1e30);
+    mean = vec3(0.0);
+    vec3 secondMoment = vec3(0.0);
+    float count = 0.0;
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            ivec2 p = clamp(center + ivec2(x, y), ivec2(0), size - ivec2(1));
+            vec3 value = rgbToYCoCg(texelFetch(u_CurrentColor, p, 0).rgb);
+            lo = min(lo, value);
+            hi = max(hi, value);
+            mean += value;
+            secondMoment += value * value;
+            count += 1.0;
+        }
+    }
+    mean /= max(count, 1.0);
+    secondMoment /= max(count, 1.0);
+    sigma = sqrt(max(secondMoment - mean * mean, vec3(0.0)));
+}
+
+bool insideUv(vec2 uv) {
+    return all(greaterThanEqual(uv, vec2(0.0))) && all(lessThanEqual(uv, vec2(1.0)));
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 outputSize = imageSize(u_OutputColor);
+    if (any(greaterThanEqual(pixel, outputSize))) return;
+
+    vec2 renderExtent = max(u_Taa.extents.xy, vec2(1.0));
+    vec2 outputUv = (vec2(pixel) + 0.5) / vec2(outputSize);
+    vec2 currentJitterUv = u_Taa.jitterPixels.xy / renderExtent;
+    vec2 previousJitterUv = u_Taa.jitterPixels.zw / renderExtent;
+    vec2 currentUv = outputUv + currentJitterUv;
+
+    vec4 current = sampleCatmullRom(u_CurrentColor, clamp(currentUv, vec2(0.0), vec2(1.0)));
+    float rejection = 0.0;
+    float historyWeight = 0.0;
+    float resolvedConfidence = 0.08;
+    float resolvedLock = 0.0;
+    vec4 resolved = current;
+
+    float motionValid = textureLod(u_MotionValidity, clamp(currentUv, vec2(0.0), vec2(1.0)), 0.0).r;
+    if (motionValid < 0.5) {
+        rejection = 0.20; // explicit invalid motion
+    } else {
+        vec2 velocity = textureLod(u_FinalVelocity, currentUv, 0.0).rg;
+        // DeferredVelocityContract: velocity = current raw/jittered UV - previous raw/jittered UV.
+        vec2 previousRawUv = currentUv - velocity;
+        vec2 previousResolvedUv = previousRawUv - previousJitterUv;
+        if (!insideUv(currentUv) || !insideUv(previousRawUv) || !insideUv(previousResolvedUv)) {
+            rejection = 0.40; // screen edge / off-screen reprojection
+        } else if (textureLod(u_DisocclusionMask, currentUv, 0.0).r >= 0.5) {
+            rejection = 0.60; // explicit geometry disocclusion
+        } else {
+            float currentDepth = textureLod(u_CurrentDepth, currentUv, 0.0).r;
+            float previousDepth = textureLod(u_HistoryDepth, previousRawUv, 0.0).r;
+            ivec2 depthSize = textureSize(u_CurrentDepth, 0);
+            ivec2 depthPixel = clamp(ivec2(currentUv * vec2(depthSize)), ivec2(0), depthSize - ivec2(1));
+            float localGradient = 0.0;
+            localGradient = max(localGradient, abs(currentDepth - currentDepthAt(depthPixel + ivec2(1, 0), depthSize)));
+            localGradient = max(localGradient, abs(currentDepth - currentDepthAt(depthPixel + ivec2(-1, 0), depthSize)));
+            localGradient = max(localGradient, abs(currentDepth - currentDepthAt(depthPixel + ivec2(0, 1), depthSize)));
+            localGradient = max(localGradient, abs(currentDepth - currentDepthAt(depthPixel + ivec2(0, -1), depthSize)));
+            float depthScale = max(max(abs(currentDepth), abs(previousDepth)), 1e-3);
+            float depthThreshold = u_Taa.policy.z * depthScale
+                    + max(localGradient * 1.5, depthScale / max(min(renderExtent.x, renderExtent.y), 1.0));
+            if (abs(currentDepth - previousDepth) > depthThreshold) {
+                rejection = 0.80; // resolve-local depth consistency rejection
+            } else {
+                float reactive = clamp(textureLod(u_ReactiveMask, currentUv, 0.0).r, 0.0, 1.0);
+                float historyConfidence = clamp(textureLod(u_HistoryConfidence, previousResolvedUv, 0.0).r, 0.0, 1.0);
+                float historyLock = clamp(textureLod(u_HistoryLock, previousResolvedUv, 0.0).r, 0.0, 1.0);
+                vec4 history = sampleCatmullRom(u_HistoryColor, previousResolvedUv);
+
+                vec3 lo;
+                vec3 hi;
+                vec3 mean;
+                vec3 sigma;
+                neighborhoodStatistics(currentUv, lo, hi, mean, sigma);
+                float gamma = mix(u_Taa.response.z, u_Taa.response.w, reactive);
+                vec3 varianceLo = mean - sigma * gamma;
+                vec3 varianceHi = mean + sigma * gamma;
+                vec3 clipLo = max(lo, varianceLo);
+                vec3 clipHi = min(hi, varianceHi);
+                vec3 historyYCoCg = clamp(rgbToYCoCg(history.rgb), clipLo, clipHi);
+                history.rgb = yCoCgToRgb(historyYCoCg);
+
+                float motionPixels = length(velocity * renderExtent);
+                float motionResponse = exp(-motionPixels * u_Taa.response.x);
+                float reactiveResponse = mix(1.0, u_Taa.response.y, reactive);
+                float ageResponse = mix(0.65, 1.0, clamp(u_Taa.policy.y, 0.0, 1.0));
+                float lockResponse = mix(0.55, 1.0, historyLock);
+                historyWeight = clamp(u_Taa.policy.x * historyConfidence * motionResponse
+                        * reactiveResponse * ageResponse * lockResponse, 0.0, u_Taa.policy.x);
+
+                resolved = mix(current, history, historyWeight);
+                float stable = (1.0 - reactive) * exp(-motionPixels * 0.15);
+                resolvedConfidence = clamp(max(0.08, historyConfidence + 0.08 * stable), 0.0, 1.0);
+                resolvedLock = clamp(historyLock + u_Taa.policy.w * stable - 0.08 * reactive, 0.0, 1.0);
+            }
+        }
+    }
+
+    imageStore(u_OutputColor, pixel, resolved);
+    imageStore(u_OutputConfidence, pixel, vec4(resolvedConfidence, 0.0, 0.0, 0.0));
+    imageStore(u_OutputLock, pixel, vec4(resolvedLock, 0.0, 0.0, 0.0));
+    imageStore(u_HistoryWeight, pixel, vec4(historyWeight, 0.0, 0.0, 0.0));
+    imageStore(u_RejectionMask, pixel, vec4(rejection, 0.0, 0.0, 0.0));
+}

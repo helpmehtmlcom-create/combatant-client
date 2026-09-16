@@ -29,6 +29,8 @@ public final class DeferredResourceBindings {
     private final DeferredResourceAllocator allocator;
     private long frameId = Long.MIN_VALUE;
     private long historyEpoch = Long.MIN_VALUE;
+    private int outputWidth;
+    private int outputHeight;
 
     public DeferredResourceBindings(DeferredResourceAllocator allocator) {
         if (allocator == null) throw new IllegalArgumentException("allocator");
@@ -70,7 +72,15 @@ public final class DeferredResourceBindings {
     public void reset() {
         frameId = Long.MIN_VALUE;
         historyEpoch = Long.MIN_VALUE;
+        outputWidth = 0;
+        outputHeight = 0;
         clearBindings();
+    }
+
+    /** Output extent used by OUTPUT-resolution temporal/post resources. */
+    public void setOutputResolution(int width, int height) {
+        outputWidth = Math.max(0, width);
+        outputHeight = Math.max(0, height);
     }
 
     private void clearBindings() {
@@ -192,7 +202,10 @@ public final class DeferredResourceBindings {
         int samples = reference.texture() instanceof combatant.client.mixininterface.IMsaaTexture msaa
                 ? Math.max(1, msaa.combatant$getSamples()) : 1;
         DeferredResourceAllocator.Allocation allocation = allocator.acquire(
-                resource, reference.getWidth(0), reference.getHeight(0), samples, rhi, settings
+                resource, reference.getWidth(0), reference.getHeight(0),
+                outputWidth > 0 ? outputWidth : reference.getWidth(0),
+                outputHeight > 0 ? outputHeight : reference.getHeight(0),
+                samples, rhi, settings
         );
         owned.put(resource, allocation);
         bindTexture(resource, allocation.view());
@@ -209,8 +222,10 @@ public final class DeferredResourceBindings {
         if (reference == null) reference = textures.get(DeferredResource.MAIN_DEPTH);
         if (reference == null) return false;
 
-        int width = spec.width(reference.getWidth(0), settings);
-        int height = spec.height(reference.getHeight(0), settings);
+        int width = spec.width(reference.getWidth(0),
+                outputWidth > 0 ? outputWidth : reference.getWidth(0), settings);
+        int height = spec.height(reference.getHeight(0),
+                outputHeight > 0 ? outputHeight : reference.getHeight(0), settings);
         int sceneSamples = reference.texture() instanceof combatant.client.mixininterface.IMsaaTexture msaa
                 ? Math.max(1, msaa.combatant$getSamples()) : 1;
         int samples = spec.samples() == DeferredTextureSpec.SamplePolicy.MATCH_SCENE ? sceneSamples : 1;
@@ -239,6 +254,14 @@ public final class DeferredResourceBindings {
 
     public long historyEpoch() {
         return historyEpoch;
+    }
+
+    public int outputWidth() {
+        return outputWidth;
+    }
+
+    public int outputHeight() {
+        return outputHeight;
     }
 
     private static void requireTextureResource(DeferredResource resource) {

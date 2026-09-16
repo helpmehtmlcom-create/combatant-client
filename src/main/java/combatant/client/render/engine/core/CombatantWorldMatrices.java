@@ -9,13 +9,17 @@ package combatant.client.render.engine.core;
 
 import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
+import org.joml.Vector2f;
+import org.joml.Vector2fc;
 import net.minecraft.world.phys.Vec3;
 
 public enum CombatantWorldMatrices {
     ;
     private static final Matrix4f POSITION = new Matrix4f();
     private static final Matrix4f RENDER_PROJECTION = new Matrix4f();
+    private static final Matrix4f UNJITTERED_RENDER_PROJECTION = new Matrix4f();
     private static final Matrix4f FRUSTUM_PROJECTION = new Matrix4f();
+    private static final Vector2f JITTER_PIXELS = new Vector2f();
     private static Vec3 CAMERA_POS;
     private static boolean valid;
 
@@ -28,7 +32,14 @@ public enum CombatantWorldMatrices {
     }
 
     public static void capture(Matrix4fc positionMatrix, Matrix4fc renderProjectionMatrix, Matrix4fc frustumProjectionMatrix, Vec3 cameraPos) {
-        if (positionMatrix == null || renderProjectionMatrix == null || frustumProjectionMatrix == null) {
+        capture(positionMatrix, renderProjectionMatrix, renderProjectionMatrix, frustumProjectionMatrix, new Vector2f(), cameraPos);
+    }
+
+    public static void capture(Matrix4fc positionMatrix, Matrix4fc renderProjectionMatrix,
+                               Matrix4fc unjitteredRenderProjectionMatrix, Matrix4fc frustumProjectionMatrix,
+                               Vector2fc jitterPixels, Vec3 cameraPos) {
+        if (positionMatrix == null || renderProjectionMatrix == null || unjitteredRenderProjectionMatrix == null
+                || frustumProjectionMatrix == null) {
             valid = false;
             CAMERA_POS = null;
             return;
@@ -36,7 +47,9 @@ public enum CombatantWorldMatrices {
 
         POSITION.set(positionMatrix);
         RENDER_PROJECTION.set(renderProjectionMatrix);
+        UNJITTERED_RENDER_PROJECTION.set(unjitteredRenderProjectionMatrix);
         FRUSTUM_PROJECTION.set(frustumProjectionMatrix);
+        JITTER_PIXELS.set(jitterPixels == null ? new Vector2f() : jitterPixels);
         CAMERA_POS = cameraPos;
         valid = true;
     }
@@ -61,6 +74,14 @@ public enum CombatantWorldMatrices {
 
     public static Matrix4f renderProjectionMatrix() {
         return valid ? new Matrix4f(RENDER_PROJECTION) : null;
+    }
+
+    public static Matrix4f unjitteredRenderProjectionMatrix() {
+        return valid ? new Matrix4f(UNJITTERED_RENDER_PROJECTION) : null;
+    }
+
+    public static Vector2f jitterPixels() {
+        return valid ? new Vector2f(JITTER_PIXELS) : new Vector2f();
     }
 
     public static Matrix4f frustumProjectionMatrix() {

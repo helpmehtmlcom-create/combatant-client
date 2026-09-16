@@ -42,8 +42,10 @@ public final class DeferredResourceAllocator implements AutoCloseable {
     }
 
     public Allocation acquire(DeferredResource resource,
-                              int fullWidth,
-                              int fullHeight,
+                              int renderWidth,
+                              int renderHeight,
+                              int outputWidth,
+                              int outputHeight,
                               int sceneSamples,
                               CombatantRhi rhi,
                               DeferredRuntimeConfig.Snapshot settings) {
@@ -59,8 +61,8 @@ public final class DeferredResourceAllocator implements AutoCloseable {
         owner = rhi;
 
         DeferredTextureSpec spec = resource.textureSpec();
-        int width = spec.width(fullWidth, settings);
-        int height = spec.height(fullHeight, settings);
+        int width = spec.width(renderWidth, outputWidth, settings);
+        int height = spec.height(renderHeight, outputHeight, settings);
         int samples = spec.samples() == DeferredTextureSpec.SamplePolicy.MATCH_SCENE
                 ? Math.max(1, sceneSamples) : 1;
         int mipLevels = spec.mipChain()
@@ -82,6 +84,15 @@ public final class DeferredResourceAllocator implements AutoCloseable {
         return created;
     }
 
+
+    public Allocation acquire(DeferredResource resource,
+                              int fullWidth,
+                              int fullHeight,
+                              int sceneSamples,
+                              CombatantRhi rhi,
+                              DeferredRuntimeConfig.Snapshot settings) {
+        return acquire(resource, fullWidth, fullHeight, fullWidth, fullHeight, sceneSamples, rhi, settings);
+    }
     public @Nullable Allocation current(DeferredResource resource) {
         return allocations.get(resource);
     }

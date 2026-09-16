@@ -204,6 +204,27 @@ public enum DeferredResource {
             DeferredTextureSpec.computeAttachment(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.FULL)),
     HISTORY_DEPTH(FrameGraphResourceKey.persistentTexture("world.history.depth"),
             DeferredTextureSpec.computeAttachment(GpuFormat.R32_FLOAT, DeferredTextureSpec.ResolutionClass.FULL)),
+    /** Final TAA/TAAU resolve at presentation resolution. */
+    TAA_RESOLVED_COLOR(FrameGraphResourceKey.transientTexture("world.temporal.taa.resolved"),
+            DeferredTextureSpec.computeAttachment(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.OUTPUT)),
+    /** Per-pixel temporal confidence produced by the final scene resolve. */
+    TAA_CONFIDENCE(FrameGraphResourceKey.transientTexture("world.temporal.taa.confidence"),
+            DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.OUTPUT, false)),
+    /** Per-pixel lock state/age proxy produced by the final scene resolve. */
+    TAA_LOCK(FrameGraphResourceKey.transientTexture("world.temporal.taa.lock"),
+            DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.OUTPUT, false)),
+    /** Debug output: actual history blend weight after every rejection/response policy. */
+    TAA_HISTORY_WEIGHT(FrameGraphResourceKey.transientTexture("world.temporal.taa.history_weight"),
+            DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.OUTPUT, false)),
+    /** Debug output: categorical/composite rejection reason for the final temporal consumer. */
+    TAA_REJECTION_MASK(FrameGraphResourceKey.transientTexture("world.temporal.taa.rejection"),
+            DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.OUTPUT, false)),
+    HISTORY_TAA_COLOR(FrameGraphResourceKey.persistentTexture("world.history.taa.color"),
+            DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.OUTPUT, false)),
+    HISTORY_TAA_CONFIDENCE(FrameGraphResourceKey.persistentTexture("world.history.taa.confidence"),
+            DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.OUTPUT, false)),
+    HISTORY_TAA_LOCK(FrameGraphResourceKey.persistentTexture("world.history.taa.lock"),
+            DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.OUTPUT, false)),
     HISTORY_REFLECTION(FrameGraphResourceKey.persistentTexture("world.history.reflection"),
             DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.REFLECTION_HISTORY, false)),
     HISTORY_REFLECTION_CONFIDENCE(FrameGraphResourceKey.persistentTexture("world.history.reflection_confidence"),

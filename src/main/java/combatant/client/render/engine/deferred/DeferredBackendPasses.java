@@ -113,6 +113,7 @@ final class DeferredBackendPasses implements AutoCloseable {
     private final DeferredFroxelMediaSource froxelMedia = new DeferredFroxelMediaSource(cloudField, cloudShadows);
     private final DeferredAtmosphereCompositeSource atmosphereComposite = new DeferredAtmosphereCompositeSource(froxelMedia);
     private final DeferredTemporalHistorySource temporalHistory = new DeferredTemporalHistorySource();
+    private final DeferredTemporalResolveSource temporalResolve = new DeferredTemporalResolveSource();
     private final DeferredPatchSurfaceSource patchSurfaces = new DeferredPatchSurfaceSource(reflectionCascades);
 
     void install(ArrayList<DeferredPassSpec> passes) {
@@ -219,6 +220,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         froxelMedia.install(passes);
         atmosphereComposite.install(passes);
         temporalHistory.install(passes);
+        temporalResolve.install(passes);
         patchSurfaces.install(passes);
     }
 
@@ -255,6 +257,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         froxelMedia.prepare(rhi);
         atmosphereComposite.prepare(rhi);
         temporalHistory.prepare(rhi);
+        temporalResolve.prepare(rhi);
         patchSurfaces.prepare(rhi);
     }
 
@@ -291,6 +294,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         froxelMedia.release(releaseOwner);
         atmosphereComposite.release(releaseOwner);
         temporalHistory.release(releaseOwner);
+        temporalResolve.release(releaseOwner);
         patchSurfaces.release(releaseOwner);
         owner = null;
     }
