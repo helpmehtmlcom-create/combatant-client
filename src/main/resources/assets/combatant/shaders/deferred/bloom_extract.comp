@@ -1,0 +1,64 @@
+#version 430 core
+
+/*
+ * This file is part of the Combatant Client distribution.
+ * Copyright (c) 2026 pivosos2007.
+ *
+ * Licensed under the GNU General Public License v3.0.
+ */
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0) uniform sampler2D u_HdrPostInput;
+
+layout(std430, binding = 1) readonly buffer ExposureState {
+    vec4 exposure;
+    vec4 adaptation;
+    vec4 percentiles;
+    uvec4 lifecycle;
+} u_Exposure;
+
+layout(binding = 2, rgba16f) writeonly uniform image2D u_BloomMip0;
+
+layout(std430, binding = 3) readonly buffer BloomParams {
+    vec4 params; // x=threshold, y=soft knee, z=intensity
+} u_Bloom;
+
+bool invalidColor(vec3 c) {
+    return any(isnan(c)) || any(isinf(c));
+}
+
+vec3 safeHdr(vec3 c) {
+    return invalidColor(c) ? vec3(0.0) : max(c, vec3(0.0));
+}
+
+vec3 sampleHdr(vec2 uv, vec2 texel) {
+    // Normalized 2x2 footprint. It preserves average HDR radiance when bloom starts below output res.
+    return 0.25 * (
+        safeHdr(textureLod(u_HdrPostInput, uv + texel * vec2(-0.25, -0.25), 0.0).rgb) +
+        safeHdr(textureLod(u_HdrPostInput, uv + texel * vec2( 0.25, -0.25), 0.0).rgb) +
+        safeHdr(textureLod(u_HdrPostInput, uv + texel * vec2(-0.25,  0.25), 0.0).rgb) +
+        safeHdr(textureLod(u_HdrPostInput, uv + texel * vec2( 0.25,  0.25), 0.0).rgb)
+    );
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 outSize = imageSize(u_BloomMip0);
+    if (any(greaterThanEqual(pixel, outSize))) return;
+
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(outSize);
+    vec2 sourceTexel = 1.0 / vec2(max(textureSize(u_HdrPostInput, 0), ivec2(1)));
+    vec3 hdr = sampleHdr(uv, sourceTexel);
+
+    float exposure = u_Exposure.lifecycle.x != 0u ? max(u_Exposure.exposure.x, 0.0) : 1.0;
+    float brightness = max(max(hdr.r, hdr.g), hdr.b) * exposure;
+    float threshold = max(0.0, u_Bloom.params.x);
+    float knee = max(1e-5, threshold * clamp(u_Bloom.params.y, 0.0, 1.0));
+    float soft = clamp((brightness - threshold + knee) / (2.0 * knee), 0.0, 1.0);
+    soft = soft * soft * knee;
+    float contribution = max(brightness - threshold, soft);
+    float weight = brightness > 1e-6 ? contribution / brightness : 0.0;
+
+    imageStore(u_BloomMip0, pixel, vec4(hdr * clamp(weight, 0.0, 1.0), 1.0));
+}

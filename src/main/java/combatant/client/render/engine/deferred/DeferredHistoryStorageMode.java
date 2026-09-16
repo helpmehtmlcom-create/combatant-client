@@ -14,5 +14,7 @@ package combatant.client.render.engine.deferred;
  */
 public enum DeferredHistoryStorageMode {
     STORE_AFTER_CONSUME,
-    PING_PONG
+    PING_PONG,
+    /** One persistent state buffer updated in-place after its previous value has been consumed. */
+    IN_PLACE
 }

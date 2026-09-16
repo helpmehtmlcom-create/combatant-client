@@ -1,0 +1,51 @@
+#version 430 core
+
+/*
+ * This file is part of the Combatant Client distribution.
+ * Copyright (c) 2026 pivosos2007.
+ *
+ * Licensed under the GNU General Public License v3.0.
+ */
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, rgba16f) readonly uniform image2D u_BaseLevel;
+layout(binding = 1, rgba16f) readonly uniform image2D u_CoarserAccumulated;
+layout(binding = 2, rgba16f) writeonly uniform image2D u_BloomOutput;
+
+layout(std430, binding = 3) readonly buffer BloomParams {
+    vec4 params; // z=intensity, w=has coarser chain
+} u_Bloom;
+
+vec4 loadCoarse(ivec2 p, ivec2 size) {
+    return imageLoad(u_CoarserAccumulated, clamp(p, ivec2(0), size - ivec2(1)));
+}
+
+vec4 sampleCoarseBilinear(vec2 uv) {
+    ivec2 size = imageSize(u_CoarserAccumulated);
+    vec2 p = uv * vec2(size) - 0.5;
+    ivec2 base = ivec2(floor(p));
+    vec2 f = fract(p);
+    vec4 a = mix(loadCoarse(base + ivec2(0, 0), size),
+                 loadCoarse(base + ivec2(1, 0), size), f.x);
+    vec4 b = mix(loadCoarse(base + ivec2(0, 1), size),
+                 loadCoarse(base + ivec2(1, 1), size), f.x);
+    return mix(a, b, f.y);
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(u_BloomOutput);
+    if (any(greaterThanEqual(pixel, size))) return;
+
+    vec4 sum = imageLoad(u_BaseLevel, pixel);
+    if (u_Bloom.params.w > 0.5) {
+        vec2 uv = (vec2(pixel) + 0.5) / vec2(size);
+        vec4 coarse = sampleCoarseBilinear(uv);
+        sum.rgb += coarse.rgb;
+        sum.a += coarse.a;
+    }
+    float normalization = max(sum.a, 1.0);
+    vec3 bloom = max(sum.rgb / normalization, vec3(0.0)) * max(u_Bloom.params.z, 0.0);
+    imageStore(u_BloomOutput, pixel, vec4(bloom, 1.0));
+}

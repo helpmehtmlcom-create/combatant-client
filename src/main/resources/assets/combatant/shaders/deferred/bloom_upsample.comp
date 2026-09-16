@@ -1,0 +1,43 @@
+#version 430 core
+
+/*
+ * This file is part of the Combatant Client distribution.
+ * Copyright (c) 2026 pivosos2007.
+ *
+ * Licensed under the GNU General Public License v3.0.
+ */
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, rgba16f) readonly uniform image2D u_CurrentLevel;
+layout(binding = 1, rgba16f) readonly uniform image2D u_CoarserAccumulated;
+layout(binding = 2, rgba16f) writeonly uniform image2D u_OutputLevel;
+
+vec4 loadCoarse(ivec2 p, ivec2 size) {
+    return imageLoad(u_CoarserAccumulated, clamp(p, ivec2(0), size - ivec2(1)));
+}
+
+vec4 sampleCoarseBilinear(vec2 uv) {
+    ivec2 size = imageSize(u_CoarserAccumulated);
+    vec2 p = uv * vec2(size) - 0.5;
+    ivec2 base = ivec2(floor(p));
+    vec2 f = fract(p);
+    vec4 a = mix(loadCoarse(base + ivec2(0, 0), size),
+                 loadCoarse(base + ivec2(1, 0), size), f.x);
+    vec4 b = mix(loadCoarse(base + ivec2(0, 1), size),
+                 loadCoarse(base + ivec2(1, 1), size), f.x);
+    return mix(a, b, f.y);
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(u_OutputLevel);
+    if (any(greaterThanEqual(pixel, size))) return;
+
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(size);
+    vec4 current = imageLoad(u_CurrentLevel, pixel);
+    vec4 coarse = sampleCoarseBilinear(uv);
+    // RGB stores the weighted sum; alpha stores the accumulated scale weight. The final stage
+    // normalizes by alpha, preventing energy from growing with mip count/resolution.
+    imageStore(u_OutputLevel, pixel, vec4(current.rgb + coarse.rgb, current.a + coarse.a));
+}

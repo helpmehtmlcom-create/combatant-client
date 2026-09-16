@@ -28,6 +28,8 @@ public record DeferredTextureSpec(
         FULL,
         /** Final presentation/output resolution; may differ from the world render resolution. */
         OUTPUT,
+        /** HDR bloom working resolution, scaled from final output rather than render resolution. */
+        BLOOM,
         SHADOW_OUTPUT,
         CONTACT_SHADOW_TRACE,
         AMBIENT_OCCLUSION,
@@ -41,6 +43,7 @@ public record DeferredTextureSpec(
             if (settings == null) settings = DeferredRuntimeConfig.current();
             return switch (this) {
                 case FULL, OUTPUT -> 1.0f;
+                case BLOOM -> DeferredPostConfig.current().bloomInitialScale();
                 case SHADOW_OUTPUT -> settings.shadowOutputScale();
                 case CONTACT_SHADOW_TRACE -> settings.contactShadowScale();
                 case AMBIENT_OCCLUSION -> settings.ambientOcclusionScale();
@@ -54,6 +57,10 @@ public record DeferredTextureSpec(
 
         public int width(int renderWidth, int outputWidth, DeferredRuntimeConfig.Snapshot settings) {
             if (this == OUTPUT) return Math.max(1, outputWidth > 0 ? outputWidth : renderWidth);
+            if (this == BLOOM) {
+                int base = outputWidth > 0 ? outputWidth : renderWidth;
+                return scaledExtent(base, scale(settings));
+            }
             return scaledExtent(renderWidth, scale(settings));
         }
 
@@ -67,6 +74,10 @@ public record DeferredTextureSpec(
 
         public int height(int renderHeight, int outputHeight, DeferredRuntimeConfig.Snapshot settings) {
             if (this == OUTPUT) return Math.max(1, outputHeight > 0 ? outputHeight : renderHeight);
+            if (this == BLOOM) {
+                int base = outputHeight > 0 ? outputHeight : renderHeight;
+                return scaledExtent(base, scale(settings));
+            }
             return scaledExtent(renderHeight, scale(settings));
         }
 

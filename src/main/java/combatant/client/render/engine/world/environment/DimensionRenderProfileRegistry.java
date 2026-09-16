@@ -37,17 +37,17 @@ public final class DimensionRenderProfileRegistry {
         register(Level.OVERWORLD, new DimensionRenderProfile(
                 OVERWORLD_PROFILE_ID, OVERWORLD_ENVIRONMENT, OVERWORLD_SKY,
                 OVERWORLD_CELESTIAL, OVERWORLD_MEDIUM, OVERWORLD_WEATHER, OVERWORLD_CLOUDS,
-                WorldRenderState.NEUTRAL, WorldRenderState.NEUTRAL, WorldRenderState.NEUTRAL
+                WorldRenderState.NEUTRAL, ExposureProfileRegistry.OVERWORLD, WorldRenderState.NEUTRAL
         ));
         register(Level.NETHER, new DimensionRenderProfile(
                 NETHER_PROFILE_ID, id("nether_environment"), WorldRenderState.NONE,
                 WorldRenderState.NONE, id("nether_medium"), WorldRenderState.NONE, WorldRenderState.NONE,
-                WorldRenderState.NEUTRAL, WorldRenderState.NEUTRAL, WorldRenderState.NEUTRAL
+                WorldRenderState.NEUTRAL, ExposureProfileRegistry.NETHER, WorldRenderState.NEUTRAL
         ));
         register(Level.END, new DimensionRenderProfile(
                 END_PROFILE_ID, id("end_environment"), WorldRenderState.NONE,
                 WorldRenderState.NONE, id("end_medium"), WorldRenderState.NONE, WorldRenderState.NONE,
-                WorldRenderState.NEUTRAL, WorldRenderState.NEUTRAL, WorldRenderState.NEUTRAL
+                WorldRenderState.NEUTRAL, ExposureProfileRegistry.END, WorldRenderState.NEUTRAL
         ));
     }
 

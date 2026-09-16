@@ -233,8 +233,20 @@ public enum DeferredResource {
             DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.INDIRECT_LIGHT, false)),
     HISTORY_INDIRECT_CONFIDENCE(FrameGraphResourceKey.persistentTexture("world.history.indirect_confidence"),
             DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.INDIRECT_LIGHT, false)),
+    /** Transient weighted log-luminance histogram for eye adaptation. */
+    EXPOSURE_HISTOGRAM(FrameGraphResourceKey.transientBuffer("world.post.exposure.histogram"), null),
+    /** HDR bloom extraction/downsample chain at output-relative bloom resolution. */
+    BLOOM_PYRAMID(FrameGraphResourceKey.transientTexture("world.post.bloom.pyramid"),
+            DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.BLOOM, true)),
+    /** Progressive upsample scratch chain. */
+    BLOOM_UPSAMPLE(FrameGraphResourceKey.transientTexture("world.post.bloom.upsample"),
+            DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.BLOOM, true)),
+    /** Final HDR bloom radiance, kept separate for future post composition/tonemapping. */
+    BLOOM_COLOR(FrameGraphResourceKey.transientTexture("world.post.bloom.color"),
+            DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.BLOOM, false)),
     LIGHT_LIST(FrameGraphResourceKey.transientBuffer("world.light_list"), null),
     INDIRECT_DRAWS(FrameGraphResourceKey.transientBuffer("world.indirect_draws"), null),
+    /** Persistent eye-adaptation state; never encoded into a color-history pixel. */
     EXPOSURE(FrameGraphResourceKey.persistentBuffer("world.exposure"), null);
 
     private final FrameGraphResourceKey key;

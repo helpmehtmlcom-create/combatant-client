@@ -1,0 +1,122 @@
+#version 430 core
+
+/*
+ * This file is part of the Combatant Client distribution.
+ * Copyright (c) 2026 pivosos2007.
+ *
+ * Licensed under the GNU General Public License v3.0.
+ */
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) readonly buffer ExposureHistogram {
+    uint bins[];
+} u_Histogram;
+
+layout(std430, binding = 1) buffer ExposureState {
+    vec4 exposure;    // x=multiplier, y=adapted EV, z=target EV, w=target luminance
+    vec4 adaptation;  // x=previous EV, y=previous multiplier, z=applied rate, w=delta seconds
+    vec4 percentiles; // x=low EV, y=high EV, z=metered EV, w=weighted sample count
+    uvec4 lifecycle;  // x=valid, y=age, z=reset reason, w=contract version
+} u_State;
+
+layout(std430, binding = 2) readonly buffer ExposureReduceParams {
+    vec4 histogram;     // x=bins, y=min log luminance, z=max log luminance, w=middle grey
+    vec4 percentiles;   // x=low, y=high, z=target, w=metering policy
+    vec4 adaptation;    // x=brighten rate, y=darken rate, z=compensation EV, w=delta seconds
+    vec4 rangeAndReset; // x=min EV, y=max EV, z=initial EV, w=reset flag
+    int historyAge;
+    int resetReason;
+    int resetPolicy;
+    int nextAge;
+} u_Params;
+
+float binLogLuminance(int index, int binCount, float minLog, float maxLog) {
+    float t = (float(index) + 0.5) / float(max(binCount, 1));
+    return mix(minLog, maxLog, t);
+}
+
+int percentileIndex(uint total, float percentile, int binCount) {
+    uint threshold = uint(clamp(percentile, 0.0, 1.0) * float(total));
+    uint cumulative = 0u;
+    for (int i = 0; i < binCount; ++i) {
+        cumulative += u_Histogram.bins[i];
+        if (cumulative >= threshold) return i;
+    }
+    return max(0, binCount - 1);
+}
+
+void main() {
+    int binCount = clamp(int(u_Params.histogram.x + 0.5), 1, 256);
+    float minLog = u_Params.histogram.y;
+    float maxLog = max(minLog + 1e-4, u_Params.histogram.z);
+    float middleGrey = max(1e-4, u_Params.histogram.w);
+
+    uint total = 0u;
+    for (int i = 0; i < binCount; ++i) total += u_Histogram.bins[i];
+
+    float lowLog = 0.0;
+    float highLog = 0.0;
+    float meteredLog = 0.0;
+    if (total > 0u) {
+        int lowIndex = percentileIndex(total, u_Params.percentiles.x, binCount);
+        int highIndex = percentileIndex(total, u_Params.percentiles.y, binCount);
+        int targetIndex = percentileIndex(total, u_Params.percentiles.z, binCount);
+        highIndex = max(highIndex, lowIndex);
+
+        lowLog = binLogLuminance(lowIndex, binCount, minLog, maxLog);
+        highLog = binLogLuminance(highIndex, binCount, minLog, maxLog);
+
+        if (u_Params.percentiles.w >= 0.5) {
+            meteredLog = binLogLuminance(targetIndex, binCount, minLog, maxLog);
+        } else {
+            float weighted = 0.0;
+            uint clippedCount = 0u;
+            for (int i = lowIndex; i <= highIndex; ++i) {
+                uint count = u_Histogram.bins[i];
+                weighted += binLogLuminance(i, binCount, minLog, maxLog) * float(count);
+                clippedCount += count;
+            }
+            meteredLog = clippedCount > 0u
+                    ? weighted / float(clippedCount)
+                    : binLogLuminance(targetIndex, binCount, minLog, maxLog);
+        }
+    }
+
+    float targetLuminance = total > 0u ? exp2(meteredLog) : middleGrey;
+    float meteredEv = log2(max(targetLuminance, 1e-8) / middleGrey);
+    float desiredEv = clamp(meteredEv - u_Params.adaptation.z,
+            u_Params.rangeAndReset.x, u_Params.rangeAndReset.y);
+
+    bool hadPrevious = u_State.lifecycle.x != 0u;
+    float previousEv = hadPrevious ? u_State.exposure.y : desiredEv;
+    float previousMultiplier = hadPrevious ? u_State.exposure.x : exp2(-previousEv);
+    bool reset = u_Params.rangeAndReset.w > 0.5 || !hadPrevious;
+    float adaptedEv;
+    float appliedRate = 0.0;
+    if (reset) {
+        adaptedEv = u_Params.resetPolicy == 1
+                ? clamp(u_Params.rangeAndReset.z, u_Params.rangeAndReset.x, u_Params.rangeAndReset.y)
+                : desiredEv;
+    } else {
+        // Lower EV means exposure multiplier rises (camera brightens a dark scene).
+        appliedRate = desiredEv < previousEv ? u_Params.adaptation.x : u_Params.adaptation.y;
+        float response = 1.0 - exp(-max(appliedRate, 0.0) * clamp(u_Params.adaptation.w, 1.0 / 240.0, 0.25));
+        adaptedEv = mix(previousEv, desiredEv, clamp(response, 0.0, 1.0));
+    }
+
+    adaptedEv = clamp(adaptedEv, u_Params.rangeAndReset.x, u_Params.rangeAndReset.y);
+    float exposureMultiplier = exp2(-adaptedEv);
+
+    u_State.exposure = vec4(exposureMultiplier, adaptedEv, desiredEv, targetLuminance);
+    u_State.adaptation = vec4(previousEv, previousMultiplier, appliedRate,
+            clamp(u_Params.adaptation.w, 1.0 / 240.0, 0.25));
+    u_State.percentiles = vec4(
+        total > 0u ? log2(max(exp2(lowLog), 1e-8) / middleGrey) : 0.0,
+        total > 0u ? log2(max(exp2(highLog), 1e-8) / middleGrey) : 0.0,
+        meteredEv,
+        float(total)
+    );
+    u_State.lifecycle = uvec4(1u, uint(max(u_Params.nextAge, 1)),
+            uint(max(u_Params.resetReason, 0)), 1u);
+}
