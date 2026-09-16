@@ -132,13 +132,17 @@ public class KillAura extends Module {
     }
 
     private final EnumValue<SwitchMode> swordSwitchMode =
-            enumSetting("killauraSwordSwitchMode", "sword_switch_mode", SwitchMode.SILENT, SwitchMode.values());
+            description(enumSetting("killauraSwordSwitchMode", "sword_switch_mode", SwitchMode.SILENT, SwitchMode.values()),
+                    "Weapon switch behavior: SILENT (packet only), CLIENT (hotbar change), or NONE");
     private final BooleanValue silentSwordSwitch =
-            bool("killauraSilentSwordSwitch", "silent_sword_switch", true);
+            description(bool("killauraSilentSwordSwitch", "silent_sword_switch", true),
+                    "Performs weapon swap via server packets while keeping your client hotbar selection");
     private final BooleanValue swordOnly =
-            bool("killauraSwordOnly", "sword_only", true);
+            description(bool("killauraSwordOnly", "sword_only", true),
+                    "Only attack when holding a sword, axe, or mace");
     private final BooleanValue switchBack =
-            bool("killauraSwitchBack", "switch_back", true);
+            description(bool("killauraSwitchBack", "switch_back", true),
+                    "Reverts to previously selected hotbar slot after attacking");
     private final NumberValue<Double> acquireRangeIncrement =
             visibleWhen(numCommon(
                     "killauraAcquireRangeIncrement",

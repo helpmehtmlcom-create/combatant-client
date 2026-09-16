@@ -111,12 +111,15 @@ public class AutoCrystal extends Module {
             1.0f,
             20.0f
     );
-    private final BooleanValue antiSuicide = boolCommon(
+    private final BooleanValue antiSuicide = description(boolCommon(
             "autocrystalAntiSuicide",
             "anti_suicide",
             true
+    ), "Prevents placing crystals if explosion damage would pop your totem or kill you");
+    private final BooleanValue placeEnabled = description(
+            boolCommon("autocrystalPlace", CommonSettingSchemas.PLACE, true),
+            "Enables automatic End Crystal placement at optimal target blast positions"
     );
-    private final BooleanValue placeEnabled = boolCommon("autocrystalPlace", CommonSettingSchemas.PLACE, true);
     private final NumberValue<Integer> placeDelay =
             visibleWhen(numCommon(
                     "autocrystalPlaceDelay",
@@ -143,11 +146,22 @@ public class AutoCrystal extends Module {
         PLACE_ONLY
     }
 
-    private final EnumValue<ExecutionOrder> executionOrder =
-            enumSetting("autocrystalExecutionOrder", "execution_order", ExecutionOrder.BREAK_PLACE, ExecutionOrder.values());
-    private final BooleanValue instantSpawnBreak = bool("autocrystalInstantSpawnBreak", "instant_spawn_break", true);
-    private final BooleanValue fastPlace = bool("autocrystalFastPlace", "fast_place", true);
-    private final BooleanValue multiBreak = bool("autocrystalMultiBreak", "multi_break", true);
+    private final EnumValue<ExecutionOrder> executionOrder = description(
+            enumSetting("autocrystalExecutionOrder", "execution_order", ExecutionOrder.BREAK_PLACE, ExecutionOrder.values()),
+            "Sequencing order: BREAK_PLACE (break old, place new), PLACE_BREAK, or single-action modes"
+    );
+    private final BooleanValue instantSpawnBreak = description(
+            bool("autocrystalInstantSpawnBreak", "instant_spawn_break", true),
+            "Detonates crystals the exact tick their spawn packet arrives from the server"
+    );
+    private final BooleanValue fastPlace = description(
+            bool("autocrystalFastPlace", "fast_place", true),
+            "Bypasses standard client placement delay when conditions allow instant crystal placement"
+    );
+    private final BooleanValue multiBreak = description(
+            bool("autocrystalMultiBreak", "multi_break", true),
+            "Detonates multiple crystals in the same tick if damage conditions are met"
+    );
     private final NumberValue<Integer> maxBreaks = visibleWhen(
             num("autocrystalMaxBreaks", "max_breaks", 2, 1, 5),
             multiBreak::get

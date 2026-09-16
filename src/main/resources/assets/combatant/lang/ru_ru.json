@@ -3103,6 +3103,7 @@
   "command.help.description": "Показывает все доступные команды клиента с кликабельными страницами.",
   "command.hide.description": "Скрывает или показывает модуль в ModuleList, не отключая его.",
   "command.iris.description": "Показывает диагностику совместимости Iris и шейдеров.",
+  "command.kit.description": "Сохраняет, загружает, экипирует или сортирует наборы инвентаря для InventorySorter.",
   "command.modules.description": "Показывает модули по состоянию или категории.",
   "command.ping.description": "Показывает текущую задержку до сервера.",
   "command.profiler.description": "Управляет профилировщиками рендера и среды выполнения.",

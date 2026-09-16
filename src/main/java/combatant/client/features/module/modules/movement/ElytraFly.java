@@ -66,11 +66,23 @@ public class ElytraFly extends Module {
     private static final double DIVE_BOOST_MULTIPLIER = 2.0;
     private static final double PACKET_START_COLLISION_XZ_CONTRACT = 0.25;
     private static final double PACKET_START_COLLISION_Y_OFFSET = -0.3;
-    public final BooleanValue noCrash = bool("elytrafly_no_crash", true);
+    public final BooleanValue noCrash = description(
+            bool("elytrafly_no_crash", true),
+            "Prevents flying into blocks or the ground to avoid kinetic wall damage"
+    );
     private final Minecraft mc = Minecraft.getInstance();
-    private final EnumValue<Mode> mode = enumMode("elytrafly_mode", Mode.BOOST, Mode.values());
-    private final BooleanValue instantStart = bool("elytrafly_instant_start", false);
-    private final BooleanValue instantStop = bool("elytrafly_instant_stop", false);
+    private final EnumValue<Mode> mode = description(
+            enumMode("elytrafly_mode", Mode.BOOST, Mode.values()),
+            "Flight mode: BOOST (pitch-directed boost), STATIC (omnidirectional WASD), PACKET, or FIREWORK"
+    );
+    private final BooleanValue instantStart = description(
+            bool("elytrafly_instant_start", false),
+            "Instantly begins elytra flight on single jump in air"
+    );
+    private final BooleanValue instantStop = description(
+            bool("elytrafly_instant_stop", false),
+            "Instantly stops all momentum and hovers in place when releasing movement keys"
+    );
     private final BooleanValue speedEnabled =
             visibleWhen(bool("elytrafly_speed", true), () -> mode.get() == Mode.STATIC);
     private final NumberValue<Float> verticalSpeed =

@@ -3319,6 +3319,7 @@
   "command.help.description": "Shows every available client command with clickable pages.",
   "command.hide.description": "Hides or shows a module in ModuleList without disabling it.",
   "command.iris.description": "Shows Iris and shader compatibility diagnostics.",
+  "command.kit.description": "Saves, loads, equips, or sorts inventory kits for InventorySorter.",
   "command.modules.description": "Lists modules by state or category.",
   "command.ping.description": "Shows the current server latency.",
   "command.profiler.description": "Controls rendering and runtime profilers.",

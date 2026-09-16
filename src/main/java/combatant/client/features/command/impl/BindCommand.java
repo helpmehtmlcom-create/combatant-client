@@ -20,7 +20,7 @@ import java.util.Locale;
 @CommandInfo(
         id = "bind",
         aliases = {"binds", "keybind"},
-        usage = "@bind <module> <key|combo|none> | @bind list",
+        usage = "@bind <module> [key|combo|none] | @bind list",
         descriptionKey = "command.bind.description"
 )
 public final class BindCommand implements ClientCommand {
@@ -31,14 +31,19 @@ public final class BindCommand implements ClientCommand {
             listBinds();
             return true;
         }
+        if (moduleArg == null || moduleArg.isBlank()) {
+            CommandOutput.warning("Usage: " + metadata().usage());
+            return true;
+        }
         Module module = CommandUtils.findModule(moduleArg);
         if (module == null) {
-            CommandOutput.error(moduleArg == null ? "Usage: " + metadata().usage() : "Module not found: " + moduleArg);
+            CommandOutput.error("Module not found: " + moduleArg);
             return true;
         }
         String key = ctx.arg(1);
         if (key == null) {
-            CommandOutput.send(module.getDisplayName() + " bind: " + module.getKeyBindSetting().getValue().get());
+            String current = module.getKeyBindSetting().getValue().get();
+            CommandOutput.info(module.getDisplayName() + " bind: " + (current == null || current.isBlank() ? "NONE" : current));
             return true;
         }
         String normalized = key.trim().toUpperCase(Locale.ROOT);

@@ -60,28 +60,33 @@ public final class BowBomb extends Module {
 
                     if (!shooting) {
                         shooting = true;
-                        LocalPlayer p = mc.player;
-                        double x = p.getX();
-                        double y = p.getY();
-                        double z = p.getZ();
-                        int count = strength.get();
-                        boolean isBypass = mode.get() == Mode.BYPASS;
+                        try {
+                            LocalPlayer p = mc.player;
+                            if (p == null || mc.getConnection() == null) return;
+                            double x = p.getX();
+                            double y = p.getY();
+                            double z = p.getZ();
+                            int count = Math.min(strength.get(), 100);
+                            boolean isBypass = mode.get() == Mode.BYPASS;
 
-                        for (int i = 0; i < count; i++) {
-                            if (isBypass) {
-                                mc.getConnection().send(new ServerboundMovePlayerPacket.Pos(
-                                        x, y - 1e-10, z, true, false
-                                ));
-                                mc.getConnection().send(new ServerboundMovePlayerPacket.Pos(
-                                        x, y + 1e-10, z, false, false
-                                ));
-                            } else {
-                                mc.getConnection().send(new ServerboundMovePlayerPacket.Pos(
-                                        x, y - 1e-10, z, true, false
-                                ));
+                            for (int i = 0; i < count; i++) {
+                                if (mc.getConnection() == null) break;
+                                if (isBypass) {
+                                    mc.getConnection().send(new ServerboundMovePlayerPacket.Pos(
+                                            x, y - 1e-10, z, true, false
+                                    ));
+                                    mc.getConnection().send(new ServerboundMovePlayerPacket.Pos(
+                                            x, y + 1e-10, z, false, false
+                                    ));
+                                } else {
+                                    mc.getConnection().send(new ServerboundMovePlayerPacket.Pos(
+                                            x, y - 1e-10, z, true, false
+                                    ));
+                                }
                             }
+                        } finally {
+                            shooting = false;
                         }
-                        shooting = false;
                     }
                 }
             }

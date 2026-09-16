@@ -46,7 +46,7 @@ public final class KitCommand implements ClientCommand {
                 }
                 String name = ctx.arg(1);
                 if (name == null || name.trim().isEmpty()) {
-                    CommandOutput.error("Usage: @kit save <name>");
+                    CommandOutput.warning("Usage: @kit save <name>");
                     return true;
                 }
                 sorter.saveCurrentInventory(name.trim());
@@ -59,7 +59,7 @@ public final class KitCommand implements ClientCommand {
                 }
                 String name = ctx.arg(1);
                 if (name == null || name.trim().isEmpty()) {
-                    CommandOutput.error("Usage: @kit load <name>");
+                    CommandOutput.warning("Usage: @kit load <name>");
                     return true;
                 }
                 if (sorter.loadKit(name.trim())) {
@@ -113,7 +113,7 @@ public final class KitCommand implements ClientCommand {
                 }
                 String name = ctx.arg(1);
                 if (name == null || name.trim().isEmpty()) {
-                    CommandOutput.error("Usage: @kit delete <name>");
+                    CommandOutput.warning("Usage: @kit delete <name>");
                     return true;
                 }
                 if (sorter.deleteKit(name.trim())) {

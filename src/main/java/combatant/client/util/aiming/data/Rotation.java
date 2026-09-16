@@ -41,8 +41,15 @@ public record Rotation(float yaw, float pitch, boolean isNormalized) {
     }
 
     public static Rotation fromRotationVec(double diffX, double diffY, double diffZ) {
+        if (Double.isNaN(diffX) || Double.isNaN(diffY) || Double.isNaN(diffZ)) {
+            return ZERO;
+        }
+        double distXZ = Math.hypot(diffX, diffZ);
+        if (distXZ < 1.0E-7 && Math.abs(diffY) < 1.0E-7) {
+            return ZERO;
+        }
         float yaw = Mth.wrapDegrees((float) Math.toDegrees(Math.atan2(diffZ, diffX)) - 90.0f);
-        float pitch = Mth.wrapDegrees((float) -Math.toDegrees(Math.atan2(diffY, Math.hypot(diffX, diffZ))));
+        float pitch = Mth.clamp(Mth.wrapDegrees((float) -Math.toDegrees(Math.atan2(diffY, distXZ))), -90.0f, 90.0f);
         return new Rotation(yaw, pitch, false);
     }
 
@@ -53,7 +60,10 @@ public record Rotation(float yaw, float pitch, boolean isNormalized) {
     }
 
     private static float quantizeDelta(float rawDelta, float gcd) {
-        if (gcd <= 0.0f) {
+        if (Float.isNaN(rawDelta) || Float.isInfinite(rawDelta)) {
+            return 0.0f;
+        }
+        if (gcd <= 0.0f || Float.isNaN(gcd) || Float.isInfinite(gcd)) {
             return rawDelta;
         }
 

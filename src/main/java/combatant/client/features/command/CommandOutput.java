@@ -47,6 +47,9 @@ public enum CommandOutput {
         send(message, Tone.INFO);
     }
 
+    public static void info(String message) {
+        send(message, Tone.INFO);
+    }
     public static void success(String message) {
         send(message, Tone.SUCCESS);
     }

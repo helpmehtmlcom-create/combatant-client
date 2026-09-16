@@ -35,3 +35,22 @@ Index `description` and `aliases` in `ModuleManager` into a lightweight in-memor
 - Frequency: recurring
 - Related Features: ClickGUI, ModulesCommand
 
+---
+
+## [FEAT-20260916-002] setting_quick_presets
+**Logged**: 2026-09-16T13:50:00Z
+**Priority**: medium
+**Status**: pending
+**Area**: frontend
+### Requested Capability
+Per-module quick presets dropdown (e.g. "Strict / NCP", "Hypixel", "Anarchy / 2b2t", "Grim AC") in ClickGUI setting header.
+### User Context
+Configuring 20+ intricate settings for AutoCrystal or KillAura is tedious for new users; one-click server profile presets significantly improve understandability and out-of-the-box experience.
+### Complexity Estimate
+medium
+### Suggested Implementation
+Define `SettingPreset` record containing map of config values and expose a preset selection pill in `SettingsPanelComponent` header.
+### Metadata
+- Frequency: recurring
+- Related Features: SettingsPanelComponent, ConfigProfileService
+

@@ -56,6 +56,7 @@ private static final float DROPDOWN_PANEL_W = 115.0f;
     private final List<Setting> settings = new ArrayList<>();
     private final List<SettingRow> rows = new ArrayList<>();
     private final List<SettingHit> hits = new ArrayList<>();
+    private Setting hoveredSettingWithTooltip;
     private final SettingRenderSurface renderSurface;
     private final Minecraft mc = Minecraft.getInstance();
     private final UiScriptModuleHandle panelModuleHandle = HudScriptLayouts.handle(SettingsPanelComponent.class);
@@ -269,6 +270,7 @@ private static final float DROPDOWN_PANEL_W = 115.0f;
             renderScriptedPanel(panelScale, fadeProgress, mx, my, palette);
 
             hits.clear();
+            hoveredSettingWithTooltip = null;
             float rowsReveal = fadeProgress;
             boolean clipped = ScissorFunction.pushRaw(contentX, contentY, contentW, contentH);
             float fadeBottom = contentY + contentH;
@@ -290,6 +292,12 @@ private static final float DROPDOWN_PANEL_W = 115.0f;
                     float gap = row.gap() * rowsReveal;
                     if (sh > 0.5f) {
                         hits.add(new SettingHit(row.setting(), contentX, y, contentW, sh, row.scale()));
+                        if (inside(mx, my, contentX, y, contentW, sh)) {
+                            String tip = row.setting().getResolvedTooltip();
+                            if (tip != null && !tip.isBlank()) {
+                                hoveredSettingWithTooltip = row.setting();
+                            }
+                        }
                         if (y + sh >= contentY - 1.0f * panelScale && y <= contentY + contentH + 1.0f * panelScale) {
                             float slide = (1f - row.anim()) * 6f * panelScale;
                             boolean itemClip = ScissorFunction.pushRaw(contentX, y, contentW, sh);
@@ -495,6 +503,25 @@ private static final float DROPDOWN_PANEL_W = 115.0f;
             areaH = Math.max(1f, HudScale.virtualHeight(screenW, screenH));
         }
 
+        if (hoveredSettingWithTooltip != null) {
+            String tooltip = hoveredSettingWithTooltip.getResolvedTooltip();
+            if (tooltip != null && !tooltip.isBlank()) {
+                String settingTitle = hoveredSettingWithTooltip.getDisplayName();
+                ClickGuiHintOverlay.renderBottomLeft(
+                        areaX,
+                        areaY,
+                        areaW,
+                        areaH,
+                        scale,
+                        alpha,
+                        settingTitle + " — " + tooltip,
+                        ClickGuiI18n.tr("clickgui.hints.settings_panel.scroll", "Wheel - scroll settings"),
+                        ClickGuiI18n.tr("clickgui.hints.settings_panel.back", "Esc - back to category")
+                );
+                return;
+            }
+        }
+
         ClickGuiHintOverlay.renderBottomLeft(
                 areaX,
                 areaY,
@@ -509,7 +536,6 @@ private static final float DROPDOWN_PANEL_W = 115.0f;
                 ClickGuiI18n.tr("clickgui.hints.settings_panel.hide", "Alt+H - hide hints")
         );
     }
-
     private void renderScriptedPanel(float scale,
                                      float alpha,
                                      float mouseX,

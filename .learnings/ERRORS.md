@@ -96,3 +96,30 @@ Access `player.input.keyPresses.forward()`, etc.
 ### Resolution
 - **Resolved**: 2026-09-16T11:30:00Z
 - **Notes**: Added null-checks and updated access to `player.input.keyPresses.forward()`.
+
+---
+
+## [ERR-20260916-004] CommandOutput missing info method
+**Logged**: 2026-09-16T13:15:00Z
+**Priority**: medium
+**Status**: resolved
+**Area**: backend
+### Summary
+Compilation error when calling `CommandOutput.info(...)` instead of `send(...)`.
+### Error
+```
+error: cannot find symbol
+CommandOutput.info(...)
+  symbol: method info(String)
+  location: class CommandOutput
+```
+### Context
+`CommandOutput` had `success(msg)`, `warning(msg)`, `error(msg)`, but only `send(msg)` for informational tone.
+### Suggested Fix
+Added `public static void info(String message) { send(message, Tone.INFO); }` to `CommandOutput`.
+### Metadata
+- Reproducible: yes
+- Related Files: src/main/java/combatant/client/features/command/CommandOutput.java
+### Resolution
+- **Resolved**: 2026-09-16T13:20:00Z
+- **Notes**: Added `info` overload calling `send(message, Tone.INFO)`.

@@ -708,6 +708,22 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
         }
         return value;
     }
+    protected final <V extends ConfigValue<?>> V description(V value, String description) {
+        SettingDef def = declaredSettingDefsByValue.get(value);
+        if (def != null) {
+            def.description(description);
+        }
+        return value;
+    }
+
+    protected final <V extends ConfigValue<?>> V tooltip(V value, String tooltip) {
+        SettingDef def = declaredSettingDefsByValue.get(value);
+        if (def != null) {
+            def.tooltip(tooltip);
+        }
+        return value;
+    }
+
 
     private void declare(ConfigValue<?> value, SettingDef def) {
         declaredSettingDefs.add(def);

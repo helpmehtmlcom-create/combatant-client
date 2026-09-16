@@ -48,7 +48,13 @@ public enum RotationUtil {
         double dx = to.x - from.x;
         double dy = to.y - from.y;
         double dz = to.z - from.z;
+        if (Double.isNaN(dx) || Double.isNaN(dy) || Double.isNaN(dz)) {
+            return new float[]{0.0f, 0.0f};
+        }
         double distXZ = Math.sqrt(dx * dx + dz * dz);
+        if (distXZ < 1.0E-7 && Math.abs(dy) < 1.0E-7) {
+            return new float[]{0.0f, 0.0f};
+        }
 
         float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
         float pitch = (float) (-Math.toDegrees(Math.atan2(dy, distXZ)));

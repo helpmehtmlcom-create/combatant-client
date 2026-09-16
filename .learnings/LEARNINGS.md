@@ -83,3 +83,57 @@ Maintain cached flat subscriber arrays updated on registration/unregistration ra
 - Related Files: src/main/java/combatant/client/events/EventBus.java, src/main/java/combatant/client/mixins/ConnectionMixin.java
 - Tags: eventbus, performance, zero_allocation
 
+---
+
+## [LRN-20260916-004] best_practice
+**Logged**: 2026-09-16T13:30:00Z
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+### Summary
+Setting tooltip and description architecture in ClickGUI hint overlay.
+### Details
+`SettingDef` and abstract `Setting` support programmatic `.description()` and `.tooltip()` declarations as well as localized `<setting_translation_key>.desc` keys. `SettingsPanelComponent` captures the hovered setting during row iteration and displays `Setting Title — Tooltip` directly in the bottom-left `ClickGuiHintOverlay`, providing immediate user guidance without obstructing the panel.
+### Suggested Action
+Attach `.description(...)` to all multi-mode or complex numeric settings in gameplay modules.
+### Metadata
+- Source: settings_ux_audit
+- Related Files: src/main/java/combatant/client/config/SettingDef.java, src/main/java/combatant/client/features/gui/clickgui/settings/Setting.java, src/main/java/combatant/client/features/gui/clickgui/layout/screen/settings/implement/module/SettingsPanelComponent.java
+- Tags: settings, tooltips, clickgui, ux
+
+---
+
+## [LRN-20260916-005] best_practice
+**Logged**: 2026-09-16T13:40:00Z
+**Priority**: critical
+**Status**: resolved
+**Area**: backend
+### Summary
+Thread-safe state handling for Netty packet event listeners.
+### Details
+`PacketEvent.Receive` is fired synchronously on Netty worker threads. Handlers modifying state (e.g. `Blocker.java` storing block destruction targets in `placePositions`) must use concurrent data structures like `ConcurrentHashMap.newKeySet()` or dispatch to the main game loop via `mc.execute()` to prevent `ConcurrentModificationException` during main-thread tick iterations.
+### Suggested Action
+Audit all `PacketEvent` listeners to ensure any collections modified from incoming packets are thread-safe.
+### Metadata
+- Source: crash_hazard_audit
+- Related Files: src/main/java/combatant/client/features/module/modules/combat/Blocker.java
+- Tags: concurrency, netty, packet_event, thread_safety
+
+---
+
+## [LRN-20260916-006] best_practice
+**Logged**: 2026-09-16T13:45:00Z
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+### Summary
+NaN and zero-magnitude vector defense in rotation math.
+### Details
+Calculating yaw and pitch angles via `Math.atan2` and `Math.hypot` without guarding against `Double.isNaN` or near-zero magnitudes (`< 1.0E-7`) can propagate `NaN` or `Infinity` into Minecraft movement and rotation packets (`ServerboundMovePlayerPacket.Rot`), causing server kicks or desyncs. Always clamp and return `Rotation.ZERO` when distance is negligible.
+### Suggested Action
+Use `RotationUtil.calculateRotations` and `Rotation.fromRotationVec` with builtin NaN and near-zero clamping.
+### Metadata
+- Source: crash_hazard_audit
+- Related Files: src/main/java/combatant/client/util/aiming/RotationUtil.java, src/main/java/combatant/client/util/aiming/data/Rotation.java
+- Tags: math, rotations, nan_safety, aiming
+

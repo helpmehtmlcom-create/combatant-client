@@ -136,7 +136,7 @@ public class Blocker extends Module {
             numCommon("blocker_fade_time", CommonSettingSchemas.FADE_TIME, 600, 50, 2000);
 
     // Runtime state
-    private final Set<BlockPos> placePositions = new LinkedHashSet<>();
+    private final Set<BlockPos> placePositions = ConcurrentHashMap.newKeySet();
     private final Map<BlockPos, Float> miningProgress = new ConcurrentHashMap<>();
     private final Map<BlockPos, Long> miningTimes = new ConcurrentHashMap<>();
     private final Map<BlockPos, Long> renderBlocks = new ConcurrentHashMap<>();
