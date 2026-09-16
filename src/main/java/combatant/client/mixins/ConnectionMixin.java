@@ -40,7 +40,7 @@ public class ConnectionMixin {
             return;
         }
         if (BlinkManager.isSilentlyHandlingPackets()) return;
-        if (!Events.BUS.hasListeners(PacketEvent.Receive.class)) return;
+        if (!Events.BUS.hasListeners(PacketEvent.Receive.class) && !Events.BUS.hasListeners(PacketEvent.class)) return;
 
         try {
             PacketEvent.Receive event = new PacketEvent.Receive(packet);
@@ -97,7 +97,7 @@ public class ConnectionMixin {
     private static <T extends PacketListener> void combatant$onHandlePacketPost(Packet<T> packet, PacketListener listener, CallbackInfo ci) {
         if (packet == null) return;
         if (BlinkManager.isSilentlyHandlingPackets()) return;
-        if (!Events.BUS.hasListeners(PacketEvent.ReceivePost.class)) return;
+        if (!Events.BUS.hasListeners(PacketEvent.ReceivePost.class) && !Events.BUS.hasListeners(PacketEvent.class)) return;
 
         try {
             PacketEvent.ReceivePost event = new PacketEvent.ReceivePost(packet);
@@ -152,7 +152,7 @@ public class ConnectionMixin {
             return;
         }
         if (BlinkManager.isSilentlyHandlingPackets()) return;
-        if (!Events.BUS.hasListeners(PacketEvent.Send.class)) return;
+        if (!Events.BUS.hasListeners(PacketEvent.Send.class) && !Events.BUS.hasListeners(PacketEvent.class)) return;
         try {
             PacketEvent.Send event = new PacketEvent.Send(packet);
             Events.BUS.post(event);
@@ -168,7 +168,7 @@ public class ConnectionMixin {
     private void combatant$onSendPacketPost(Packet<?> packet, CallbackInfo ci) {
         if (packet == null) return;
         if (BlinkManager.isSilentlyHandlingPackets()) return;
-        if (!Events.BUS.hasListeners(PacketEvent.SendPost.class)) return;
+        if (!Events.BUS.hasListeners(PacketEvent.SendPost.class) && !Events.BUS.hasListeners(PacketEvent.class)) return;
         try {
             PacketEvent.SendPost event = new PacketEvent.SendPost(packet);
             Events.BUS.post(event);

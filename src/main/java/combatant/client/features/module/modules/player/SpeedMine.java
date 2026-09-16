@@ -32,6 +32,7 @@ import combatant.client.features.module.WorldPhase;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.util.combat.ExplosionRenderUtil;
 import combatant.client.util.player.inventory.InventorySwap;
+import combatant.client.util.block.mining.MiningDamageCalculator;
 
 @ModuleInfo(
         id = "speedmine",
@@ -235,9 +236,10 @@ public final class SpeedMine extends Module {
             return;
         }
 
-        float delta = state.getDestroyProgress(player, mc.level, miningPos) * speed.get();
+        int bestTool = findBestHotbarTool(miningPos);
+        ItemStack toolStack = (bestTool >= 0 && bestTool < 9) ? player.getInventory().getItem(bestTool) : player.getMainHandItem();
+        float delta = MiningDamageCalculator.calculateDestroyProgress(player, toolStack, state, miningPos) * speed.get();
         progress += delta;
-
         if (progress >= breakThreshold.get()) {
             int toolSlot = findBestHotbarTool(miningPos);
             if (toolSlot >= 0 && silentSwitch.get()) {
@@ -306,20 +308,7 @@ public final class SpeedMine extends Module {
     public int findBestHotbarTool(BlockPos pos) {
         if (mc.player == null || mc.level == null || pos == null) return -1;
         BlockState state = mc.level.getBlockState(pos);
-        if (state.isAir()) return -1;
-
-        int bestSlot = -1;
-        float bestSpeed = 1.0f;
-        for (int slot = 0; slot < 9; slot++) {
-            ItemStack stack = mc.player.getInventory().getItem(slot);
-            if (stack == null || stack.isEmpty()) continue;
-            float s = stack.getDestroySpeed(state);
-            if (s > bestSpeed) {
-                bestSpeed = s;
-                bestSlot = slot;
-            }
-        }
-        return bestSlot;
+        return MiningDamageCalculator.findBestHotbarTool(mc.player, state, pos);
     }
 
     public BlockPos getMiningPos() {

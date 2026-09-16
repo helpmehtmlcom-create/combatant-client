@@ -11,6 +11,7 @@ import combatant.client.config.common.CommonSettingSchema;
 import combatant.client.config.values.*;
 import combatant.client.features.gui.clickgui.settings.TextListSetting;
 
+import combatant.client.util.logging.DebugLog;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -296,7 +297,8 @@ public final class SettingDef {
             boolean unavailable;
             try {
                 unavailable = supplier.get();
-            } catch (Exception ignored) {
+            } catch (Exception t) {
+                DebugLog.warnOnChange("setting-avail-" + id, "Error evaluating availability for setting %s: %s", id, t.getMessage());
                 unavailable = false;
             }
             if (!unavailable) {

@@ -17,6 +17,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.movement.Flight;
@@ -28,8 +29,12 @@ public abstract class ClientCommonPacketListenerImplMixin {
     @Shadow
     protected Connection connection;
 
+    @Unique
+    private boolean combatant$replacingMovePacket;
+
     @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;)V", at = @At("HEAD"), cancellable = true)
     private void combatant$flightSendPacket(Packet<?> packet, CallbackInfo ci) {
+        if (combatant$replacingMovePacket) return;
         if (!((Object) this instanceof ClientPacketListener)) return;
         if (!(packet instanceof ServerboundMovePlayerPacket move)) return;
         Flight flight = Modules.get(Flight.class);
@@ -38,7 +43,12 @@ public abstract class ClientCommonPacketListenerImplMixin {
         ServerboundMovePlayerPacket replacement = flight.onSendMovePacket(move);
         if (replacement != null && replacement != move) {
             ci.cancel();
-            connection.send(replacement);
+            combatant$replacingMovePacket = true;
+            try {
+                connection.send(replacement);
+            } finally {
+                combatant$replacingMovePacket = false;
+            }
         }
     }
 }

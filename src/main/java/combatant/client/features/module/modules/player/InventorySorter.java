@@ -49,19 +49,11 @@ public class InventorySorter extends Module {
     private static final int OFFHAND_INV_SLOT = 40;
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
-    private final StringValue activeKit =
-            text("invsorter_kit", "kit", "CrystalPvP");
-    private final EnumValue<SortMode> mode =
-            enumSetting("invsorter_mode", "mode", SortMode.SMOOTH, SortMode.values());
-    private final NumberValue<Integer> delayTicks =
-            num("invsorter_delay", "delay", 2, 0, 10);
     private final BooleanValue sortOnOpen =
             bool("invsorter_sort_on_open", "sort_on_open", false);
-    private final BooleanValue sortOffhand =
-            bool("invsorter_offhand", "sort_offhand", true);
-    private final BooleanValue chatNotice =
-            bool("invsorter_notice", "chat_notice", true);
-
+    private String activeKit = "CrystalPvP";
+    private static final int DEFAULT_DELAY = 2;
+    private static final boolean SORT_OFFHAND = true;
     private final Minecraft mc = Minecraft.getInstance();
     private final Map<String, Kit> loadedKits = new LinkedHashMap<>();
     private final Queue<SwapAction> pendingSwaps = new ArrayDeque<>();
@@ -93,7 +85,7 @@ public class InventorySorter extends Module {
         }
 
         if (isActionPressedOnce(ACTION_SAVE)) {
-            saveCurrentInventory(activeKit.get());
+            saveCurrentInventory(activeKit);
             return;
         }
 
@@ -112,7 +104,7 @@ public class InventorySorter extends Module {
             SwapAction swap = pendingSwaps.poll();
             if (swap != null) {
                 executeSwap(swap);
-                cooldown = delayTicks.get();
+                cooldown = DEFAULT_DELAY;
             }
         }
     }
@@ -120,36 +112,35 @@ public class InventorySorter extends Module {
     public void sort() {
         if (mc.player == null) return;
 
-        Kit kit = getKit(activeKit.get());
+        Kit kit = getKit(activeKit);
         if (kit == null) {
-            if (chatNotice.get()) {
-                sendClientMessage("Kit not found: " + activeKit.get());
-            }
-            return;
+            kit = getDefaultPvPKit();
         }
 
         pendingSwaps.clear();
         planSorting(kit);
 
         if (pendingSwaps.isEmpty()) {
-            if (chatNotice.get()) {
-                sendClientMessage("Inventory already matches " + kit.name());
-            }
+            sendClientMessage("Inventory already matches " + kit.name());
             return;
         }
 
-        if (chatNotice.get()) {
-            sendClientMessage("Sorting inventory to match " + kit.name() + " (" + pendingSwaps.size() + " moves)...");
-        }
+        sendClientMessage("Sorting inventory to match " + kit.name() + " (" + pendingSwaps.size() + " moves)...");
+    }
 
-        if (mode.get() == SortMode.INSTANT) {
-            while (!pendingSwaps.isEmpty()) {
-                SwapAction swap = pendingSwaps.poll();
-                if (swap != null) {
-                    executeSwap(swap);
-                }
-            }
-        }
+    private Kit getDefaultPvPKit() {
+        Map<Integer, String> slots = new LinkedHashMap<>();
+        slots.put(0, "minecraft:netherite_sword");
+        slots.put(1, "minecraft:netherite_pickaxe");
+        slots.put(2, "minecraft:end_crystal");
+        slots.put(3, "minecraft:enchanted_golden_apple");
+        slots.put(4, "minecraft:obsidian");
+        slots.put(5, "minecraft:ender_pearl");
+        slots.put(6, "minecraft:totem_of_undying");
+        slots.put(7, "minecraft:experience_bottle");
+        slots.put(8, "minecraft:firework_rocket");
+        slots.put(OFFHAND_INV_SLOT, "minecraft:totem_of_undying");
+        return new Kit("CrystalPvP", slots);
     }
 
     private void planSorting(Kit kit) {
@@ -170,7 +161,7 @@ public class InventorySorter extends Module {
             String desiredId = entry.getValue();
             if (targetSlot < 0 || targetSlot >= currentLayout.length) continue;
             if (desiredId == null || desiredId.isEmpty() || desiredId.equals("minecraft:air")) continue;
-            if (targetSlot == OFFHAND_INV_SLOT && !sortOffhand.get()) continue;
+            if (targetSlot == OFFHAND_INV_SLOT && !SORT_OFFHAND) continue;
 
             if (desiredId.equalsIgnoreCase(currentLayout[targetSlot])) {
                 continue; // already correct item in slot
@@ -241,7 +232,7 @@ public class InventorySorter extends Module {
 
     public void saveCurrentInventory(String kitName) {
         if (mc.player == null) return;
-        String name = kitName == null || kitName.trim().isEmpty() ? activeKit.get() : kitName.trim();
+        String name = kitName == null || kitName.trim().isEmpty() ? activeKit : kitName.trim();
 
         Map<Integer, String> slots = new LinkedHashMap<>();
         for (int i = 0; i < 36; i++) {
@@ -262,7 +253,7 @@ public class InventorySorter extends Module {
         loadedKits.put(name.toLowerCase(Locale.ROOT), kit);
         saveKitsToDisk();
 
-        activeKit.set(name);
+        activeKit = name;
         String msg = "[InventorySorter] Saved current layout as kit '" + name + "' (" + slots.size() + " items)";
         sendClientMessage(msg);
         Notifier.success(msg);
@@ -272,7 +263,7 @@ public class InventorySorter extends Module {
         if (kitName == null) return false;
         Kit kit = loadedKits.get(kitName.trim().toLowerCase(Locale.ROOT));
         if (kit != null) {
-            activeKit.set(kit.name());
+            activeKit = kit.name();
             return true;
         }
         return false;
@@ -299,12 +290,12 @@ public class InventorySorter extends Module {
     }
 
     public String getActiveKit() {
-        return activeKit.get();
+        return activeKit;
     }
 
     public void setActiveKit(String name) {
         if (name != null) {
-            activeKit.set(name);
+            activeKit = name;
         }
     }
 
@@ -391,10 +382,6 @@ public class InventorySorter extends Module {
         spvp.put(4, "minecraft:bow");
         spvp.put(5, "minecraft:arrow");
         spvp.put(6, "minecraft:splash_potion");
-        spvp.put(7, "minecraft:potion");
-        spvp.put(8, "minecraft:shield");
-        spvp.put(OFFHAND_INV_SLOT, "minecraft:totem_of_undying");
-        loadedKits.put("swordpvp", new Kit("SwordPvP", spvp));
     }
 
     public record Kit(String name, Map<Integer, String> slots) {}

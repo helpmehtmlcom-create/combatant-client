@@ -153,33 +153,14 @@ public class ChestStealer extends Module {
             }
             return;
         }
-
-        if (instant.get()) {
-            int currentEmpty = emptySlots;
-            for (Slot slot : lootableSlots) {
-                if (currentEmpty <= 0 && !canStackIntoPlayer(menu, slot.getItem())) {
-                    break;
-                }
-                boolean usedEmpty = !canStackIntoPlayer(menu, slot.getItem());
-                lootSlot(menu, slot);
-                if (usedEmpty) {
-                    currentEmpty--;
-                }
-            }
-
-            if (autoClose.get()) {
-                closeContainer();
-            }
-        } else {
-            if (timer > 0) {
-                timer--;
-                return;
-            }
-
-            Slot bestSlot = lootableSlots.get(0);
-            lootSlot(menu, bestSlot);
-            timer = delayTicks.get();
+        if (timer > 0) {
+            timer--;
+            return;
         }
+
+        Slot bestSlot = lootableSlots.get(0);
+        lootSlot(menu, bestSlot);
+        timer = delayTicks.get();
     }
 
     private void lootSlot(AbstractContainerMenu menu, Slot slot) {

@@ -382,8 +382,8 @@ public class MinecraftMixin implements MinecraftGameConfigHolder {
         }
     }
 
-    @Inject(method = "disconnect", at = @At("HEAD"))
-    private void freecam$onDisconnect(CallbackInfo ci) {
+    @Inject(method = "disconnect(Lnet/minecraft/client/gui/screens/Screen;ZZ)V", at = @At("HEAD"))
+    private void freecam$onDisconnect(net.minecraft.client.gui.screens.Screen screen, boolean transferring, boolean bl, CallbackInfo ci) {
         try {
             Freecam fc = Modules.get(Freecam.class);
             if (fc != null && fc.isEnabled()) {

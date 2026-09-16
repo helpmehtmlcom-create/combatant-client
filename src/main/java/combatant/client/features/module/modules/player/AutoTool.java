@@ -20,6 +20,7 @@ import combatant.client.features.module.ModuleInfo;
 import combatant.client.mixins.accessors.MultiPlayerGameModeAccessor;
 import combatant.client.mixins.accessors.PlayerInventoryAccessor;
 import combatant.client.util.player.inventory.InventorySwap;
+import combatant.client.util.block.mining.MiningDamageCalculator;
 
 //todo Description
 @ModuleInfo(
@@ -83,20 +84,7 @@ public class AutoTool extends Module {
     private int findBestHotbarTool(BlockPos pos) {
         if (mc.player == null || mc.level == null) return -1;
         BlockState state = mc.level.getBlockState(pos);
-        if (state.isAir()) return -1;
-
-        int bestSlot = -1;
-        float bestSpeed = 1.0f;
-        for (int slot = 0; slot < 9; slot++) {
-            ItemStack stack = mc.player.getInventory().getItem(slot);
-            if (stack == null || stack.isEmpty()) continue;
-            float speed = stack.getDestroySpeed(state);
-            if (speed > bestSpeed) {
-                bestSpeed = speed;
-                bestSlot = slot;
-            }
-        }
-        return bestSlot;
+        return MiningDamageCalculator.findBestHotbarTool(mc.player, state, pos);
     }
 
     private void resetState() {

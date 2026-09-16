@@ -41,11 +41,11 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 
-//todo Description
 @ModuleInfo(
         id = "hitbox",
         displayName = "Hitbox",
-        category = ModuleCategory.COMBAT
+        category = ModuleCategory.COMBAT,
+        description = "Expands target bounding boxes for easier hits and renders customizable hitbox visuals."
 )
 public class Hitbox extends Module {
 
@@ -103,6 +103,13 @@ public class Hitbox extends Module {
         addAction(ACTION_SUPPRESS_HITBOX, "MOUSE3", BindMode.HOLD);
     }
 
+
+    @Override
+    public void onDisable() {
+        precomputedBoxes.clear();
+        precomputedEntities.clear();
+        hitFlashMs.clear();
+    }
     private static Map<String, Boolean> ignoreCategoryDefaults() {
         return Map.of(
                 "friends", false,

@@ -21,12 +21,12 @@ import combatant.client.events.impl.PacketEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
-import combatant.client.util.network.TransferOrigin;
 
 @ModuleInfo(
         id = "bowbomb",
         displayName = "BowBomb",
-        category = ModuleCategory.COMBAT
+        category = ModuleCategory.COMBAT,
+        description = "Exploits bow release packets to dramatically boost projectile velocity."
 )
 public final class BowBomb extends Module {
 
@@ -37,8 +37,8 @@ public final class BowBomb extends Module {
     private boolean shooting = false;
 
     @EventHandler
-    public void onPacketSend(PacketEvent event) {
-        if (!isEnabled() || event.getOrigin() != TransferOrigin.OUTGOING) return;
+    public void onPacketSend(PacketEvent.Send event) {
+        if (!isEnabled()) return;
         if (mc.player == null || mc.getConnection() == null) return;
 
         if (event.getPacket() instanceof ServerboundPlayerActionPacket action) {

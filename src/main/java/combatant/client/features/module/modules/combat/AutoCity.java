@@ -37,6 +37,7 @@ import combatant.client.features.relations.CategoryType;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.util.combat.ExplosionRenderUtil;
 import combatant.client.util.player.inventory.InventorySwap;
+import combatant.client.util.block.mining.MiningDamageCalculator;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -346,16 +347,7 @@ public final class AutoCity extends Module {
                 ? mc.player.getInventory().getItem(toolSlot)
                 : mc.player.getMainHandItem();
 
-        float hardness = state.getDestroySpeed(mc.level, pos);
-        if (hardness < 0) return 0.0f;
-
-        boolean canHarvest = !state.requiresCorrectToolForDrops() || tool.isCorrectToolForDrops(state);
-        float toolSpeed = tool.getDestroySpeed(state);
-
-        float calculated = toolSpeed / hardness / (canHarvest ? 30.0f : 100.0f);
-        float vanillaProgress = state.getDestroyProgress(mc.player, mc.level, pos);
-
-        return Math.max(vanillaProgress, calculated);
+        return MiningDamageCalculator.calculateDestroyProgress(mc.player, tool, state, pos);
     }
 
     private void finishBreak(BlockPos pos) {
@@ -388,20 +380,7 @@ public final class AutoCity extends Module {
     private int findBestHotbarTool(BlockPos pos) {
         if (mc.player == null || mc.level == null || pos == null) return -1;
         BlockState state = mc.level.getBlockState(pos);
-        if (state.isAir()) return -1;
-
-        int bestSlot = -1;
-        float bestSpeed = 1.0f;
-        for (int slot = 0; slot < 9; slot++) {
-            ItemStack stack = mc.player.getInventory().getItem(slot);
-            if (stack == null || stack.isEmpty()) continue;
-            float speed = stack.getDestroySpeed(state);
-            if (speed > bestSpeed) {
-                bestSpeed = speed;
-                bestSlot = slot;
-            }
-        }
-        return bestSlot;
+        return MiningDamageCalculator.findBestHotbarTool(mc.player, state, pos);
     }
 
     @Override

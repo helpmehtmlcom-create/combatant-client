@@ -10,6 +10,7 @@ package combatant.client.render.engine.rhi.resource;
 import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.pipeline.TextureTarget;
 
+import combatant.client.util.logging.DebugLog;
 import java.util.*;
 
 /**
@@ -195,7 +196,7 @@ public final class FramebufferPool implements AutoCloseable {
             idleTransientBytes = Math.max(0L, idleTransientBytes - bytes);
             transientBytes.remove(target);
             leakTracker.release(target);
-            target.destroyBuffers();
+            safeDestroy(target);
             transientEvictions++;
         }
     }
@@ -224,7 +225,7 @@ public final class FramebufferPool implements AutoCloseable {
             while (!queue.isEmpty()) {
                 TextureTarget fb = queue.poll();
                 leakTracker.release(fb);
-                fb.destroyBuffers();
+                safeDestroy(fb);
             }
         }
         temporary.clear();
@@ -235,14 +236,14 @@ public final class FramebufferPool implements AutoCloseable {
     private void closeFrameTransients() {
         for (FrameTransient allocation : frameTransient.values()) {
             leakTracker.release(allocation.target);
-            allocation.target.destroyBuffers();
+            safeDestroy(allocation.target);
         }
         frameTransient.clear();
         for (Queue<TextureTarget> queue : availableTransient.values()) {
             while (!queue.isEmpty()) {
                 TextureTarget target = queue.poll();
                 leakTracker.release(target);
-                target.destroyBuffers();
+                safeDestroy(target);
             }
         }
         availableTransient.clear();
@@ -255,7 +256,7 @@ public final class FramebufferPool implements AutoCloseable {
     public void closePersistent() {
         for (TextureTarget fb : persistent.values()) {
             leakTracker.release(fb);
-            fb.destroyBuffers();
+            safeDestroy(fb);
         }
         persistent.clear();
     }
@@ -264,6 +265,16 @@ public final class FramebufferPool implements AutoCloseable {
     public void close() {
         closeTemporary();
         closePersistent();
+    }
+
+    private static void safeDestroy(TextureTarget target) {
+        if (target != null) {
+            try {
+                target.destroyBuffers();
+            } catch (Throwable t) {
+                DebugLog.error("Error destroying framebuffer target", t);
+            }
+        }
     }
 
     public int persistentCount() {

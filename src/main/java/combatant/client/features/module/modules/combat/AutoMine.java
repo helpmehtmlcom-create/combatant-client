@@ -11,10 +11,9 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
@@ -28,10 +27,11 @@ import combatant.client.events.impl.GameTickEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
-import combatant.client.features.module.Modules;
 import combatant.client.features.module.WorldPhase;
-import combatant.client.features.module.modules.player.SpeedMine;
 import combatant.client.render.engine.renderer.Renderer3D;
+import combatant.client.util.block.mining.BlockMiningSystem;
+import combatant.client.util.block.mining.MiningDamageCalculator;
+import combatant.client.util.block.mining.MiningTask;
 import combatant.client.util.combat.ExplosionRenderUtil;
 import combatant.client.util.player.inventory.InventorySwap;
 
@@ -48,9 +48,12 @@ import java.util.List;
 public final class AutoMine extends Module {
 
     public enum Mode {
+        SMART,
         CITY,
         SURROUND,
-        BURROW
+        BURROW,
+        ANTI_CEV,
+        SELF_WEB
     }
 
     public enum MineMode implements EnumValue.IdProvider {
@@ -72,18 +75,22 @@ public final class AutoMine extends Module {
 
     private final Minecraft mc = Minecraft.getInstance();
 
-    private final EnumValue<Mode> mode = enumSetting("automineMode", "mode", Mode.CITY, Mode.values());
-    private final EnumValue<MineMode> mineMode = enumSetting("automineMineMode", "mine_mode", MineMode.FAST, MineMode.values());
-    private final NumberValue<Float> fastSpeed = visibleWhen(num("automineFastSpeed", "fast_speed", 1.5f, 1.1f, 3.0f), () -> mineMode.get() == MineMode.FAST);
-    private final BooleanValue rebreak = bool("automineRebreak", "rebreak", true);
-    private final BooleanValue doubleMine = bool("automineDoubleMine", "double_mine", true);
+    private final NumberValue<Float> speed = num("automineSpeed", "speed", 1.5f, 1.0f, 3.0f);
     private final NumberValue<Float> range = num("automineRange", "range", 5.0f, 2.0f, 7.0f);
-    private final BooleanValue selfCheck = bool("automineSelfCheck", "self_check", true);
+    private final BooleanValue doubleMine = bool("automineDoubleMine", "double_mine", true);
+    private final BooleanValue rebreak = bool("automineRebreak", "rebreak", true);
     private final BooleanValue render = bool("automineRender", "render", true);
     private final RGBAColorValue fillColor = color("automineFillColor", "#D6303155");
     private final RGBAColorValue lineColor = color("automineLineColor", "#FF7675FF");
     private final RGBAColorValue secondaryFillColor = color("automineSecondaryFillColor", "#0984E355");
     private final RGBAColorValue secondaryLineColor = color("automineSecondaryLineColor", "#74B9FFFF");
+
+    // Automatic internal defaults
+    private static final float BREAK_THRESHOLD = 1.0f;
+    private static final boolean SILENT_SWITCH = true;
+    private static final boolean SWING = true;
+    private static final boolean REBREAK = true;
+    private static final boolean SELF_CHECK = true;
 
     private BlockPos targetBlock = null;
     private float progress = 0.0f;
@@ -108,8 +115,12 @@ public final class AutoMine extends Module {
     }
 
     public void reset() {
-        abortMining(targetBlock);
-        abortMining(secondaryTargetBlock);
+        if (targetBlock != null) {
+            BlockMiningSystem.INSTANCE.abortMining(true);
+        }
+        if (secondaryTargetBlock != null) {
+            BlockMiningSystem.INSTANCE.abortMining(false);
+        }
         targetBlock = null;
         secondaryTargetBlock = null;
         rebreakPos = null;
@@ -131,251 +142,131 @@ public final class AutoMine extends Module {
 
         LocalPlayer player = mc.player;
 
-        if (rebreak.get()) {
-            handleRebreak(player);
-        }
+        // 1. Automatic instant rebreak on replacement
+        handleRebreak(player);
 
+        // 2. Select target player and candidate blocks
         currentTarget = findTargetPlayer();
-        if (currentTarget == null) {
-            if (targetBlock != null) {
-                abortMining(targetBlock);
-                targetBlock = null;
-                progress = 0.0f;
-            }
-            if (secondaryTargetBlock != null) {
-                abortMining(secondaryTargetBlock);
-                secondaryTargetBlock = null;
-                secondaryProgress = 0.0f;
-            }
-            return;
-        }
+        List<BlockPos> bestBlocks = (currentTarget != null) ? findBestBlocks(currentTarget) : List.of();
 
-        List<BlockPos> bestBlocks = findBestBlocks(currentTarget);
+        // 3. Process primary target
         BlockPos bestPrimary = !bestBlocks.isEmpty() ? bestBlocks.get(0) : null;
-        BlockPos bestSecondary = (doubleMine.get() && bestBlocks.size() > 1) ? bestBlocks.get(1) : null;
+        processPrimary(bestPrimary, player);
 
-        processTarget(bestPrimary, true);
-
-        if (doubleMine.get()) {
-            processTarget(bestSecondary, false);
+        // 4. Process secondary target (double mine)
+        if (doubleMine.get() && bestBlocks.size() > 1) {
+            BlockPos bestSecondary = bestBlocks.get(1);
+            processSecondary(bestSecondary, player);
         } else if (secondaryTargetBlock != null) {
-            abortMining(secondaryTargetBlock);
+            BlockMiningSystem.INSTANCE.abortMining(false);
             secondaryTargetBlock = null;
             secondaryProgress = 0.0f;
         }
+
+        // 5. Update active progress state from BlockMiningSystem
+        MiningTask primaryTask = BlockMiningSystem.INSTANCE.getPrimaryTask();
+        if (primaryTask != null) {
+            targetBlock = primaryTask.getPos();
+            progress = primaryTask.getProgress();
+        } else if (targetBlock != null) {
+            BlockState st = mc.level.getBlockState(targetBlock);
+            if (st.isAir()) {
+                rebreakPos = targetBlock;
+                targetBlock = null;
+                progress = 0.0f;
+            }
+        }
+
+        MiningTask secondaryTask = BlockMiningSystem.INSTANCE.getSecondaryTask();
+        if (secondaryTask != null) {
+            secondaryTargetBlock = secondaryTask.getPos();
+            secondaryProgress = secondaryTask.getProgress();
+        } else if (secondaryTargetBlock != null) {
+            BlockState st = mc.level.getBlockState(secondaryTargetBlock);
+            if (st.isAir()) {
+                secondaryRebreakPos = secondaryTargetBlock;
+                secondaryTargetBlock = null;
+                secondaryProgress = 0.0f;
+            }
+        }
     }
 
-    private void processTarget(BlockPos best, boolean isPrimary) {
-        BlockPos current = isPrimary ? targetBlock : secondaryTargetBlock;
-
+    private void processPrimary(BlockPos best, LocalPlayer player) {
         if (best == null) {
-            if (current != null) {
-                abortMining(current);
-                if (isPrimary) {
-                    targetBlock = null;
-                    progress = 0.0f;
-                } else {
-                    secondaryTargetBlock = null;
-                    secondaryProgress = 0.0f;
-                }
-            }
-            return;
-        }
-
-        if (!best.equals(current)) {
-            if (current != null) {
-                abortMining(current);
-            }
-            if (isPrimary) {
-                targetBlock = best;
-                progress = 0.0f;
-            } else {
-                secondaryTargetBlock = best;
-                secondaryProgress = 0.0f;
-            }
-
-            startMiningTarget(best);
-        } else {
-            updateMiningProgress(best, isPrimary);
-        }
-    }
-
-    private void startMiningTarget(BlockPos pos) {
-        if (pos == null || mc.level == null || mc.player == null) return;
-        BlockState state = mc.level.getBlockState(pos);
-        if (state.isAir() || !isBreakable(state, pos)) return;
-
-        if (mineMode.get() == MineMode.INSTANT) {
-            instantBreak(pos);
-        } else {
-            startMining(pos);
-        }
-    }
-
-    private void updateMiningProgress(BlockPos pos, boolean isPrimary) {
-        if (pos == null || mc.level == null || mc.player == null) return;
-        BlockState state = mc.level.getBlockState(pos);
-        if (state.isAir()) {
-            if (rebreak.get()) {
-                if (isPrimary) {
-                    rebreakPos = pos;
-                    rebreakProgress = 0.0f;
-                } else {
-                    secondaryRebreakPos = pos;
-                    secondaryRebreakProgress = 0.0f;
-                }
-            }
-            if (isPrimary) {
-                targetBlock = null;
-                progress = 0.0f;
-            } else {
-                secondaryTargetBlock = null;
-                secondaryProgress = 0.0f;
-            }
-            InventorySwap.INSTANCE.releaseHotbar(this);
-            return;
-        }
-
-        if (mineMode.get() == MineMode.INSTANT) {
-            instantBreak(pos);
-            return;
-        }
-
-        float delta = state.getDestroyProgress(mc.player, mc.level, pos);
-        if (mineMode.get() == MineMode.FAST) {
-            delta *= fastSpeed.get();
-        }
-
-        if (isPrimary) {
-            progress += delta;
-            if (progress >= 1.0f) {
-                finishBreak(pos);
-                if (rebreak.get()) {
-                    rebreakPos = pos;
-                    rebreakProgress = 0.0f;
-                }
+            if (targetBlock != null) {
+                BlockMiningSystem.INSTANCE.abortMining(true);
                 targetBlock = null;
                 progress = 0.0f;
             }
+            return;
+        }
+
+        float spd = speed.get();
+        if (!best.equals(targetBlock)) {
+            targetBlock = best;
+            progress = 0.0f;
+            BlockMiningSystem.INSTANCE.startMining(best, null, true, spd);
         } else {
-            secondaryProgress += delta;
-            if (secondaryProgress >= 1.0f) {
-                finishBreak(pos);
-                if (rebreak.get()) {
-                    secondaryRebreakPos = pos;
-                    secondaryRebreakProgress = 0.0f;
-                }
+            MiningTask task = BlockMiningSystem.INSTANCE.getPrimaryTask();
+            if (task != null) {
+                task.setSpeedMultiplier(spd);
+                BlockMiningSystem.INSTANCE.tick(player, SILENT_SWITCH, SWING, BREAK_THRESHOLD);
+                progress = task.getProgress();
+            }
+        }
+    }
+
+    private void processSecondary(BlockPos best, LocalPlayer player) {
+        if (best == null) {
+            if (secondaryTargetBlock != null) {
+                BlockMiningSystem.INSTANCE.abortMining(false);
                 secondaryTargetBlock = null;
                 secondaryProgress = 0.0f;
+            }
+            return;
+        }
+
+        float spd = speed.get();
+        if (!best.equals(secondaryTargetBlock)) {
+            secondaryTargetBlock = best;
+            secondaryProgress = 0.0f;
+            BlockMiningSystem.INSTANCE.startMining(best, null, false, spd);
+        } else {
+            MiningTask task = BlockMiningSystem.INSTANCE.getSecondaryTask();
+            if (task != null) {
+                task.setSpeedMultiplier(spd);
+                BlockMiningSystem.INSTANCE.tick(player, SILENT_SWITCH, SWING, BREAK_THRESHOLD);
+                secondaryProgress = task.getProgress();
             }
         }
     }
 
     private void handleRebreak(LocalPlayer player) {
         if (rebreakPos != null) {
-            handleSingleRebreak(player, rebreakPos, true);
+            if (isRebreakValid(player, rebreakPos)) {
+                BlockMiningSystem.INSTANCE.instantRebreak(rebreakPos, null, SILENT_SWITCH, SWING);
+            } else {
+                rebreakPos = null;
+            }
         }
         if (doubleMine.get() && secondaryRebreakPos != null) {
-            handleSingleRebreak(player, secondaryRebreakPos, false);
+            if (isRebreakValid(player, secondaryRebreakPos)) {
+                BlockMiningSystem.INSTANCE.instantRebreak(secondaryRebreakPos, null, SILENT_SWITCH, SWING);
+            } else {
+                secondaryRebreakPos = null;
+            }
         }
     }
 
-    private void handleSingleRebreak(LocalPlayer player, BlockPos pos, boolean isPrimary) {
-        if (pos == null || mc.level == null) return;
-        if (player.getEyePosition().distanceTo(Vec3.atCenterOf(pos)) > range.get()) {
-            if (isPrimary) rebreakPos = null;
-            else secondaryRebreakPos = null;
-            return;
-        }
-
+    private boolean isRebreakValid(LocalPlayer player, BlockPos pos) {
+        if (pos == null || mc.level == null) return false;
+        if (player.getEyePosition().distanceTo(Vec3.atCenterOf(pos)) > range.get()) return false;
         BlockState state = mc.level.getBlockState(pos);
-        if (state.isAir()) {
-            return;
-        }
-
-        if (!isBreakable(state, pos)) {
-            if (isPrimary) rebreakPos = null;
-            else secondaryRebreakPos = null;
-            return;
-        }
-
-        if (mineMode.get() == MineMode.INSTANT) {
-            instantBreak(pos);
-        } else {
-            float delta = state.getDestroyProgress(player, mc.level, pos);
-            if (mineMode.get() == MineMode.FAST) {
-                delta *= fastSpeed.get();
-            }
-            if (isPrimary) {
-                rebreakProgress += delta;
-                if (rebreakProgress >= 1.0f) {
-                    finishBreak(pos);
-                    rebreakProgress = 0.0f;
-                }
-            } else {
-                secondaryRebreakProgress += delta;
-                if (secondaryRebreakProgress >= 1.0f) {
-                    finishBreak(pos);
-                    secondaryRebreakProgress = 0.0f;
-                }
-            }
-        }
+        return !state.isAir() && isBreakable(state, pos);
     }
 
     private void instantBreak(BlockPos pos) {
-        if (mc.getConnection() == null || mc.player == null || pos == null) return;
-        mc.getConnection().send(new ServerboundPlayerActionPacket(
-                ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK,
-                pos,
-                Direction.UP
-        ));
-        int toolSlot = findBestHotbarTool(pos);
-        if (toolSlot >= 0) {
-            InventorySwap.INSTANCE.leaseHotbar(this, toolSlot, 2);
-        }
-        mc.getConnection().send(new ServerboundPlayerActionPacket(
-                ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK,
-                pos,
-                Direction.UP
-        ));
-        mc.player.swing(InteractionHand.MAIN_HAND);
-        InventorySwap.INSTANCE.releaseHotbar(this);
-    }
-
-    private void startMining(BlockPos pos) {
-        if (mc.getConnection() == null || pos == null) return;
-        mc.getConnection().send(new ServerboundPlayerActionPacket(
-                ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK,
-                pos,
-                Direction.UP
-        ));
-        if (mc.player != null) {
-            mc.player.swing(InteractionHand.MAIN_HAND);
-        }
-    }
-
-    private void finishBreak(BlockPos pos) {
-        if (mc.getConnection() == null || mc.player == null || pos == null) return;
-        int toolSlot = findBestHotbarTool(pos);
-        if (toolSlot >= 0) {
-            InventorySwap.INSTANCE.leaseHotbar(this, toolSlot, 2);
-        }
-        mc.getConnection().send(new ServerboundPlayerActionPacket(
-                ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK,
-                pos,
-                Direction.UP
-        ));
-        mc.player.swing(InteractionHand.MAIN_HAND);
-        InventorySwap.INSTANCE.releaseHotbar(this);
-    }
-
-    private void abortMining(BlockPos pos) {
-        if (mc.getConnection() == null || pos == null) return;
-        mc.getConnection().send(new ServerboundPlayerActionPacket(
-                ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK,
-                pos,
-                Direction.UP
-        ));
+        BlockMiningSystem.INSTANCE.instantRebreak(pos, null, SILENT_SWITCH, SWING);
     }
 
     private Player findTargetPlayer() {
@@ -395,81 +286,123 @@ public final class AutoMine extends Module {
     }
 
     private List<BlockPos> findBestBlocks(Player target) {
-        if (mc.level == null || mc.player == null || target == null) return List.of();
+        if (mc.level == null || mc.player == null) return List.of();
 
-        BlockPos targetFeet = target.blockPosition();
         List<BlockPos> candidates = new ArrayList<>();
-
-        switch (mode.get()) {
-            case BURROW -> {
-                BlockState state = mc.level.getBlockState(targetFeet);
-                if (isBreakable(state, targetFeet)) {
-                    candidates.add(targetFeet);
-                }
-                if (doubleMine.get()) {
-                    BlockPos headPos = targetFeet.above();
-                    BlockState headState = mc.level.getBlockState(headPos);
-                    if (isBreakable(headState, headPos)) {
-                        candidates.add(headPos);
-                    }
-                    for (Direction dir : Direction.Plane.HORIZONTAL) {
-                        BlockPos surroundPos = targetFeet.relative(dir);
-                        BlockState sState = mc.level.getBlockState(surroundPos);
-                        if (isBreakable(sState, surroundPos) && !candidates.contains(surroundPos)) {
-                            candidates.add(surroundPos);
-                        }
-                    }
-                }
-            }
-            case CITY -> {
-                Direction[] directions = {Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST};
-                for (Direction dir : directions) {
-                    BlockPos surroundPos = targetFeet.relative(dir);
-                    BlockState state = mc.level.getBlockState(surroundPos);
-                    if (!isBreakable(state, surroundPos)) continue;
-
-                    candidates.add(surroundPos);
-                }
-            }
-            case SURROUND -> {
-                Direction[] directions = {Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST};
-                for (Direction dir : directions) {
-                    BlockPos pos = targetFeet.relative(dir);
-                    BlockState state = mc.level.getBlockState(pos);
-                    if (isBreakable(state, pos)) {
-                        candidates.add(pos);
-                    }
-                }
-            }
-        }
-
-        if (candidates.isEmpty()) return List.of();
-
+        BlockPos targetFeet = target != null ? target.blockPosition() : null;
         BlockPos selfFeet = mc.player.blockPosition();
-        if (selfCheck.get()) {
-            candidates.removeIf(p -> {
-                for (Direction dir : Direction.Plane.HORIZONTAL) {
-                    if (selfFeet.relative(dir).equals(p)) return true;
-                }
-                return selfFeet.equals(p);
-            });
+
+        // 1. Self Web check (automatic self-defense)
+        BlockState selfState = mc.level.getBlockState(selfFeet);
+        if (selfState.is(Blocks.COBWEB)) {
+            candidates.add(selfFeet);
+        }
+        BlockState selfHeadState = mc.level.getBlockState(selfFeet.above());
+        if (selfHeadState.is(Blocks.COBWEB) && !candidates.contains(selfFeet.above())) {
+            candidates.add(selfFeet.above());
+        }
+        if (!candidates.isEmpty()) {
+            return candidates;
+        }
+
+        if (target == null || targetFeet == null) {
+            return candidates;
+        }
+
+        // Priority A: Target Burrow
+        BlockState inFeet = mc.level.getBlockState(targetFeet);
+        if (isBurrowBlock(inFeet, targetFeet)) {
+            candidates.add(targetFeet);
+        }
+
+        // Priority B: City Surround Blocks (blocks with adjacent air where crystal can be placed)
+        List<BlockPos> cityBlocks = evaluateCityBlocks(targetFeet);
+        for (BlockPos cp : cityBlocks) {
+            if (!candidates.contains(cp)) {
+                candidates.add(cp);
+            }
+        }
+
+        // Priority C: Anti-Cev / Trap
+        BlockPos headTrap = targetFeet.above(2);
+        BlockState headTrapState = mc.level.getBlockState(headTrap);
+        if (isBreakable(headTrapState, headTrap) && !candidates.contains(headTrap)) {
+            candidates.add(headTrap);
+        }
+
+        // Priority D: General Surround
+        for (Direction dir : Direction.Plane.HORIZONTAL) {
+            BlockPos sp = targetFeet.relative(dir);
+            BlockState ss = mc.level.getBlockState(sp);
+            if (isBreakable(ss, sp) && !candidates.contains(sp)) {
+                candidates.add(sp);
+            }
         }
 
         if (candidates.isEmpty()) return List.of();
 
-        Vec3 eyePos = mc.player.getEyePosition();
-        candidates.sort(Comparator.comparingDouble(p -> Vec3.atCenterOf(p).distanceToSqr(eyePos)));
+        // Automatic anti-self-mine check: protect our own surround and feet
+        candidates.removeIf(p -> {
+            if (selfFeet.equals(p)) return true;
+            for (Direction dir : Direction.Plane.HORIZONTAL) {
+                if (selfFeet.relative(dir).equals(p)) return true;
+            }
+            return false;
+        });
 
-        float r = range.get();
-        List<BlockPos> inRange = new ArrayList<>();
-        for (BlockPos candidate : candidates) {
-            if (eyePos.distanceTo(Vec3.atCenterOf(candidate)) <= r) {
-                inRange.add(candidate);
-                if (!doubleMine.get() && inRange.size() >= 1) break;
-                if (doubleMine.get() && inRange.size() >= 2) break;
+        // Filter by eye reach
+        Vec3 eyePos = mc.player.getEyePosition();
+        float maxRange = range.get();
+        candidates.removeIf(p -> eyePos.distanceTo(Vec3.atCenterOf(p)) > maxRange);
+
+        // Sort candidates by break speed and distance
+        candidates.sort(Comparator.comparingDouble((BlockPos p) -> {
+            BlockState st = mc.level.getBlockState(p);
+            float dmg = MiningDamageCalculator.calculateDestroyProgress(mc.player, mc.player.getMainHandItem(), st, p);
+            double distSq = Vec3.atCenterOf(p).distanceToSqr(eyePos);
+            return distSq - (dmg * 10.0);
+        }));
+
+        return candidates;
+    }
+
+    private List<BlockPos> evaluateCityBlocks(BlockPos targetFeet) {
+        List<BlockPos> valid = new ArrayList<>();
+        if (mc.level == null) return valid;
+
+        for (Direction dir : Direction.Plane.HORIZONTAL) {
+            BlockPos surroundPos = targetFeet.relative(dir);
+            BlockState state = mc.level.getBlockState(surroundPos);
+            if (!isBreakable(state, surroundPos)) continue;
+
+            // Check if crystal can be placed adjacent to this surround block
+            for (Direction crystalDir : Direction.Plane.HORIZONTAL) {
+                BlockPos crystalPos = surroundPos.relative(crystalDir);
+                BlockPos crystalBase = crystalPos.below();
+                BlockState baseState = mc.level.getBlockState(crystalBase);
+
+                boolean validBase = baseState.is(Blocks.OBSIDIAN) || baseState.is(Blocks.BEDROCK);
+                boolean airAbove = mc.level.getBlockState(crystalPos).isAir();
+
+                if (validBase && airAbove) {
+                    valid.add(surroundPos);
+                    break;
+                }
+            }
+
+            if (!valid.contains(surroundPos)) {
+                valid.add(surroundPos);
             }
         }
-        return inRange;
+        return valid;
+    }
+
+    private boolean isBurrowBlock(BlockState state, BlockPos pos) {
+        if (state == null || state.isAir()) return false;
+        return state.is(Blocks.OBSIDIAN) || state.is(Blocks.CRYING_OBSIDIAN)
+                || state.is(Blocks.ENDER_CHEST) || state.is(Blocks.RESPAWN_ANCHOR)
+                || state.is(Blocks.ANVIL) || state.is(Blocks.CHIPPED_ANVIL)
+                || state.is(Blocks.DAMAGED_ANVIL);
     }
 
     private boolean isBreakable(BlockState state, BlockPos pos) {
@@ -481,27 +414,16 @@ public final class AutoMine extends Module {
     public int findBestHotbarTool(BlockPos pos) {
         if (mc.player == null || mc.level == null || pos == null) return -1;
         BlockState state = mc.level.getBlockState(pos);
-        if (state.isAir()) return -1;
-
-        int bestSlot = -1;
-        float bestSpeed = 1.0f;
-        for (int slot = 0; slot < 9; slot++) {
-            ItemStack stack = mc.player.getInventory().getItem(slot);
-            if (stack == null || stack.isEmpty()) continue;
-            float s = stack.getDestroySpeed(state);
-            if (s > bestSpeed) {
-                bestSpeed = s;
-                bestSlot = slot;
-            }
-        }
-        return bestSlot;
+        return MiningDamageCalculator.findBestHotbarTool(mc.player, state, pos);
     }
 
     @Override
     public void onRenderWorldEngine(Renderer3D renderer, Renderer3D depthRenderer, float tickDelta) {
         if (!isEnabled() || !render.get() || mc.level == null) return;
 
-        renderBlock(renderer, targetBlock, progress, fillColor.getArgb(), lineColor.getArgb());
+        if (targetBlock != null) {
+            renderBlock(renderer, targetBlock, progress, fillColor.getArgb(), lineColor.getArgb());
+        }
 
         if (doubleMine.get() && secondaryTargetBlock != null) {
             renderBlock(renderer, secondaryTargetBlock, secondaryProgress, secondaryFillColor.getArgb(), secondaryLineColor.getArgb());
@@ -509,10 +431,10 @@ public final class AutoMine extends Module {
 
         if (rebreak.get()) {
             if (rebreakPos != null && !rebreakPos.equals(targetBlock)) {
-                renderBlock(renderer, rebreakPos, rebreakProgress, fillColor.getArgb(), lineColor.getArgb());
+                renderBlock(renderer, rebreakPos, 1.0f, fillColor.getArgb(), lineColor.getArgb());
             }
             if (secondaryRebreakPos != null && !secondaryRebreakPos.equals(secondaryTargetBlock)) {
-                renderBlock(renderer, secondaryRebreakPos, secondaryRebreakProgress, secondaryFillColor.getArgb(), secondaryLineColor.getArgb());
+                renderBlock(renderer, secondaryRebreakPos, 1.0f, secondaryFillColor.getArgb(), secondaryLineColor.getArgb());
             }
         }
     }
@@ -524,6 +446,8 @@ public final class AutoMine extends Module {
 
         AABB fullBox = new AABB(pos);
         float p = Math.min(1.0f, Math.max(0.0f, currentProgress));
+
+        // Smooth box animation scaling from center outward as mining progresses
         AABB renderBox = fullBox.deflate((1.0 - p) * 0.5);
 
         ExplosionRenderUtil.addFilledBox(renderer, renderBox, fill);
