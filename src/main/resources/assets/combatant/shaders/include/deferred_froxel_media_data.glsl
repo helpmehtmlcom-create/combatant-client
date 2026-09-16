@@ -23,6 +23,8 @@ layout(std430, binding = 0) readonly buffer FroxelMediaData {
     vec4 mediumWeather;
     vec4 mediumWeatherState;
     vec4 mediumLighting;
+    vec4 localFogBinning;
+    vec4 localLightTransport;
     vec4 directionalDirection;
     vec4 directionalRadiance;
 } u_Data;

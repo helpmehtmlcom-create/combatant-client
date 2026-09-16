@@ -17,6 +17,10 @@ layout(binding = 12) uniform sampler2D u_WaterBoundary;
 #moj_import <combatant:deferred_cloud_density.glsl>
 #moj_import <combatant:deferred_froxel_transport.glsl>
 #moj_import <combatant:deferred_cloud_shadow_sampling.glsl>
+#define COMBATANT_LOCAL_FOG_VOLUME_BINDING 13
+#define COMBATANT_LOCAL_FOG_BIN_COUNT_BINDING 14
+#define COMBATANT_LOCAL_FOG_BIN_INDEX_BINDING 15
+#moj_import <combatant:deferred_local_fog_volume_contract.glsl>
 
 vec3 worldRay(vec2 uv) {
     float ndcZ = u_Data.policy.y > 0.5 ? 0.5 : 0.0;
@@ -79,6 +83,66 @@ float mediumDensity(vec3 localPosition, float distanceBlocks) {
     float heightAboveReference = max(localPosition.y - u_Data.mediumDistribution.x, 0.0);
     float heightScale = exp(-heightAboveReference / max(u_Data.mediumDistribution.y, 1e-3));
     return max(0.0, weatherDensity * heightScale);
+}
+
+float luminance(vec3 value) {
+    return dot(max(value, vec3(0.0)), vec3(0.2126, 0.7152, 0.0722));
+}
+
+float localVolumeSignedDistance(LocalFogVolume volume, vec3 relativeWorld) {
+    vec3 delta = relativeWorld - volume.centerShape.xyz;
+    if (volume.centerShape.w < 0.5) {
+        return length(delta) - max(volume.extentDensity.x, 1e-4);
+    }
+    vec3 q = abs(delta) - max(volume.extentDensity.xyz, vec3(1e-4));
+    return length(max(q, vec3(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
+
+float localVolumeWeight(LocalFogVolume volume, vec3 relativeWorld) {
+    float signedDistance = localVolumeSignedDistance(volume, relativeWorld);
+    float edge = max(volume.absorptionEdge.w, 0.0);
+    float boundaryWeight = edge > 1e-4
+            ? 1.0 - smoothstep(-edge, 0.0, signedDistance)
+            : (signedDistance <= 0.0 ? 1.0 : 0.0);
+    return clamp(boundaryWeight * max(volume.extentDensity.w, 0.0), 0.0, 1e6);
+}
+
+void sampleLocalVolumes(ivec3 coord,
+                        ivec3 dimensions,
+                        vec3 relativeWorld,
+                        out vec3 sigmaS,
+                        out vec3 sigmaA,
+                        out vec3 emission,
+                        out float scatteringWeight,
+                        out float anisotropyMoment) {
+    sigmaS = vec3(0.0);
+    sigmaA = vec3(0.0);
+    emission = vec3(0.0);
+    scatteringWeight = 0.0;
+    anisotropyMoment = 0.0;
+    if (u_Data.counts.z <= 0.5) return;
+
+    uint binIndex = combatant_local_fog_bin_index(coord, dimensions);
+    uint maxPerBin = uint(max(int(u_Data.localFogBinning.z + 0.5), 1));
+    uint count = min(u_LocalFogBinCounts.counts[binIndex], maxPerBin);
+    uint base = binIndex * maxPerBin;
+    uint volumeCount = uint(clamp(int(u_Data.counts.z + 0.5), 0, u_LocalFogVolumes.volumes.length()));
+    for (uint listIndex = 0u; listIndex < count; ++listIndex) {
+        uint volumeIndex = u_LocalFogBinIndices.indices[base + listIndex];
+        if (volumeIndex >= volumeCount) continue;
+        LocalFogVolume volume = u_LocalFogVolumes.volumes[volumeIndex];
+        float weight = localVolumeWeight(volume, relativeWorld);
+        if (weight <= 1e-6) continue;
+
+        vec3 volumeSigmaS = max(volume.scatteringG.rgb, vec3(0.0)) * weight;
+        sigmaS += volumeSigmaS;
+        sigmaA += max(volume.absorptionEdge.rgb, vec3(0.0)) * weight;
+        emission += max(volume.emission.rgb, vec3(0.0)) * weight;
+
+        float phaseWeight = luminance(volumeSigmaS);
+        scatteringWeight += phaseWeight;
+        anisotropyMoment += phaseWeight * clamp(volume.scatteringG.w, -0.95, 0.95);
+    }
 }
 
 
@@ -195,8 +259,16 @@ void main() {
     vec3 worldSigmaA = max(u_Data.mediumAbsorption.rgb, vec3(0.0)) * density;
     vec3 waterSigmaS = max(u_Data.cameraMediumScattering.rgb, vec3(0.0)) * waterFraction;
     vec3 waterSigmaA = max(u_Data.cameraMediumAbsorption.rgb, vec3(0.0)) * waterFraction;
-    vec3 sigmaS = worldSigmaS + waterSigmaS;
-    vec3 sigmaA = worldSigmaA + waterSigmaA;
+    vec3 localSigmaS;
+    vec3 localSigmaA;
+    vec3 localEmission;
+    float localScatteringWeight;
+    float localAnisotropyMoment;
+    sampleLocalVolumes(coord, dimensions, relativeWorld, localSigmaS, localSigmaA, localEmission,
+            localScatteringWeight, localAnisotropyMoment);
+
+    vec3 sigmaS = worldSigmaS + waterSigmaS + localSigmaS;
+    vec3 sigmaA = worldSigmaA + waterSigmaA + localSigmaA;
     vec3 sigmaT = sigmaS + sigmaA;
 
     vec3 segmentRadiance;
@@ -210,6 +282,16 @@ void main() {
             u_Data.shadowMapDomain, u_Data.shadowSun, u_Data.cloudBounds);
     segmentRadiance *= shadowVisibility;
 
+    vec3 emissionSigma = -log(max(clamp(segmentTransmittance, vec3(0.0), vec3(1.0)), vec3(1e-6)))
+            / max(segmentLength, 1e-5);
+    vec3 emissionFactor = vec3(segmentLength);
+    for (int channel = 0; channel < 3; ++channel) {
+        if (emissionSigma[channel] > 1e-6) {
+            emissionFactor[channel] = (1.0 - segmentTransmittance[channel]) / emissionSigma[channel];
+        }
+    }
+    segmentRadiance += max(localEmission, vec3(0.0)) * emissionFactor;
+
     float cloudSigmaT = 0.0;
     float cloudSigmaS = 0.0;
     if (u_Data.counts.w > 0.5) {
@@ -221,13 +303,15 @@ void main() {
 
     float worldWeight = max(max(worldSigmaS.r, worldSigmaS.g), worldSigmaS.b);
     float waterWeight = max(max(waterSigmaS.r, waterSigmaS.g), waterSigmaS.b);
-    float anisotropy = (worldWeight + waterWeight) > 1e-8
+    float totalScatteringWeight = worldWeight + waterWeight + localScatteringWeight;
+    float anisotropy = totalScatteringWeight > 1e-8
             ? (clamp(u_Data.mediumScattering.w, -0.95, 0.95) * worldWeight
-               + clamp(u_Data.cameraMediumScattering.w, -0.95, 0.95) * waterWeight)
-              / (worldWeight + waterWeight)
+               + clamp(u_Data.cameraMediumScattering.w, -0.95, 0.95) * waterWeight
+               + localAnisotropyMoment)
+              / totalScatteringWeight
             : 0.0;
 
     imageStore(u_SegmentRadiance, coord, vec4(segmentRadiance, cloudSigmaT));
     imageStore(u_SegmentTransmittance, coord, vec4(segmentTransmittance, cloudSigmaS));
-    imageStore(u_MediaProperties, coord, vec4(sigmaS, anisotropy));
+    imageStore(u_MediaProperties, coord, vec4(sigmaS, clamp(anisotropy, -0.95, 0.95)));
 }

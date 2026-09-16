@@ -101,6 +101,57 @@ vec3 integratedSource(vec3 sourcePerBlock, vec3 segmentTransmittance, float segm
     return sourcePerBlock * factor;
 }
 
+bool froxelCoordForViewPosition(vec3 viewPosition, ivec3 dimensions, out ivec3 coord) {
+    vec4 clip = u_Cull.projection * vec4(viewPosition, 1.0);
+    if (clip.w <= 1e-6) return false;
+    vec2 uv = clip.xy / clip.w * 0.5 + 0.5;
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThanEqual(uv, vec2(1.0)))) return false;
+
+    float distanceValue = length(viewPosition);
+    float maxDistance = max(u_Data.froxel.w, 1e-4);
+    if (distanceValue < 0.0 || distanceValue >= maxDistance) return false;
+    float normalized = pow(clamp(distanceValue / maxDistance, 0.0, 1.0),
+            1.0 / max(u_Data.policy.x, 1.0));
+    int z = clamp(int(floor(normalized * float(dimensions.z))), 0, dimensions.z - 1);
+    ivec2 xy = clamp(ivec2(floor(uv * vec2(dimensions.xy))), ivec2(0), dimensions.xy - ivec2(1));
+    coord = ivec3(xy, z);
+    return true;
+}
+
+vec3 sigmaFromFroxel(ivec3 coord, ivec3 dimensions) {
+    vec3 transmittance = clamp(imageLoad(u_SegmentTransmittance, coord).rgb, vec3(1e-6), vec3(1.0));
+    float nearDistance = combatant_froxel_boundary_distance(
+            coord.z, dimensions.z, u_Data.froxel.w, u_Data.policy.x);
+    float farDistance = combatant_froxel_boundary_distance(
+            coord.z + 1, dimensions.z, u_Data.froxel.w, u_Data.policy.x);
+    float segmentLength = max(farDistance - nearDistance, 1e-4);
+    return -log(transmittance) / segmentLength;
+}
+
+vec3 lightPathTransmittance(vec3 receiverView,
+                            vec3 pathDirection,
+                            float pathDistance,
+                            ivec3 dimensions,
+                            vec3 fallbackSigma) {
+    int sampleCount = clamp(int(u_Data.localLightTransport.x + 0.5), 1, 16);
+    float stepLength = max(pathDistance, 0.0) / float(sampleCount);
+    if (stepLength <= 1e-6) return vec3(1.0);
+
+    vec3 opticalDepth = vec3(0.0);
+    for (int sampleIndex = 0; sampleIndex < 16; ++sampleIndex) {
+        if (sampleIndex >= sampleCount) break;
+        float distanceAlongPath = (float(sampleIndex) + 0.5) * stepLength;
+        vec3 samplePosition = receiverView + pathDirection * distanceAlongPath;
+        ivec3 sampleCoord;
+        vec3 sigma = fallbackSigma;
+        if (froxelCoordForViewPosition(samplePosition, dimensions, sampleCoord)) {
+            sigma = sigmaFromFroxel(sampleCoord, dimensions);
+        }
+        opticalDepth += max(sigma, vec3(0.0)) * stepLength;
+    }
+    return exp(-opticalDepth);
+}
+
 void main() {
     ivec3 coord = ivec3(gl_GlobalInvocationID.xyz);
     ivec3 dimensions = imageSize(u_SegmentRadiance);
@@ -165,7 +216,8 @@ void main() {
         float visibility = localShadowVisibility(light, viewPosition);
         if (visibility <= 0.0) continue;
         float phase = hgPhase(dot(rayView, lightDirection), g);
-        vec3 lightPathT = exp(-max(localSigmaT, vec3(0.0)) * distanceValue);
+        vec3 lightPathT = lightPathTransmittance(
+                viewPosition, lightDirection, sourceDistance, dimensions, max(localSigmaT, vec3(0.0)));
         incident += max(light.radianceType.rgb, vec3(0.0)) * attenuation * phase * visibility * lightPathT;
     }
 
