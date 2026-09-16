@@ -17,6 +17,9 @@ layout(std430, binding = 0) readonly buffer FroxelMediaData {
     vec4 mediumDistribution;
     vec4 mediumScattering;
     vec4 mediumAbsorption;
+    vec4 cameraMediumBoundary;
+    vec4 cameraMediumScattering;
+    vec4 cameraMediumAbsorption;
     vec4 mediumWeather;
     vec4 mediumWeatherState;
     vec4 mediumLighting;

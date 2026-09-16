@@ -5,18 +5,18 @@
  */
 package combatant.client.render.engine.water;
 
-/** Explicit validity states mirrored by the forward-water thickness resolver. */
-public enum WaterThicknessStatus {
-    EXACT_LOCAL_BOUNDARY(1),
+/** Explicit validity/fallback states for the forward-water refraction contract. */
+public enum WaterRefractionStatus {
+    VALID_EXACT_BOUNDARY(1),
     VALID_SCREEN_SPACE(2),
-    CONNECTED_FLUID_CONTINUATION(3),
-    UNKNOWN_OFFSCREEN(4),
-    CAMERA_INSIDE_FLUID(5),
-    MISSING_BACK_SURFACE(6);
+    INVALID_BOUNDARY_DIRECTION(3),
+    OFFSCREEN(4),
+    TOTAL_INTERNAL_REFLECTION(5),
+    UNKNOWN(6);
 
     private final int gpuCode;
 
-    WaterThicknessStatus(int gpuCode) {
+    WaterRefractionStatus(int gpuCode) {
         this.gpuCode = gpuCode;
     }
 

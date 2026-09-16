@@ -132,6 +132,56 @@ public final class WaterSurfaceExtractor {
         return false;
     }
 
+
+    /** Exact base extracted top-surface sample for a producer-known fluid column, when available. */
+    public static SurfaceSample sampleTopSurface(BlockPos blockPos, int fluidTypeId, double worldX, double worldZ) {
+        if (blockPos == null) return SurfaceSample.UNKNOWN;
+        SectionPatchMesh section = SECTIONS.get(SectionPos.asLong(blockPos));
+        if (section == null) return SurfaceSample.UNKNOWN;
+        long packedPos = blockPos.asLong();
+        for (WaterPatch patch : section.waterPatches()) {
+            if (patch.blockPos() != packedPos || patch.fluidTypeId() != fluidTypeId) continue;
+            float localX = (float) (worldX - blockPos.getX());
+            float localZ = (float) (worldZ - blockPos.getZ());
+            float y = samplePatchHeight(patch, localX, localZ);
+            if (Float.isFinite(y)) return new SurfaceSample(y, true);
+        }
+        return SurfaceSample.UNKNOWN;
+    }
+
+    private static float samplePatchHeight(WaterPatch patch, float localX, float localZ) {
+        float[] local = patch.localSurfaceCoordinates();
+        float[] positions = patch.positions();
+        float h00 = nearestCornerHeight(local, positions, 0.0f, 0.0f);
+        float h10 = nearestCornerHeight(local, positions, 1.0f, 0.0f);
+        float h11 = nearestCornerHeight(local, positions, 1.0f, 1.0f);
+        float h01 = nearestCornerHeight(local, positions, 0.0f, 1.0f);
+        float u = Math.max(0.0f, Math.min(1.0f, localX));
+        float v = Math.max(0.0f, Math.min(1.0f, localZ));
+        float a = h00 + (h10 - h00) * u;
+        float b = h01 + (h11 - h01) * u;
+        return a + (b - a) * v;
+    }
+
+    private static float nearestCornerHeight(float[] local, float[] positions, float targetX, float targetZ) {
+        int best = 0;
+        float bestDistance = Float.POSITIVE_INFINITY;
+        for (int i = 0; i < 4; i++) {
+            float dx = local[i * 2] - targetX;
+            float dz = local[i * 2 + 1] - targetZ;
+            float d = dx * dx + dz * dz;
+            if (d < bestDistance) {
+                bestDistance = d;
+                best = i;
+            }
+        }
+        return positions[best * 3 + 1];
+    }
+
+    public record SurfaceSample(float worldY, boolean valid) {
+        public static final SurfaceSample UNKNOWN = new SurfaceSample(0.0f, false);
+    }
+
     public static void clear() {
         BUILD.remove();
         SECTIONS.clear();
@@ -152,6 +202,8 @@ public final class WaterSurfaceExtractor {
             float flowZ,
             float flowStrength,
             int surfaceFlags,
+            int fluidConnectivity,
+            float cellBaseY,
             float surfaceNormalX,
             float surfaceNormalY,
             float surfaceNormalZ,
@@ -190,7 +242,7 @@ public final class WaterSurfaceExtractor {
             return new WaterPatch(
                     surface.blockPos().asLong(), surface.materialId(), surface.fluidTypeId(),
                     surface.flowX(), surface.flowZ(), surface.flowStrength(), surface.surfaceFlags(),
-                    normal[0], normal[1], normal[2],
+                    surface.fluidConnectivity(), surface.blockPos().getY(), normal[0], normal[1], normal[2],
                     positions, localSurfaceCoordinates, uvs, surface.color(), surface.ao(), surface.light(),
                     surface.mapMask(), surface.featureMask(), surface.packedSurface(),
                     surface.material().transmission(), surface.material().thickness(),

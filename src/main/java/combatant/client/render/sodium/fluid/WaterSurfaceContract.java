@@ -5,7 +5,11 @@
  */
 package combatant.client.render.sodium.fluid;
 
+import net.minecraft.client.renderer.block.BlockAndTintGetter;
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.FluidState;
 
 /**
  * Explicit producer-side semantics carried by extracted water surfaces.
@@ -19,6 +23,13 @@ public final class WaterSurfaceContract {
     public static final int FLAG_STILL = 1 << 2;
     public static final int FLAG_FLOWING = 1 << 3;
     public static final int FLAG_REVERSED = 1 << 4;
+
+    public static final int CONNECT_DOWN = 1 << 0;
+    public static final int CONNECT_NORTH = 1 << 1;
+    public static final int CONNECT_SOUTH = 1 << 2;
+    public static final int CONNECT_WEST = 1 << 3;
+    public static final int CONNECT_EAST = 1 << 4;
+    public static final int CONNECT_UP = 1 << 5;
 
     private WaterSurfaceContract() {
     }
@@ -51,6 +62,26 @@ public final class WaterSurfaceContract {
         else flags |= FLAG_FLOWING;
         if (surface.reversed()) flags |= FLAG_REVERSED;
         return flags;
+    }
+
+
+    /** Producer-known same-fluid adjacency. A clear bit means that cell face is a real local medium boundary. */
+    public static int fluidConnectivity(BlockAndTintGetter level, BlockPos pos, FluidState state) {
+        if (level == null || pos == null || state == null) return 0;
+        Fluid fluid = state.getType();
+        int mask = 0;
+        if (sameFluid(level, pos.below(), fluid)) mask |= CONNECT_DOWN;
+        if (sameFluid(level, pos.north(), fluid)) mask |= CONNECT_NORTH;
+        if (sameFluid(level, pos.south(), fluid)) mask |= CONNECT_SOUTH;
+        if (sameFluid(level, pos.west(), fluid)) mask |= CONNECT_WEST;
+        if (sameFluid(level, pos.east(), fluid)) mask |= CONNECT_EAST;
+        if (sameFluid(level, pos.above(), fluid)) mask |= CONNECT_UP;
+        return mask;
+    }
+
+    private static boolean sameFluid(BlockAndTintGetter level, BlockPos pos, Fluid fluid) {
+        FluidState neighbor = level.getFluidState(pos);
+        return neighbor != null && fluid.isSame(neighbor.getType());
     }
 
     /** Geometric orientation of the captured producer quad, in world axes. */

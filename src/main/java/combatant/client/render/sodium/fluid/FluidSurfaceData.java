@@ -32,6 +32,7 @@ public record FluidSurfaceData(
         float flowZ,
         boolean source,
         int amount,
+        int fluidConnectivity,
         ModelQuadFacing facing,
         boolean reversed,
         float[] x,
@@ -106,6 +107,7 @@ public record FluidSurfaceData(
                 (float) flow.z,
                 state != null && state.isSource(),
                 state == null ? 0 : state.getAmount(),
+                WaterSurfaceContract.fluidConnectivity(context.level(), context.worldPos(), state),
                 facing,
                 reversed,
                 x, y, z, u, v, color, ao, light,
@@ -146,6 +148,10 @@ public record FluidSurfaceData(
 
     public int surfaceFlags() {
         return WaterSurfaceContract.flags(this);
+    }
+
+    public boolean connected(int bit) {
+        return (fluidConnectivity & bit) != 0;
     }
 
     public float[] surfaceNormal() {

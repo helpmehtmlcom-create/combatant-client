@@ -34,6 +34,7 @@ layout(std140) uniform WaterFrame {
     vec4 u_Deformation0;
     vec4 u_Deformation1;
     vec4 u_MediumReflection;
+    vec4 u_MediumBoundary;
     vec4 u_OpticalAbsorption;
     vec4 u_OpticalScattering;
     vec4 u_ReflectionMeta;

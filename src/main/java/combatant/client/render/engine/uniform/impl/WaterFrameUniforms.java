@@ -18,7 +18,7 @@ public enum WaterFrameUniforms {
     public static final int SIZE = new Std140SizeCalculator()
             .putMat4f().putMat4f().putMat4f().putMat4f().putMat4f().putMat4f()
             .putVec4().putVec4().putVec4().putVec4().putVec4()
-            .putVec4().putVec4().putVec4().putVec4().putVec4()
+            .putVec4().putVec4().putVec4().putVec4().putVec4().putVec4()
             .get();
 
     public static GpuBufferSlice write(Frame frame) {
@@ -51,6 +51,7 @@ public enum WaterFrameUniforms {
             float[] deformation0,
             float[] deformation1,
             float[] mediumReflection,
+            float[] mediumBoundary,
             float[] opticalAbsorption,
             float[] opticalScattering,
             float[] reflectionMeta
@@ -69,6 +70,7 @@ public enum WaterFrameUniforms {
             deformation0 = vec4(deformation0);
             deformation1 = vec4(deformation1);
             mediumReflection = vec4(mediumReflection);
+            mediumBoundary = vec4(mediumBoundary);
             opticalAbsorption = vec4(opticalAbsorption);
             opticalScattering = vec4(opticalScattering);
             reflectionMeta = vec4(reflectionMeta);
@@ -77,7 +79,7 @@ public enum WaterFrameUniforms {
         float[][] vectors() {
             return new float[][]{
                     currentCameraTime, previousCameraTime, viewport, depthTransform, deformation0,
-                    deformation1, mediumReflection, opticalAbsorption, opticalScattering, reflectionMeta
+                    deformation1, mediumReflection, mediumBoundary, opticalAbsorption, opticalScattering, reflectionMeta
             };
         }
 
