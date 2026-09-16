@@ -221,4 +221,25 @@ public enum CombatantVertexFormats {
             .addAttribute("MaterialSurface", CombatantVertexFormatElements.MATERIAL_SURFACE)
             .build();
 
+    /**
+     * Water-only extracted surface contract. Unlike {@link #WATER_PATCH}, this layout carries the
+     * producer-known fluid/material flags required by both tessellated and triangle fallback paths.
+     */
+    public static final VertexFormat WATER_FORWARD_PATCH = VertexFormat.builder(0)
+            .addAttribute("Position", CombatantVertexFormatElements.POS3)
+            .addAttribute("UV0", CombatantVertexFormatElements.TEXTURE)
+            .addAttribute("LocalSurface", CombatantVertexFormatElements.TEXTURE)
+            .addAttribute("Color", CombatantVertexFormatElements.COLOR)
+            .addAttribute("Params", CombatantVertexFormatElements.PARAMS)
+            .addAttribute("Params2", CombatantVertexFormatElements.PARAMS2)
+            .addAttribute("Params3", CombatantVertexFormatElements.PARAMS3)
+            .addAttribute("Params4", CombatantVertexFormatElements.PARAMS4)
+            .addAttribute("MaterialId", CombatantVertexFormatElements.MATERIAL_ID)
+            .addAttribute("FluidTypeId", CombatantVertexFormatElements.MATERIAL_ID)
+            .addAttribute("MaterialMapMask", CombatantVertexFormatElements.MATERIAL_MAP_MASK)
+            .addAttribute("MaterialFeatureMask", CombatantVertexFormatElements.MATERIAL_SURFACE)
+            .addAttribute("SurfaceFlags", CombatantVertexFormatElements.MATERIAL_SURFACE)
+            .addAttribute("MaterialSurface", CombatantVertexFormatElements.MATERIAL_SURFACE)
+            .build();
+
 }

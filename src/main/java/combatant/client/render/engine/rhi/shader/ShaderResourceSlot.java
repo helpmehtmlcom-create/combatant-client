@@ -6,13 +6,23 @@
  */
 package combatant.client.render.engine.rhi.shader;
 
-/** Backend-neutral descriptor/binding slot. */
+import com.mojang.blaze3d.GpuFormat;
+
+/** Backend-neutral descriptor/binding slot. Format is optional until shader reflection supplies it. */
 public record ShaderResourceSlot(int binding,
                                  ShaderResourceKind kind,
-                                 StorageAccess access) {
+                                 StorageAccess access,
+                                 GpuFormat format) {
     public ShaderResourceSlot {
         if (binding < 0) throw new IllegalArgumentException("binding");
         if (kind == null) throw new IllegalArgumentException("kind");
         access = access == null ? StorageAccess.READ_WRITE : access;
+        if (format != null && kind != ShaderResourceKind.STORAGE_IMAGE && kind != ShaderResourceKind.STORAGE_VOLUME) {
+            throw new IllegalArgumentException("Expected format is only valid for storage image/volume slots");
+        }
+    }
+
+    public ShaderResourceSlot(int binding, ShaderResourceKind kind, StorageAccess access) {
+        this(binding, kind, access, null);
     }
 }

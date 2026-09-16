@@ -10,11 +10,16 @@ layout(binding = 5, rgba16f) readonly uniform image3D u_IntegratedTransmittance;
 layout(binding = 6, rgba16f) writeonly uniform image2D u_Output;
 layout(std430, binding = 7) readonly buffer AtmosphereCompositeData {
     mat4 inverseProjection;
+    mat4 inverseView;
     vec4 froxel;
     vec4 policy;
+    vec4 aerialLayout;
 } u_Data;
+layout(binding = 8) uniform sampler2D u_AerialRadiance;
+layout(binding = 9) uniform sampler2D u_AerialTransmittance;
 
 #moj_import <combatant:deferred_froxel_transport.glsl>
+#moj_import <combatant:deferred_aerial_sampling.glsl>
 
 struct MediaTransport {
     vec3 radiance;
@@ -25,6 +30,13 @@ vec3 viewPosition(vec2 uv, float depth) {
     float ndcZ = u_Data.policy.y > 0.5 ? depth : depth * 2.0 - 1.0;
     vec4 view = u_Data.inverseProjection * vec4(uv * 2.0 - 1.0, ndcZ, 1.0);
     return view.xyz / max(abs(view.w), 1e-7) * sign(view.w);
+}
+
+vec3 worldRay(vec2 uv) {
+    float ndcZ = u_Data.policy.y > 0.5 ? 0.5 : 0.0;
+    vec4 view = u_Data.inverseProjection * vec4(uv * 2.0 - 1.0, ndcZ, 1.0);
+    vec3 viewDirection = normalize(view.xyz / max(abs(view.w), 1e-7) * sign(view.w));
+    return normalize(mat3(u_Data.inverseView) * viewDirection);
 }
 
 void sampleCloudDepthAware(vec2 uv, float sceneDistance, out vec4 cloud, out float cloudDistance) {
@@ -98,6 +110,17 @@ MediaTransport identityTransport() {
     MediaTransport result;
     result.radiance = vec3(0.0);
     result.transmittance = vec3(1.0);
+    return result;
+}
+
+MediaTransport atmosphereTransport(vec3 rayWorld, float distanceBlocks) {
+    if (distanceBlocks <= 0.0) return identityTransport();
+    float distanceKm = distanceBlocks * 0.001;
+    MediaTransport result;
+    result.radiance = max(combatant_sample_aerial(u_AerialRadiance, rayWorld, distanceKm).rgb, vec3(0.0));
+    result.transmittance = clamp(
+            combatant_sample_aerial(u_AerialTransmittance, rayWorld, distanceKm).rgb,
+            vec3(0.0), vec3(1.0));
     return result;
 }
 
@@ -177,14 +200,21 @@ void main() {
     sampleCloudDepthAware(uv, sceneDistance, cloud, cloudDistance);
 
     if (sceneDistance < 0.0) {
-        vec3 result = base;
+        vec3 rayWorld = worldRay(uv);
+        MediaTransport fullTransport = sampleTransport(uv, backgroundDistance);
+        MediaTransport atmosphereFront = atmosphereTransport(rayWorld, backgroundDistance);
+        vec3 safeAtmosphereT = max(atmosphereFront.transmittance, vec3(1e-5));
+        vec3 skyAfterMediaRange = max((base - atmosphereFront.radiance) / safeAtmosphereT, vec3(0.0));
+
+        vec3 result = fullTransport.radiance + fullTransport.transmittance * skyAfterMediaRange;
         if (cloudDistance >= 0.0 && cloudDistance <= backgroundDistance) {
             float effectiveCloudDistance = clamp(cloudDistance, 0.0, backgroundDistance);
             MediaTransport frontTransport = sampleTransport(uv, effectiveCloudDistance);
-            vec3 safeFrontT = max(frontTransport.transmittance, vec3(1e-5));
-            vec3 skyBehindCloud = max((base - frontTransport.radiance) / safeFrontT, vec3(0.0));
+            MediaTransport behindTransport = segmentBetween(frontTransport, fullTransport);
+            vec3 backgroundAtCloud = behindTransport.radiance
+                    + behindTransport.transmittance * skyAfterMediaRange;
             float cloudT = clamp(cloud.a, 0.0, 1.0);
-            vec3 cloudAtCamera = max(cloud.rgb, vec3(0.0)) + cloudT * skyBehindCloud;
+            vec3 cloudAtCamera = max(cloud.rgb, vec3(0.0)) + cloudT * backgroundAtCloud;
             result = frontTransport.radiance + frontTransport.transmittance * cloudAtCamera;
         }
         imageStore(u_Output, pixel, vec4(max(result, vec3(0.0)), 1.0));

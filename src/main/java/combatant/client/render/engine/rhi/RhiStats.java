@@ -41,6 +41,10 @@ public final class RhiStats {
     private long storageBufferUploads;
     private long storageBufferUploadBytes;
     private long advancedShaderBarriers;
+    private long storageVolumeAllocations;
+    private long storageVolumeDestructions;
+    private long storageVolumeLive;
+    private long storageVolumeLiveBytes;
     private long meshUploads;
     private long uploadedVertexBytes;
     private long uploadedIndexBytes;
@@ -215,6 +219,21 @@ public final class RhiStats {
 
     public void advancedShaderBarrier() {
         advancedShaderBarriers++;
+    }
+
+    /** Session-lifetime accounting for backend-owned native 3D images. */
+    public void storageVolumeAllocated(long approximateBytes) {
+        storageVolumeAllocations++;
+        storageVolumeLive++;
+        long bytes = Math.max(0L, approximateBytes);
+        storageVolumeLiveBytes = storageVolumeLiveBytes > Long.MAX_VALUE - bytes
+                ? Long.MAX_VALUE : storageVolumeLiveBytes + bytes;
+    }
+
+    public void storageVolumeDestroyed(long approximateBytes) {
+        storageVolumeDestructions++;
+        storageVolumeLive = Math.max(0L, storageVolumeLive - 1L);
+        storageVolumeLiveBytes = Math.max(0L, storageVolumeLiveBytes - Math.max(0L, approximateBytes));
     }
 
     public void meshUpload(long vertexBytes, long indexBytes) {
@@ -394,6 +413,11 @@ public final class RhiStats {
         return advancedShaderBarriers;
     }
 
+    public long storageVolumeAllocations() { return storageVolumeAllocations; }
+    public long storageVolumeDestructions() { return storageVolumeDestructions; }
+    public long storageVolumeLive() { return storageVolumeLive; }
+    public long storageVolumeLiveBytes() { return storageVolumeLiveBytes; }
+
     public long meshUploads() {
         return meshUploads;
     }
@@ -432,6 +456,7 @@ public final class RhiStats {
                 fullscreenPasses, textureFastCopies, textureShaderCopies, textureGlCopyImages,
                 computeDispatches, computeWorkgroups, computeStorageBindings,
                 storageBufferUploads, storageBufferUploadBytes, advancedShaderBarriers,
+                storageVolumeAllocations, storageVolumeDestructions, storageVolumeLive, storageVolumeLiveBytes,
                 meshUploads, uploadedVertexBytes, uploadedIndexBytes, ringWraps, ringStalls,
                 dynamicArenaAllocations, dynamicPersistentArenaAllocations, dynamicSpillArenaAllocations,
                 dynamicArenaReuses, dynamicArenaRetires, dynamicFenceChecks, dynamicFenceCompletions,

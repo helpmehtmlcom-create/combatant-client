@@ -10,6 +10,8 @@ package combatant.client.render.engine.rhi.shader;
 public interface RhiStorageVolume extends AutoCloseable {
     StorageVolumeDescriptor descriptor();
 
+    boolean isClosed();
+
     @Override
     void close();
 }

@@ -131,6 +131,27 @@ public record FluidSurfaceData(
         return Arrays.copyOf(y, 4);
     }
 
+    /** Producer-known stable fluid registry identity, suitable for GPU/debug contracts. */
+    public int fluidTypeId() {
+        return WaterSurfaceContract.stableFluidTypeId(fluidId);
+    }
+
+    public float flowStrength() {
+        return WaterSurfaceContract.flowStrength(flowX, flowZ);
+    }
+
+    public boolean still() {
+        return flowStrength() <= 1.0e-5f;
+    }
+
+    public int surfaceFlags() {
+        return WaterSurfaceContract.flags(this);
+    }
+
+    public float[] surfaceNormal() {
+        return WaterSurfaceContract.surfaceNormal(this);
+    }
+
     private static float[] copy4(float[] values) {
         if (values == null || values.length != 4) throw new IllegalArgumentException("fluid quad requires four values");
         return Arrays.copyOf(values, 4);

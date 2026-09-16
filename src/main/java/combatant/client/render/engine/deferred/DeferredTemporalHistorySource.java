@@ -86,6 +86,7 @@ final class DeferredTemporalHistorySource implements AutoCloseable {
                         new StorageImageBinding(3, historyDepth, StorageAccess.WRITE_ONLY)
                 )
         ));
+        context.temporalHistory().commit(DeferredTemporalHistoryId.SCENE);
     }
 
     private void ensureOwner(CombatantRhi rhi) {

@@ -108,7 +108,7 @@ public final class DeferredPassGraph {
 
     public void execute(DeferredStage stage, RenderFrameContext frame, DeferredResourceBindings resources) {
         execute(stage, frame, resources, new DeferredSecondaryViewRegistry(), new DeferredPrimaryViewSource(),
-                WorldRenderState.unknown(0L), DeferredRuntimeConfig.current());
+                new DeferredTemporalHistoryRegistry(), WorldRenderState.unknown(0L), DeferredRuntimeConfig.current());
     }
 
     public void execute(DeferredStage stage,
@@ -116,8 +116,8 @@ public final class DeferredPassGraph {
                         DeferredResourceBindings resources,
                         DeferredSecondaryViewRegistry secondaryViews,
                         DeferredPrimaryViewSource primaryView) {
-        execute(stage, frame, resources, secondaryViews, primaryView, WorldRenderState.unknown(0L),
-                DeferredRuntimeConfig.current());
+        execute(stage, frame, resources, secondaryViews, primaryView, new DeferredTemporalHistoryRegistry(),
+                WorldRenderState.unknown(0L), DeferredRuntimeConfig.current());
     }
 
     public void execute(DeferredStage stage,
@@ -125,11 +125,13 @@ public final class DeferredPassGraph {
                         DeferredResourceBindings resources,
                         DeferredSecondaryViewRegistry secondaryViews,
                         DeferredPrimaryViewSource primaryView,
+                        DeferredTemporalHistoryRegistry temporalHistory,
                         WorldRenderState worldState,
                         DeferredRuntimeConfig.Snapshot settings) {
         if (stage == null || frame == null || resources == null) return;
         if (secondaryViews == null) throw new IllegalArgumentException("secondaryViews");
         if (primaryView == null) throw new IllegalArgumentException("primaryView");
+        if (temporalHistory == null) throw new IllegalArgumentException("temporalHistory");
         List<DeferredPassSpec> snapshot;
         CompiledFrameGraph compiledSnapshot;
         synchronized (this) {
@@ -140,7 +142,7 @@ public final class DeferredPassGraph {
 
         CombatantRhi rhi = CombatantRenderSystem.rhi();
         DeferredPassContext context = new DeferredPassContext(
-                stage, frame, rhi, resources, secondaryViews, primaryView, worldState, settings
+                stage, frame, rhi, resources, secondaryViews, primaryView, temporalHistory, worldState, settings
         );
         try (RenderPhaseScope ignored = CombatantRenderSystem.phase(stage.renderPhase(), "deferred:" + stage.name().toLowerCase())) {
             for (int passIndex = 0; passIndex < snapshot.size(); passIndex++) {

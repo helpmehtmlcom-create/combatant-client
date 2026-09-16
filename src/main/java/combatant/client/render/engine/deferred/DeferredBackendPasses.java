@@ -72,7 +72,9 @@ final class DeferredBackendPasses implements AutoCloseable {
     private static final ShaderResourceLayout VELOCITY_LAYOUT = new ShaderResourceLayout(List.of(
             new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(1, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
-            new ShaderResourceSlot(2, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
+            new ShaderResourceSlot(2, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(3, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
+            new ShaderResourceSlot(4, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY)
     ));
 
     private CombatantRhi owner;
@@ -97,6 +99,7 @@ final class DeferredBackendPasses implements AutoCloseable {
     private final DeferredIndirectLightSource indirectLight = new DeferredIndirectLightSource();
     private final DeferredReflectionCascadeSource reflectionCascades = new DeferredReflectionCascadeSource();
     private final DeferredReflectionSource reflections = new DeferredReflectionSource();
+    private final DeferredReactiveMaskSource reactiveMask = new DeferredReactiveMaskSource();
     private final DeferredDisocclusionSource disocclusion = new DeferredDisocclusionSource();
     private final DeferredTemporalSignalSource temporalSignals = new DeferredTemporalSignalSource();
     private final DeferredReflectionDenoiseSource reflectionDenoise = new DeferredReflectionDenoiseSource();
@@ -140,11 +143,12 @@ final class DeferredBackendPasses implements AutoCloseable {
                 .execute(this::captureGbufferDepth)
                 .build());
         passes.add(DeferredPassSpec.builder("world.velocity.camera", DeferredStage.VELOCITY_RESOLVE)
-                .read(DeferredResource.RESOLVED_DEPTH)
-                .write(DeferredResource.VELOCITY)
+                .read(DeferredResource.RESOLVED_DEPTH, DeferredResource.GBUFFER_DEPTH)
+                .write(DeferredResource.VELOCITY, DeferredResource.MOTION_VALIDITY)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.isValid(DeferredResource.RESOLVED_DEPTH)
-                        && context.primaryView().hasTemporalHistory())
+                        && context.isValid(DeferredResource.GBUFFER_DEPTH)
+                        && context.primaryView().current() != null)
                 .execute(this::resolveCameraVelocity)
                 .build());
         passes.add(DeferredPassSpec.builder("world.depth.pyramid", DeferredStage.DEPTH_PYRAMID)
@@ -165,11 +169,12 @@ final class DeferredBackendPasses implements AutoCloseable {
                 .execute(this::resolveDepth)
                 .build());
         passes.add(DeferredPassSpec.builder("world.pre_translucency.velocity.camera", DeferredStage.PRE_TRANSLUCENCY_VELOCITY_RESOLVE)
-                .read(DeferredResource.RESOLVED_DEPTH)
-                .write(DeferredResource.VELOCITY)
+                .read(DeferredResource.RESOLVED_DEPTH, DeferredResource.GBUFFER_DEPTH)
+                .write(DeferredResource.VELOCITY, DeferredResource.MOTION_VALIDITY)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.isValid(DeferredResource.RESOLVED_DEPTH)
-                        && context.primaryView().hasTemporalHistory())
+                        && context.isValid(DeferredResource.GBUFFER_DEPTH)
+                        && context.primaryView().current() != null)
                 .execute(this::resolveCameraVelocity)
                 .build());
         passes.add(DeferredPassSpec.builder("world.pre_translucency.depth.pyramid", DeferredStage.PRE_TRANSLUCENCY_DEPTH_PYRAMID)
@@ -191,6 +196,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         indirectLight.install(passes);
         reflectionCascades.install(passes);
         reflections.install(passes);
+        reactiveMask.install(passes);
         disocclusion.install(passes);
         temporalSignals.install(passes);
         reflectionDenoise.install(passes);
@@ -224,6 +230,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         sceneRadiance.prepare(rhi);
         indirectLight.prepare(rhi);
         reflections.prepare(rhi);
+        reactiveMask.prepare(rhi);
         disocclusion.prepare(rhi);
         temporalSignals.prepare(rhi);
         reflectionDenoise.prepare(rhi);
@@ -258,6 +265,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         indirectLight.release(releaseOwner);
         reflectionCascades.release(releaseOwner);
         reflections.release(releaseOwner);
+        reactiveMask.release(releaseOwner);
         disocclusion.release(releaseOwner);
         temporalSignals.release(releaseOwner);
         reflectionDenoise.release(releaseOwner);
@@ -313,22 +321,29 @@ final class DeferredBackendPasses implements AutoCloseable {
         ensureOwner(context.rhi());
         DeferredPrimaryViewSource.FrameView current = context.primaryView().current();
         DeferredPrimaryViewSource.FrameView previous = context.primaryView().previous();
-        if (current == null || previous == null || !context.primaryView().hasTemporalHistory()) return;
+        if (current == null) return;
 
+        boolean historyValid = context.primaryView().hasTemporalHistory() && previous != null;
+        DeferredPrimaryViewSource.FrameView reprojectionPrevious = historyValid ? previous : current;
         GpuTextureView resolvedDepth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
+        GpuTextureView gbufferDepth = requireTexture(context, DeferredResource.GBUFFER_DEPTH);
         RhiStorageImage output = requireImage(context, DeferredResource.VELOCITY);
+        RhiStorageImage validity = requireImage(context, DeferredResource.MOTION_VALIDITY);
         RhiStorageBuffer cameraBuffer = temporalCameraBuffer();
 
-        Vec3 delta = current.cameraPosition().subtract(previous.cameraPosition());
+        Vec3 delta = historyValid
+                ? current.cameraPosition().subtract(reprojectionPrevious.cameraPosition())
+                : Vec3.ZERO;
         boolean zeroToOneNdc = isVulkan(context);
         Std430Writer writer = new Std430Writer(TEMPORAL_CAMERA_LAYOUT, 1)
                 .putMat4(0, "currentInverseProjection", current.inverseProjection())
                 .putMat4(0, "currentInverseView", current.inverseView())
-                .putMat4(0, "previousView", previous.view())
-                .putMat4(0, "previousProjection", previous.projection())
+                .putMat4(0, "previousView", reprojectionPrevious.view())
+                .putMat4(0, "previousProjection", reprojectionPrevious.projection())
                 .putVec4(0, "cameraDelta", (float) delta.x, (float) delta.y, (float) delta.z, 0.0f)
                 .putVec4(0, "depthNdcTransform",
-                        zeroToOneNdc ? 1.0f : 2.0f, zeroToOneNdc ? 0.0f : -1.0f, 0.0f, 0.0f);
+                        zeroToOneNdc ? 1.0f : 2.0f, zeroToOneNdc ? 0.0f : -1.0f,
+                        historyValid ? 1.0f : 0.0f, DeferredVelocityContract.VERSION);
         cameraBuffer.upload(writer.buffer(), 0L);
 
         GpuSampler sampler = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
@@ -339,8 +354,14 @@ final class DeferredBackendPasses implements AutoCloseable {
                 groups(output.descriptor().height()),
                 1,
                 List.of(new StorageBinding(2, cameraBuffer, 0L, writer.byteSize(), StorageAccess.READ_ONLY)),
-                List.of(new SampledTextureBinding(0, resolvedDepth, sampler)),
-                List.of(new StorageImageBinding(1, output, StorageAccess.WRITE_ONLY))
+                List.of(
+                        new SampledTextureBinding(0, resolvedDepth, sampler),
+                        new SampledTextureBinding(4, gbufferDepth, sampler)
+                ),
+                List.of(
+                        new StorageImageBinding(1, output, StorageAccess.WRITE_ONLY),
+                        new StorageImageBinding(3, validity, StorageAccess.WRITE_ONLY)
+                )
         ));
     }
 
@@ -411,6 +432,7 @@ final class DeferredBackendPasses implements AutoCloseable {
             indirectLight.release(previous);
             reflectionCascades.release(previous);
             reflections.release(previous);
+            reactiveMask.release(previous);
             disocclusion.release(previous);
             temporalSignals.release(previous);
             reflectionDenoise.release(previous);
@@ -514,6 +536,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         indirectLight.close();
         reflectionCascades.close();
         reflections.close();
+        reactiveMask.close();
         disocclusion.close();
         temporalSignals.close();
         reflectionDenoise.close();

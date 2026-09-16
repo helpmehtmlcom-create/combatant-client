@@ -30,6 +30,7 @@ import combatant.client.render.engine.rhi.shader.StorageBinding;
 import combatant.client.render.engine.rhi.shader.StorageBufferDescriptor;
 import combatant.client.render.engine.rhi.shader.StorageImageBinding;
 import combatant.client.render.engine.rhi.shader.StorageVolumeBinding;
+import combatant.client.render.engine.world.AerialPerspectiveLayout;
 import net.minecraft.resources.Identifier;
 
 import java.util.ArrayList;
@@ -42,8 +43,10 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
 
     private static final Std430StructLayout DATA_LAYOUT = Std430StructLayout.builder()
             .member("inverseProjection", Std430Type.MAT4)
+            .member("inverseView", Std430Type.MAT4)
             .member("froxel", Std430Type.VEC4)
             .member("policy", Std430Type.VEC4)
+            .member("aerialLayout", Std430Type.VEC4)
             .build();
 
     private static final ShaderResourceLayout LAYOUT = new ShaderResourceLayout(List.of(
@@ -54,7 +57,9 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
             new ShaderResourceSlot(4, ShaderResourceKind.STORAGE_VOLUME, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(5, ShaderResourceKind.STORAGE_VOLUME, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(6, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
-            new ShaderResourceSlot(7, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
+            new ShaderResourceSlot(7, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(8, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(9, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY)
     ));
 
     private final DeferredFroxelMediaSource froxelMedia;
@@ -71,6 +76,7 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
         passes.add(DeferredPassSpec.builder("world.environment.media.composite", DeferredStage.VOLUMETRIC_MEDIA_COMPOSITE)
                 .read(DeferredResource.SKY_COMPOSITED_RADIANCE, DeferredResource.RESOLVED_DEPTH,
                         DeferredResource.CLOUD_TEMPORAL_RADIANCE, DeferredResource.CLOUD_TEMPORAL_DEPTH,
+                        DeferredResource.AERIAL_PERSPECTIVE, DeferredResource.AERIAL_TRANSMITTANCE,
                         DeferredResource.FROXEL_MEDIA_INTEGRATED_RADIANCE,
                         DeferredResource.FROXEL_MEDIA_INTEGRATED_TRANSMITTANCE)
                 .write(DeferredResource.SCENE_RADIANCE)
@@ -80,6 +86,8 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
                         && context.isValid(DeferredResource.CLOUD_TEMPORAL_RADIANCE)
                         && context.isValid(DeferredResource.CLOUD_TEMPORAL_DEPTH)
+                        && context.isValid(DeferredResource.AERIAL_PERSPECTIVE)
+                        && context.isValid(DeferredResource.AERIAL_TRANSMITTANCE)
                         && context.isValid(DeferredResource.FROXEL_MEDIA_INTEGRATED_RADIANCE)
                         && context.isValid(DeferredResource.FROXEL_MEDIA_INTEGRATED_TRANSMITTANCE))
                 .execute(this::composite)
@@ -107,6 +115,8 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
         GpuTextureView depth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
         GpuTextureView cloudRadiance = requireTexture(context, DeferredResource.CLOUD_TEMPORAL_RADIANCE);
         GpuTextureView cloudDepth = requireTexture(context, DeferredResource.CLOUD_TEMPORAL_DEPTH);
+        GpuTextureView aerialRadiance = requireTexture(context, DeferredResource.AERIAL_PERSPECTIVE);
+        GpuTextureView aerialTransmittance = requireTexture(context, DeferredResource.AERIAL_TRANSMITTANCE);
         RhiStorageVolume integratedRadiance = requireVolume(context, DeferredResource.FROXEL_MEDIA_INTEGRATED_RADIANCE);
         RhiStorageVolume integratedTransmittance = requireVolume(context, DeferredResource.FROXEL_MEDIA_INTEGRATED_TRANSMITTANCE);
         RhiStorageImage output = requireImage(context, DeferredResource.SCENE_RADIANCE);
@@ -114,8 +124,12 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
         DeferredFroxelConfig.Grid grid = froxelMedia.currentGrid();
         Std430Writer writer = new Std430Writer(DATA_LAYOUT, 1)
                 .putMat4(0, "inverseProjection", view.inverseProjection())
+                .putMat4(0, "inverseView", view.inverseView())
                 .putVec4(0, "froxel", grid.width(), grid.height(), grid.depth(), grid.maxDistanceBlocks())
-                .putVec4(0, "policy", grid.depthExponent(), isVulkan(context) ? 1.0f : 0.0f, 0.0f, 0.0f);
+                .putVec4(0, "policy", grid.depthExponent(), isVulkan(context) ? 1.0f : 0.0f, 0.0f, 0.0f)
+                .putVec4(0, "aerialLayout", AerialPerspectiveLayout.ZENITH_SLICES,
+                        AerialPerspectiveLayout.AZIMUTH_SLICES,
+                        Math.max(0.064f, grid.maxDistanceBlocks() * 0.001f), 0.0f);
         RhiStorageBuffer buffer = data();
         buffer.upload(writer.buffer(), 0L);
 
@@ -129,7 +143,9 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
                         new SampledTextureBinding(0, base, linear),
                         new SampledTextureBinding(1, depth, nearest),
                         new SampledTextureBinding(2, cloudRadiance, linear),
-                        new SampledTextureBinding(3, cloudDepth, nearest)
+                        new SampledTextureBinding(3, cloudDepth, nearest),
+                        new SampledTextureBinding(8, aerialRadiance, nearest),
+                        new SampledTextureBinding(9, aerialTransmittance, nearest)
                 ),
                 List.of(new StorageImageBinding(6, output, StorageAccess.WRITE_ONLY)),
                 List.of(

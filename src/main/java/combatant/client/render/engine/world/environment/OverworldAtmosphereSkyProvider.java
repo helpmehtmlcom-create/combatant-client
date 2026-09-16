@@ -155,9 +155,9 @@ public final class OverworldAtmosphereSkyProvider implements SkyEnvironmentProvi
         DirectionalLightDescriptor sun = context.worldState().celestialState().sun();
         DirectionalLightDescriptor moon = context.worldState().celestialState().moon();
         double cameraY = context.view() != null ? context.view().cameraPosition().y : 0.0;
-        float aerialDistanceKm = context.view() != null && context.view().farPlane() > 0.0f
-                ? Math.max(0.064f, context.view().farPlane() * 0.001f)
-                : 1.024f;
+        float viewFarPlane = context.view() != null ? context.view().farPlane() : 0.0f;
+        float aerialDistanceKm = Math.max(0.064f,
+                ParticipatingMediaRange.resolveBlocks(context.worldState(), viewFarPlane) * 0.001f);
         float observerRadius = a.planetRadiusKm() + (float) Math.max(0.0, cameraY * 0.001);
         observerRadius = Math.min(observerRadius, a.atmosphereRadiusKm() - 0.001f);
 

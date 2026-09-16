@@ -12,8 +12,14 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 layout(binding = 0) uniform sampler2D u_Velocity;
 layout(binding = 1) uniform sampler2D u_CurrentDepth;
 layout(binding = 2) uniform sampler2D u_HistoryDepth;
-layout(binding = 3, r8) writeonly uniform image2D u_DisocclusionMask;
-layout(std430, binding = 4) readonly buffer DisocclusionParams { vec4 params; } u_Disocclusion;
+layout(binding = 3) uniform sampler2D u_MotionValidity;
+layout(binding = 4, r8) writeonly uniform image2D u_DisocclusionMask;
+// x=base relative depth threshold, y=one-pixel resolution scale, z=local depth-gradient multiplier.
+layout(std430, binding = 5) readonly buffer DisocclusionParams { vec4 params; } u_Disocclusion;
+
+float currentDepthAt(ivec2 pixel, ivec2 size) {
+    return texelFetch(u_CurrentDepth, clamp(pixel, ivec2(0), size - ivec2(1)), 0).r;
+}
 
 void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
@@ -21,6 +27,13 @@ void main() {
     if (any(greaterThanEqual(pixel, size))) return;
 
     vec2 uv = (vec2(pixel) + 0.5) / vec2(size);
+    float motionValid = textureLod(u_MotionValidity, uv, 0.0).r;
+    if (motionValid < 0.5) {
+        imageStore(u_DisocclusionMask, pixel, vec4(1.0, 0.0, 0.0, 0.0));
+        return;
+    }
+
+    // SceneVelocity contract: currentUV - previousUV.
     vec2 velocity = textureLod(u_Velocity, uv, 0.0).rg;
     vec2 previousUv = uv - velocity;
     bool inside = all(greaterThanEqual(previousUv, vec2(0.0)))
@@ -28,11 +41,23 @@ void main() {
 
     float disoccluded = 1.0;
     if (inside) {
-        float currentDepth = textureLod(u_CurrentDepth, uv, 0.0).r;
+        float currentDepth = currentDepthAt(pixel, size);
         float previousDepth = textureLod(u_HistoryDepth, previousUv, 0.0).r;
         float depthDelta = abs(currentDepth - previousDepth);
         float depthScale = max(max(abs(currentDepth), abs(previousDepth)), 1e-3);
-        disoccluded = depthDelta > u_Disocclusion.params.x * depthScale ? 1.0 : 0.0;
+
+        // A one-pixel local depth footprint grows near geometric edges and naturally tracks the
+        // current render resolution. This avoids one fixed tolerance for every depth/distance.
+        float localGradient = 0.0;
+        localGradient = max(localGradient, abs(currentDepth - currentDepthAt(pixel + ivec2(1, 0), size)));
+        localGradient = max(localGradient, abs(currentDepth - currentDepthAt(pixel + ivec2(-1, 0), size)));
+        localGradient = max(localGradient, abs(currentDepth - currentDepthAt(pixel + ivec2(0, 1), size)));
+        localGradient = max(localGradient, abs(currentDepth - currentDepthAt(pixel + ivec2(0, -1), size)));
+
+        float resolutionFloor = u_Disocclusion.params.y * depthScale;
+        float threshold = u_Disocclusion.params.x * depthScale
+                + max(localGradient * u_Disocclusion.params.z, resolutionFloor);
+        disoccluded = depthDelta > threshold ? 1.0 : 0.0;
     }
 
     imageStore(u_DisocclusionMask, pixel, vec4(disoccluded, 0.0, 0.0, 0.0));

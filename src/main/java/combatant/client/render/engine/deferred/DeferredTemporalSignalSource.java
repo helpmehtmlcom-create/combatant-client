@@ -56,7 +56,8 @@ final class DeferredTemporalSignalSource implements AutoCloseable {
             new ShaderResourceSlot(7, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
             new ShaderResourceSlot(8, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
             new ShaderResourceSlot(9, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
-            new ShaderResourceSlot(10, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
+            new ShaderResourceSlot(10, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(11, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY)
     ));
     private static final ShaderResourceLayout COPY_LAYOUT = new ShaderResourceLayout(List.of(
             new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
@@ -83,53 +84,54 @@ final class DeferredTemporalSignalSource implements AutoCloseable {
                 DeferredResource.INDIRECT_TRACE_LIGHT, DeferredResource.INDIRECT_TRACE_CONFIDENCE,
                 DeferredResource.INDIRECT_LIGHT, DeferredResource.INDIRECT_CONFIDENCE,
                 DeferredResource.HISTORY_INDIRECT, DeferredResource.HISTORY_INDIRECT_CONFIDENCE,
-                true);
+                DeferredTemporalHistoryId.INDIRECT_LIGHT, true);
         installHistoryStore(passes,
                 "world.indirect.history", DeferredStage.INDIRECT_HISTORY,
                 DeferredResource.INDIRECT_LIGHT, DeferredResource.INDIRECT_CONFIDENCE,
                 DeferredResource.HISTORY_INDIRECT, DeferredResource.HISTORY_INDIRECT_CONFIDENCE,
-                true);
+                DeferredTemporalHistoryId.INDIRECT_LIGHT, true);
         installSignal(passes,
                 "world.reflection.temporal", DeferredStage.REFLECTION_TEMPORAL,
                 DeferredResource.REFLECTION_RESOLVED_COLOR, DeferredResource.REFLECTION_RESOLVED_CONFIDENCE,
                 DeferredResource.REFLECTION_TEMPORAL_COLOR, DeferredResource.REFLECTION_TEMPORAL_CONFIDENCE,
                 DeferredResource.HISTORY_REFLECTION, DeferredResource.HISTORY_REFLECTION_CONFIDENCE,
-                false);
+                DeferredTemporalHistoryId.REFLECTIONS, false);
         installHistoryStore(passes,
                 "world.reflection.history", DeferredStage.REFLECTION_HISTORY,
                 DeferredResource.REFLECTION_COLOR, DeferredResource.REFLECTION_CONFIDENCE,
                 DeferredResource.HISTORY_REFLECTION, DeferredResource.HISTORY_REFLECTION_CONFIDENCE,
-                false);
+                DeferredTemporalHistoryId.REFLECTIONS, false);
     }
 
     private void installSignal(ArrayList<DeferredPassSpec> passes, String name, DeferredStage stage,
                                DeferredResource currentColor, DeferredResource currentConfidence,
                                DeferredResource outputColor, DeferredResource outputConfidence,
                                DeferredResource historyColor, DeferredResource historyConfidence,
-                               boolean indirect) {
+                               DeferredTemporalHistoryId historyId, boolean indirect) {
         passes.add(DeferredPassSpec.builder(name, stage)
                 .read(currentColor, currentConfidence, DeferredResource.VELOCITY,
                         DeferredResource.RESOLVED_DEPTH, DeferredResource.HISTORY_DEPTH,
-                        DeferredResource.DISOCCLUSION_MASK, historyColor, historyConfidence)
+                        DeferredResource.DISOCCLUSION_MASK, DeferredResource.REACTIVE_MASK,
+                        historyColor, historyConfidence)
                 .write(outputColor, outputConfidence)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.isValid(currentColor) && context.isValid(currentConfidence))
                 .execute(context -> resolve(context, currentColor, currentConfidence, outputColor, outputConfidence,
-                        historyColor, historyConfidence, indirect))
+                        historyColor, historyConfidence, historyId, indirect))
                 .build());
     }
 
     private void installHistoryStore(ArrayList<DeferredPassSpec> passes, String name, DeferredStage stage,
                                      DeferredResource color, DeferredResource confidence,
                                      DeferredResource historyColor, DeferredResource historyConfidence,
-                                     boolean indirect) {
+                                     DeferredTemporalHistoryId historyId, boolean indirect) {
         passes.add(DeferredPassSpec.builder(name, stage)
                 .read(color, confidence)
                 .write(historyColor, historyConfidence)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.isValid(color) && context.isValid(confidence)
                         && (indirect ? context.settings().indirectLightEnabled() : context.settings().reflectionsEnabled()))
-                .execute(context -> store(context, color, confidence, historyColor, historyConfidence))
+                .execute(context -> store(context, color, confidence, historyColor, historyConfidence, historyId))
                 .build());
     }
 
@@ -151,7 +153,7 @@ final class DeferredTemporalSignalSource implements AutoCloseable {
                          DeferredResource currentColorResource, DeferredResource currentConfidenceResource,
                          DeferredResource outputColorResource, DeferredResource outputConfidenceResource,
                          DeferredResource historyColorResource, DeferredResource historyConfidenceResource,
-                         boolean indirect) {
+                         DeferredTemporalHistoryId historyId, boolean indirect) {
         ensureOwner(context.rhi());
         GpuTextureView currentColor = requireTexture(context, currentColorResource);
         GpuTextureView currentConfidence = requireTexture(context, currentConfidenceResource);
@@ -160,20 +162,24 @@ final class DeferredTemporalSignalSource implements AutoCloseable {
 
         DeferredRuntimeConfig.Snapshot settings = context.settings();
         boolean temporalEnabled = indirect ? settings.indirectTemporalEnabled() : settings.reflectionTemporalEnabled();
+        DeferredTemporalHistoryDescriptor signalHistory = context.history(historyId);
+        DeferredTemporalHistoryDescriptor sceneHistory = context.history(DeferredTemporalHistoryId.SCENE);
         boolean historyValid = temporalEnabled
-                && context.history().valid()
-                && context.isValid(historyColorResource)
-                && context.isValid(historyConfidenceResource)
-                && context.isValid(DeferredResource.HISTORY_DEPTH)
+                && signalHistory.valid()
+                && sceneHistory.valid()
                 && context.isValid(DeferredResource.VELOCITY)
+                && context.isValid(DeferredResource.MOTION_VALIDITY)
                 && context.isValid(DeferredResource.RESOLVED_DEPTH)
                 && context.isValid(DeferredResource.DISOCCLUSION_MASK)
+                && context.isValid(DeferredResource.REACTIVE_MASK)
                 && context.resources().texture(historyColorResource) != null
                 && context.resources().texture(historyConfidenceResource) != null
                 && context.resources().texture(DeferredResource.HISTORY_DEPTH) != null
                 && context.resources().texture(DeferredResource.VELOCITY) != null
+                && context.resources().texture(DeferredResource.MOTION_VALIDITY) != null
                 && context.resources().texture(DeferredResource.RESOLVED_DEPTH) != null
-                && context.resources().texture(DeferredResource.DISOCCLUSION_MASK) != null;
+                && context.resources().texture(DeferredResource.DISOCCLUSION_MASK) != null
+                && context.resources().texture(DeferredResource.REACTIVE_MASK) != null;
 
         GpuSampler nearest = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
         GpuSampler linear = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
@@ -213,7 +219,8 @@ final class DeferredTemporalSignalSource implements AutoCloseable {
                         new SampledTextureBinding(4, requireTexture(context, historyColorResource), linear),
                         new SampledTextureBinding(5, requireTexture(context, historyConfidenceResource), nearest),
                         new SampledTextureBinding(6, requireTexture(context, DeferredResource.HISTORY_DEPTH), nearest),
-                        new SampledTextureBinding(9, requireTexture(context, DeferredResource.DISOCCLUSION_MASK), nearest)
+                        new SampledTextureBinding(9, requireTexture(context, DeferredResource.DISOCCLUSION_MASK), nearest),
+                        new SampledTextureBinding(11, requireTexture(context, DeferredResource.REACTIVE_MASK), nearest)
                 ),
                 List.of(
                         new StorageImageBinding(7, outputColor, StorageAccess.WRITE_ONLY),
@@ -224,7 +231,8 @@ final class DeferredTemporalSignalSource implements AutoCloseable {
 
     private void store(DeferredPassContext context,
                        DeferredResource colorResource, DeferredResource confidenceResource,
-                       DeferredResource historyColorResource, DeferredResource historyConfidenceResource) {
+                       DeferredResource historyColorResource, DeferredResource historyConfidenceResource,
+                       DeferredTemporalHistoryId historyId) {
         ensureOwner(context.rhi());
         GpuTextureView color = requireTexture(context, colorResource);
         GpuTextureView confidence = requireTexture(context, confidenceResource);
@@ -245,6 +253,7 @@ final class DeferredTemporalSignalSource implements AutoCloseable {
                         new StorageImageBinding(3, historyConfidence, StorageAccess.WRITE_ONLY)
                 )
         ));
+        context.temporalHistory().commit(historyId);
     }
 
     private void ensureOwner(CombatantRhi rhi) {

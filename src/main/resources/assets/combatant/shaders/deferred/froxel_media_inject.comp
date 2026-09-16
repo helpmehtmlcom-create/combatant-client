@@ -6,23 +6,10 @@ layout(binding = 2, rgba16f) writeonly uniform image3D u_SegmentTransmittance;
 layout(binding = 3) uniform sampler2D u_AerialRadiance;
 layout(binding = 4) uniform sampler2D u_AerialTransmittance;
 layout(binding = 7) uniform sampler2D u_CloudShadowMap;
+layout(binding = 11, rgba16f) writeonly uniform image3D u_MediaProperties;
 
-layout(std430, binding = 0) readonly buffer FroxelMediaData {
-    mat4 inverseProjection;
-    mat4 inverseView;
-    vec4 cameraTime;
-    vec4 grid;
-    vec4 counts;
-    vec4 noiseDomain;
-    vec4 froxel;
-    vec4 policy;
-    vec4 shadowMapDomain;
-    vec4 shadowSun;
-    vec4 cloudBounds;
-    vec4 aerialLayout;
-} u_Data;
+#moj_import <combatant:deferred_froxel_media_data.glsl>
 
-const float PI = 3.14159265358979323846;
 
 #define COMBATANT_CLOUD_WEATHER_BINDING 5
 #define COMBATANT_CLOUD_LAYER_BINDING 6
@@ -37,48 +24,7 @@ vec3 worldRay(vec2 uv) {
     return normalize(mat3(u_Data.inverseView) * viewDirection);
 }
 
-vec4 aerialTexel(sampler2D source, int azimuthIndex, int zenithIndex, int distanceIndex) {
-    ivec2 size = textureSize(source, 0);
-    int zenithCount = max(1, int(u_Data.aerialLayout.x));
-    int azimuthCount = max(1, int(u_Data.aerialLayout.y));
-    azimuthIndex = (azimuthIndex % azimuthCount + azimuthCount) % azimuthCount;
-    zenithIndex = clamp(zenithIndex, 0, zenithCount - 1);
-    distanceIndex = clamp(distanceIndex, 0, max(size.y - 1, 0));
-    int x = azimuthIndex * zenithCount + zenithIndex;
-    return texelFetch(source, ivec2(clamp(x, 0, max(size.x - 1, 0)), distanceIndex), 0);
-}
-
-vec4 sampleAerial(sampler2D source, vec3 direction, float distanceKm) {
-    direction = normalize(direction);
-    int zenithCount = max(1, int(u_Data.aerialLayout.x));
-    int azimuthCount = max(1, int(u_Data.aerialLayout.y));
-    float zenithCoord = clamp(direction.y * 0.5 + 0.5, 0.0, 1.0) * float(zenithCount) - 0.5;
-    float azimuth01 = fract(atan(direction.z, direction.x) / (2.0 * PI) + 1.0);
-    float azimuthCoord = azimuth01 * float(azimuthCount) - 0.5;
-    float distance01 = sqrt(clamp(distanceKm / max(u_Data.aerialLayout.z, 1e-4), 0.0, 1.0));
-    ivec2 aerialSize = textureSize(source, 0);
-    float distanceCoord = distance01 * float(aerialSize.y) - 0.5;
-
-    int z0 = int(floor(zenithCoord));
-    int a0 = int(floor(azimuthCoord));
-    int d0 = int(floor(distanceCoord));
-    float zf = fract(zenithCoord);
-    float af = fract(azimuthCoord);
-    float df = fract(distanceCoord);
-
-    vec4 c000 = aerialTexel(source, a0, z0, d0);
-    vec4 c100 = aerialTexel(source, a0 + 1, z0, d0);
-    vec4 c010 = aerialTexel(source, a0, z0 + 1, d0);
-    vec4 c110 = aerialTexel(source, a0 + 1, z0 + 1, d0);
-    vec4 c001 = aerialTexel(source, a0, z0, d0 + 1);
-    vec4 c101 = aerialTexel(source, a0 + 1, z0, d0 + 1);
-    vec4 c011 = aerialTexel(source, a0, z0 + 1, d0 + 1);
-    vec4 c111 = aerialTexel(source, a0 + 1, z0 + 1, d0 + 1);
-
-    vec4 near0 = mix(mix(c000, c100, af), mix(c010, c110, af), zf);
-    vec4 far0 = mix(mix(c001, c101, af), mix(c011, c111, af), zf);
-    return mix(near0, far0, df);
-}
+#moj_import <combatant:deferred_aerial_sampling.glsl>
 
 void cumulativeAtmosphere(vec3 ray, float distanceBlocks, out vec3 radiance, out vec3 transmittance) {
     if (u_Data.policy.z <= 0.5 || distanceBlocks <= 0.0) {
@@ -87,8 +33,85 @@ void cumulativeAtmosphere(vec3 ray, float distanceBlocks, out vec3 radiance, out
         return;
     }
     float distanceKm = distanceBlocks * 0.001;
-    radiance = max(sampleAerial(u_AerialRadiance, ray, distanceKm).rgb, vec3(0.0));
-    transmittance = clamp(sampleAerial(u_AerialTransmittance, ray, distanceKm).rgb, vec3(0.0), vec3(1.0));
+    radiance = max(combatant_sample_aerial(u_AerialRadiance, ray, distanceKm).rgb, vec3(0.0));
+    transmittance = clamp(combatant_sample_aerial(u_AerialTransmittance, ray, distanceKm).rgb, vec3(0.0), vec3(1.0));
+}
+
+float mediumWeatherFieldWeight(vec2 localXZ) {
+    int width = max(0, int(u_Data.grid.y));
+    int depth = max(0, int(u_Data.grid.z));
+    if (width <= 0 || depth <= 0 || u_Data.grid.w <= 0.5) return 0.0;
+
+    float spacing = max(u_Data.grid.x, 1.0);
+    vec2 maximum = vec2(float(max(width - 1, 0)), float(max(depth - 1, 0))) * spacing;
+    vec2 enter = smoothstep(vec2(-spacing), vec2(0.0), localXZ);
+    vec2 leave = vec2(1.0) - smoothstep(maximum, maximum + vec2(spacing), localXZ);
+    return clamp(enter.x * enter.y * leave.x * leave.y, 0.0, 1.0);
+}
+
+vec3 mediumWeatherSignals(vec2 localXZ) {
+    vec3 globalSignals = u_Data.mediumWeatherState.w > 0.5
+            ? max(u_Data.mediumWeatherState.xyz, vec3(0.0))
+            : vec3(0.0);
+    WeatherCell localWeather = combatant_cloud_sample_weather(localXZ);
+    vec3 localSignals = vec3(
+            max(localWeather.climate.x, 0.0),
+            max(localWeather.climate.z, 0.0),
+            max(localWeather.climate.w, 0.0)
+    );
+    float localWeight = mediumWeatherFieldWeight(localXZ) * clamp(localWeather.windFront.w, 0.0, 1.0);
+    return mix(globalSignals, localSignals, localWeight);
+}
+
+float mediumDensity(vec3 localPosition, float distanceBlocks) {
+    if (u_Data.mediumDistribution.w <= 0.5 || distanceBlocks > u_Data.mediumLighting.z) return 0.0;
+
+    vec3 weatherSignals = mediumWeatherSignals(localPosition.xz);
+    float humidityThreshold = clamp(u_Data.mediumWeather.x, 0.0, 0.9999);
+    float humidityDrive = max(weatherSignals.x - humidityThreshold, 0.0)
+            / max(1.0 - humidityThreshold, 1e-4);
+    float weatherDensity = u_Data.mediumDistribution.z
+            + humidityDrive * u_Data.mediumWeather.y
+            + weatherSignals.z * u_Data.mediumWeather.z
+            + weatherSignals.y * u_Data.mediumWeather.w;
+
+    float heightAboveReference = max(localPosition.y - u_Data.mediumDistribution.x, 0.0);
+    float heightScale = exp(-heightAboveReference / max(u_Data.mediumDistribution.y, 1e-3));
+    return max(0.0, weatherDensity * heightScale);
+}
+
+float equivalentEmission(float integratedRadiance, float transmittance, float segmentLength) {
+    float t = clamp(transmittance, 1e-6, 1.0);
+    float sigma = -log(t) / max(segmentLength, 1e-5);
+    float oneMinusT = 1.0 - t;
+    if (sigma <= 1e-6 || oneMinusT <= 1e-6) {
+        return max(integratedRadiance, 0.0) / max(segmentLength, 1e-5);
+    }
+    return max(integratedRadiance, 0.0) * sigma / oneMinusT;
+}
+
+void mergeAtmosphereAndMedium(vec3 atmosphereRadiance,
+                              vec3 atmosphereTransmittance,
+                              vec3 mediumExtinction,
+                              float segmentLength,
+                              out vec3 radiance,
+                              out vec3 transmittance) {
+    vec3 atmosphereSigma = -log(clamp(atmosphereTransmittance, vec3(1e-6), vec3(1.0)))
+            / max(segmentLength, 1e-5);
+    vec3 atmosphereEmission = vec3(
+            equivalentEmission(atmosphereRadiance.r, atmosphereTransmittance.r, segmentLength),
+            equivalentEmission(atmosphereRadiance.g, atmosphereTransmittance.g, segmentLength),
+            equivalentEmission(atmosphereRadiance.b, atmosphereTransmittance.b, segmentLength)
+    );
+    vec3 totalSigma = max(atmosphereSigma + max(mediumExtinction, vec3(0.0)), vec3(0.0));
+    transmittance = exp(-totalSigma * segmentLength);
+    vec3 factor = vec3(segmentLength);
+    for (int channel = 0; channel < 3; ++channel) {
+        if (totalSigma[channel] > 1e-6) {
+            factor[channel] = (1.0 - transmittance[channel]) / totalSigma[channel];
+        }
+    }
+    radiance = atmosphereEmission * factor;
 }
 
 void main() {
@@ -113,11 +136,22 @@ void main() {
     cumulativeAtmosphere(ray, farDistance, farRadiance, farTransmittance);
 
     vec3 safeNearT = max(nearTransmittance, vec3(1e-5));
-    vec3 segmentTransmittance = clamp(farTransmittance / safeNearT, vec3(0.0), vec3(1.0));
-    vec3 segmentRadiance = max((farRadiance - nearRadiance) / safeNearT, vec3(0.0));
+    vec3 atmosphereSegmentT = clamp(farTransmittance / safeNearT, vec3(0.0), vec3(1.0));
+    vec3 atmosphereSegmentL = max((farRadiance - nearRadiance) / safeNearT, vec3(0.0));
 
     vec3 relativeWorld = ray * centerDistance;
-    float worldY = u_Data.cameraTime.y + relativeWorld.y;
+    vec3 localPosition = vec3(u_Data.cameraTime.x, u_Data.cameraTime.y, u_Data.cameraTime.z) + relativeWorld;
+    float density = mediumDensity(localPosition, centerDistance);
+    vec3 sigmaS = max(u_Data.mediumScattering.rgb, vec3(0.0)) * density;
+    vec3 sigmaA = max(u_Data.mediumAbsorption.rgb, vec3(0.0)) * density;
+    vec3 sigmaT = sigmaS + sigmaA;
+
+    vec3 segmentRadiance;
+    vec3 segmentTransmittance;
+    mergeAtmosphereAndMedium(atmosphereSegmentL, atmosphereSegmentT, sigmaT,
+            segmentLength, segmentRadiance, segmentTransmittance);
+
+    float worldY = localPosition.y;
     float shadowVisibility = combatant_sample_cloud_shadow(
             u_CloudShadowMap, relativeWorld, worldY,
             u_Data.shadowMapDomain, u_Data.shadowSun, u_Data.cloudBounds);
@@ -126,15 +160,13 @@ void main() {
     float cloudSigmaT = 0.0;
     float cloudSigmaS = 0.0;
     if (u_Data.counts.w > 0.5) {
-        vec3 cameraLocal = u_Data.cameraTime.xyz;
-        CloudOptics cloud = combatant_cloud_optics_at(cameraLocal + relativeWorld);
+        CloudOptics cloud = combatant_cloud_optics_at(localPosition);
         cloudSigmaT = max(0.0, cloud.density * cloud.extinction);
         cloudSigmaS = cloudSigmaT * clamp(cloud.albedo, 0.0, 1.0);
-
-        float localCloudT = exp(-cloudSigmaT * segmentLength * 0.5);
-        segmentRadiance *= localCloudT;
+        segmentRadiance *= exp(-cloudSigmaT * segmentLength * 0.5);
     }
 
     imageStore(u_SegmentRadiance, coord, vec4(segmentRadiance, cloudSigmaT));
     imageStore(u_SegmentTransmittance, coord, vec4(segmentTransmittance, cloudSigmaS));
+    imageStore(u_MediaProperties, coord, vec4(sigmaS, clamp(u_Data.mediumScattering.w, -0.95, 0.95)));
 }

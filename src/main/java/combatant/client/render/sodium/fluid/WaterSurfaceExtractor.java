@@ -147,9 +147,16 @@ public final class WaterSurfaceExtractor {
     public record WaterPatch(
             long blockPos,
             int materialId,
+            int fluidTypeId,
             float flowX,
             float flowZ,
+            float flowStrength,
+            int surfaceFlags,
+            float surfaceNormalX,
+            float surfaceNormalY,
+            float surfaceNormalZ,
             float[] positions,
+            float[] localSurfaceCoordinates,
             float[] uvs,
             int[] color,
             float[] ao,
@@ -157,6 +164,8 @@ public final class WaterSurfaceExtractor {
             int mapMask,
             int featureMask,
             int packedSurface,
+            float transmission,
+            float fallbackThickness,
             float displacementScale,
             float minTessFactor,
             float maxTessFactor,
@@ -165,19 +174,26 @@ public final class WaterSurfaceExtractor {
     ) {
         static WaterPatch from(FluidSurfaceData surface) {
             float[] positions = new float[12];
+            float[] localSurfaceCoordinates = new float[8];
             float[] uvs = new float[8];
             for (int i = 0; i < 4; i++) {
                 positions[i * 3] = surface.blockPos().getX() + surface.x()[i];
                 positions[i * 3 + 1] = surface.blockPos().getY() + surface.y()[i];
                 positions[i * 3 + 2] = surface.blockPos().getZ() + surface.z()[i];
+                localSurfaceCoordinates[i * 2] = surface.x()[i];
+                localSurfaceCoordinates[i * 2 + 1] = surface.z()[i];
                 uvs[i * 2] = surface.u()[i];
                 uvs[i * 2 + 1] = surface.v()[i];
             }
             var tess = surface.material().tessellation();
+            float[] normal = surface.surfaceNormal();
             return new WaterPatch(
-                    surface.blockPos().asLong(), surface.materialId(), surface.flowX(), surface.flowZ(),
-                    positions, uvs, surface.color(), surface.ao(), surface.light(),
+                    surface.blockPos().asLong(), surface.materialId(), surface.fluidTypeId(),
+                    surface.flowX(), surface.flowZ(), surface.flowStrength(), surface.surfaceFlags(),
+                    normal[0], normal[1], normal[2],
+                    positions, localSurfaceCoordinates, uvs, surface.color(), surface.ao(), surface.light(),
                     surface.mapMask(), surface.featureMask(), surface.packedSurface(),
+                    surface.material().transmission(), surface.material().thickness(),
                     tess.displacementScale(), tess.minFactor(), tess.maxFactor(),
                     tess.distanceFadeStart(), tess.distanceFadeEnd()
             );

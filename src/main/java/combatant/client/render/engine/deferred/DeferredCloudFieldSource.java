@@ -57,13 +57,12 @@ final class DeferredCloudFieldSource implements AutoCloseable {
         long requiredWeatherSamples = (long) field.gridWidth() * (long) field.gridDepth();
         boolean weatherFitsCapacity = requiredWeatherSamples > 0L
                 && requiredWeatherSamples <= config.maxWeatherSamples();
+        boolean weatherAvailable = weather.valid() && field.valid() && weatherFitsCapacity;
         boolean active = config.enabled()
                 && profile.valid()
-                && weather.valid()
-                && field.valid()
-                && weatherFitsCapacity
+                && weatherAvailable
                 && cloudsEnabledByGame();
-        int weatherCount = active ? (int) requiredWeatherSamples : 0;
+        int weatherCount = weatherAvailable ? (int) requiredWeatherSamples : 0;
         int layerCount = active ? Math.min(profile.layers().size(), config.maxLayers()) : 0;
         uploadWeather(field, weatherCount);
         uploadLayers(profile, layerCount);

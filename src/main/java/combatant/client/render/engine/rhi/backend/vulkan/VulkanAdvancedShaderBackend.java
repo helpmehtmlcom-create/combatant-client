@@ -37,6 +37,7 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 
 import static org.lwjgl.util.shaderc.Shaderc.*;
@@ -111,7 +112,7 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
         if (!descriptor.format().hasColorAspect() || descriptor.format().componentCount() == 3) {
             throw new UnsupportedOperationException("Unsupported Vulkan storage-volume format: " + descriptor.format());
         }
-        return new VulkanStorageVolume(backend, descriptor);
+        return new VulkanStorageVolume(backend, descriptor, stats);
     }
 
     @Override
@@ -408,7 +409,7 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
                     imageBarrier.subresourceRange()
                             .aspectMask(VK_IMAGE_ASPECT_COLOR_BIT)
                             .baseMipLevel(0)
-                            .levelCount(1)
+                            .levelCount(volume.descriptor().mipLevels())
                             .baseArrayLayer(0)
                             .layerCount(1);
                     imageBarrier.sType$Default()
@@ -739,7 +740,7 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
                 volume.ensureGeneralLayout(commandBuffer);
                 VkDescriptorImageInfo.Buffer info = VkDescriptorImageInfo.calloc(1, stack);
                 info.get(0).sampler(0L)
-                        .imageView(volume.imageView())
+                        .imageView(volume.imageView(binding.mipLevel()))
                         .imageLayout(VK_IMAGE_LAYOUT_GENERAL);
                 imageInfos.add(info);
                 writes.get(write++).sType$Default()
@@ -853,6 +854,7 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
                                          List<SampledTextureBinding> sampled,
                                          List<StorageImageBinding> images,
                                          List<StorageVolumeBinding> volumes) {
+        validateUniqueBindings(buffers, sampled, images, volumes);
         for (StorageBinding binding : buffers) {
             ShaderResourceSlot slot = layout.slot(binding.binding());
             if (slot == null || slot.kind() != ShaderResourceKind.STORAGE_BUFFER) {
@@ -872,6 +874,7 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
                 throw new IllegalArgumentException("No STORAGE_IMAGE slot declared at binding " + binding.binding());
             }
             validateAccess(slot, binding.access(), binding.binding());
+            validateExpectedFormat(slot, binding.image().descriptor().format(), binding.binding());
         }
         for (StorageVolumeBinding binding : volumes) {
             ShaderResourceSlot slot = layout.slot(binding.binding());
@@ -879,6 +882,7 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
                 throw new IllegalArgumentException("No STORAGE_VOLUME slot declared at binding " + binding.binding());
             }
             validateAccess(slot, binding.access(), binding.binding());
+            validateExpectedFormat(slot, binding.volume().descriptor().format(), binding.binding());
         }
         for (ShaderResourceSlot slot : layout.slots()) {
             boolean found = switch (slot.kind()) {
@@ -891,10 +895,34 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
         }
     }
 
+    private static void validateUniqueBindings(List<StorageBinding> buffers,
+                                               List<SampledTextureBinding> sampled,
+                                               List<StorageImageBinding> images,
+                                               List<StorageVolumeBinding> volumes) {
+        Set<Integer> seen = new java.util.HashSet<>();
+        for (StorageBinding binding : buffers) requireUniqueBinding(seen, binding.binding());
+        for (SampledTextureBinding binding : sampled) requireUniqueBinding(seen, binding.binding());
+        for (StorageImageBinding binding : images) requireUniqueBinding(seen, binding.binding());
+        for (StorageVolumeBinding binding : volumes) requireUniqueBinding(seen, binding.binding());
+    }
+
+    private static void requireUniqueBinding(Set<Integer> seen, int binding) {
+        if (!seen.add(binding)) {
+            throw new IllegalArgumentException("Duplicate shader resource binding " + binding);
+        }
+    }
+
     private static void validateAccess(ShaderResourceSlot slot, StorageAccess actual, int binding) {
         if (!slot.access().allows(actual)) {
             throw new IllegalArgumentException("Binding " + binding + " access " + actual
                     + " exceeds declared access " + slot.access());
+        }
+    }
+
+    private static void validateExpectedFormat(ShaderResourceSlot slot, com.mojang.blaze3d.GpuFormat actual, int binding) {
+        if (slot.format() != null && slot.format() != actual) {
+            throw new IllegalArgumentException("Binding " + binding + " format " + actual
+                    + " does not match declared shader image format " + slot.format());
         }
     }
 

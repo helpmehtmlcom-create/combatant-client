@@ -96,6 +96,7 @@ public enum DeferredRuntimeAssets {
     @AssetLoad(value = AssetLoadPhase.POST_RELOAD, scope = SCOPE, order = 100)
     public static void reload(ResourceManager resources) {
         prepare(resources, true);
+        CombatantRenderSystem.deferredWorld().requestHistoryReset(DeferredHistoryResetReason.RESOURCE_RELOAD);
     }
 
     /** Device/backend switches happen outside the ordinary resource-reload hook sequence. */

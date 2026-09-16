@@ -71,6 +71,7 @@ public final class DeferredWorldPipeline {
     private DeferredRuntimeConfig.Snapshot frameSettings = DeferredRuntimeConfig.current();
     private long frameSettingsGeneration = DeferredRuntimeConfig.generation();
     private long temporalPolicyGeneration = Long.MIN_VALUE;
+    private long temporalScaleSignature = Long.MIN_VALUE;
     private int temporalWidth = -1;
     private int temporalHeight = -1;
     private int temporalSamples = -1;
@@ -90,6 +91,7 @@ public final class DeferredWorldPipeline {
     private final DeferredResourceBindings resourceBindings = new DeferredResourceBindings(physicalResources);
     private final DeferredSecondaryViewRegistry secondaryViews = new DeferredSecondaryViewRegistry();
     private final DeferredPrimaryViewSource primaryView = new DeferredPrimaryViewSource();
+    private final DeferredTemporalHistoryRegistry temporalHistory = new DeferredTemporalHistoryRegistry();
     private final DeferredWorldRenderStateSource worldStateSource = new DeferredWorldRenderStateSource();
     private WorldRenderState worldRenderState = WorldRenderState.unknown(0L);
 
@@ -110,8 +112,7 @@ public final class DeferredWorldPipeline {
     public void requestHistoryReset(DeferredHistoryResetReason reason) {
         if (reason == null || reason == DeferredHistoryResetReason.NONE) return;
         if (!requestedEnabled && !enabled()) return;
-        pendingExternalHistoryReset.getAndUpdate(current ->
-                current == DeferredHistoryResetReason.NONE ? reason : current);
+        pendingExternalHistoryReset.getAndUpdate(current -> DeferredHistoryResetReason.merge(current, reason));
     }
 
     public LifecycleState lifecycleState() {
@@ -212,7 +213,7 @@ public final class DeferredWorldPipeline {
         try {
             DeferredRuntimeAssets.reprepareAfterBackendSwitch(minecraft.getResourceManager());
             physicalResources.reset();
-            primaryView.queueHistoryReset(DeferredHistoryResetReason.BACKEND_CHANGE);
+            primaryView.queueHistoryReset(DeferredHistoryResetReason.BACKEND_RECREATION);
         } catch (Throwable error) {
             requestedEnabled = false;
             lifecycleState = LifecycleState.FAILED;
@@ -562,11 +563,17 @@ public final class DeferredWorldPipeline {
         frameSettings = DeferredRuntimeConfig.current();
         frameSettingsGeneration = DeferredRuntimeConfig.generation();
         worldRenderState = worldStateSource.capture(Minecraft.getInstance().level, primaryView.current());
-        if (temporalPolicyGeneration != Long.MIN_VALUE && temporalPolicyGeneration != frameSettingsGeneration) {
+        long scaleSignature = temporalResolutionPolicySignature(frameSettings);
+        if (temporalScaleSignature != Long.MIN_VALUE && temporalScaleSignature != scaleSignature) {
+            primaryView.invalidateHistory(frameId, DeferredHistoryResetReason.RENDER_SCALE_CHANGE);
+        } else if (temporalPolicyGeneration != Long.MIN_VALUE && temporalPolicyGeneration != frameSettingsGeneration) {
             primaryView.invalidateHistory(frameId, DeferredHistoryResetReason.POLICY_CHANGE);
         }
         temporalPolicyGeneration = frameSettingsGeneration;
-        resourceBindings.beginFrame(frameId, primaryView.historyDescriptor().epoch());
+        temporalScaleSignature = scaleSignature;
+        DeferredHistoryDescriptor history = primaryView.historyDescriptor();
+        resourceBindings.beginFrame(frameId, history.epoch());
+        temporalHistory.beginFrame(frameId, history, resourceBindings, frameSettings);
         secondaryViews.beginFrame(frameId);
         clearedThisFrame = false;
         lightingResolvedThisFrame = false;
@@ -593,6 +600,12 @@ public final class DeferredWorldPipeline {
         temporalWidth = width;
         temporalHeight = height;
         temporalSamples = samples;
+        Minecraft minecraft = Minecraft.getInstance();
+        int outputWidth = minecraft != null && minecraft.getWindow() != null
+                ? Math.max(1, minecraft.getWindow().getWidth()) : width;
+        int outputHeight = minecraft != null && minecraft.getWindow() != null
+                ? Math.max(1, minecraft.getWindow().getHeight()) : height;
+        primaryView.updateResolutions(frameId, width, height, outputWidth, outputHeight);
 
         RenderTarget surface = acquire(resources, "world-gbuffer-surface", width, height, samples, SURFACE_FORMAT);
         RenderTarget geometry = acquire(resources, "world-gbuffer-geometry", width, height, samples, GEOMETRY_FORMAT);
@@ -697,6 +710,7 @@ public final class DeferredWorldPipeline {
         targets = null;
         sampleableTargets = null;
         temporalPolicyGeneration = Long.MIN_VALUE;
+        temporalScaleSignature = Long.MIN_VALUE;
         temporalWidth = -1;
         temporalHeight = -1;
         temporalSamples = -1;
@@ -706,12 +720,17 @@ public final class DeferredWorldPipeline {
         preGeometryExecuted = false;
         postGeometryExecuted = false;
         primaryView.reset();
+        temporalHistory.reset(DeferredHistoryResetReason.RENDERER_RESET);
         worldStateSource.reset();
         worldRenderState = worldStateSource.current();
     }
 
     public DeferredPrimaryViewSource primaryView() {
         return primaryView;
+    }
+
+    public DeferredTemporalHistoryRegistry temporalHistory() {
+        return temporalHistory;
     }
 
     /** Explicit semantic world contract frozen for the current deferred frame. */
@@ -725,9 +744,22 @@ public final class DeferredWorldPipeline {
                                    org.joml.Matrix4fc projection,
                                    @Nullable net.minecraft.world.phys.Vec3 cameraPosition,
                                    float farPlane) {
+        capturePrimaryView(frameId, view, projection, projection, new org.joml.Vector2f(),
+                cameraPosition, farPlane);
+    }
+
+    /** Exact jitter-aware capture point for a future TAA/TAAU producer. */
+    public void capturePrimaryView(long frameId,
+                                   org.joml.Matrix4fc view,
+                                   org.joml.Matrix4fc jitteredProjection,
+                                   org.joml.Matrix4fc unjitteredProjection,
+                                   org.joml.Vector2fc jitter,
+                                   @Nullable net.minecraft.world.phys.Vec3 cameraPosition,
+                                   float farPlane) {
         if (!enabled()) return;
         primaryView.beginWorld(Minecraft.getInstance().level);
-        primaryView.capture(frameId, view, projection, cameraPosition, farPlane);
+        primaryView.capture(frameId, view, jitteredProjection, unjitteredProjection, jitter,
+                cameraPosition, farPlane);
     }
 
     public void captureSunAngle(long frameId, float sunAngle) {
@@ -736,11 +768,22 @@ public final class DeferredWorldPipeline {
     }
 
     private void executeStage(DeferredStage stage) {
-        resourceBindings.setHistoryEpoch(primaryView.historyDescriptor().epoch());
+        DeferredHistoryDescriptor history = primaryView.historyDescriptor();
+        resourceBindings.setHistoryEpoch(history.epoch());
+        temporalHistory.beginFrame(frameStateId, history, resourceBindings, frameSettings);
         CombatantRenderSystem.deferredGraph().execute(
                 stage, CombatantRenderSystem.ensureFrameContext(), resourceBindings, secondaryViews, primaryView,
-                worldRenderState, frameSettings
+                temporalHistory, worldRenderState, frameSettings
         );
+    }
+
+    private static long temporalResolutionPolicySignature(DeferredRuntimeConfig.Snapshot settings) {
+        long hash = 0xcbf29ce484222325L;
+        hash = (hash ^ Float.floatToIntBits(settings.indirectLightScale())) * 0x100000001b3L;
+        hash = (hash ^ Float.floatToIntBits(settings.reflectionOutputScale())) * 0x100000001b3L;
+        hash = (hash ^ Float.floatToIntBits(settings.reflectionHistoryScale())) * 0x100000001b3L;
+        hash = (hash ^ Float.floatToIntBits(DeferredCloudConfig.current().renderScale())) * 0x100000001b3L;
+        return hash;
     }
 
     private static GbufferViews lightingInputs(GeometryTargets targets) {

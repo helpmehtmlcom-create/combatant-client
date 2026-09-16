@@ -24,6 +24,7 @@ public final class DimensionRenderProfileRegistry {
     public static final Identifier OVERWORLD_SKY = id("overworld_atmosphere");
     public static final Identifier OVERWORLD_WEATHER = id("overworld_weather");
     public static final Identifier OVERWORLD_CLOUDS = id("overworld_clouds");
+    public static final Identifier OVERWORLD_MEDIUM = ParticipatingMediumProfileRegistry.OVERWORLD;
 
     private static final DimensionRenderProfile UNKNOWN = new DimensionRenderProfile(
             WorldRenderState.UNKNOWN_PROFILE, WorldRenderState.NONE, WorldRenderState.NONE,
@@ -35,7 +36,7 @@ public final class DimensionRenderProfileRegistry {
     static {
         register(Level.OVERWORLD, new DimensionRenderProfile(
                 OVERWORLD_PROFILE_ID, OVERWORLD_ENVIRONMENT, OVERWORLD_SKY,
-                OVERWORLD_CELESTIAL, WorldRenderState.NEUTRAL, OVERWORLD_WEATHER, OVERWORLD_CLOUDS,
+                OVERWORLD_CELESTIAL, OVERWORLD_MEDIUM, OVERWORLD_WEATHER, OVERWORLD_CLOUDS,
                 WorldRenderState.NEUTRAL, WorldRenderState.NEUTRAL, WorldRenderState.NEUTRAL
         ));
         register(Level.NETHER, new DimensionRenderProfile(

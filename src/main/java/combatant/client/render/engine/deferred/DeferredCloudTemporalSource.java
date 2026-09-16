@@ -137,15 +137,13 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
         GpuTextureView currentRadiance = requireTexture(context, DeferredResource.CLOUD_RADIANCE);
         GpuTextureView currentDepth = requireTexture(context, DeferredResource.CLOUD_DEPTH);
         GpuTextureView currentReprojectionData = requireTexture(context, DeferredResource.CLOUD_REPROJECTION_DATA);
+        DeferredTemporalHistoryDescriptor cloudHistory = context.history(DeferredTemporalHistoryId.CLOUDS);
         GpuTextureView historyRadiance = context.resources().texture(DeferredResource.HISTORY_CLOUD_RADIANCE);
         GpuTextureView historyDepth = context.resources().texture(DeferredResource.HISTORY_CLOUD_REPROJECTION_DEPTH);
         GpuTextureView historyConfidence = context.resources().texture(DeferredResource.HISTORY_CLOUD_CONFIDENCE);
         boolean historyValid = config.temporalEnabled()
-                && context.primaryView().hasTemporalHistory()
+                && cloudHistory.valid()
                 && previous != null
-                && context.isValid(DeferredResource.HISTORY_CLOUD_RADIANCE)
-                && context.isValid(DeferredResource.HISTORY_CLOUD_REPROJECTION_DEPTH)
-                && context.isValid(DeferredResource.HISTORY_CLOUD_CONFIDENCE)
                 && historyRadiance != null
                 && historyDepth != null
                 && historyConfidence != null;
@@ -230,6 +228,7 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
                         new StorageImageBinding(6, historyConfidence, StorageAccess.WRITE_ONLY)
                 )
         ));
+        context.temporalHistory().commit(DeferredTemporalHistoryId.CLOUDS);
     }
 
     private void ensureOwner(CombatantRhi rhi) {
