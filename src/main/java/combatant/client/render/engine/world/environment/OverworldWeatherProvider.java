@@ -178,6 +178,7 @@ public final class OverworldWeatherProvider implements WeatherProvider {
                 windX, 0.0f, windZ,
                 frontStrength,
                 frontVX, frontVZ,
+                SurfaceDepositionKind.NONE, 0.0f,
                 true
         );
     }

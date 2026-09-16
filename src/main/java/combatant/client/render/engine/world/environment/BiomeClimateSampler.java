@@ -6,8 +6,8 @@
  */
 package combatant.client.render.engine.world.environment;
 
+import combatant.client.mixininterface.IBiome;
 import combatant.client.mixins.accessors.BiomeAccessor;
-import combatant.client.mixins.accessors.BiomeClimateSettingsAccessor;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -96,15 +96,8 @@ public final class BiomeClimateSampler {
         }
         float downfall = 0.0f;
         boolean downfallValid = false;
-        try {
-            Object climate = ((BiomeAccessor) (Object) biome).combatant$getClimateSettings();
-            if (climate instanceof BiomeClimateSettingsAccessor accessor) {
-                downfall = accessor.combatant$getDownfall();
-                downfallValid = true;
-            }
-        } catch (Throwable ignored) {
-            // A missing private climate accessor is represented explicitly by downfallValid=false.
-        }
+        downfall = ((IBiome) (Object) biome).combatant$getDownfall();
+        downfallValid = true;
         Biome.Precipitation precipitation = level.getPrecipitationAt(pos);
         return new BiomeClimateSample(
                 key, x, y, z,

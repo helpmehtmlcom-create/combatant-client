@@ -55,7 +55,7 @@ public final class MaterialRegistry {
         }
 
         Map<DescriptorKey, ExplicitDescriptor> explicit = loadExplicitDescriptors(resources);
-        snapshot = new Snapshot(Set.copyOf(available), Map.copyOf(explicit), new HashMap<>());
+        snapshot = new Snapshot(Set.copyOf(available), Map.copyOf(explicit), new HashMap<>(), new HashMap<>());
         DebugLog.renderThread("[Materials] registry reload: textures=%d explicitDescriptors=%d",
                 available.size(), explicit.size());
     }
@@ -148,7 +148,7 @@ public final class MaterialRegistry {
 
         int stableId = stableId32(spriteId, classification);
         if (stableId == DEFAULT_ID) stableId = 1;
-        return new MaterialSurfaceDescriptor(
+        MaterialSurfaceDescriptor descriptor = new MaterialSurfaceDescriptor(
                 stableId,
                 spriteId,
                 classification.domain(),
@@ -171,6 +171,18 @@ public final class MaterialRegistry {
                 weatherResponse,
                 tessellation
         );
+        synchronized (state.weatherResponses) {
+            state.weatherResponses.put(stableId, weatherResponse);
+        }
+        return descriptor;
+    }
+
+    /** Exact weather-response descriptors keyed by the stable material ID written to G-buffer. */
+    public Map<Integer, MaterialWeatherResponse> weatherResponsesSnapshot() {
+        Snapshot state = snapshot;
+        synchronized (state.weatherResponses) {
+            return Map.copyOf(state.weatherResponses);
+        }
     }
 
     private static MaterialSurfaceDescriptor fallback(MaterialClassification classification) {
@@ -323,7 +335,9 @@ public final class MaterialRegistry {
                     floatOr(weather, "dryingRate", 0.0f),
                     floatOr(weather, "runoffRate", 0.0f),
                     floatOr(weather, "puddleCapacity", 0.0f),
-                    floatOr(weather, "snowRetention", 0.0f)
+                    floatOr(weather, "snowRetention", 0.0f),
+                    floatOr(weather, "particulateRetention", 0.0f),
+                    floatOr(weather, "particulateWashOffRate", 1.0f)
             );
         }
 
@@ -491,7 +505,8 @@ public final class MaterialRegistry {
 
     private record Snapshot(Set<Identifier> available,
                             Map<DescriptorKey, ExplicitDescriptor> explicit,
-                            Map<CacheKey, MaterialSurfaceDescriptor> cache) {
-        private static final Snapshot EMPTY = new Snapshot(Set.of(), Map.of(), new HashMap<>());
+                            Map<CacheKey, MaterialSurfaceDescriptor> cache,
+                            Map<Integer, MaterialWeatherResponse> weatherResponses) {
+        private static final Snapshot EMPTY = new Snapshot(Set.of(), Map.of(), new HashMap<>(), new HashMap<>());
     }
 }

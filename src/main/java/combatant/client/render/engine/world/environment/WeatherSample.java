@@ -23,11 +23,13 @@ public record WeatherSample(
         float frontStrength,
         float frontVelocityXBlocksPerSecond,
         float frontVelocityZBlocksPerSecond,
+        SurfaceDepositionKind deposition,
+        float depositionIntensity,
         boolean valid
 ) {
     public static final WeatherSample UNKNOWN = new WeatherSample(
             0, 0, 0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, PrecipitationKind.NONE,
-            0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false
+            0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, SurfaceDepositionKind.NONE, 0.0f, false
     );
 
     public WeatherSample {
@@ -43,6 +45,8 @@ public record WeatherSample(
         frontStrength = clamp01(frontStrength);
         frontVelocityXBlocksPerSecond = finite(frontVelocityXBlocksPerSecond);
         frontVelocityZBlocksPerSecond = finite(frontVelocityZBlocksPerSecond);
+        if (deposition == null) deposition = SurfaceDepositionKind.NONE;
+        depositionIntensity = clamp01(depositionIntensity);
     }
 
     private static float finite(float value) {

@@ -88,6 +88,7 @@ final class DeferredBackendPasses implements AutoCloseable {
     private final DeferredShadowResolveSource shadowResolve = new DeferredShadowResolveSource();
     private final DeferredContactShadowSource contactShadows = new DeferredContactShadowSource();
     private final DeferredAmbientOcclusionSource ambientOcclusion = new DeferredAmbientOcclusionSource();
+    private final DeferredSurfaceWeatherSource surfaceWeather = new DeferredSurfaceWeatherSource();
     private final DeferredColoredBlockLightSource coloredBlockLight = new DeferredColoredBlockLightSource();
     private final DeferredSkyEnvironmentSource skyEnvironment = new DeferredSkyEnvironmentSource();
     private final DeferredEnvironmentIrradianceSource environmentIrradiance = new DeferredEnvironmentIrradianceSource();
@@ -174,6 +175,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         shadowResolve.install(passes);
         contactShadows.install(passes);
         ambientOcclusion.install(passes);
+        surfaceWeather.install(passes);
         coloredBlockLight.install(passes);
         skyEnvironment.install(passes);
         environmentIrradiance.install(passes);
@@ -201,6 +203,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         shadowResolve.prepare(rhi);
         contactShadows.prepare(rhi);
         ambientOcclusion.prepare(rhi);
+        surfaceWeather.prepare(rhi);
         coloredBlockLight.prepare(rhi);
         skyEnvironment.prepare(rhi);
         environmentIrradiance.prepare(rhi);
@@ -226,6 +229,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         shadowResolve.release(releaseOwner);
         contactShadows.release(releaseOwner);
         ambientOcclusion.release(releaseOwner);
+        surfaceWeather.release(releaseOwner);
         coloredBlockLight.release(releaseOwner);
         skyEnvironment.release(releaseOwner);
         environmentIrradiance.release(releaseOwner);
@@ -371,6 +375,7 @@ final class DeferredBackendPasses implements AutoCloseable {
             shadowResolve.release(previous);
             contactShadows.release(previous);
             ambientOcclusion.release(previous);
+            surfaceWeather.release(previous);
             coloredBlockLight.release(previous);
             skyEnvironment.release(previous);
             environmentIrradiance.release(previous);

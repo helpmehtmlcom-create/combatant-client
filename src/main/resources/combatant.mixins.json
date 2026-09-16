@@ -80,6 +80,7 @@
     "AvatarRendererMixin",
     "BatchingRenderCommandQueueMixin",
     "BeaconRendererMixin",
+    "BiomeMixin",
     "BossHealthOverlayMixin",
     "BufferManagerDefaultBufferManagerMixin",
     "ButtonWidgetTextMixin",
