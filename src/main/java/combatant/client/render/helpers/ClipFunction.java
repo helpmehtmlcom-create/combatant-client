@@ -9,6 +9,7 @@ package combatant.client.render.helpers;
 
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.renderer.Renderer2D;
+import combatant.client.render.engine.renderer.ui.UiBlurResources;
 import combatant.client.render.engine.renderer.ui.draw.*;
 import combatant.client.render.engine.renderer.ui.clip.UiClipSnapshot;
 import combatant.client.render.engine.renderer.ui.clip.UiClipStack;
@@ -34,12 +35,6 @@ public enum ClipFunction {
 
     private static boolean enabledValue(String value) {
         return "1".equals(value) || "true".equalsIgnoreCase(value) || "yes".equalsIgnoreCase(value);
-    }
-
-    /** @deprecated use {@link ScissorFunction#pushRaw(float, float, float, float)} for raster scissor semantics. */
-    @Deprecated
-    public static boolean pushRaw(float x, float y, float width, float height) {
-        return pushRect(x, y, width, height);
     }
 
     /** Shape-aware rectangular clip. This no longer aliases {@link ScissorFunction}. */
@@ -120,7 +115,7 @@ public enum ClipFunction {
         // A clipped liquid-glass consumer must refresh the shared blur before this
         // shape installs its clip state. The refresh remains on the normal
         // shared Kawase chain and therefore never needs a clip-state bypass.
-        Renderer2D.prepareLiquidGlassBlurBeforeShapeClipIfRequested();
+        UiBlurResources.prepareBeforeShapeClipIfRequested();
         UiClipSnapshot parentSnapshot = STACK.current();
         UiClipStack.Layer layer = requestedStrategy != null
                 ? STACK.push(shape, requestedStrategy)
@@ -259,14 +254,6 @@ public enum ClipFunction {
 
     public static UiClipSnapshot currentSnapshot() {
         return STACK.current();
-    }
-
-    /**
-     * @deprecated use {@link #isShapeClipActive()} — the backend is no longer required to be stencil.
-     */
-    @Deprecated
-    public static boolean isStencilActive() {
-        return isShapeClipActive();
     }
 
     private static void warnShapeUnsupported(UiShape shape, ShapeClipBackend backend, String reason) {

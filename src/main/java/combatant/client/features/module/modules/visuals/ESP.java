@@ -57,10 +57,9 @@ import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.animation.AnimatedRenderColors;
 import combatant.client.render.engine.core.CombatantWorldMatrices;
 import combatant.client.render.engine.core.CombatantRenderSystem;
-import combatant.client.render.engine.msaa.MsaaFramebuffer;
-import combatant.client.render.engine.msaa.MsaaWorldTarget;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
+import combatant.client.render.engine.postprocess.PostProcessExecutionContext;
 import combatant.client.render.engine.postprocess.PostProcessPass;
 import combatant.client.render.engine.postprocess.PostProcessBackendResourceOwner;
 import combatant.client.render.engine.postprocess.SeparableMaskBlurComputeBackend;
@@ -230,12 +229,10 @@ public class ESP extends Module {
     private TextureTarget shaderBlurBuffer;
     private TextureTarget shaderEffectBuffer;
     private final SeparableMaskBlurComputeBackend shaderEspComputeBlur = new SeparableMaskBlurComputeBackend();
-    private MsaaFramebuffer shaderMaskMsaa;
     private FeatureRenderDispatcher shaderEspRenderDispatcher;
     private RenderBuffers shaderEspRenderBuffers;
     private int shaderBufferW = -1;
     private int shaderBufferH = -1;
-    private int shaderMaskSamples;
 
     {
         PostProcessManager.register(shaderEspPass);
@@ -631,10 +628,6 @@ public class ESP extends Module {
     @Override
     public void onDisable() {
         shaderEspComputeBlur.close();
-        if (shaderMaskMsaa != null) {
-            shaderMaskMsaa.destroyBuffers();
-            shaderMaskMsaa = null;
-        }
         if (shaderMask != null) {
             shaderMask.destroyBuffers();
             shaderMask = null;
@@ -651,7 +644,6 @@ public class ESP extends Module {
         shaderBufferH = -1;
         shaderEspCommandQueue.getSubmitsPerOrder().clear();
         closeShaderEspRenderDispatcher();
-        shaderMaskSamples = 0;
     }
 
     private void closeShaderEspRenderDispatcher() {
@@ -955,22 +947,6 @@ public class ESP extends Module {
             shaderBufferH = height;
         }
 
-        int samples = MsaaWorldTarget.getSamples();
-        if (samples > 1) {
-            if (shaderMaskMsaa == null || shaderMaskSamples != samples) {
-                if (shaderMaskMsaa != null) {
-                    shaderMaskMsaa.destroyBuffers();
-                }
-                shaderMaskMsaa = new MsaaFramebuffer("combatant-shader-esp-mask-msaa", width, height, true, samples);
-                shaderMaskSamples = samples;
-            } else if (sizeChanged) {
-                shaderMaskMsaa.resize(width, height);
-            }
-        } else if (shaderMaskMsaa != null) {
-            shaderMaskMsaa.destroyBuffers();
-            shaderMaskMsaa = null;
-            shaderMaskSamples = 0;
-        }
     }
 
     private boolean renderShaderEntityMask(List<RenderEntry> entries, float tickDelta) {
@@ -983,11 +959,10 @@ public class ESP extends Module {
             return false;
         }
 
-        MsaaFramebuffer worldMsaa = MsaaWorldTarget.getMsaaFramebuffer();
-        boolean useMsaaMask = worldMsaa != null
-                && worldMsaa.getSamples() > 1
-                && shaderMaskMsaa != null;
-        RenderTarget target = useMsaaMask ? shaderMaskMsaa : shaderMask;
+        // Shader ESP already softens/dilates the silhouette in post. Rendering the auxiliary
+        // mask with world MSAA multiplies the entity pass cost (and forces a resolve) without
+        // producing a meaningful final-quality gain, so keep this mask single-sampled.
+        RenderTarget target = shaderMask;
 
         var colorTex = target.getColorTexture();
         if (colorTex == null) {
@@ -1112,7 +1087,7 @@ public class ESP extends Module {
             shaderEspCommandQueue.getSubmitsPerOrder().clear();
         }
 
-        return !useMsaaMask || CombatantRenderSystem.rhi().msaa().resolve(shaderMaskMsaa, shaderMask, true, false);
+        return true;
     }
 
     private FeatureRenderDispatcher getShaderEspRenderDispatcher() {
@@ -1642,8 +1617,10 @@ public class ESP extends Module {
         }
 
         @Override
-        public boolean render(GpuTextureView src, GpuTextureView dst, float tickDelta) {
-            return ESP.this.renderShaderEsp(src, dst, tickDelta);
+        public boolean render(PostProcessExecutionContext execution) {
+            if (execution == null || execution.context() == null) return false;
+            return ESP.this.renderShaderEsp(
+                    execution.source(), execution.destination(), execution.context().tickDelta());
         }
 
         @Override

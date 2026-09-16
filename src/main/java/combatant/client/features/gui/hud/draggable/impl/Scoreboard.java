@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.hud.draggable.impl;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.config.values.*;
 import combatant.client.features.module.Modules;
 import combatant.client.util.screen.ClientScreen;
@@ -35,7 +36,6 @@ import combatant.client.render.engine.math.HudScale;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.svg.SvgRenderOptions;
 import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextGlyphFallback;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.engine.text.VanillaTextRenderer;
@@ -455,7 +455,7 @@ public final class Scoreboard extends DraggableHudElement {
         } else {
             type = FontInfo.Type.Regular;
         }
-        TextRenderer renderer = Fonts.renderer("Iosevka", type, fallback);
+        TextRenderer renderer = BuiltinFontCatalog.iosevka(type).renderer(fallback);
         return renderer != null ? renderer : fallback;
     }
 
@@ -766,8 +766,8 @@ public final class Scoreboard extends DraggableHudElement {
         float titleScale = CUSTOM_TITLE_SCALE * baseScale;
         float textScale = CUSTOM_TEXT_SCALE * baseScale;
         TextRenderer fallback = textRenderer != null ? textRenderer : TextRenderer.get();
-        TextRenderer titleRenderer = Fonts.renderer("Iosevka", FontInfo.Type.BoldItalic, fallback);
-        TextRenderer bodyRenderer = Fonts.renderer("Iosevka", FontInfo.Type.Regular, titleRenderer);
+        TextRenderer titleRenderer = BuiltinFontCatalog.IOSEVKA_BOLD_ITALIC.renderer(fallback);
+        TextRenderer bodyRenderer = BuiltinFontCatalog.IOSEVKA_REGULAR.renderer(titleRenderer);
         if (titleRenderer == null) titleRenderer = fallback;
         if (bodyRenderer == null) bodyRenderer = titleRenderer;
 

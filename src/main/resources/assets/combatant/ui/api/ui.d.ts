@@ -381,14 +381,11 @@ export type UiConnectorNode = UiNode & {
   type: "connector";
   connector?:
     | "line"
-    | "wire"
     | "cable"
     | "bezier"
     | "orthogonal"
     | "node-edge"
     | "spline"
-    | "wave"
-    | "waveform"
     | "spline-area"
     | "rounded-edge"
     | "rounded-node-edge"
@@ -434,18 +431,6 @@ export type UiConnectorNode = UiNode & {
   points?: Array<{ x: number; y: number }> | number[];
   /** Local y coordinate used as the bottom edge of a spline area fill. Defaults to node height. */
   baseline?: number;
-  /** Local center line for analytic wave/waveform connectors. */
-  centerY?: number;
-  /** Analytic wave amplitude in logical pixels. */
-  amplitude?: number;
-  /** Wave phase in radians. */
-  phase?: number;
-  /** Wave wavelength in logical pixels. */
-  wavelength?: number;
-  /** Secondary harmonic strength [0..0.45]. */
-  harmonic?: number;
-  /** Endpoint settling distance in logical pixels. */
-  edgeFade?: number;
   fillStartColor?: string | number;
   fillEndColor?: string | number;
   fillBottomStartColor?: string | number;

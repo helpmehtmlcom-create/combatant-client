@@ -33,7 +33,7 @@ public enum ShaderEspBlurUniforms {
         DATA.texelRadius[0] = 1.0f / safeW;
         DATA.texelRadius[1] = 1.0f / safeH;
         DATA.texelRadius[2] = safeRadius;
-        DATA.texelRadius[3] = Math.max(0.5f, safeRadius * 0.5f);
+        DATA.texelRadius[3] = 0.0f;
 
         DATA.direction[0] = directionX;
         DATA.direction[1] = directionY;

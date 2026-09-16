@@ -13,6 +13,7 @@
 
 package combatant.client.features.module.modules.player;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.config.common.CommonSettingSchemas;
 import combatant.client.config.values.*;
 import combatant.client.events.impl.*;
@@ -51,8 +52,6 @@ import combatant.client.render.engine.core.ViewportContext;
 import combatant.client.render.engine.math.HudScale;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.Renderer3D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.helpers.TickDelta;
 import combatant.client.util.aiming.RestrictedSingleUseAction;
@@ -779,7 +778,7 @@ public class Scaffold extends Module {
             float offsetY = placementIndicatorOffsetY.get().floatValue();
             boolean pill = placementIndicatorStyle.get() == IndicatorStyle.PILL;
             float textScale = pill ? 1.08f * renderScale : 0.86f * renderScale;
-            TextRenderer countRenderer = Fonts.renderer("Inter", FontInfo.Type.Bold, textRenderer);
+            TextRenderer countRenderer = BuiltinFontCatalog.INTER_BOLD.renderer(textRenderer);
             float countWidth = data.countText().isEmpty() ? 0.0f : (float) countRenderer.getWidth(data.countText(), false) * textScale;
             float textHeight = (float) countRenderer.getHeight(false) * textScale;
             float pillPadX = 3.0f * renderScale;
@@ -878,7 +877,7 @@ public class Scaffold extends Module {
 
             if (!indicatorCountText.isEmpty() && indicatorRenderItem) {
                 float ratio = Renderer2D.getUnscaledItemRatio();
-                TextRenderer countRenderer = Fonts.renderer("Inter", FontInfo.Type.Bold, textRenderer);
+                TextRenderer countRenderer = BuiltinFontCatalog.INTER_BOLD.renderer(textRenderer);
                 countRenderer.begin(indicatorTextScale * ratio);
                 double textX = indicatorCountX * ratio;
                 double textY = indicatorCountY * ratio;

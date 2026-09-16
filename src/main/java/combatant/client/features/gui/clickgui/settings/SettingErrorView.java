@@ -6,6 +6,7 @@
  */
 package combatant.client.features.gui.clickgui.settings;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.features.gui.diagnostics.FailureText;
 import combatant.client.features.gui.chat.diagnostics.FailureDiagnostics;
 
@@ -20,8 +21,6 @@ import combatant.client.config.SettingOwner;
 import combatant.client.runtime.error.ErrorHandler;
 import combatant.client.runtime.error.FailureRegistry.Failure;
 import combatant.client.render.engine.animation.AnimationUtility;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.helpers.SystemCursor;
 
@@ -79,7 +78,7 @@ public final class SettingErrorView {
     }
 
     public static void warning(float x, float y, float size, float alpha) {
-        TextRenderer icon = Fonts.renderer("Icons", FontInfo.Type.Regular, ClickGuiRenderer.getInterRegular());
+        TextRenderer icon = BuiltinFontCatalog.ICONS.renderer(ClickGuiRenderer.getInterRegular());
         ClickGuiRenderer.drawText(icon, "L", x, y, size, LayoutRender2D.alpha(RED, alpha), false);
     }
 

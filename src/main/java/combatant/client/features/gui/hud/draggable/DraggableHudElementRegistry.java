@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.hud.draggable;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 
 import combatant.client.features.theme.Theme;
 import combatant.client.features.gui.hud.*;
@@ -22,8 +23,6 @@ import combatant.client.features.theme.Themes;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.math.HudScale;
 import combatant.client.render.engine.profiler.RenderProfiler2D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.runtime.RuntimeGate;
 import combatant.client.runtime.error.ErrorHandler;
@@ -1206,7 +1205,7 @@ public enum DraggableHudElementRegistry {
         }
 
         if (dragging == null) return;
-        TextRenderer coordRenderer = Fonts.renderer("Comfortaa", FontInfo.Type.Regular,
+        TextRenderer coordRenderer = BuiltinFontCatalog.COMFORTAA.renderer(
                 fallbackTextRenderer != null ? fallbackTextRenderer : TextRenderer.get());
         if (coordRenderer == null) return;
 

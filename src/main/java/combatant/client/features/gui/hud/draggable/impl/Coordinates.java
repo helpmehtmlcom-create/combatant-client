@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.hud.draggable.impl;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.config.values.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -26,8 +27,6 @@ import combatant.client.features.gui.hud.script.ScriptedCompactHudStatRenderer;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.math.HudScale;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 
 import static combatant.client.features.theme.Theme.theme;
@@ -176,7 +175,7 @@ public final class Coordinates extends DraggableHudElement implements Scriptable
         String extra = showNether ? "[" + hx + " " + hz + "]" : "";
 
         TextRenderer fallback = textRenderer != null ? textRenderer : TextRenderer.get();
-        TextRenderer tr = Fonts.renderer("Onest", FontInfo.Type.Regular, fallback);
+        TextRenderer tr = BuiltinFontCatalog.ONEST_REGULAR.renderer(fallback);
 
         float drawScale = HudScale.scale(screenW, screenH)
                 * (hud.getFontSize() / 18f)

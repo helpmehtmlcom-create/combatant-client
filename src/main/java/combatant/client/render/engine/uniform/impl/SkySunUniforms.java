@@ -27,11 +27,10 @@ public enum SkySunUniforms {
     private static final String UNIFORM_NAME = "Combatant - SkySun UBO";
     private static final int EXPECTED_WRITES_PER_FRAME = 16;
 
-    public static void update(float innerRatio, float haloStrength, float coreStrength, float rayStrength) {
+    public static void update(float innerRatio, float haloStrength, float coreStrength) {
         DATA.innerRatio = innerRatio;
         DATA.haloStrength = haloStrength;
         DATA.coreStrength = coreStrength;
-        DATA.rayStrength = rayStrength;
         CombatantRenderSystem.uniforms().write(UNIFORM_NAME, SIZE, EXPECTED_WRITES_PER_FRAME, DATA);
     }
 
@@ -43,7 +42,6 @@ public enum SkySunUniforms {
         private float innerRatio;
         private float haloStrength;
         private float coreStrength;
-        private float rayStrength;
 
         @Override
         public void write(java.nio.ByteBuffer buffer) {
@@ -51,7 +49,7 @@ public enum SkySunUniforms {
                     .putFloat(innerRatio)
                     .putFloat(haloStrength)
                     .putFloat(coreStrength)
-                    .putFloat(rayStrength);
+                    .putFloat(0.0f);
         }
 
         @Override

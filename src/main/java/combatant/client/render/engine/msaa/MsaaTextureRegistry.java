@@ -9,7 +9,6 @@ package combatant.client.render.engine.msaa;
 
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
 
-@Deprecated
 public enum MsaaTextureRegistry {
     ;
     private static final Int2IntOpenHashMap SAMPLES = new Int2IntOpenHashMap();

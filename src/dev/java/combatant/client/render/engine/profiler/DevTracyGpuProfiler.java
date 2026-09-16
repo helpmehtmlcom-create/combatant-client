@@ -7,12 +7,9 @@ import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL15C;
 import org.lwjgl.opengl.GL33C;
 import org.lwjgl.opengl.GLCapabilities;
-import combatant.client.render.engine.guard.LegacyRenderPath;
-import combatant.client.render.engine.guard.RenderBoundaryExempt;
 
 import java.util.ArrayDeque;
 
-@RenderBoundaryExempt(value = LegacyRenderPath.DIRECT_GL_OUTSIDE_BACKEND, reason = "Profiler-only timer query path; not part of renderer submission architecture")
 public enum DevTracyGpuProfiler {
     ;
 

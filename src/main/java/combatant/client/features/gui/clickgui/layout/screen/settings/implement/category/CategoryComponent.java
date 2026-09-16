@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.clickgui.layout.screen.settings.implement.category;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.gui.clickgui.layout.screen.settings.MenuScreen;
 import combatant.client.features.gui.clickgui.layout.screen.settings.SettingsGuiPalette;
@@ -17,8 +18,6 @@ import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.ui.draw.UiBoxShape;
 import combatant.client.render.engine.renderer.ui.draw.UiPaint;
 import combatant.client.render.engine.svg.SvgRenderOptions;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 
 public final class CategoryComponent {
@@ -89,7 +88,7 @@ public final class CategoryComponent {
             );
         } else {
             TextRenderer font = category.iconToken()
-                    ? Fonts.renderer("Icons", FontInfo.Type.Regular, ClickGuiRenderer.getInterMedium())
+                    ? BuiltinFontCatalog.ICONS.renderer(ClickGuiRenderer.getInterMedium())
                     : ClickGuiRenderer.getInterMedium();
             float size = category.iconToken() ? 8.7f * scale : (category.token().length() > 2 ? 7.6f * scale : 9.2f * scale);
             float tw = ClickGuiRenderer.textWidth(font, category.token(), size);

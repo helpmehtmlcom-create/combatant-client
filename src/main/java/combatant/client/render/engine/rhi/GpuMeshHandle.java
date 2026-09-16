@@ -100,10 +100,6 @@ public record GpuMeshHandle(GpuBuffer vertexBuffer,
         return bytes > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) bytes;
     }
 
-    private static void closeQuietly(@Nullable GpuBuffer buffer) {
-        if (buffer == null || buffer.isClosed()) return;
-        buffer.close();
-    }
 
     /**
      * Current RenderPass API has no vertex byte offset on setVertexBuffer; baseVertex carries the offset for indexed draws.
@@ -195,8 +191,6 @@ public record GpuMeshHandle(GpuBuffer vertexBuffer,
 
     @Override
     public void close() {
-        if (ownership != MeshOwnership.TEMPORARY_OWNED) return;
-        closeQuietly(vertexBuffer);
-        closeQuietly(indexBuffer);
+        // Mesh buffers are owned by the RHI arena or a persistent backend resource.
     }
 }

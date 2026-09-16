@@ -45,8 +45,8 @@ import java.util.List;
  */
 public enum CombatantRenderPipelines {
     ;
-    private static final float COPLANAR_SURFACE_DEPTH_BIAS_SLOPE = 1.0f;
-    private static final float COPLANAR_SURFACE_DEPTH_BIAS_CONSTANT = 10.0f;
+    private static final float COPLANAR_SURFACE_DEPTH_BIAS_SLOPE = 0.0f;
+    private static final float COPLANAR_SURFACE_DEPTH_BIAS_CONSTANT = 1.0f;
     private static final float COPLANAR_DECAL_DEPTH_BIAS_SLOPE = 1.0f;
     private static final float COPLANAR_DECAL_DEPTH_BIAS_CONSTANT = 1.0f;
 
@@ -54,10 +54,6 @@ public enum CombatantRenderPipelines {
     public static final Identifier SHADER_POS_COLOR_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_color.vert");
     public static final Identifier SHADER_WIDE_LINE_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/wide_line.vert");
     public static final Identifier SHADER_POS_COLOR_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_color.frag");
-    public static final Identifier SHADER_POS_COLOR_FOG_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_color_fog.vert");
-    public static final Identifier SHADER_POS_COLOR_FOG_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_color_fog.frag");
-    public static final Identifier SHADER_POS_COLOR_RECT_PARAMS_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_color_rect_params.vert");
-    public static final Identifier SHADER_POS_COLOR_RECT_PARAMS2_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_color_rect_params2.vert");
     public static final Identifier SHADER_POS_LOCAL_COLOR_RECT_PARAMS_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_local_color_rect_params.vert");
     public static final Identifier SHADER_POS_LOCAL_COLOR_RECT_PARAMS2_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_local_color_rect_params2.vert");
     public static final Identifier SHADER_POS_LOCAL_COLOR_RECT_PARAMS5_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_local_color_rect_params5.vert");
@@ -67,13 +63,8 @@ public enum CombatantRenderPipelines {
     public static final Identifier SHADER_UI_PATH_FAST_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/ui_path_fast.vert");
     public static final Identifier SHADER_UI_PATH_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/ui_path.frag");
     public static final Identifier SHADER_UI_PATH_ANALYTIC_CLIP_FRAG = CombatantShaderSources.analyticClipVariantId(SHADER_UI_PATH_FRAG);
-    public static final Identifier SHADER_UI_WAVE_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/ui_wave.frag");
-    public static final Identifier SHADER_UI_WAVE_ANALYTIC_CLIP_FRAG = CombatantShaderSources.analyticClipVariantId(SHADER_UI_WAVE_FRAG);
     public static final Identifier SHADER_UI_POS_TEX_COLOR_FAST_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/ui_pos_tex_color_fast.vert");
-    public static final Identifier SHADER_UI_POS_COLOR_RECT_PARAMS_FAST_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/ui_pos_color_rect_params_fast.vert");
-    public static final Identifier SHADER_UI_POS_LOCAL_COLOR_RECT_PARAMS_FAST_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/ui_pos_local_color_rect_params_fast.vert");
     public static final Identifier SHADER_UI_GEOMETRY_FAST_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/ui_geometry_fast.vert");
-    public static final Identifier SHADER_UI_GEOMETRY_PARAMS2_FAST_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/ui_geometry_params2_fast.vert");
     public static final Identifier SHADER_UI_PRIMITIVE_FAST_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/ui_primitive_fast.vert");
     public static final Identifier SHADER_UI_POS_TEX_COLOR_TRANSFORMED_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/ui_pos_tex_color_transformed.vert");
     public static final Identifier SHADER_POS_TEX_COLOR_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_tex_color.vert");
@@ -83,24 +74,15 @@ public enum CombatantRenderPipelines {
     public static final Identifier SHADER_POS_TEX_COLOR_PREMULTIPLIED_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_tex_color_premultiplied.frag");
     public static final Identifier SHADER_POS_TEX_COLOR_PREMULTIPLIED_ANALYTIC_CLIP_FRAG = CombatantShaderSources.analyticClipVariantId(SHADER_POS_TEX_COLOR_PREMULTIPLIED_FRAG);
     public static final Identifier SHADER_RIG_TEXTURED_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/rig_textured.vert");
-    public static final Identifier SHADER_RIG_TEXTURED_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/rig_textured.frag");
     public static final Identifier SHADER_RIG_ENTITY_CUTOUT_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/rig_entity_cutout.frag");
     public static final Identifier SHADER_RIG_ENTITY_TRANSLUCENT_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/rig_entity_translucent.frag");
     public static final Identifier SHADER_GUI_TEXTURE_LOOKUP_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/gui_texture_lookup.frag");
     public static final Identifier SHADER_POS_TEX_COLOR_TINT_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_tex_color_tint.frag");
     public static final Identifier SHADER_MAP_TILE_LIGHT_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/map_tile_light.frag");
     public static final Identifier SHADER_MAP_TILE_OPAQUE_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/map_tile_opaque.frag");
-    public static final Identifier SHADER_POS_TEX_COLOR_SKY_FOG_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_tex_color_sky_fog.vert");
-    public static final Identifier SHADER_POS_TEX_COLOR_SKY_FOG_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_tex_color_sky_fog.frag");
-    public static final Identifier SHADER_POS_TEX_COLOR_SKY_FOG_ADDITIVE_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_tex_color_sky_fog_additive.frag");
-    public static final Identifier SHADER_POS_COLOR_SKYBOX_SHADER_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_color_skybox_shader.vert");
     public static final Identifier SHADER_REIMAGINED_SKYBOX_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/reimagined_skybox.frag");
-    public static final Identifier SHADER_POS_TEX_COLOR_RECT_PARAMS_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_tex_color_rect_params.vert");
     public static final Identifier SHADER_POS_TEX_LOCAL_COLOR_RECT_PARAMS_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_tex_local_color_rect_params.vert");
-    public static final Identifier SHADER_POS_TEX_LOCAL_COLOR_RECT_PARAMS2_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_tex_local_color_rect_params2.vert");
-    public static final Identifier SHADER_POS_TEX_LOCAL_COLOR_RECT_PARAMS6_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_tex_local_color_rect_params6.vert");
     public static final Identifier SHADER_POS_TEX_LOCAL_COLOR_RECT_PARAMS7_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_tex_local_color_rect_params7.vert");
-    public static final Identifier SHADER_POS_TEX_COLOR_RECT_PARAMS2_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_tex_color_rect_params2.vert");
     public static final Identifier SHADER_TEXT_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/text.vert");
     public static final Identifier SHADER_TEXT_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/text.frag");
     public static final Identifier SHADER_TEXT_ANALYTIC_CLIP_FRAG = CombatantShaderSources.analyticClipVariantId(SHADER_TEXT_FRAG);
@@ -211,12 +193,6 @@ public enum CombatantRenderPipelines {
             "rig_entity_translucent_no_depth_write_cull", SHADER_RIG_ENTITY_TRANSLUCENT_FRAG, true, false, true
     ));
 
-    /**
-     * Compatibility alias for callers written against the first rig pipeline.
-     * New code should choose a {@link RigRenderMode} explicitly.
-     */
-    @Deprecated
-    public static final RenderPipeline RIG_TEXTURED = RIG_ENTITY_TRANSLUCENT_CULL;
 
     /**
      * No depth test; translucent; triangles.
@@ -353,21 +329,6 @@ public enum CombatantRenderPipelines {
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT_PREMULTIPLIED_ALPHA)
             .withCull(true)
-            .build()
-    );
-    /**
-     * Depth test (GEQUAL); translucent; textured triangles.
-     */
-    public static final RenderPipeline WORLD_TEXTURED_DEPTH = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
-            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_textured_depth"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
-            .withVertexShader(SHADER_POS_TEX_COLOR_VERT)
-            .withFragmentShader(SHADER_POS_TEX_COLOR_FRAG)
-            .withSampler("u_Texture")
-            .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthWrite(false)
-            .withBlend(BlendFunction.TRANSLUCENT)
-            .withCull(false)
             .build()
     );
     /**
@@ -596,20 +557,6 @@ public enum CombatantRenderPipelines {
     );
 
     /**
-     * Depth test (GEQUAL); translucent; triangles; lets liquids blend over (no depth write).
-     */
-    public static final RenderPipeline WORLD_COLORED_LIQUID_BLEND = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
-            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_colored_liquid_blend"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
-            .withVertexShader(SHADER_POS_COLOR_VERT)
-            .withFragmentShader(SHADER_POS_COLOR_FRAG)
-            .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthWrite(false)
-            .withBlend(BlendFunction.TRANSLUCENT)
-            .withCull(false)
-            .build()
-    );
-    /**
      * Depth test (GEQUAL); translucent; lines; lets liquids blend over (no depth write).
      */
     public static final RenderPipeline WORLD_COLORED_LINES_LIQUID_BLEND = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
@@ -639,36 +586,6 @@ public enum CombatantRenderPipelines {
             .build()
     );
 
-    /**
-     * Depth test (GEQUAL); translucent; textured triangles; lets liquids blend over (no depth write).
-     */
-    public static final RenderPipeline WORLD_TEXTURED_LIQUID_BLEND = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
-            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_textured_liquid_blend"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
-            .withVertexShader(SHADER_POS_TEX_COLOR_VERT)
-            .withFragmentShader(SHADER_POS_TEX_COLOR_FRAG)
-            .withSampler("u_Texture")
-            .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthWrite(false)
-            .withBlend(BlendFunction.TRANSLUCENT)
-            .withCull(false)
-            .build()
-    );
-    /**
-     * Depth test (GEQUAL); additive; textured triangles; lets liquids blend over (no depth write).
-     */
-    public static final RenderPipeline WORLD_TEXTURED_ADDITIVE_LIQUID_BLEND = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
-            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_textured_additive_liquid_blend"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
-            .withVertexShader(SHADER_POS_TEX_COLOR_VERT)
-            .withFragmentShader(SHADER_POS_TEX_COLOR_FRAG)
-            .withSampler("u_Texture")
-            .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthWrite(false)
-            .withBlend(BlendFunctions.ALPHA_ADDITIVE)
-            .withCull(false)
-            .build()
-    );
     /**
      * Depth test (GEQUAL); translucent; triangles; intended for above-liquids pass (no depth write).
      */
@@ -747,18 +664,6 @@ public enum CombatantRenderPipelines {
     /**
      * Depth test (GEQUAL); translucent; textured triangles; intended for pre-water depth.
      */
-    public static final RenderPipeline WORLD_TEXTURED_LIQUID_IGNORE = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
-            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_textured_liquid_ignore"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
-            .withVertexShader(SHADER_POS_TEX_COLOR_VERT)
-            .withFragmentShader(SHADER_POS_TEX_COLOR_FRAG)
-            .withSampler("u_Texture")
-            .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-            .withDepthWrite(false)
-            .withBlend(BlendFunction.TRANSLUCENT)
-            .withCull(false)
-            .build()
-    );
     /**
      * UI triangles (pos2 + color).
      */
@@ -776,17 +681,6 @@ public enum CombatantRenderPipelines {
     /**
      * UI lines (pos2 + color).
      */
-    public static final RenderPipeline UI_COLORED_LINES = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
-            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/ui_colored_lines"))
-            .withVertexFormat(CombatantVertexFormats.POS2_COLOR, com.mojang.blaze3d.PrimitiveTopology.DEBUG_LINES)
-            .withVertexShader(SHADER_POS_COLOR_VERT)
-            .withFragmentShader(SHADER_POS_COLOR_FRAG)
-            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
-            .withDepthWrite(false)
-            .withBlend(BlendFunction.TRANSLUCENT)
-            .withCull(true)
-            .build()
-    );
     public static final RenderPipeline UI_COLORED_LINES_FAST = add(new ExtendedRenderPipelineBuilder(UI_BATCH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/ui_colored_lines_fast"))
             .withVertexFormat(CombatantVertexFormats.POS2_COLOR, com.mojang.blaze3d.PrimitiveTopology.DEBUG_LINES)
@@ -909,19 +803,6 @@ public enum CombatantRenderPipelines {
     /**
      * UI MSDF SVG quads (pos2 + tex + color).
      */
-    public static final RenderPipeline UI_SVG_MSDF = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
-            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/ui_svg_msdf"))
-            .withVertexFormat(CombatantVertexFormats.POS2_TEXTURE_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
-            .withVertexShader(SHADER_POS_TEX_COLOR_VERT)
-            .withFragmentShader(SHADER_SVG_MSDF_FRAG)
-            .withSampler("u_Texture")
-            .withUniform("MsdfText", UniformType.UNIFORM_BUFFER)
-            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
-            .withDepthWrite(false)
-            .withBlend(BlendFunction.TRANSLUCENT)
-            .withCull(true)
-            .build()
-    );
     public static final RenderPipeline UI_SVG_MSDF_FAST = add(new ExtendedRenderPipelineBuilder(UI_BATCH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/ui_svg_msdf_fast"))
             .withVertexFormat(CombatantVertexFormats.POS2_TEXTURE_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
@@ -953,18 +834,6 @@ public enum CombatantRenderPipelines {
     /**
      * UI textured triangles (pos2 + tex + color), additive blend.
      */
-    public static final RenderPipeline UI_TEXTURED_ADDITIVE = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
-            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/ui_textured_additive"))
-            .withVertexFormat(CombatantVertexFormats.POS2_TEXTURE_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
-            .withVertexShader(SHADER_POS_TEX_COLOR_VERT)
-            .withFragmentShader(SHADER_POS_TEX_COLOR_FRAG)
-            .withSampler("u_Texture")
-            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
-            .withDepthWrite(false)
-            .withBlend(BlendFunctions.ALPHA_ADDITIVE)
-            .withCull(true)
-            .build()
-    );
     public static final RenderPipeline UI_TEXTURED_ADDITIVE_TRANSFORMED = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS, UI_BATCH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/ui_textured_additive_transformed"))
             .withVertexFormat(CombatantVertexFormats.POS2_TEXTURE_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
@@ -1497,38 +1366,6 @@ public enum CombatantRenderPipelines {
             .withUniform("Fog", UniformType.UNIFORM_BUFFER)
             .buildSnippet();
     /**
-     * No depth test; translucent; textured skybox with vanilla sky/fog blending.
-     */
-    public static final RenderPipeline WORLD_SKYBOX_TEXTURED_FOG = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS, FOG_UNIFORMS)
-            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_skybox_textured_fog"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
-            .withVertexShader(SHADER_POS_TEX_COLOR_SKY_FOG_VERT)
-            .withFragmentShader(SHADER_POS_TEX_COLOR_SKY_FOG_FRAG)
-            .withSampler("u_Texture")
-            .withUniform("SkyboxShader", UniformType.UNIFORM_BUFFER)
-            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
-            .withDepthWrite(false)
-            .withBlend(BlendFunction.TRANSLUCENT)
-            .withCull(false)
-            .build()
-    );
-    /**
-     * No depth test; additive; textured skybox with vanilla sky/fog blending.
-     */
-    public static final RenderPipeline WORLD_SKYBOX_TEXTURED_FOG_ADDITIVE = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS, FOG_UNIFORMS)
-            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_skybox_textured_fog_additive"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
-            .withVertexShader(SHADER_POS_TEX_COLOR_SKY_FOG_VERT)
-            .withFragmentShader(SHADER_POS_TEX_COLOR_SKY_FOG_ADDITIVE_FRAG)
-            .withSampler("u_Texture")
-            .withUniform("SkyboxShader", UniformType.UNIFORM_BUFFER)
-            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
-            .withDepthWrite(false)
-            .withBlend(BlendFunctions.ALPHA_ADDITIVE)
-            .withCull(false)
-            .build()
-    );
-    /**
      * Fullscreen procedural Reimagined skybox with sky/fog blending.
      */
     public static final RenderPipeline WORLD_REIMAGINED_SKYBOX_SHADER = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS, FOG_UNIFORMS)
@@ -1639,32 +1476,6 @@ public enum CombatantRenderPipelines {
             .withVertexFormat(CombatantVertexFormats.POS2_COLOR_PARAMS, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
             .withVertexShader(SHADER_UI_PATH_FAST_VERT)
             .withFragmentShader(SHADER_UI_PATH_ANALYTIC_CLIP_FRAG)
-            .withContract(RenderPipelineContract.UI_WARPED)
-            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
-            .withDepthWrite(false)
-            .withBlend(BlendFunction.TRANSLUCENT)
-            .withCull(false)
-            .build()
-    );
-
-    /** Single-quad analytic waveform used by media/progress timelines. */
-    public static final RenderPipeline UI_WAVE_BATCH = add(new ExtendedRenderPipelineBuilder(UI_BATCH_UNIFORMS)
-            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/ui_wave_batch"))
-            .withVertexFormat(CombatantVertexFormats.POS2_LOCAL_COLOR_RECT_PARAMS3, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
-            .withVertexShader(SHADER_UI_GEOMETRY_FAST_VERT)
-            .withFragmentShader(SHADER_UI_WAVE_FRAG)
-            .withContract(RenderPipelineContract.UI_WARPED)
-            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
-            .withDepthWrite(false)
-            .withBlend(BlendFunction.TRANSLUCENT)
-            .withCull(false)
-            .build()
-    );
-    public static final RenderPipeline UI_WAVE_BATCH_ANALYTIC_CLIP = add(new ExtendedRenderPipelineBuilder(UI_BATCH_UNIFORMS, UI_ANALYTIC_CLIP_UNIFORMS)
-            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/analytic_clip/ui_wave_batch"))
-            .withVertexFormat(CombatantVertexFormats.POS2_LOCAL_COLOR_RECT_PARAMS3, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
-            .withVertexShader(SHADER_UI_GEOMETRY_FAST_VERT)
-            .withFragmentShader(SHADER_UI_WAVE_ANALYTIC_CLIP_FRAG)
             .withContract(RenderPipelineContract.UI_WARPED)
             .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
             .withDepthWrite(false)

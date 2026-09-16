@@ -33,7 +33,7 @@
 
       const side=saturate(Math.abs(s));
       const sideSign=Math.sign(s);
-      // The visual lag is visible: loose limbs trail root acceleration while the
+      // The visual lag remains visible: loose limbs trail root acceleration while the
       // chest leans into it. This remains a secondary motion, never a replacement gait.
       const lagX=m.inertiaStrafe*.095*moving;
       const lagZ=-m.inertiaForward*.072*moving;

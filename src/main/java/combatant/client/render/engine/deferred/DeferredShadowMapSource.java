@@ -22,8 +22,6 @@ import combatant.client.render.engine.rhi.shader.StorageBufferDescriptor;
 import combatant.client.render.sodium.SodiumSecondaryTerrainContext;
 import combatant.client.render.sodium.SodiumTerrainSubmission;
 import net.caffeinemc.mods.sodium.client.render.SodiumWorldRenderer;
-import net.caffeinemc.mods.sodium.client.render.chunk.ChunkRenderMatrices;
-import net.caffeinemc.mods.sodium.client.render.chunk.terrain.DefaultTerrainRenderPasses;
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
 
@@ -42,13 +40,19 @@ final class DeferredShadowMapSource implements AutoCloseable {
             .member("viewProjection", Std430Type.MAT4)
             .member("atlasScaleBias", Std430Type.VEC4)
             .member("splitRange", Std430Type.VEC4)
+            .member("shadowTexel", Std430Type.VEC4)
             .build();
 
+    private final DeferredSecondaryShadowCasterSource secondaryCasters;
     private TextureTarget atlas;
     private int atlasWidth;
     private int atlasHeight;
     private CombatantRhi bufferOwner;
     private RhiStorageBuffer cascadeData;
+
+    DeferredShadowMapSource(DeferredSecondaryShadowCasterSource secondaryCasters) {
+        this.secondaryCasters = secondaryCasters;
+    }
 
     boolean available(DeferredPassContext context) {
         if (context == null || !context.secondaryViews().has(DeferredViewFamily.SHADOW_CASCADE)) return false;
@@ -83,21 +87,14 @@ final class DeferredShadowMapSource implements AutoCloseable {
         );
 
         for (DeferredSecondaryView view : views) {
-            ChunkRenderMatrices matrices = new ChunkRenderMatrices(view.projection(), view.view());
-            SodiumSecondaryTerrainContext.run(SodiumSecondaryTerrainContext.Purpose.SHADOW_DEPTH, view, target, () -> {
-                renderer.renderLayer(
-                        matrices,
-                        DefaultTerrainRenderPasses.SOLID,
-                        view.origin().x, view.origin().y, view.origin().z,
-                        primarySubmission.fog(), primarySubmission.sampler()
-                );
-                renderer.renderLayer(
-                        matrices,
-                        DefaultTerrainRenderPasses.CUTOUT,
-                        view.origin().x, view.origin().y, view.origin().z,
-                        primarySubmission.fog(), primarySubmission.sampler()
-                );
-            });
+            secondaryCasters.render(
+                    context,
+                    SodiumSecondaryTerrainContext.Purpose.SHADOW_DEPTH,
+                    view,
+                    target,
+                    renderer,
+                    primarySubmission
+            );
         }
 
         RhiStorageBuffer metadata = uploadCascadeMetadata(context.rhi(), views, requiredWidth, requiredHeight);
@@ -150,6 +147,19 @@ final class DeferredShadowMapSource implements AutoCloseable {
             );
             writer.putVec4(i, "splitRange",
                     view.nearPlane(), view.farPlane(), (float) i, (float) count
+            );
+            Matrix4f projection = view.projection();
+            float extentX = Math.abs(projection.m00()) > 1.0e-6f ? Math.abs(2.0f / projection.m00()) : 0.0f;
+            float extentY = Math.abs(projection.m11()) > 1.0e-6f ? Math.abs(2.0f / projection.m11()) : 0.0f;
+            float worldTexel = Math.max(
+                    extentX / Math.max(1.0f, view.viewportWidth()),
+                    extentY / Math.max(1.0f, view.viewportHeight())
+            );
+            writer.putVec4(i, "shadowTexel",
+                    1.0f / Math.max(1.0f, width),
+                    1.0f / Math.max(1.0f, height),
+                    worldTexel,
+                    0.0f
             );
         }
         cascadeData.upload(writer.buffer(), 0L);

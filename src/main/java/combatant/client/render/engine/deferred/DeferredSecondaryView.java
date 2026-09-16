@@ -80,4 +80,11 @@ public record DeferredSecondaryView(
     public boolean hasExplicitViewport() {
         return viewportWidth > 0 && viewportHeight > 0;
     }
+
+    public DeferredSecondaryView withViewport(int x, int y, int width, int height) {
+        return new DeferredSecondaryView(
+                family, index, id, view, projection, origin, targetLayer,
+                x, y, width, height, nearPlane, farPlane
+        );
+    }
 }

@@ -26,6 +26,7 @@ import combatant.client.render.engine.rhi.FullscreenDrawCommand;
 import combatant.client.render.engine.rhi.resource.RenderResourceManager;
 import combatant.client.render.engine.rhi.resource.TransientTargetDescriptor;
 import combatant.client.render.engine.uniform.impl.DeferredLightingUniforms;
+import combatant.client.render.engine.world.WorldRenderState;
 import combatant.client.util.logging.DebugLog;
 import combatant.client.util.resources.asset.AssetAutoLoader;
 import org.jetbrains.annotations.Nullable;
@@ -34,6 +35,7 @@ import org.joml.Vector4fc;
 
 import java.util.Optional;
 import java.util.OptionalDouble;
+import java.util.Locale;
 import java.util.function.Supplier;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -88,6 +90,8 @@ public final class DeferredWorldPipeline {
     private final DeferredResourceBindings resourceBindings = new DeferredResourceBindings(physicalResources);
     private final DeferredSecondaryViewRegistry secondaryViews = new DeferredSecondaryViewRegistry();
     private final DeferredPrimaryViewSource primaryView = new DeferredPrimaryViewSource();
+    private final DeferredWorldRenderStateSource worldStateSource = new DeferredWorldRenderStateSource();
+    private WorldRenderState worldRenderState = WorldRenderState.unknown(0L);
 
     public boolean enabled() {
         return lifecycleState == LifecycleState.ACTIVE;
@@ -175,6 +179,8 @@ public final class DeferredWorldPipeline {
         try {
             AssetAutoLoader.activate(DeferredRuntimeAssets.SCOPE, minecraft.getResourceManager());
             primaryView.reset();
+            worldStateSource.reset();
+            worldRenderState = worldStateSource.current();
             physicalResources.reset();
             geometryPipelineGeneration++;
             lifecycleState = LifecycleState.ACTIVE;
@@ -251,6 +257,8 @@ public final class DeferredWorldPipeline {
         geometryPipelineGeneration++;
         releasePhysicalResources();
         primaryView.reset();
+        worldStateSource.reset();
+        worldRenderState = worldStateSource.current();
         try {
             if (AssetAutoLoader.isScopeActive(DeferredRuntimeAssets.SCOPE)) {
                 AssetAutoLoader.deactivate(DeferredRuntimeAssets.SCOPE, minecraft.getResourceManager());
@@ -367,9 +375,7 @@ public final class DeferredWorldPipeline {
 
     /** Executes the neutral backend lighting stage once after opaque and cutout terrain. */
     public boolean resolveLighting(GpuTextureView sceneColor,
-                                   GpuTextureView lightmap,
                                    GpuSampler gbufferSampler,
-                                   GpuSampler lightmapSampler,
                                    LightingState state) {
         if (!enabled() || lightingResolvedThisFrame || targets == null) return false;
         RenderSystem.assertOnRenderThread();
@@ -412,17 +418,68 @@ public final class DeferredWorldPipeline {
                 executeStage(DeferredStage.PRE_LIGHTING);
                 postGeometryExecuted = true;
             }
-            DeferredLightingUniforms.update(state);
+            GpuTextureView resolvedDepth = resourceBindings.texture(DeferredResource.RESOLVED_DEPTH);
+            GpuTextureView gbufferDepth = resourceBindings.texture(DeferredResource.GBUFFER_DEPTH);
+            if (resolvedDepth == null || gbufferDepth == null) {
+                throw new IllegalStateException("Deferred lighting requires resolved and G-buffer depth");
+            }
+            boolean shadowValid = resourceBindings.isValid(DeferredResource.SHADOW_COLOR);
+            boolean ambientOcclusionValid = resourceBindings.isValid(DeferredResource.AMBIENT_OCCLUSION);
+            boolean cloudShadowValid = resourceBindings.isValid(DeferredResource.CLOUD_SHADOW_VISIBILITY);
+            if (!resourceBindings.isValid(DeferredResource.ENVIRONMENT_IRRADIANCE)) {
+                throw new IllegalStateException("Deferred lighting requires environment irradiance contract");
+            }
+            GpuTextureView environmentIrradiance = resourceBindings.texture(DeferredResource.ENVIRONMENT_IRRADIANCE);
+            GpuTextureView shadowVisibility = shadowValid
+                    ? resourceBindings.texture(DeferredResource.SHADOW_COLOR) : inputs.surface();
+            GpuTextureView ambientVisibility = ambientOcclusionValid
+                    ? resourceBindings.texture(DeferredResource.AMBIENT_OCCLUSION) : inputs.surface();
+            GpuTextureView cloudShadowVisibility = cloudShadowValid
+                    ? resourceBindings.texture(DeferredResource.CLOUD_SHADOW_VISIBILITY) : inputs.surface();
+            boolean zeroToOneDepth = CombatantRenderSystem.rhi().capabilities().backendName() != null
+                    && CombatantRenderSystem.rhi().capabilities().backendName().toLowerCase(Locale.ROOT).contains("vulkan");
+            DeferredLightingUniforms.update(
+                    state, worldRenderState, primaryView.current(), zeroToOneDepth, shadowValid, ambientOcclusionValid,
+                    cloudShadowValid
+            );
+
+            // Keep direct terrain lighting in a Combatant-owned HDR target. Publishing it into the
+            // mutable Minecraft scene target is only a compatibility step for forward opaque draws.
+            resourceBindings.ensureTexture(
+                    DeferredResource.DIRECT_LIGHTING_COLOR, CombatantRenderSystem.rhi(), frameSettings
+            );
+            GpuTextureView directLighting = resourceBindings.texture(DeferredResource.DIRECT_LIGHTING_COLOR);
+            if (directLighting == null) {
+                throw new IllegalStateException("Deferred direct-lighting target is unavailable");
+            }
             CombatantRenderSystem.rhi().drawFullscreen(
                     FullscreenDrawCommand.builder("Combatant Deferred Terrain Lighting")
-                            .colorAttachment(sceneColor)
+                            .colorAttachment(directLighting)
                             .pipeline(DeferredRuntimeAssets.terrainLighting())
                             .uniform("DeferredLighting", DeferredLightingUniforms.get())
                             .sampler("u_GbufferSurface", inputs.surface(), gbufferSampler)
                             .sampler("u_GbufferGeometry", inputs.geometry(), gbufferSampler)
-                            .sampler("u_GbufferAuxiliary", inputs.auxiliary(), gbufferSampler)
                             .sampler("u_GbufferMaterial", inputs.material(), gbufferSampler)
-                            .sampler("u_LightTex", lightmap, lightmapSampler)
+                            .sampler("u_GbufferDepth", gbufferDepth, gbufferSampler)
+                            .sampler("u_EnvironmentIrradiance", environmentIrradiance, gbufferSampler)
+                            .sampler("u_ResolvedDepth", resolvedDepth, gbufferSampler)
+                            .sampler("u_ShadowVisibility", shadowVisibility, gbufferSampler)
+                            .sampler("u_CloudShadowVisibility", cloudShadowVisibility, gbufferSampler)
+                            .sampler("u_AmbientVisibility", ambientVisibility, gbufferSampler)
+                            .build()
+            );
+            resourceBindings.markWritten(DeferredResource.DIRECT_LIGHTING_COLOR);
+
+            // Forward compatibility rendering still targets Minecraft's scene image. Only terrain
+            // pixels are published here; sky and other non-G-buffer producers remain untouched.
+            CombatantRenderSystem.rhi().drawFullscreen(
+                    FullscreenDrawCommand.builder("Combatant Deferred Terrain Publish")
+                            .colorAttachment(sceneColor)
+                            .pipeline(DeferredRuntimeAssets.terrainPublish())
+                            .uniform("DeferredLighting", DeferredLightingUniforms.get())
+                            .sampler("u_Source", directLighting, gbufferSampler)
+                            .sampler("u_GbufferAuxiliary", inputs.auxiliary(), gbufferSampler)
+                            .sampler("u_GbufferDepth", gbufferDepth, gbufferSampler)
                             .build()
             );
             lightingResolvedThisFrame = true;
@@ -482,6 +539,8 @@ public final class DeferredWorldPipeline {
         if (worldOwner != currentWorld) {
             physicalResources.reset();
             primaryView.beginWorld(currentWorld);
+            worldStateSource.reset();
+            worldRenderState = worldStateSource.current();
             worldOwner = currentWorld;
             frameStateId = Long.MIN_VALUE;
             targetFrameId = Long.MIN_VALUE;
@@ -502,6 +561,7 @@ public final class DeferredWorldPipeline {
         }
         frameSettings = DeferredRuntimeConfig.current();
         frameSettingsGeneration = DeferredRuntimeConfig.generation();
+        worldRenderState = worldStateSource.capture(Minecraft.getInstance().level, primaryView.current());
         if (temporalPolicyGeneration != Long.MIN_VALUE && temporalPolicyGeneration != frameSettingsGeneration) {
             primaryView.invalidateHistory(frameId, DeferredHistoryResetReason.POLICY_CHANGE);
         }
@@ -565,6 +625,7 @@ public final class DeferredWorldPipeline {
         executeStage(DeferredStage.INDIRECT_TRACE);
         executeStage(DeferredStage.INDIRECT_TEMPORAL);
         executeStage(DeferredStage.INDIRECT_HISTORY);
+        executeStage(DeferredStage.INDIRECT_COMPOSITE);
         executeStage(DeferredStage.REFLECTION_CAPTURE_PREPARE);
         executeStage(DeferredStage.REFLECTION_CAPTURE);
         executeStage(DeferredStage.REFLECTION_PREPARE);
@@ -574,6 +635,7 @@ public final class DeferredWorldPipeline {
         executeStage(DeferredStage.REFLECTION_DENOISE);
         executeStage(DeferredStage.REFLECTION_HISTORY);
         executeStage(DeferredStage.REFLECTION_COMPOSITE);
+        executeStage(DeferredStage.SKY_COMPOSITE);
         executeStage(DeferredStage.WATER_SURFACE);
         executeStage(DeferredStage.PRE_TRANSLUCENCY);
     }
@@ -641,10 +703,17 @@ public final class DeferredWorldPipeline {
         preGeometryExecuted = false;
         postGeometryExecuted = false;
         primaryView.reset();
+        worldStateSource.reset();
+        worldRenderState = worldStateSource.current();
     }
 
     public DeferredPrimaryViewSource primaryView() {
         return primaryView;
+    }
+
+    /** Explicit semantic world contract frozen for the current deferred frame. */
+    public WorldRenderState worldRenderState() {
+        return worldRenderState;
     }
 
     /** Exact matrices are injected before LevelRenderer/Sodium world submission. */
@@ -667,7 +736,7 @@ public final class DeferredWorldPipeline {
         resourceBindings.setHistoryEpoch(primaryView.historyDescriptor().epoch());
         CombatantRenderSystem.deferredGraph().execute(
                 stage, CombatantRenderSystem.ensureFrameContext(), resourceBindings, secondaryViews, primaryView,
-                frameSettings
+                worldRenderState, frameSettings
         );
     }
 

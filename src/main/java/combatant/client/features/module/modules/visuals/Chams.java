@@ -46,7 +46,6 @@ import combatant.client.render.engine.postprocess.PostProcessPass;
 import combatant.client.render.engine.postprocess.PostProcessExecutionContext;
 import combatant.client.render.engine.postprocess.PostProcessBackendResourceOwner;
 import combatant.client.render.engine.postprocess.HandChamsComputeBackend;
-import combatant.client.render.engine.postprocess.graph.LegacyPostProcessGraphPass;
 import combatant.client.features.gui.preview.VisualPreviewRuntime;
 import combatant.client.render.engine.profiler.ProfilerPhase;
 import combatant.client.render.engine.profiler.TracyGpuProfiler;
@@ -622,11 +621,8 @@ public class Chams extends Module {
 
     /** Composites only Chams' hand material and trail passes for an isolated preview scene. */
     public void compositePreparedHandScene(float tickDelta) {
-        PostProcessManager.renderSelected(PostProcessPass.Phase.POST_HAND, tickDelta, pass -> {
-            if (!(pass instanceof LegacyPostProcessGraphPass legacy)) return false;
-            PostProcessPass delegate = legacy.delegate();
-            return delegate == handsPass || delegate == ghostingPass;
-        });
+        PostProcessManager.renderSelected(PostProcessPass.Phase.POST_HAND, tickDelta,
+                pass -> pass == handsPass || pass == ghostingPass);
     }
 
     private void markHandMaskReady() {
@@ -1061,13 +1057,6 @@ public class Chams extends Module {
         return renderGhostingRaster(execution.source(), execution.destination(), maskView, frame);
     }
 
-    private boolean renderGhosting(GpuTextureView src, GpuTextureView dst) {
-        GpuTextureView maskView = readyGhostMask();
-        if (maskView == null) return false;
-        ghostComputeNeedsReset = true;
-        chamsCompute.invalidateGhostHistory();
-        return renderGhostingRaster(src, dst, maskView, ghostFrameParams());
-    }
 
     private GpuTextureView readyGhostMask() {
         if (!ghostMaskReady || handMask == null || handMask.getColorTextureView() == null) {
@@ -1191,10 +1180,12 @@ public class Chams extends Module {
         }
 
         @Override
-        public boolean render(GpuTextureView src, GpuTextureView dst, float tickDelta) {
+        public boolean render(PostProcessExecutionContext execution) {
+            if (execution == null || execution.context() == null) return false;
             if (!isActiveForHandRender() || mc.player == null || mc.level == null) return false;
             if (!hands.get() || !isFirstPersonHandContext()) return false;
-            return Chams.this.renderHands(src, dst, tickDelta);
+            return Chams.this.renderHands(
+                    execution.source(), execution.destination(), execution.context().tickDelta());
         }
 
         @Override
@@ -1236,11 +1227,6 @@ public class Chams extends Module {
             return Chams.this.renderGhosting(execution);
         }
 
-        @Override
-        public boolean render(GpuTextureView src, GpuTextureView dst, float tickDelta) {
-            if (!isActive()) return false;
-            return Chams.this.renderGhosting(src, dst);
-        }
     }
 
 }

@@ -10,7 +10,6 @@ package combatant.client.render.engine.rhi.upload;
 import com.mojang.blaze3d.systems.RenderSystem;
 import combatant.client.render.engine.profiler.RenderCostProfiler;
 import combatant.client.render.engine.rhi.GpuMeshHandle;
-import combatant.client.render.engine.rhi.MeshOwnership;
 import combatant.client.render.engine.rhi.RhiCapabilities;
 import combatant.client.render.engine.rhi.RhiStats;
 import combatant.client.render.engine.uniform.MeshBuilder;
@@ -30,14 +29,12 @@ import java.util.List;
  * - no per-mesh GpuBuffer allocation in the normal path;
  * - no MappableRingBuffer#getBlocking() as the normal path;
  * - no RenderSystem.flipFrame cleanup fan-out;
- * - spill arenas are GPU buffers too, not immediate uploads;
- * - immediate upload is disabled by default and exists only as an explicit emergency switch.
+ * - spill arenas are GPU buffers too; there is no per-mesh immediate-upload fallback.
  */
 public final class Blaze3dDynamicMeshBackend implements DynamicMeshBackend {
     private static final int DEFAULT_VERTEX_ARENA_BYTES = Integer.getInteger("combatant.rhi.vertexArenaBytes", 32 * 1024 * 1024);
     private static final int DEFAULT_INDEX_ARENA_BYTES = Integer.getInteger("combatant.rhi.indexArenaBytes", 8 * 1024 * 1024);
     private static final int DEFAULT_PERSISTENT_ARENAS = Integer.getInteger("combatant.rhi.meshArenas", 3);
-    private static final boolean ALLOW_IMMEDIATE_FALLBACK = Boolean.getBoolean("combatant.rhi.allowImmediateFallback");
 
     private final RhiStats stats;
     private final List<Blaze3dMeshArena> persistentArenas = new ArrayList<>();
@@ -86,21 +83,16 @@ public final class Blaze3dDynamicMeshBackend implements DynamicMeshBackend {
                         + vertexBytes + ", vertexStride=" + vertexStride);
             }
 
-            try {
-                ensurePersistentArenas();
-                Blaze3dMeshArena arena = selectArena(vertexBytes, indexBytes, vertexStride);
-                Blaze3dMeshAllocation allocation = arena.allocate(vertexBytes, indexBytes, vertexStride);
-                allocation.write(mesh);
-                stats.meshUpload(vertexBytes, indexBytes);
-                stats.dynamicArenaAllocation(vertexBytes, indexBytes, arena.persistent());
-                stats.dynamicArenaUploadPath(vertexBytes + (long) indexBytes, arena.persistentMappedWrites());
-                GpuMeshHandle handle = allocation.toHandle(mesh);
-                handle.validateForDraw("dynamic mesh upload");
-                return handle;
-            } catch (RuntimeException ex) {
-                if (!ALLOW_IMMEDIATE_FALLBACK) throw ex;
-                return emergencyImmediateFallback(mesh, vertexBytes, indexBytes, ex);
-            }
+            ensurePersistentArenas();
+            Blaze3dMeshArena arena = selectArena(vertexBytes, indexBytes, vertexStride);
+            Blaze3dMeshAllocation allocation = arena.allocate(vertexBytes, indexBytes, vertexStride);
+            allocation.write(mesh);
+            stats.meshUpload(vertexBytes, indexBytes);
+            stats.dynamicArenaAllocation(vertexBytes, indexBytes, arena.persistent());
+            stats.dynamicArenaUploadPath(vertexBytes + (long) indexBytes, arena.persistentMappedWrites());
+            GpuMeshHandle handle = allocation.toHandle(mesh);
+            handle.validateForDraw("dynamic mesh upload");
+            return handle;
         }
     }
 
@@ -194,20 +186,6 @@ public final class Blaze3dDynamicMeshBackend implements DynamicMeshBackend {
         if (!activeArenas.contains(arena)) {
             activeArenas.add(arena);
         }
-    }
-
-    private GpuMeshHandle emergencyImmediateFallback(MeshBuilder mesh, int vertexBytes, int indexBytes, RuntimeException cause) {
-        stats.immediateFallbackUpload(vertexBytes, indexBytes);
-        stats.temporaryOwnedMesh();
-        return new GpuMeshHandle(
-                mesh.getVertexBuffer(),
-                mesh.getIndexBuffer(),
-                0L,
-                0,
-                mesh.getIndicesCount(),
-                mesh.getIndexType(),
-                MeshOwnership.TEMPORARY_OWNED
-        );
     }
 
     @Override

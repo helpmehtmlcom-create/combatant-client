@@ -7,6 +7,7 @@
 
 package combatant.client.features.module.modules.visuals;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.config.values.*;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
@@ -39,8 +40,6 @@ import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.renderer.ui.ItemBatchRenderer;
 import combatant.client.render.engine.text.TextRenderer;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.RuntimeTextLayout;
 import combatant.client.render.engine.text.VanillaTextRenderer;
 import combatant.client.render.engine.text.WorldTextRenderer;
@@ -484,7 +483,7 @@ public class DropESP extends Module {
     }
 
     private static TextRenderer dropLabelRenderer(TextRenderer fallback) {
-        return Fonts.renderer("InterMedium", FontInfo.Type.Regular, fallback);
+        return BuiltinFontCatalog.INTER_MEDIUM.renderer(fallback);
     }
 
     private static Component formatReferenceItemLabel(ItemStack stack) {

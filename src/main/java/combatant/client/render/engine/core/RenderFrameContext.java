@@ -23,12 +23,6 @@ public record RenderFrameContext(long frameId, float tickProgress, float frameDe
                                  SodiumFrameContext sodium) {
     private static final float TICKS_PER_SECOND = 20.0f;
 
-    /**
-     * Legacy alias for render interpolation progress.
-     */
-    public float tickDelta() {
-        return tickProgress;
-    }
 
     /**
      * Fractional progress inside the current game tick, used for world/entity interpolation.

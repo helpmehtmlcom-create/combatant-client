@@ -28,9 +28,4 @@ public record RhiResourceBarrier(Stage sourceStage,
         images = images == null || images.isEmpty() ? List.of() : List.copyOf(images);
     }
 
-    /** Compatibility overload for buffer-only dependencies. */
-    public RhiResourceBarrier(Stage sourceStage, Access sourceAccess, Stage destinationStage, Access destinationAccess,
-                              List<RhiStorageBuffer> buffers) {
-        this(sourceStage, sourceAccess, destinationStage, destinationAccess, buffers, List.of());
-    }
 }

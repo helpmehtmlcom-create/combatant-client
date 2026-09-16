@@ -7,14 +7,13 @@
 
 package combatant.client.features.gui.clickgui.settings;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 
 import combatant.client.features.theme.Theme;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.theme.Themes;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.svg.SvgRenderOptions;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 
 enum ModulesSettingsSkin {
@@ -64,19 +63,19 @@ enum ModulesSettingsSkin {
     }
 
     static TextRenderer fontRegular() {
-        return Fonts.renderer("Onest", FontInfo.Type.Regular);
+        return BuiltinFontCatalog.ONEST_REGULAR.renderer();
     }
 
     static TextRenderer fontMedium() {
-        return Fonts.renderer("OnestMedium", FontInfo.Type.Regular);
+        return BuiltinFontCatalog.ONEST_MEDIUM.renderer();
     }
 
     static TextRenderer fontSemibold() {
-        return Fonts.renderer("OnestBold", FontInfo.Type.Regular);
+        return BuiltinFontCatalog.ONEST_BOLD.renderer();
     }
 
     static TextRenderer fontLight() {
-        return Fonts.renderer("OnestLight", FontInfo.Type.Regular);
+        return BuiltinFontCatalog.ONEST_LIGHT.renderer();
     }
 
     static boolean inside(double mx, double my, float x, float y, float w, float h) {

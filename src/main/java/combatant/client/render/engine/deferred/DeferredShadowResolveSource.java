@@ -36,11 +36,8 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Produces canonical directional-shadow visibility in two backend-neutral steps.
- *
- * <p>The cascade atlas is first resolved into a raw visibility source. Contact visibility is an
- * independent optional source. A final combine pass publishes {@link DeferredResource#SHADOW_COLOR}
- * without baking filtering/softness/color policy into either producer.</p>
+ * Resolves directional CSM into canonical scalar visibility, then combines optional contact shadow.
+ * Filtering/bias remain geometric visibility policy and never encode color or art direction.
  */
 final class DeferredShadowResolveSource implements AutoCloseable {
     private static final int LOCAL_SIZE = 8;
@@ -52,14 +49,18 @@ final class DeferredShadowResolveSource implements AutoCloseable {
             .member("inverseView", Std430Type.MAT4)
             .member("depthTransform", Std430Type.VEC4)
             .member("viewportAndFar", Std430Type.VEC4)
+            .member("shadowParams0", Std430Type.VEC4)
+            .member("shadowParams1", Std430Type.VEC4)
             .build();
 
     private static final ShaderResourceLayout CASCADE_LAYOUT = new ShaderResourceLayout(List.of(
             new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(1, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
-            new ShaderResourceSlot(2, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
-            new ShaderResourceSlot(3, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
-            new ShaderResourceSlot(4, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
+            new ShaderResourceSlot(2, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(3, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(4, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
+            new ShaderResourceSlot(5, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(6, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
     ));
     private static final ShaderResourceLayout COMBINE_LAYOUT = new ShaderResourceLayout(List.of(
             new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
@@ -74,12 +75,15 @@ final class DeferredShadowResolveSource implements AutoCloseable {
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.shadow.cascade.resolve", DeferredStage.SHADOW_CASCADE_RESOLVE)
-                .read(DeferredResource.RESOLVED_DEPTH, DeferredResource.SHADOW_DEPTH,
+                .read(DeferredResource.RESOLVED_DEPTH, DeferredResource.GBUFFER_DEPTH,
+                        DeferredResource.GBUFFER_GEOMETRY, DeferredResource.SHADOW_DEPTH,
                         DeferredResource.SHADOW_CASCADE_DATA)
                 .write(DeferredResource.SHADOW_CASCADE_VISIBILITY)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.settings().shadowsEnabled()
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
+                        && context.isValid(DeferredResource.GBUFFER_DEPTH)
+                        && context.resources().texture(DeferredResource.GBUFFER_GEOMETRY) != null
                         && context.isValid(DeferredResource.SHADOW_DEPTH)
                         && context.isValid(DeferredResource.SHADOW_CASCADE_DATA)
                         && context.primaryView().current() != null)
@@ -115,11 +119,14 @@ final class DeferredShadowResolveSource implements AutoCloseable {
         if (current == null) return;
 
         GpuTextureView resolvedDepth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
+        GpuTextureView geometry = requireTexture(context, DeferredResource.GBUFFER_GEOMETRY);
+        GpuTextureView gbufferDepth = requireTexture(context, DeferredResource.GBUFFER_DEPTH);
         GpuTextureView shadowDepth = requireTexture(context, DeferredResource.SHADOW_DEPTH);
         RhiStorageImage output = requireImage(context, DeferredResource.SHADOW_CASCADE_VISIBILITY);
         RhiStorageBuffer cascades = context.resources().buffer(DeferredResource.SHADOW_CASCADE_DATA);
         if (cascades == null) throw new IllegalStateException("Shadow cascade metadata is not bound");
 
+        DeferredRuntimeConfig.Snapshot settings = context.settings();
         boolean zeroToOne = isVulkan(context);
         Std430Writer camera = new Std430Writer(CAMERA_LAYOUT, 1)
                 .putMat4(0, "inverseProjection", current.inverseProjection())
@@ -130,26 +137,38 @@ final class DeferredShadowResolveSource implements AutoCloseable {
                         zeroToOne ? 1.0f : 0.5f,
                         zeroToOne ? 0.0f : 0.5f)
                 .putVec4(0, "viewportAndFar",
-                        resolvedDepth.getWidth(0), resolvedDepth.getHeight(0), current.farPlane(), 0.0f);
+                        resolvedDepth.getWidth(0), resolvedDepth.getHeight(0), current.farPlane(), 0.0f)
+                .putVec4(0, "shadowParams0",
+                        settings.shadowCascadeBlendFraction(),
+                        settings.shadowNormalOffsetTexels(),
+                        settings.shadowReceiverBiasTexels(),
+                        settings.shadowFilterRadiusTexels())
+                .putVec4(0, "shadowParams1",
+                        settings.shadowBlockerSearchRadiusTexels(),
+                        settings.shadowPenumbraScaleTexels(),
+                        settings.shadowMaxPenumbraTexels(),
+                        0.0f);
         RhiStorageBuffer cameraBuffer = cameraBuffer();
         cameraBuffer.upload(camera.buffer(), 0L);
 
         GpuSampler nearest = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
         context.advancedShaders().dispatch(new ComputeDispatchCommand(
-                "Combatant shadow cascade resolve",
+                "Combatant directional CSM resolve",
                 cascadePipeline(),
                 groups(output.descriptor().width()),
                 groups(output.descriptor().height()),
                 1,
                 List.of(
-                        new StorageBinding(3, cascades, 0L, cascades.descriptor().byteSize(), StorageAccess.READ_ONLY),
-                        new StorageBinding(4, cameraBuffer, 0L, camera.byteSize(), StorageAccess.READ_ONLY)
+                        new StorageBinding(5, cascades, 0L, cascades.descriptor().byteSize(), StorageAccess.READ_ONLY),
+                        new StorageBinding(6, cameraBuffer, 0L, camera.byteSize(), StorageAccess.READ_ONLY)
                 ),
                 List.of(
                         new SampledTextureBinding(0, resolvedDepth, nearest),
-                        new SampledTextureBinding(1, shadowDepth, nearest)
+                        new SampledTextureBinding(1, shadowDepth, nearest),
+                        new SampledTextureBinding(2, geometry, nearest),
+                        new SampledTextureBinding(3, gbufferDepth, nearest)
                 ),
-                List.of(new StorageImageBinding(2, output, StorageAccess.WRITE_ONLY))
+                List.of(new StorageImageBinding(4, output, StorageAccess.WRITE_ONLY))
         ));
     }
 

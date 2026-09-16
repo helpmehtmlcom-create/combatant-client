@@ -37,10 +37,9 @@ import java.util.List;
 /**
  * Edge-aware spatial resolve for temporally stabilized reflections.
  *
- * <p>This stage consumes only contracts that already exist: resolved depth,
- * geometric normal and reflection confidence. Material roughness is not inferred from color or
- * any other rendered result; once the material/G-buffer contract exposes roughness it can be added
- * to this filter explicitly.</p>
+ * <p>This stage consumes explicit resolved depth, geometric normal, material roughness and
+ * reflection confidence contracts. Roughness controls the integration footprint; it is never
+ * inferred from reflected color.</p>
  */
 final class DeferredReflectionDenoiseSource implements AutoCloseable {
     private static final int LOCAL_SIZE = 8;
@@ -57,7 +56,8 @@ final class DeferredReflectionDenoiseSource implements AutoCloseable {
             new ShaderResourceSlot(3, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(4, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
             new ShaderResourceSlot(5, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
-            new ShaderResourceSlot(6, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
+            new ShaderResourceSlot(6, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(7, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY)
     ));
 
     private CombatantRhi owner;
@@ -69,6 +69,7 @@ final class DeferredReflectionDenoiseSource implements AutoCloseable {
                 .read(DeferredResource.REFLECTION_TEMPORAL_COLOR,
                         DeferredResource.REFLECTION_TEMPORAL_CONFIDENCE,
                         DeferredResource.GBUFFER_GEOMETRY,
+                        DeferredResource.GBUFFER_MATERIAL,
                         DeferredResource.RESOLVED_DEPTH)
                 .write(DeferredResource.REFLECTION_COLOR, DeferredResource.REFLECTION_CONFIDENCE)
                 .requires(RhiShaderStage.COMPUTE)
@@ -76,7 +77,8 @@ final class DeferredReflectionDenoiseSource implements AutoCloseable {
                         && context.isValid(DeferredResource.REFLECTION_TEMPORAL_COLOR)
                         && context.isValid(DeferredResource.REFLECTION_TEMPORAL_CONFIDENCE)
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
-                        && context.resources().texture(DeferredResource.GBUFFER_GEOMETRY) != null)
+                        && context.resources().texture(DeferredResource.GBUFFER_GEOMETRY) != null
+                        && context.resources().texture(DeferredResource.GBUFFER_MATERIAL) != null)
                 .execute(this::denoise)
                 .build());
     }
@@ -99,6 +101,7 @@ final class DeferredReflectionDenoiseSource implements AutoCloseable {
         GpuTextureView inputColor = requireTexture(context, DeferredResource.REFLECTION_TEMPORAL_COLOR);
         GpuTextureView inputConfidence = requireTexture(context, DeferredResource.REFLECTION_TEMPORAL_CONFIDENCE);
         GpuTextureView geometry = requireTexture(context, DeferredResource.GBUFFER_GEOMETRY);
+        GpuTextureView material = requireTexture(context, DeferredResource.GBUFFER_MATERIAL);
         GpuTextureView depth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
         RhiStorageImage outputColor = requireImage(context, DeferredResource.REFLECTION_COLOR);
         RhiStorageImage outputConfidence = requireImage(context, DeferredResource.REFLECTION_CONFIDENCE);
@@ -127,7 +130,8 @@ final class DeferredReflectionDenoiseSource implements AutoCloseable {
                         new SampledTextureBinding(0, inputColor, linear),
                         new SampledTextureBinding(1, inputConfidence, nearest),
                         new SampledTextureBinding(2, geometry, nearest),
-                        new SampledTextureBinding(3, depth, nearest)
+                        new SampledTextureBinding(3, depth, nearest),
+                        new SampledTextureBinding(7, material, nearest)
                 ),
                 List.of(
                         new StorageImageBinding(4, outputColor, StorageAccess.WRITE_ONLY),

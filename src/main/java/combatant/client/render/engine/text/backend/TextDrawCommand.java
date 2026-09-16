@@ -43,11 +43,6 @@ public record TextDrawCommand(TextRenderer renderer,
         return new Builder(text);
     }
 
-    /** @deprecated Use placement; it is the authoritative render domain. */
-    @Deprecated
-    public TextRenderDomain domain() {
-        return placement != null ? placement.legacyDomain() : TextRenderDomain.UI;
-    }
 
     public RenderColor color() {
         return new RenderColor(argb);

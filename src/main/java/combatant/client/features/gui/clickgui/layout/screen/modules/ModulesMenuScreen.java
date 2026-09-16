@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.clickgui.layout.screen.modules;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.config.MainConfig;
 import combatant.client.render.engine.renderer.RenderWarpStack;
 import net.minecraft.client.Minecraft;
@@ -27,7 +28,6 @@ import combatant.client.features.gui.clickgui.util.ClickGuiI18n;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.svg.SvgRenderOptions;
-import combatant.client.render.engine.text.FontInfo;
 import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.helpers.ClipFunction;
@@ -1024,9 +1024,9 @@ public final class ModulesMenuScreen {
             fontGeneration = generation;
         }
         if (regular == null)
-            regular = Fonts.renderer("Onest", FontInfo.Type.Regular, ClickGuiRenderer.getInterRegular());
-        if (medium == null) medium = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, regular);
-        if (semibold == null) semibold = Fonts.renderer("OnestBold", FontInfo.Type.Regular, medium);
+            regular = BuiltinFontCatalog.ONEST_REGULAR.renderer(ClickGuiRenderer.getInterRegular());
+        if (medium == null) medium = BuiltinFontCatalog.ONEST_MEDIUM.renderer(regular);
+        if (semibold == null) semibold = BuiltinFontCatalog.ONEST_BOLD.renderer(medium);
     }
 
     private String bindingLabel(ModuleComponent.CardEntry entry) {

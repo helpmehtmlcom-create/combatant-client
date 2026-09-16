@@ -24,11 +24,4 @@ public record TextCommandStatsSnapshot(int recorded,
                                        int directAdjacentBatchedCommands,
                                        long uploadedVertexBytes,
                                        long uploadedIndexBytes) {
-    /**
-     * Compatibility alias for old profiler labels.
-     */
-    @Deprecated
-    public int world() {
-        return worldPlacements;
-    }
 }

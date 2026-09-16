@@ -21,7 +21,6 @@ public enum UiBatchType {
     MAIN_MENU_HONEYCOMB(CombatantRenderPipelines.UI_MAIN_MENU_HONEYCOMB_BATCH, true, true),
     ROUNDED_STROKE_ANGULAR(CombatantRenderPipelines.UI_ROUNDED_STROKE_ANGULAR_BATCH, true, false),
     PATH(CombatantRenderPipelines.UI_PATH_BATCH, CombatantRenderPipelines.UI_PATH_BATCH_ANALYTIC_CLIP, true, false),
-    WAVE(CombatantRenderPipelines.UI_WAVE_BATCH, CombatantRenderPipelines.UI_WAVE_BATCH_ANALYTIC_CLIP, true, false),
     SHAPE(CombatantRenderPipelines.UI_SHAPE_BATCH, CombatantRenderPipelines.UI_SHAPE_BATCH_ANALYTIC_CLIP, true, false),
     PRIMITIVE(CombatantRenderPipelines.UI_PRIMITIVE_BATCH, true, false),
     GLOW(CombatantRenderPipelines.UI_GLOW_BATCH, true, false),

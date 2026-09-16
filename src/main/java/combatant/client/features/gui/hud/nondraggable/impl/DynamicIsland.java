@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.hud.nondraggable.impl;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.util.resources.asset.UiScriptAsset;
 import combatant.client.util.screen.ClientScreen;
 import net.minecraft.client.Minecraft;
@@ -54,8 +55,6 @@ import combatant.client.render.engine.renderer.ui.runtime.script.UiScriptPatchSe
 import combatant.client.render.engine.renderer.ui.runtime.script.UiScriptProps;
 import combatant.client.render.engine.renderer.ui.runtime.script.UiScriptModule;
 import combatant.client.render.engine.renderer.ui.runtime.script.UiScriptModuleHandle;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.runtime.RuntimeGate;
 import combatant.client.util.media.MediaSessionService;
@@ -635,9 +634,9 @@ public final class DynamicIsland extends AbstractHudElement {
 
         updatePalette();
         TextRenderer fallback = textRenderer != null ? textRenderer : TextRenderer.get();
-        TextRenderer titleRenderer = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, fallback);
-        TextRenderer valueRenderer = Fonts.renderer("MatrixSansPrint", FontInfo.Type.Regular, fallback);
-        TextRenderer metaRenderer = Fonts.renderer("Onest", FontInfo.Type.Regular, fallback);
+        TextRenderer titleRenderer = BuiltinFontCatalog.ONEST_MEDIUM.renderer(fallback);
+        TextRenderer valueRenderer = BuiltinFontCatalog.MATRIX_SANS_PRINT.renderer(fallback);
+        TextRenderer metaRenderer = BuiltinFontCatalog.ONEST_REGULAR.renderer(fallback);
 
         IslandMetrics metrics = measureMetrics(titleRenderer, valueRenderer);
         float targetMainWidth = switch (currentMode) {

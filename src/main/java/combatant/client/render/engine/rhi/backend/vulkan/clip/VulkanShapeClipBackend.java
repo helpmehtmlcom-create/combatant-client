@@ -101,21 +101,6 @@ public final class VulkanShapeClipBackend implements ShapeClipBackend, AutoClose
         }
     }
 
-    @Override
-    public boolean prepareMainTarget() {
-        return supported();
-    }
-
-    @Override
-    public boolean prepare(@Nullable GpuTextureView colorView, @Nullable GpuTextureView depthView) {
-        return supported();
-    }
-
-    @Override
-    public boolean clearMainTarget() {
-        requestClear("manual clearMainTarget");
-        return supported();
-    }
 
     @Override
     public void beginWrite(int parentReference, int newReference) {

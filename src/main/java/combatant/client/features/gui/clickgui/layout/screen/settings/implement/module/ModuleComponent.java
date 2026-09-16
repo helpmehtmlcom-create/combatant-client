@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.clickgui.layout.screen.settings.implement.module;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.render.engine.renderer.RenderWarpStack;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.gui.clickgui.sound.GuiSound;
@@ -22,8 +23,6 @@ import combatant.client.features.gui.clickgui.util.ClickGuiI18n;
 import combatant.client.features.gui.clickgui.util.ClickGuiMath;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.helpers.ScissorFunction;
 import combatant.client.render.helpers.SystemCursor;
@@ -325,7 +324,7 @@ public final class ModuleComponent {
         StringBuilder line = new StringBuilder();
         int currentLine = 1;
         float textSize = 10f * scale;
-        TextRenderer icons = Fonts.renderer("Icons", FontInfo.Type.Regular, ClickGuiRenderer.getInterRegular());
+        TextRenderer icons = BuiltinFontCatalog.ICONS.renderer(ClickGuiRenderer.getInterRegular());
         int iconColor = palette.moduleDescriptionIcon();
         int textColor = palette.moduleDescriptionText();
 

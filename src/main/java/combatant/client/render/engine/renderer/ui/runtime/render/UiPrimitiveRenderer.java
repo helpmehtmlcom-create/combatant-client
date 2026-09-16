@@ -1210,24 +1210,6 @@ public final class UiPrimitiveRenderer {
                     }
                 }
             }
-            case "wave", "waveform" -> {
-                double span = Math.abs(x2 - x1);
-                if (span >= 0.25) {
-                    double center = bounds.y() + props.number("centerY", bounds.height() * 0.5f);
-                    double amplitude = Math.max(0.0, props.number("amplitude", Math.max(1.0f, bounds.height() * 0.30f)));
-                    double phase = props.number("phase", 0.0f);
-                    double wavelength = Math.max(1.0, props.number("wavelength", 14.0f));
-                    double harmonic = Math.max(0.0, Math.min(0.45, props.number("harmonic", 0.12f)));
-                    double edgeFadePx = Math.max(0.0, props.number("edgeFade", Math.min(4.0f, (float) span * 0.18f)));
-                    if (gradient) {
-                        renderer.analyticWaveGradient(x1, x2, center, amplitude, thickness, wavelength,
-                                phase, harmonic, edgeFadePx, start, end);
-                    } else {
-                        renderer.analyticWave(x1, x2, center, amplitude, thickness, wavelength,
-                                phase, harmonic, edgeFadePx, stroke);
-                    }
-                }
-            }
             case "spline-area", "spline_area", "area-spline", "area_spline" -> {
                 int count = readPoints(props.get("points"), bounds.x(), bounds.y());
                 if (count >= 2) {
@@ -1238,10 +1220,6 @@ public final class UiPrimitiveRenderer {
                     int bottomEnd = color(props.get("fillBottomEndColor"), fillEnd & 0x00FFFFFF);
                     renderer.splineAreaGradient(points, count, baseline, fillStart, fillEnd, bottomStart, bottomEnd);
                 }
-            }
-            case "wire" -> {
-                if (gradient) renderer.wireGradient(x1, y1, x2, y2, thickness, start, end);
-                else renderer.wire(x1, y1, x2, y2, thickness, stroke);
             }
             default -> {
                 if (gradient) renderer.connectorGradient(x1, y1, x2, y2, thickness, start, end);

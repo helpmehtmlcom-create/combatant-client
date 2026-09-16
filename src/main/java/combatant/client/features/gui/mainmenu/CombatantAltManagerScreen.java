@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.mainmenu;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 
 import combatant.client.features.theme.Theme;
 import combatant.client.util.screen.ClientScreen;
@@ -43,8 +44,6 @@ import combatant.client.render.engine.renderer.ui.draw.UiPaint;
 import combatant.client.render.engine.renderer.ui.draw.UiPrimitive;
 import combatant.client.render.engine.renderer.ui.draw.UiStroke;
 import combatant.client.render.engine.svg.SvgRenderOptions;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.helpers.PlayerHeadRenderer;
 import combatant.client.render.helpers.ScissorFunction;
@@ -180,11 +179,11 @@ public final class CombatantAltManagerScreen extends Screen {
 
     @Override
     protected void init() {
-        titleRenderer = Fonts.renderer("OnestBold", FontInfo.Type.Regular, TextRenderer.get());
-        bodyRenderer = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, titleRenderer);
-        menuIconRenderer = Fonts.renderer("MainMenuIcons", FontInfo.Type.Regular, TextRenderer.get());
-        guiIconRenderer = Fonts.renderer("GuiIcons", FontInfo.Type.Regular, menuIconRenderer);
-        iconRenderer = Fonts.renderer("RichIcons", FontInfo.Type.Regular, menuIconRenderer);
+        titleRenderer = BuiltinFontCatalog.ONEST_BOLD.renderer(TextRenderer.get());
+        bodyRenderer = BuiltinFontCatalog.ONEST_MEDIUM.renderer(titleRenderer);
+        menuIconRenderer = BuiltinFontCatalog.MAIN_MENU_ICONS.renderer(TextRenderer.get());
+        guiIconRenderer = BuiltinFontCatalog.GUI_ICONS.renderer(menuIconRenderer);
+        iconRenderer = BuiltinFontCatalog.RICH_ICONS.renderer(menuIconRenderer);
     }
 
     @Override

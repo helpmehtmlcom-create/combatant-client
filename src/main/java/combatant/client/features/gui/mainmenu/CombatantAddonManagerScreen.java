@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.mainmenu;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 
 import combatant.client.features.theme.Theme;
 import combatant.client.addon.AddonIssue;
@@ -25,8 +26,6 @@ import combatant.client.render.engine.renderer.ui.draw.UiPaint;
 import combatant.client.render.engine.renderer.ui.draw.UiPrimitive;
 import combatant.client.render.engine.renderer.ui.draw.UiStroke;
 import combatant.client.render.engine.svg.SvgRenderOptions;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.helpers.ScissorFunction;
 import combatant.client.util.screen.ClientScreen;
@@ -136,8 +135,8 @@ public final class CombatantAddonManagerScreen extends Screen {
 
     @Override
     protected void init() {
-        titleRenderer = Fonts.renderer("Inter", FontInfo.Type.Bold, TextRenderer.get());
-        bodyRenderer = Fonts.renderer("InterMedium", FontInfo.Type.Regular, titleRenderer);
+        titleRenderer = BuiltinFontCatalog.INTER_BOLD.renderer(TextRenderer.get());
+        bodyRenderer = BuiltinFontCatalog.INTER_MEDIUM.renderer(titleRenderer);
         ensureSelection();
     }
 

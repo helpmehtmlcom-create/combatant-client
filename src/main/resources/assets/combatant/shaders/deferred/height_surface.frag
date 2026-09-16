@@ -22,8 +22,8 @@ layout(location = 3) out vec4 outAuxiliary;
 layout(location = 4) out vec4 outMaterial;
 layout(location = 5) out uint outMaterialId;
 
-float unpack8(uint packed, uint shift) {
-    return float((packed >> shift) & 255u) / 255.0;
+float unpack8(uint packedValue, uint shift) {
+    return float((packedValue >> shift) & 255u) / 255.0;
 }
 vec2 encodeOct(vec3 n) {
     n /= abs(n.x) + abs(n.y) + abs(n.z);

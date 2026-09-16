@@ -30,6 +30,7 @@ import java.util.function.Supplier;
 public final class SodiumSecondaryTerrainContext {
     public enum Purpose {
         SHADOW_DEPTH,
+        LOCAL_LIGHT_SHADOW,
         REFLECTION_CAPTURE
     }
 

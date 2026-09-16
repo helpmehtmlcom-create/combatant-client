@@ -55,7 +55,7 @@ public final class MaterialRegistry {
         }
 
         Map<DescriptorKey, ExplicitDescriptor> explicit = loadExplicitDescriptors(resources);
-        snapshot = new Snapshot(Set.copyOf(available), Map.copyOf(explicit), new HashMap<>());
+        snapshot = new Snapshot(Set.copyOf(available), Map.copyOf(explicit), new HashMap<>(), new HashMap<>());
         DebugLog.renderThread("[Materials] registry reload: textures=%d explicitDescriptors=%d",
                 available.size(), explicit.size());
     }
@@ -114,6 +114,7 @@ public final class MaterialRegistry {
         MaterialResolutionSource source;
         Scalars scalars;
         MaterialTessellationProfile tessellation;
+        MaterialWeatherResponse weatherResponse;
 
         if (explicit != null) {
             classification = explicit.applyClassification(producer);
@@ -122,10 +123,14 @@ public final class MaterialRegistry {
             tessellation = explicit.tessellation != null
                     ? explicit.tessellation
                     : defaultTessellation(classification.domain());
+            weatherResponse = explicit.weatherResponse != null
+                    ? explicit.weatherResponse
+                    : MaterialWeatherResponse.NONE;
             source = MaterialResolutionSource.EXPLICIT_DESCRIPTOR;
         } else {
             scalars = defaultScalars(classification);
             tessellation = defaultTessellation(classification.domain());
+            weatherResponse = MaterialWeatherResponse.NONE;
             boolean labPbr = maps.containsKey(MaterialTextureSemantic.LABPBR_NORMAL)
                     || maps.containsKey(MaterialTextureSemantic.LABPBR_SPECULAR);
             if (classification.source() == MaterialResolutionSource.TAG) {
@@ -143,7 +148,7 @@ public final class MaterialRegistry {
 
         int stableId = stableId32(spriteId, classification);
         if (stableId == DEFAULT_ID) stableId = 1;
-        return new MaterialSurfaceDescriptor(
+        MaterialSurfaceDescriptor descriptor = new MaterialSurfaceDescriptor(
                 stableId,
                 spriteId,
                 classification.domain(),
@@ -163,8 +168,21 @@ public final class MaterialRegistry {
                 scalars.clearcoatRoughness,
                 scalars.porosity,
                 scalars.thickness,
+                weatherResponse,
                 tessellation
         );
+        synchronized (state.weatherResponses) {
+            state.weatherResponses.put(stableId, weatherResponse);
+        }
+        return descriptor;
+    }
+
+    /** Exact weather-response descriptors keyed by the stable material ID written to G-buffer. */
+    public Map<Integer, MaterialWeatherResponse> weatherResponsesSnapshot() {
+        Snapshot state = snapshot;
+        synchronized (state.weatherResponses) {
+            return Map.copyOf(state.weatherResponses);
+        }
     }
 
     private static MaterialSurfaceDescriptor fallback(MaterialClassification classification) {
@@ -190,6 +208,7 @@ public final class MaterialRegistry {
                 scalars.clearcoatRoughness,
                 scalars.porosity,
                 scalars.thickness,
+                MaterialWeatherResponse.NONE,
                 defaultTessellation(resolved.domain())
         );
     }
@@ -307,6 +326,21 @@ public final class MaterialRegistry {
             }
         }
 
+        MaterialWeatherResponse weatherResponse = null;
+        if (json.has("weatherResponse")) {
+            JsonObject weather = json.getAsJsonObject("weatherResponse");
+            weatherResponse = new MaterialWeatherResponse(
+                    floatOr(weather, "wetLayerStrength", 0.0f),
+                    floatOr(weather, "absorptionRate", 0.0f),
+                    floatOr(weather, "dryingRate", 0.0f),
+                    floatOr(weather, "runoffRate", 0.0f),
+                    floatOr(weather, "puddleCapacity", 0.0f),
+                    floatOr(weather, "snowRetention", 0.0f),
+                    floatOr(weather, "particulateRetention", 0.0f),
+                    floatOr(weather, "particulateWashOffRate", 1.0f)
+            );
+        }
+
         return new ExplicitDescriptor(
                 source, sprite, domain, matchDomain, route, traitMask, traitsDeclared, textureOverrides,
                 optionalFloat(json, "ambientOcclusion"), optionalFloat(json, "roughness"),
@@ -314,7 +348,7 @@ public final class MaterialRegistry {
                 optionalFloat(json, "emission"), optionalFloat(json, "heightScale"),
                 optionalFloat(json, "transmission"), optionalFloat(json, "subsurface"),
                 optionalFloat(json, "clearcoat"), optionalFloat(json, "clearcoatRoughness"),
-                optionalFloat(json, "porosity"), optionalFloat(json, "thickness"), tess
+                optionalFloat(json, "porosity"), optionalFloat(json, "thickness"), weatherResponse, tess
         );
     }
 
@@ -418,6 +452,7 @@ public final class MaterialRegistry {
             Float clearcoatRoughness,
             Float porosity,
             Float thickness,
+            MaterialWeatherResponse weatherResponse,
             MaterialTessellationProfile tessellation
     ) {
         MaterialClassification applyClassification(MaterialClassification producer) {
@@ -470,7 +505,8 @@ public final class MaterialRegistry {
 
     private record Snapshot(Set<Identifier> available,
                             Map<DescriptorKey, ExplicitDescriptor> explicit,
-                            Map<CacheKey, MaterialSurfaceDescriptor> cache) {
-        private static final Snapshot EMPTY = new Snapshot(Set.of(), Map.of(), new HashMap<>());
+                            Map<CacheKey, MaterialSurfaceDescriptor> cache,
+                            Map<Integer, MaterialWeatherResponse> weatherResponses) {
+        private static final Snapshot EMPTY = new Snapshot(Set.of(), Map.of(), new HashMap<>(), new HashMap<>());
     }
 }

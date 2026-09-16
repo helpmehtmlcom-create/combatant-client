@@ -59,8 +59,8 @@ public final class DeferredResourceAllocator implements AutoCloseable {
         owner = rhi;
 
         DeferredTextureSpec spec = resource.textureSpec();
-        int width = spec.resolution().width(fullWidth, settings);
-        int height = spec.resolution().height(fullHeight, settings);
+        int width = spec.width(fullWidth, settings);
+        int height = spec.height(fullHeight, settings);
         int samples = spec.samples() == DeferredTextureSpec.SamplePolicy.MATCH_SCENE
                 ? Math.max(1, sceneSamples) : 1;
         int mipLevels = spec.mipChain()

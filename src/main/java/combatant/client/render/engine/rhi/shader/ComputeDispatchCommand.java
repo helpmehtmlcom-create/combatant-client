@@ -34,9 +34,4 @@ public record ComputeDispatchCommand(String label,
                 : List.copyOf(storageImages);
     }
 
-    /** Compatibility overload for SSBO-only kernels. */
-    public ComputeDispatchCommand(String label, RhiComputePipeline pipeline, int groupsX, int groupsY, int groupsZ,
-                                  List<StorageBinding> storageBindings) {
-        this(label, pipeline, groupsX, groupsY, groupsZ, storageBindings, List.of(), List.of());
-    }
 }

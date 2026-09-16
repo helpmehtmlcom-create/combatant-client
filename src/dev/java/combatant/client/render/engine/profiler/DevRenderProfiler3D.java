@@ -199,18 +199,15 @@ public enum DevRenderProfiler3D {
             ));
         }
 
-        if (rhi.ringWraps() > 0 || rhi.ringStalls() > 0 || rhi.immediateFallbackUploads() > 0) {
+        if (rhi.ringWraps() > 0 || rhi.ringStalls() > 0 || rhi.dynamicArenaBacklogEvents() > 0) {
             lines.add(String.format(
-                    "rhi upload: wraps %d, stalls %d, immediateFallback %d, arena reuse/retire %d/%d",
+                    "rhi upload: wraps %d, stalls %d, backlog %d, arena reuse/retire %d/%d",
                     rhi.ringWraps(),
                     rhi.ringStalls(),
-                    rhi.immediateFallbackUploads(),
+                    rhi.dynamicArenaBacklogEvents(),
                     rhi.dynamicArenaReuses(),
                     rhi.dynamicArenaRetires()
             ));
-        }
-        if (rhi.legacyPathUses() > 0) {
-            lines.add("rhi legacy paths: " + rhi.legacyPathUses() + " " + rhi.legacyPathBreakdown());
         }
         if (uniforms.writes() > 0 || uniforms.ringRotations() > 0 || uniforms.staleReadMisses() > 0) {
             lines.add(String.format(

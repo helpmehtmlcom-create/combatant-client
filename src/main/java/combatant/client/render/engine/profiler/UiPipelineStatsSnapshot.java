@@ -32,10 +32,10 @@ public record UiPipelineStatsSnapshot(
         int directPasses,
         int itemPasses,
         int mixedItemPasses,
-        int legacyPasses,
-        int legacyMixedItems,
-        int legacyBlurCapture,
-        int legacyPreparedGlass,
-        int legacyUnsupported
+        int captureAwarePasses,
+        int captureAwareMixedItems,
+        int captureAwareBlurCapture,
+        int captureAwarePreparedGlass,
+        int captureAwareUnsupported
 ) {
 }

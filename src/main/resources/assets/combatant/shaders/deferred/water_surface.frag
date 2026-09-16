@@ -25,8 +25,8 @@ layout(location = 7) flat in uint te_Surface;
 
 layout(location = 0) out vec4 outColor;
 
-float unpack8(uint packed, uint shift) {
-    return float((packed >> shift) & 255u) / 255.0;
+float unpack8(uint packedValue, uint shift) {
+    return float((packedValue >> shift) & 255u) / 255.0;
 }
 
 void main() {

@@ -25,6 +25,6 @@ public record DeferredOrderedSubmit(Deferred2DLayer layer, ViewportContext viewp
 
     @Override
     public void release() {
-        Renderer2D.releaseDeferredBatcher(batcher);
+        UiDeferredScheduler.releaseBatcher(batcher);
     }
 }

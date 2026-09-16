@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.clickgui.layout.screen.settings;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 
 import combatant.client.features.theme.Theme;
 import combatant.client.config.MainConfig;
@@ -33,8 +34,6 @@ import combatant.client.features.gui.clickgui.util.ClickGuiHintOverlay;
 import combatant.client.features.gui.clickgui.util.ClickGuiI18n;
 import combatant.client.features.theme.EditableClickGuiTheme;
 import combatant.client.render.engine.animation.AnimationUtility;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 
 import java.nio.file.Path;
@@ -499,7 +498,7 @@ public final class MenuScreen {
         );
 
         if (category.iconToken()) {
-            TextRenderer icons = Fonts.renderer("Icons", FontInfo.Type.Regular, ClickGuiRenderer.getInterRegular());
+            TextRenderer icons = BuiltinFontCatalog.ICONS.renderer(ClickGuiRenderer.getInterRegular());
             float iconSize = 11.5f * S;
             float textSize = 11.5f * S;
             float baseX = shellX + 50f * S;

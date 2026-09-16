@@ -37,6 +37,8 @@ public enum PickerCatalogFactory {
     private static final Comparator<PickerEntryData> ENTRY_ORDER = Comparator
             .comparing((PickerEntryData e) -> e == null || e.label() == null ? "" : e.label(), String.CASE_INSENSITIVE_ORDER)
             .thenComparing((PickerEntryData e) -> e == null || e.id() == null ? "" : e.id(), String.CASE_INSENSITIVE_ORDER);
+    // PARTICLES is intentionally dynamic: ParticleClassCatalog learns implementations from
+    // ParticleEngine.add(), so caching its first (usually startup-empty) snapshot loses all later observations.
     private static final EnumSet<TextListSetting.PickerMode> ASYNC_MODES = EnumSet.of(
             TextListSetting.PickerMode.BLOCKS,
             TextListSetting.PickerMode.ITEMS,
@@ -45,8 +47,7 @@ public enum PickerCatalogFactory {
             TextListSetting.PickerMode.ALL,
             TextListSetting.PickerMode.SOUNDS,
             TextListSetting.PickerMode.LIVING_ENTITIES,
-            TextListSetting.PickerMode.ENTITIES,
-            TextListSetting.PickerMode.PARTICLES
+            TextListSetting.PickerMode.ENTITIES
     );
     private static final Map<TextListSetting.PickerMode, CompletableFuture<List<PickerEntryData>>> ASYNC_CACHE =
             new ConcurrentHashMap<>();
@@ -72,6 +73,10 @@ public enum PickerCatalogFactory {
      * from a later client tick instead of poisoning the cache with an early startup failure.
      */
     public static boolean prewarmAsync() {
+        // Particle classes are classpath metadata, not registry/item data. Start this immediately so
+        // the first NoRender particle picker already has the complete vanilla implementation list.
+        ParticleClassCatalog.prewarm(CATALOG_EXECUTOR);
+
         if (!markRuntimeReadyIfPossible()) return false;
 
         // Highest first-open value first; executor ordering intentionally prioritizes item-backed pickers.
@@ -83,7 +88,6 @@ public enum PickerCatalogFactory {
         requestEntriesAsync(TextListSetting.PickerMode.LIVING_ENTITIES);
         requestEntriesAsync(TextListSetting.PickerMode.SOUNDS);
         requestEntriesAsync(TextListSetting.PickerMode.ENCHANTMENTS);
-        requestEntriesAsync(TextListSetting.PickerMode.PARTICLES);
         return true;
     }
 

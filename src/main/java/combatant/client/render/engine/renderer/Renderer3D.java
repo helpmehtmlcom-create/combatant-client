@@ -247,7 +247,7 @@ public final class Renderer3D {
             return box.move(offset);
         }
 
-        public static boolean isInFront(Entity target, float tickDelta, double minDot) {
+        private static boolean isInFront(Entity target, float tickDelta, double minDot) {
             Vec3 center = getTargetCenter(target, tickDelta);
             Vec3 camPos = RenderState.cameraPos;
             Vec3 to = center.subtract(camPos);
@@ -370,10 +370,6 @@ public final class Renderer3D {
                 new CullOptions(true, true, false, true, false, 0.05);
         public static final CullOptions SMART_TARGET =
                 new CullOptions(true, true, true, true, true, 0.05);
-
-        public CullOptions withoutSectionVisibility() {
-            return new CullOptions(frustum, false, visibleOnly, lookAtTarget, skipVisibilityWhenTranslucent, minLookDot);
-        }
     }
 
     private record SamplerBinding(String name,

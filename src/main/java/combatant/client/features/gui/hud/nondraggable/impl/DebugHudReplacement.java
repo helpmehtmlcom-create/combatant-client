@@ -7,14 +7,13 @@
 
 package combatant.client.features.gui.hud.nondraggable.impl;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.core.RenderPhase;
 import combatant.client.render.engine.core.RenderPhaseScope;
 import combatant.client.render.engine.core.ViewportContext;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.runtime.RuntimeGate;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -76,7 +75,7 @@ public enum DebugHudReplacement {
 
     private static void render(Snapshot captured) {
         TextRenderer fallback = TextRenderer.get();
-        TextRenderer text = Fonts.renderer("montserrat", FontInfo.Type.Regular, fallback);
+        TextRenderer text = BuiltinFontCatalog.MONSTERRAT.renderer(fallback);
         if (text == null) text = fallback;
 
         ViewportContext viewport = ViewportContext.current();

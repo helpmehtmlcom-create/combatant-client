@@ -12,23 +12,21 @@ public final class UiCommandStats {
     private int recordedCommands;
     private int shapeCommands;
     private int pathCommands;
-    private int primitiveCommands;
     private int textureCommands;
-    private int textCommands;
     private int itemCommands;
     private int effectCommands;
     private int compiledPasses;
     private int compiledOrderedBatches;
-    private int compiledLegacySpecialPasses;
+    private int compiledCaptureAwarePasses;
     private int rhiDrawCommands;
     private int backendDrawCalls;
 
     public void beginFrame(long frameId) {
         if (this.frameId == frameId) return;
         this.frameId = frameId;
-        recordedCommands = shapeCommands = pathCommands = primitiveCommands = textureCommands = 0;
-        textCommands = itemCommands = effectCommands = 0;
-        compiledPasses = compiledOrderedBatches = compiledLegacySpecialPasses = rhiDrawCommands = backendDrawCalls = 0;
+        recordedCommands = shapeCommands = pathCommands = textureCommands = 0;
+        itemCommands = effectCommands = 0;
+        compiledPasses = compiledOrderedBatches = compiledCaptureAwarePasses = rhiDrawCommands = backendDrawCalls = 0;
     }
 
     public void record(UiCommand command) {
@@ -37,11 +35,9 @@ public final class UiCommandStats {
         switch (command.kind()) {
             case SHAPE -> shapeCommands++;
             case PATH -> pathCommands++;
-            case PRIMITIVE -> primitiveCommands++;
             case TEXTURE -> textureCommands++;
-            case TEXT -> textCommands++;
             case ITEM -> itemCommands++;
-            case BLUR_REGION, LIQUID_GLASS_REGION, EFFECT_REGION -> effectCommands++;
+            case EFFECT_REGION -> effectCommands++;
         }
     }
 
@@ -53,8 +49,8 @@ public final class UiCommandStats {
         compiledOrderedBatches += Math.max(0, count);
     }
 
-    public void addCompiledLegacySpecialPasses(int count) {
-        compiledLegacySpecialPasses += Math.max(0, count);
+    public void addCompiledCaptureAwarePasses(int count) {
+        compiledCaptureAwarePasses += Math.max(0, count);
     }
 
     public void addExecutionStats(int drawCommands, int drawCalls) {
@@ -68,14 +64,12 @@ public final class UiCommandStats {
                 recordedCommands,
                 shapeCommands,
                 pathCommands,
-                primitiveCommands,
                 textureCommands,
-                textCommands,
                 itemCommands,
                 effectCommands,
                 compiledPasses,
                 compiledOrderedBatches,
-                compiledLegacySpecialPasses,
+                compiledCaptureAwarePasses,
                 rhiDrawCommands,
                 backendDrawCalls
         );

@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.hud.nondraggable.impl;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.util.screen.ClientScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -32,8 +33,6 @@ import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.core.ViewportContext;
 import combatant.client.render.engine.renderer.RenderWarpStack;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.helpers.ScissorFunction;
 import combatant.client.runtime.RuntimeGate;
@@ -601,7 +600,7 @@ public final class BetterButtons extends AbstractHudElement {
                                            float x, float y, float w, float h,
                                            float alpha, boolean enabled, float hover,
                                            boolean snapToPixel) {
-        TextRenderer tr = Fonts.renderer("Monsterrat", FontInfo.Type.Regular, TextRenderer.get());
+        TextRenderer tr = BuiltinFontCatalog.MONSTERRAT.renderer(TextRenderer.get());
         if (tr == null) return;
         if (text == null || text.getString().isEmpty()) return;
 
@@ -646,7 +645,7 @@ public final class BetterButtons extends AbstractHudElement {
                                               float x1, float y1,
                                               float alpha, boolean enabled, float hover,
                                               boolean snapToPixel) {
-        TextRenderer tr = Fonts.renderer("Monsterrat", FontInfo.Type.Regular, TextRenderer.get());
+        TextRenderer tr = BuiltinFontCatalog.MONSTERRAT.renderer(TextRenderer.get());
         if (tr == null) return;
         if (text == null || text.getString().isEmpty()) return;
 

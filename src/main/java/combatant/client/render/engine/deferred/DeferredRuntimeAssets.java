@@ -21,6 +21,7 @@ import combatant.client.render.engine.shader.CombatantShaderSources;
 import combatant.client.render.engine.shader.ShaderCostRegistry;
 import combatant.client.render.engine.vertex.CombatantVertexFormats;
 import combatant.client.util.logging.DebugLog;
+import combatant.client.render.engine.light.BlockLightEmitterRegistry;
 import combatant.client.util.resources.asset.AssetAutoLoader;
 import combatant.client.util.resources.asset.AssetLoad;
 import combatant.client.util.resources.asset.AssetLoadPhase;
@@ -40,8 +41,14 @@ public enum DeferredRuntimeAssets {
     public static final String SCOPE = "render.deferred";
     public static final Identifier TERRAIN_LIGHTING_FRAGMENT =
             Identifier.fromNamespaceAndPath("combatant", "shaders/deferred_terrain_lighting.frag");
+    public static final Identifier TERRAIN_PUBLISH_FRAGMENT =
+            Identifier.fromNamespaceAndPath("combatant", "shaders/deferred_terrain_publish.frag");
+    public static final Identifier OPAQUE_PUBLISH_FRAGMENT =
+            Identifier.fromNamespaceAndPath("combatant", "shaders/deferred_opaque_publish.frag");
 
     private static RenderPipeline terrainLighting;
+    private static RenderPipeline terrainPublish;
+    private static RenderPipeline opaquePublish;
     private static long preparedResourceGeneration = Long.MIN_VALUE;
 
     public static boolean active() {
@@ -54,6 +61,8 @@ public enum DeferredRuntimeAssets {
         if (!"combatant".equals(resourceId.getNamespace())) return true;
         String path = resourceId.getPath();
         boolean deferredOnly = path.equals(TERRAIN_LIGHTING_FRAGMENT.getPath())
+                || path.equals(TERRAIN_PUBLISH_FRAGMENT.getPath())
+                || path.equals(OPAQUE_PUBLISH_FRAGMENT.getPath())
                 || path.startsWith("shaders/deferred/");
         return !deferredOnly || active();
     }
@@ -63,6 +72,20 @@ public enum DeferredRuntimeAssets {
             throw new IllegalStateException("Deferred terrain lighting assets are not active");
         }
         return terrainLighting;
+    }
+
+    public static RenderPipeline terrainPublish() {
+        if (!active() || terrainPublish == null) {
+            throw new IllegalStateException("Deferred terrain publish assets are not active");
+        }
+        return terrainPublish;
+    }
+
+    public static RenderPipeline opaquePublish() {
+        if (!active() || opaquePublish == null) {
+            throw new IllegalStateException("Deferred opaque publish assets are not active");
+        }
+        return opaquePublish;
     }
 
     @AssetLoad(value = AssetLoadPhase.ACTIVATE, scope = SCOPE, order = 100)
@@ -83,6 +106,7 @@ public enum DeferredRuntimeAssets {
     private static void prepare(ResourceManager resources, boolean rebuildNativePrograms) {
         if (resources == null) throw new IllegalArgumentException("resources");
         RenderSystem.assertOnRenderThread();
+        BlockLightEmitterRegistry.global().reload(resources);
 
         if (terrainLighting == null) {
             terrainLighting = new ExtendedRenderPipelineBuilder(CombatantRenderPipelines.meshUniforms())
@@ -93,9 +117,13 @@ public enum DeferredRuntimeAssets {
                     .withFragmentShader(TERRAIN_LIGHTING_FRAGMENT)
                     .withSampler("u_GbufferSurface")
                     .withSampler("u_GbufferGeometry")
-                    .withSampler("u_GbufferAuxiliary")
                     .withSampler("u_GbufferMaterial")
-                    .withSampler("u_LightTex")
+                    .withSampler("u_GbufferDepth")
+                    .withSampler("u_EnvironmentIrradiance")
+                    .withSampler("u_ResolvedDepth")
+                    .withSampler("u_ShadowVisibility")
+                    .withSampler("u_CloudShadowVisibility")
+                    .withSampler("u_AmbientVisibility")
                     .withUniform("DeferredLighting", UniformType.UNIFORM_BUFFER)
                     .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
                     .withDepthWrite(false)
@@ -104,9 +132,56 @@ public enum DeferredRuntimeAssets {
                     .build();
             RenderPipelineRegistry.global().registerNative(terrainLighting);
         }
+        if (terrainPublish == null) {
+            terrainPublish = new ExtendedRenderPipelineBuilder(CombatantRenderPipelines.meshUniforms())
+                    .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/deferred_terrain_publish"))
+                    .withDomain(PipelineDomain.FULLSCREEN)
+                    .withVertexFormat(CombatantVertexFormats.POS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+                    .withVertexShader(CombatantRenderPipelines.SHADER_DAMAGE_TINT_VERT)
+                    .withFragmentShader(TERRAIN_PUBLISH_FRAGMENT)
+                    .withSampler("u_Source")
+                    .withSampler("u_GbufferAuxiliary")
+                    .withSampler("u_GbufferDepth")
+                    .withUniform("DeferredLighting", UniformType.UNIFORM_BUFFER)
+                    .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+                    .withDepthWrite(false)
+                    .withoutBlend()
+                    .withCull(false)
+                    .build();
+            RenderPipelineRegistry.global().registerNative(terrainPublish);
+        }
+        if (opaquePublish == null) {
+            opaquePublish = new ExtendedRenderPipelineBuilder(CombatantRenderPipelines.meshUniforms())
+                    .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/deferred_opaque_publish"))
+                    .withDomain(PipelineDomain.FULLSCREEN)
+                    .withVertexFormat(CombatantVertexFormats.POS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+                    .withVertexShader(CombatantRenderPipelines.SHADER_DAMAGE_TINT_VERT)
+                    .withFragmentShader(OPAQUE_PUBLISH_FRAGMENT)
+                    .withSampler("u_Source")
+                    .withSampler("u_GbufferAuxiliary")
+                    .withSampler("u_GbufferDepth")
+                    .withSampler("u_CurrentDepth")
+                    .withUniform("DeferredLighting", UniformType.UNIFORM_BUFFER)
+                    .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+                    .withDepthWrite(false)
+                    .withoutBlend()
+                    .withCull(false)
+                    .build();
+            RenderPipelineRegistry.global().registerNative(opaquePublish);
+        }
 
         final GpuDevice device = RenderSystem.getDevice();
         device.precompilePipeline(terrainLighting, (identifier, shaderType) -> {
+            String source = CombatantShaderSources.load(resources, identifier, shaderType);
+            ShaderCostRegistry.analyze(identifier, shaderType, source);
+            return source;
+        });
+        device.precompilePipeline(terrainPublish, (identifier, shaderType) -> {
+            String source = CombatantShaderSources.load(resources, identifier, shaderType);
+            ShaderCostRegistry.analyze(identifier, shaderType, source);
+            return source;
+        });
+        device.precompilePipeline(opaquePublish, (identifier, shaderType) -> {
             String source = CombatantShaderSources.load(resources, identifier, shaderType);
             ShaderCostRegistry.analyze(identifier, shaderType, source);
             return source;

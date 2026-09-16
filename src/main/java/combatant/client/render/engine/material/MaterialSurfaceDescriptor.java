@@ -33,6 +33,7 @@ public record MaterialSurfaceDescriptor(
         float clearcoatRoughness,
         float porosity,
         float thickness,
+        MaterialWeatherResponse weatherResponse,
         MaterialTessellationProfile tessellation
 ) {
     public MaterialSurfaceDescriptor {
@@ -53,6 +54,7 @@ public record MaterialSurfaceDescriptor(
         clearcoatRoughness = clamp01(clearcoatRoughness);
         porosity = clamp01(porosity);
         thickness = Math.max(0.0f, thickness);
+        if (weatherResponse == null) weatherResponse = MaterialWeatherResponse.NONE;
         if (tessellation == null) tessellation = MaterialTessellationProfile.NONE;
     }
 

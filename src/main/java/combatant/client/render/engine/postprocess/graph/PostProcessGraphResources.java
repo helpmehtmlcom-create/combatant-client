@@ -7,16 +7,13 @@
 
 package combatant.client.render.engine.postprocess.graph;
 
+import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.pipeline.TextureTarget;
-import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.textures.GpuTextureView;
-import net.minecraft.client.Minecraft;
-import org.jetbrains.annotations.Nullable;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.visuals.ReimaginedVisual;
 import combatant.client.render.engine.core.CombatantRenderSystem;
-import combatant.client.render.engine.deferred.DeferredResource;
 import combatant.client.render.engine.depth.PreTranslucentDepth;
 import combatant.client.render.engine.depth.WorldSceneDepth;
 import combatant.client.render.engine.postprocess.PostProcessContext;
@@ -27,12 +24,11 @@ import combatant.client.render.engine.rhi.shader.RhiStorageImage;
 import combatant.client.render.engine.rhi.shader.StorageAccess;
 import combatant.client.render.engine.rhi.shader.StorageImageDescriptor;
 import combatant.client.render.iris.IrisSceneDepth;
+import net.minecraft.client.Minecraft;
+import org.jetbrains.annotations.Nullable;
 
-import java.util.EnumMap;
-
+/** Owns the post-process ping-pong targets and frame-local scene context. */
 public final class PostProcessGraphResources implements AutoCloseable {
-    private final EnumMap<PostProcessResource, GpuTextureView> views = new EnumMap<>(PostProcessResource.class);
-
     private @Nullable RenderTarget mainFramebuffer;
     private @Nullable TextureTarget ping;
     private @Nullable TextureTarget pong;
@@ -42,25 +38,22 @@ public final class PostProcessGraphResources implements AutoCloseable {
     private boolean storageTargetsFailed;
     private @Nullable GpuTextureView pingView;
     private @Nullable GpuTextureView pongView;
-    private @Nullable PostProcessContext legacyContext;
-
+    private @Nullable PostProcessContext context;
     private boolean usePingAsSource = true;
-    private boolean prepared;
 
     public boolean prepare(PostProcessPass.Phase phase, float tickDelta, CombatantRhi rhi, boolean preferStorageTargets) {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.getWindow() == null) return false;
         RenderTarget main = mc.gameRenderer.mainRenderTarget();
-        if (main == null) return false;
+        if (main == null || main.getColorTextureView() == null) return false;
 
         int w = Math.max(1, mc.getWindow().getWidth());
         int h = Math.max(1, mc.getWindow().getHeight());
         ensurePingPong(w, h, rhi, preferStorageTargets);
         if (pingView == null || pongView == null) return false;
-        if (main.getColorTextureView() == null || pingView == null || pongView == null) return false;
 
-        clear();
-        this.mainFramebuffer = main;
+        clearFrameState();
+        mainFramebuffer = main;
         GpuTextureView mainDepth = IrisSceneDepth.isValid()
                 ? IrisSceneDepth.mainDepthView()
                 : WorldSceneDepth.hasMain() ? WorldSceneDepth.mainDepthView() : main.getDepthTextureView();
@@ -70,37 +63,7 @@ public final class PostProcessGraphResources implements AutoCloseable {
         GpuTextureView staticWorldDepth = IrisSceneDepth.isValid()
                 ? null
                 : WorldSceneDepth.hasItemEntity() ? WorldSceneDepth.itemEntityDepthView() : null;
-        put(PostProcessResource.MAIN_COLOR, main.getColorTextureView());
-        put(PostProcessResource.MAIN_DEPTH, mainDepth);
-        put(PostProcessResource.PRE_TRANSLUCENT_DEPTH, preTranslucentDepth);
-        var gbuffer = CombatantRenderSystem.deferredWorld().currentSampleableTargets();
-        if (gbuffer != null) {
-            put(PostProcessResource.GBUFFER_SURFACE, gbuffer.surface());
-            put(PostProcessResource.GBUFFER_GEOMETRY, gbuffer.geometry());
-            put(PostProcessResource.GBUFFER_AUXILIARY, gbuffer.auxiliary());
-            put(PostProcessResource.GBUFFER_MATERIAL, gbuffer.material());
-            put(PostProcessResource.GBUFFER_MATERIAL_ID, gbuffer.materialId());
-        }
-        bindDeferred(PostProcessResource.VELOCITY, DeferredResource.VELOCITY);
-        bindDeferred(PostProcessResource.RESOLVED_DEPTH, DeferredResource.RESOLVED_DEPTH);
-        bindDeferred(PostProcessResource.DEPTH_PYRAMID, DeferredResource.DEPTH_PYRAMID);
-        bindDeferred(PostProcessResource.SHADOW_DEPTH, DeferredResource.SHADOW_DEPTH);
-        bindDeferred(PostProcessResource.SHADOW_COLOR, DeferredResource.SHADOW_COLOR);
-        bindDeferred(PostProcessResource.AMBIENT_OCCLUSION, DeferredResource.AMBIENT_OCCLUSION);
-        bindDeferred(PostProcessResource.SCENE_RADIANCE, DeferredResource.SCENE_RADIANCE);
-        bindDeferred(PostProcessResource.INDIRECT_LIGHT, DeferredResource.INDIRECT_LIGHT);
-        bindDeferred(PostProcessResource.INDIRECT_CONFIDENCE, DeferredResource.INDIRECT_CONFIDENCE);
-        bindDeferred(PostProcessResource.LIGHTING_COLOR, DeferredResource.LIGHTING_COLOR);
-        bindDeferred(PostProcessResource.REFLECTION_COLOR, DeferredResource.REFLECTION_COLOR);
-        bindDeferred(PostProcessResource.REFLECTION_CONFIDENCE, DeferredResource.REFLECTION_CONFIDENCE);
-        bindDeferred(PostProcessResource.TRANSLUCENT_COLOR, DeferredResource.TRANSLUCENT_COLOR);
-        bindDeferred(PostProcessResource.TRANSLUCENT_DEPTH, DeferredResource.TRANSLUCENT_DEPTH);
-        bindDeferred(PostProcessResource.HISTORY_COLOR, DeferredResource.HISTORY_COLOR);
-        bindDeferred(PostProcessResource.HISTORY_DEPTH, DeferredResource.HISTORY_DEPTH);
-        bindDeferred(PostProcessResource.HISTORY_REFLECTION, DeferredResource.HISTORY_REFLECTION);
-        put(PostProcessResource.GRAPH_SOURCE_COLOR, pingView);
-        put(PostProcessResource.GRAPH_DEST_COLOR, pongView);
-        this.legacyContext = new PostProcessContext(
+        context = new PostProcessContext(
                 phase,
                 tickDelta,
                 main,
@@ -111,21 +74,16 @@ public final class PostProcessGraphResources implements AutoCloseable {
                 main.width,
                 main.height
         );
-        this.usePingAsSource = true;
-        this.prepared = true;
+        usePingAsSource = true;
         return true;
     }
 
     public void resetPingPong() {
         usePingAsSource = true;
-        put(PostProcessResource.GRAPH_SOURCE_COLOR, pingView);
-        put(PostProcessResource.GRAPH_DEST_COLOR, pongView);
     }
 
     public void advancePingPong() {
         usePingAsSource = !usePingAsSource;
-        put(PostProcessResource.GRAPH_SOURCE_COLOR, currentSource());
-        put(PostProcessResource.GRAPH_DEST_COLOR, currentDestination());
     }
 
     public @Nullable GpuTextureView currentSource() {
@@ -148,41 +106,17 @@ public final class PostProcessGraphResources implements AutoCloseable {
         return currentSource();
     }
 
-    public boolean isPrepared() {
-        return prepared;
-    }
-
-    public @Nullable RenderTarget mainFramebuffer() {
-        return mainFramebuffer;
-    }
-
     public @Nullable GpuTextureView mainColor() {
-        return get(PostProcessResource.MAIN_COLOR);
+        return mainFramebuffer != null ? mainFramebuffer.getColorTextureView() : null;
     }
 
-    public @Nullable PostProcessContext legacyContext() {
-        return legacyContext;
+    public @Nullable PostProcessContext context() {
+        return context;
     }
 
-    public void put(PostProcessResource resource, @Nullable GpuTextureView view) {
-        if (view != null) views.put(resource, view);
-    }
-
-    public @Nullable GpuTextureView get(PostProcessResource resource) {
-        return views.get(resource);
-    }
-
-    public void clear() {
-        views.clear();
+    private void clearFrameState() {
         mainFramebuffer = null;
-        legacyContext = null;
-        prepared = false;
-    }
-
-    private void bindDeferred(PostProcessResource target, DeferredResource source) {
-        var bindings = CombatantRenderSystem.deferredWorld().resourceBindings();
-        if (!bindings.isValid(source)) return;
-        put(target, bindings.texture(source));
+        context = null;
     }
 
     private void ensurePingPong(int w, int h, CombatantRhi rhi, boolean preferStorageTargets) {
@@ -267,12 +201,11 @@ public final class PostProcessGraphResources implements AutoCloseable {
 
     @Override
     public void close() {
-        // Framebuffers are owned by RenderResourceManager. This object only drops references.
         closeStoragePingPong();
         ping = null;
         pong = null;
         pingView = null;
         pongView = null;
-        clear();
+        clearFrameState();
     }
 }

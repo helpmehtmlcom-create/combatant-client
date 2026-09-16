@@ -34,7 +34,7 @@ public enum TextGlyphFallback {
     );
 
     public static TextRenderer vanillaSymbols(TextRenderer fallback) {
-        return Fonts.renderer("VanillaSymbols", FontInfo.Type.Regular, fallback != null ? fallback : TextRenderer.get());
+        return BuiltinFontCatalog.VANILLA_SYMBOLS.renderer(fallback != null ? fallback : TextRenderer.get());
     }
 
     public static TextRenderer rendererForGlyph(TextRenderer preferred, int codePoint) {

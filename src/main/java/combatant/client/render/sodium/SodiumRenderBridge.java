@@ -24,6 +24,7 @@ public final class SodiumRenderBridge {
     private final SodiumSectionVisibilityProvider sectionVisibilityProvider = new SodiumSectionVisibilityProvider(this);
 
     private SodiumFrameContext currentFrameContext = SodiumFrameContext.UNAVAILABLE;
+    private boolean primaryVisibilityReady;
 
     private long visibilityQueries;
     private long visibilityAccepts;
@@ -35,6 +36,7 @@ public final class SodiumRenderBridge {
 
     public SodiumFrameContext beginFrame() {
         resetFrameStats();
+        primaryVisibilityReady = false;
         currentFrameContext = captureFrameContext();
         terrainInterop.beginFrame();
         return currentFrameContext;
@@ -57,11 +59,26 @@ public final class SodiumRenderBridge {
     }
 
     public SodiumFrameContext captureFrameContext() {
-        return SodiumFrameContext.UNAVAILABLE;
+        Object renderer = sodiumWorldRenderer();
+        if (!(renderer instanceof SodiumWorldVisibilityView)) return SodiumFrameContext.UNAVAILABLE;
+        return SodiumFrameContext.available(primaryVisibilityReady, 0,
+                primaryVisibilityReady ? "primary-visibility-ready" : "primary-visibility-pending");
     }
 
     public boolean isAvailableForWorldFrame() {
-        return false;
+        return primaryVisibilityReady && sodiumWorldRenderer() instanceof SodiumWorldVisibilityView;
+    }
+
+    /** Called by the Sodium setupTerrain boundary before rebuilding primary-camera visibility. */
+    public void markPrimaryVisibilityPending() {
+        primaryVisibilityReady = false;
+        currentFrameContext = captureFrameContext();
+    }
+
+    /** Called only after Sodium has published the current setupTerrain visibility tree. */
+    public void markPrimaryVisibilityReady() {
+        primaryVisibilityReady = true;
+        currentFrameContext = captureFrameContext();
     }
 
     /**
@@ -88,9 +105,29 @@ public final class SodiumRenderBridge {
             return true;
         }
 
-        visibilityBypasses++;
-        visibilityUnavailableBypasses++;
-        return true;
+        if (!primaryVisibilityReady) {
+            visibilityBypasses++;
+            visibilityUnavailableBypasses++;
+            return true;
+        }
+
+        Object renderer = sodiumWorldRenderer();
+        if (!(renderer instanceof SodiumWorldVisibilityView visibility)) {
+            visibilityBypasses++;
+            visibilityUnavailableBypasses++;
+            return true;
+        }
+        try {
+            boolean visible = visibility.combatant$isBoxVisible(box);
+            if (visible) visibilityAccepts++;
+            else visibilityRejects++;
+            return visible;
+        } catch (Throwable ignored) {
+            // Visibility is an optimization only. A compat failure must never hide geometry.
+            visibilityErrors++;
+            visibilityBypasses++;
+            return true;
+        }
     }
 
     public void scheduleTerrainUpdate() {

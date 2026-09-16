@@ -7,18 +7,14 @@
 
 package combatant.client.render.engine.rhi;
 
-import combatant.client.render.engine.guard.LegacyRenderPath;
 import combatant.client.render.engine.rhi.pipeline.RenderPipelineSpec;
 import combatant.client.render.engine.shader.ShaderCostEstimate;
 import combatant.client.render.engine.shader.ShaderCostRegistry;
 
-import java.util.EnumMap;
 import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Map;
 
 public final class RhiStats {
-    private final EnumMap<LegacyRenderPath, Long> legacyPathBreakdown = new EnumMap<>(LegacyRenderPath.class);
     private long frameId;
     private long drawCalls;
     private long multiDrawCalls;
@@ -50,9 +46,6 @@ public final class RhiStats {
     private long uploadedIndexBytes;
     private long ringWraps;
     private long ringStalls;
-    private long immediateFallbackUploads;
-    private long temporaryOwnedMeshes;
-    private long legacyPathUses;
     private int lastRenderPassColorIdentity;
     private int lastRenderPassDepthIdentity;
     private int lastPipelineIdentity;
@@ -90,14 +83,12 @@ public final class RhiStats {
         estimatedShaderAluOps = estimatedShaderTranscendentalOps = estimatedShaderTextureOps = 0L;
         estimatedShaderBranchOps = estimatedShaderLoopOps = 0L;
         meshUploads = uploadedVertexBytes = uploadedIndexBytes = 0L;
-        ringWraps = ringStalls = immediateFallbackUploads = temporaryOwnedMeshes = 0L;
-        legacyPathUses = 0L;
+        ringWraps = ringStalls = 0L;
         lastRenderPassColorIdentity = 0;
         lastRenderPassDepthIdentity = 0;
         lastPipelineIdentity = 0;
         framePipelines.clear();
         framePipelineBreakdown.clear();
-        legacyPathBreakdown.clear();
         dynamicArenaAllocations = 0L;
         dynamicArenaReuses = 0L;
         dynamicArenaRetires = 0L;
@@ -175,11 +166,6 @@ public final class RhiStats {
         }
     }
 
-    /** Compatibility entry point for call sites that always emit a real pipeline bind. */
-    public void pipelineBind(Object pipeline, RenderPipelineSpec spec, int uniforms, int samplers) {
-        pipelineUse(pipeline, spec, uniforms, samplers, true);
-    }
-
     /** Enables allocation-bearing shader/pipeline attribution only while an external profiler needs it. */
     public void setDetailedPipelineStats(boolean enabled) {
         detailedPipelineStats = enabled;
@@ -243,20 +229,6 @@ public final class RhiStats {
 
     public void ringStall() {
         ringStalls++;
-    }
-
-    public void immediateFallbackUpload(long vertexBytes, long indexBytes) {
-        immediateFallbackUploads++;
-        meshUpload(vertexBytes, indexBytes);
-    }
-
-    public void temporaryOwnedMesh() {
-        temporaryOwnedMeshes++;
-    }
-
-    public void legacyPath(LegacyRenderPath path) {
-        legacyPathUses++;
-        if (path != null) legacyPathBreakdown.merge(path, 1L, Long::sum);
     }
 
     public void dynamicArenaCreated(int count, long vertexBytes, long indexBytes, boolean spill) {
@@ -442,18 +414,6 @@ public final class RhiStats {
         return ringStalls;
     }
 
-    public long immediateFallbackUploads() {
-        return immediateFallbackUploads;
-    }
-
-    public long temporaryOwnedMeshes() {
-        return temporaryOwnedMeshes;
-    }
-
-    public long legacyPathUses() {
-        return legacyPathUses;
-    }
-
     public RhiStatsSnapshot snapshot() {
         return snapshot(false);
     }
@@ -473,7 +433,6 @@ public final class RhiStats {
                 computeDispatches, computeWorkgroups, computeStorageBindings,
                 storageBufferUploads, storageBufferUploadBytes, advancedShaderBarriers,
                 meshUploads, uploadedVertexBytes, uploadedIndexBytes, ringWraps, ringStalls,
-                immediateFallbackUploads, temporaryOwnedMeshes,
                 dynamicArenaAllocations, dynamicPersistentArenaAllocations, dynamicSpillArenaAllocations,
                 dynamicArenaReuses, dynamicArenaRetires, dynamicFenceChecks, dynamicFenceCompletions,
                 dynamicArenaBacklogEvents, dynamicPersistentArenaBytes, dynamicSpillArenaBytes,
@@ -482,7 +441,6 @@ public final class RhiStats {
                 dynamicArenaVertexUsedObservedBytes, dynamicArenaIndexUsedObservedBytes,
                 dynamicArenaVertexCapacityObservedBytes, dynamicArenaIndexCapacityObservedBytes,
                 dynamicLargestVertexAllocationBytes, dynamicLargestIndexAllocationBytes,
-                legacyPathUses, legacyPathBreakdown.isEmpty() ? Map.of() : new EnumMap<>(legacyPathBreakdown),
                 pipelineBreakdown);
     }
 

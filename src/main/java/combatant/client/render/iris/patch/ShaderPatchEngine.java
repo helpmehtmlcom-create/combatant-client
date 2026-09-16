@@ -34,14 +34,6 @@ public enum ShaderPatchEngine {
     private static final ThreadLocal<String> LOADING_SHADER_PACK_NAME = new ThreadLocal<>();
     private static final AtomicReference<String> GLOBAL_LOADING_SHADER_PACK_NAME = new AtomicReference<>();
 
-    /**
-     * Legacy validation session: all repository manifests are visible. Runtime Iris hooks should use
-     * {@link #newSession(String)} so Combatant does not probe unrelated shaderpacks.
-     */
-    public static Session newSession() {
-        Repository repository = repository();
-        return new Session("<all>", repository.targetsByPath, Set.copyOf(repository.manifestsById.keySet()), false);
-    }
 
     public static Session newSession(String shaderPackName) {
         Repository.Selection selection = repository().select(shaderPackName);

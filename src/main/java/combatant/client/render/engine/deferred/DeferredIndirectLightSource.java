@@ -70,7 +70,7 @@ final class DeferredIndirectLightSource implements AutoCloseable {
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.indirect.prepare", DeferredStage.INDIRECT_PREPARE)
-                .read(DeferredResource.SCENE_RADIANCE, DeferredResource.RESOLVED_DEPTH,
+                .read(DeferredResource.OPAQUE_BASE_RADIANCE, DeferredResource.RESOLVED_DEPTH,
                         DeferredResource.DEPTH_PYRAMID, DeferredResource.GBUFFER_GEOMETRY)
                 .write(DeferredResource.INDIRECT_TRACE_DATA)
                 .requires(RhiShaderStage.COMPUTE)
@@ -78,7 +78,7 @@ final class DeferredIndirectLightSource implements AutoCloseable {
                 .execute(this::prepareFrame)
                 .build());
         passes.add(DeferredPassSpec.builder("world.indirect.trace", DeferredStage.INDIRECT_TRACE)
-                .read(DeferredResource.SCENE_RADIANCE, DeferredResource.RESOLVED_DEPTH,
+                .read(DeferredResource.OPAQUE_BASE_RADIANCE, DeferredResource.RESOLVED_DEPTH,
                         DeferredResource.DEPTH_PYRAMID, DeferredResource.GBUFFER_GEOMETRY,
                         DeferredResource.INDIRECT_TRACE_DATA)
                 .write(DeferredResource.INDIRECT_TRACE_LIGHT, DeferredResource.INDIRECT_TRACE_CONFIDENCE)
@@ -103,7 +103,7 @@ final class DeferredIndirectLightSource implements AutoCloseable {
     private boolean available(DeferredPassContext context) {
         return context.settings().indirectLightEnabled()
                 && context.primaryView().current() != null
-                && context.isValid(DeferredResource.SCENE_RADIANCE)
+                && context.isValid(DeferredResource.OPAQUE_BASE_RADIANCE)
                 && context.isValid(DeferredResource.RESOLVED_DEPTH)
                 && context.isValid(DeferredResource.DEPTH_PYRAMID)
                 && context.resources().texture(DeferredResource.GBUFFER_GEOMETRY) != null;
@@ -140,7 +140,7 @@ final class DeferredIndirectLightSource implements AutoCloseable {
 
     private void trace(DeferredPassContext context) {
         ensureOwner(context.rhi());
-        GpuTextureView radiance = requireTexture(context, DeferredResource.SCENE_RADIANCE);
+        GpuTextureView radiance = requireTexture(context, DeferredResource.OPAQUE_BASE_RADIANCE);
         GpuTextureView depth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
         GpuTextureView pyramid = requireTexture(context, DeferredResource.DEPTH_PYRAMID);
         GpuTextureView geometry = requireTexture(context, DeferredResource.GBUFFER_GEOMETRY);

@@ -13,14 +13,12 @@
 
 package combatant.client.render.engine.renderer;
 
-import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.textures.GpuSampler;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import com.mojang.blaze3d.vertex.PoseStack;
-import combatant.client.render.engine.rhi.FullscreenDrawCommand;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
@@ -29,7 +27,6 @@ import org.joml.Matrix4fStack;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.rhi.GpuMeshHandle;
-import combatant.client.render.engine.rhi.MeshOwnership;
 import combatant.client.render.engine.rhi.RhiDrawCommand;
 import combatant.client.render.engine.uniform.MeshBuilder;
 
@@ -53,8 +50,6 @@ public final class MeshRenderer {
     private @Nullable Integer clearColorArgb; // OptionalInt in renderpass
     private @Nullable RenderPipeline pipeline;
     private @Nullable MeshBuilder mesh;
-    private @Nullable GpuBuffer vertexBuffer;
-    private @Nullable GpuBuffer indexBuffer;
     private @Nullable Matrix4f transform;
 
     private MeshRenderer() {
@@ -118,12 +113,6 @@ public final class MeshRenderer {
         return this;
     }
 
-    public MeshRenderer mesh(GpuBuffer vertices, GpuBuffer indices) {
-        this.vertexBuffer = vertices;
-        this.indexBuffer = indices;
-        return this;
-    }
-
     public MeshRenderer mesh(MeshBuilder mesh) {
         this.mesh = mesh;
         return this;
@@ -178,45 +167,11 @@ public final class MeshRenderer {
 
             if (mesh != null && mesh.isBuilding()) mesh.end();
 
-            final int indexCount;
-            if (mesh != null) {
-                indexCount = mesh.getIndicesCount();
-            } else if (indexBuffer != null) {
-                indexCount = (int) (indexBuffer.size() / Integer.BYTES);
-            } else {
-                indexCount = 0;
-            }
-
+            if (mesh == null) return;
+            int indexCount = mesh.getIndicesCount();
             if (indexCount <= 0) return;
 
-            if (mesh != null && FullScreenRenderer.isLegacyFullscreenMesh(mesh) && depthAttachment == null && transform == null) {
-                if (commands != null && !commands.isEmpty()) {
-                    CombatantRenderSystem.rhi().drawMeshes(commands);
-                    commands.clear();
-                }
-                FullscreenDrawCommand.Builder fullscreen =
-                        FullscreenDrawCommand.builder("Combatant MeshRenderer Fullscreen Compatibility")
-                                .pipeline(pipeline)
-                                .colorAttachment(colorAttachment)
-                                .clearColor(clearColorArgb);
-                for (var e : uniforms.entrySet()) {
-                    fullscreen.uniform(e.getKey(), e.getValue());
-                }
-                for (var e : samplers.entrySet()) {
-                    SamplerBinding b = e.getValue();
-                    fullscreen.sampler(e.getKey(), b.view, b.sampler);
-                }
-                CombatantRenderSystem.rhi().drawFullscreen(fullscreen.build());
-                return;
-            }
-
-            if (mesh != null) {
-                uploaded = CombatantRenderSystem.rhi().dynamicMeshes().upload(mesh);
-            } else if (vertexBuffer != null && indexBuffer != null) {
-                uploaded = new GpuMeshHandle(vertexBuffer, indexBuffer, 0L, 0, indexCount, com.mojang.blaze3d.IndexType.INT, MeshOwnership.EXTERNAL);
-            } else {
-                return;
-            }
+            uploaded = CombatantRenderSystem.rhi().dynamicMeshes().upload(mesh);
 
             RhiDrawCommand.Builder command = RhiDrawCommand.builder("Combatant MeshRenderer")
                     .pipeline(pipeline)
@@ -250,8 +205,6 @@ public final class MeshRenderer {
             clearColorArgb = null;
             pipeline = null;
             mesh = null;
-            vertexBuffer = null;
-            indexBuffer = null;
             transform = null;
             uniforms.clear();
             samplers.clear();

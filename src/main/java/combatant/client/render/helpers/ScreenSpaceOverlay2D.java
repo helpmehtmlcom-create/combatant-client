@@ -7,13 +7,12 @@
 
 package combatant.client.render.helpers;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.engine.text.RuntimeTextLayout;
 
@@ -42,7 +41,7 @@ public enum ScreenSpaceOverlay2D {
     private static final int LABEL_SHADOW_ALPHA = 170;
 
     public static TextRenderer labelRenderer(TextRenderer fallback) {
-        return Fonts.renderer("OnestMedium", FontInfo.Type.Regular, fallback);
+        return BuiltinFontCatalog.ONEST_MEDIUM.renderer(fallback);
     }
 
     public static ScreenRect projectEntityBox(Entity entity, Vec3 lerpedPos, float tickDelta, double expandXZ, double expandTop) {

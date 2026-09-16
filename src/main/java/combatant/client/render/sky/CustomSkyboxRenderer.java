@@ -159,10 +159,10 @@ public enum CustomSkyboxRenderer {
         mv.identity();
         MeshRenderer.setProjection(new Matrix4f());
         try {
-            MeshRenderer.begin()
-                    .attachments(framebuffer)
+            FullScreenRenderer.begin("Combatant Reimagined Skybox")
+                    .attachment(framebuffer)
+                    .depthAttachment(framebuffer)
                     .pipeline(CombatantRenderPipelines.WORLD_REIMAGINED_SKYBOX_SHADER)
-                    .mesh(FullScreenRenderer.vbo, FullScreenRenderer.ibo)
                     .uniform("Fog", fog)
                     .uniform("SkyboxShader", SkyboxShaderUniforms.get())
                     .end();
@@ -306,12 +306,7 @@ public enum CustomSkyboxRenderer {
         double radius = glowRadius;
         Vec3 center = sunDir.scale(distance);
 
-        double angularRadius = Math.max(coreRadius / distance, 0.012);
         float sunrise = 1.0f - Math.abs(dayFactor * 2.0f - 1.0f);
-        float noonFactor = 1.0f - sunrise;
-        float shadowTimeVar1 = Math.abs(sunVisibility - 0.5f) * 2.0f;
-        float shadowTimeVar2 = shadowTimeVar1 * shadowTimeVar1;
-        float shadowTime = shadowTimeVar2 * shadowTimeVar2;
 
         int red = 255;
         int green = Mth.clamp((int) ((0.70f + 0.20f * dayFactor + 0.06f * sunrise) * 255.0f), 0, 255);
@@ -327,7 +322,6 @@ public enum CustomSkyboxRenderer {
                 1.10f
         );
         float coreStrength = Mth.clamp(1.10f * sunIntensitySetting * rainFade, 0.0f, 2.2f);
-        float rayStrength = 0.0f;
 
         MeshBuilder mesh = new MeshBuilder(CombatantRenderPipelines.WORLD_SKY_SUN);
         mesh.begin();
@@ -343,7 +337,7 @@ public enum CustomSkyboxRenderer {
         mesh.quad(i1, i2, i3, i4);
         mesh.end();
 
-        SkySunUniforms.update(innerRatio, haloStrength, coreStrength, rayStrength);
+        SkySunUniforms.update(innerRatio, haloStrength, coreStrength);
         MeshRenderer.begin()
                 .attachments(framebuffer)
                 .pipeline(CombatantRenderPipelines.WORLD_SKY_SUN)

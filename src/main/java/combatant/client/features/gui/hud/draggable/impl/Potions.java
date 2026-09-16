@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.hud.draggable.impl;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.config.values.*;
 import combatant.client.util.screen.ClientScreen;
 import net.minecraft.client.Minecraft;
@@ -29,8 +30,6 @@ import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.math.HudScale;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 
 import java.util.ArrayList;
@@ -230,9 +229,9 @@ public final class Potions extends DraggableHudElement {
 
         updatePalette();
 
-        TextRenderer headerIconRenderer = Fonts.renderer("IconsNur", FontInfo.Type.Regular, TextRenderer.get());
-        TextRenderer headerTextRenderer = Fonts.renderer("Inter", FontInfo.Type.Bold, TextRenderer.get());
-        TextRenderer rowTextRenderer = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, TextRenderer.get());
+        TextRenderer headerIconRenderer = BuiltinFontCatalog.ICONS_NUR.renderer(TextRenderer.get());
+        TextRenderer headerTextRenderer = BuiltinFontCatalog.INTER_BOLD.renderer(TextRenderer.get());
+        TextRenderer rowTextRenderer = BuiltinFontCatalog.ONEST_MEDIUM.renderer(TextRenderer.get());
         if (headerTextRenderer == null) headerTextRenderer = textRenderer;
         if (rowTextRenderer == null) rowTextRenderer = textRenderer;
         if (headerIconRenderer == null) headerIconRenderer = textRenderer;

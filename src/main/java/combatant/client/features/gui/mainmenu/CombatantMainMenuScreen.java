@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.mainmenu;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.config.MainConfig;
 import combatant.client.features.account.AccountConfig;
 import combatant.client.features.account.AccountEntry;
@@ -26,7 +27,6 @@ import combatant.client.render.engine.renderer.ui.runtime.render.UiTextRenderer;
 import combatant.client.render.engine.renderer.ui.runtime.style.UiStyle;
 import combatant.client.render.engine.svg.SvgRenderOptions;
 import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.helpers.PlayerHeadRenderer;
 import combatant.client.runtime.CombatantBuild;
@@ -266,7 +266,7 @@ public final class CombatantMainMenuScreen extends Screen {
 
         if (hoveredButton >= 0) {
             float hover = easeOutCubic(buttonHoverProgress[hoveredButton]);
-            TextRenderer labelFont = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, TextRenderer.get());
+            TextRenderer labelFont = BuiltinFontCatalog.ONEST_MEDIUM.renderer(TextRenderer.get());
             String label = tr(BUTTON_LABEL_KEYS[hoveredButton]);
             float labelY = gridLayout.originY() + gridLayout.radius() + 13f * MENU_SCALE;
             drawCenteredText(labelFont, label, fixedWidth * 0.5f, labelY,
@@ -338,7 +338,7 @@ public final class CombatantMainMenuScreen extends Screen {
             Renderer2D.COLOR.svg(svg, centerX - iconSize * 0.5f, topY - iconSize * 0.5f,
                     iconSize, iconSize, SvgRenderOptions.overrideColor(iconColor));
         } else {
-            TextRenderer icons = Fonts.renderer("MainMenuIcons", FontInfo.Type.Regular, TextRenderer.get());
+            TextRenderer icons = BuiltinFontCatalog.MAIN_MENU_ICONS.renderer(TextRenderer.get());
             String glyph = BUTTON_ICONS[index];
             float iconW = measureWidth(icons, glyph, ICON_FONT);
             float iconH = measureHeight(icons, ICON_FONT);
@@ -377,8 +377,8 @@ public final class CombatantMainMenuScreen extends Screen {
         String time = LocalTime.now().format(seconds ? CLOCK_SECONDS_FORMAT : CLOCK_FORMAT);
         String date = localizedDate(LocalDate.now());
 
-        TextRenderer clock = Fonts.renderer("MatrixSansPrint", FontInfo.Type.Regular, TextRenderer.get());
-        TextRenderer dateFont = Fonts.renderer("OnestBold", FontInfo.Type.Regular, clock);
+        TextRenderer clock = BuiltinFontCatalog.MATRIX_SANS_PRINT.renderer(TextRenderer.get());
+        TextRenderer dateFont = BuiltinFontCatalog.ONEST_BOLD.renderer(clock);
         float timeHeight = measureHeight(clock, TIME_FONT);
         float centerY = gridLayout.originY() - gridLayout.radius() * 3.45f;
         float timeX = fixedWidth * 0.5f - measureWidth(clock, time, TIME_FONT) * 0.5f;
@@ -429,8 +429,8 @@ public final class CombatantMainMenuScreen extends Screen {
                 new RenderColor(withAlpha(accent, Math.round(opacity * 150f))),
                 0.8f * MENU_SCALE, false);
 
-        TextRenderer titleFont = Fonts.renderer("OnestBold", FontInfo.Type.Regular, TextRenderer.get());
-        TextRenderer bodyFont = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, titleFont);
+        TextRenderer titleFont = BuiltinFontCatalog.ONEST_BOLD.renderer(TextRenderer.get());
+        TextRenderer bodyFont = BuiltinFontCatalog.ONEST_MEDIUM.renderer(titleFont);
         float textX = headX + AUTH_WARNING_HEAD + 8f * MENU_SCALE;
         drawText(titleFont, tr("screen.combatant.main_menu.auth_warning.title"), textX,
                 bounds.y + 8.8f * MENU_SCALE, 0.68f * MENU_SCALE,
@@ -443,7 +443,7 @@ public final class CombatantMainMenuScreen extends Screen {
     }
 
     private void renderFooter(float opacity) {
-        TextRenderer font = Fonts.renderer("OnestBold", FontInfo.Type.Regular, TextRenderer.get());
+        TextRenderer font = BuiltinFontCatalog.ONEST_BOLD.renderer(TextRenderer.get());
         String openSource = tr("screen.combatant.main_menu.open_source");
         String version = "v" + CombatantBuild.displayVersion();
 

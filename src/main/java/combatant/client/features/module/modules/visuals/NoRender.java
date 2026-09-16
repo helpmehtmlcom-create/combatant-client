@@ -231,6 +231,10 @@ public class NoRender extends Module {
         return isEnabled() && toggles.get(KEY_TOAST_HINTS);
     }
 
+    public boolean blockOverlayDisabled() {
+        return isEnabled() && toggles.get("block_overlay");
+    }
+
     public boolean fadeAdditionalLivingEntities() {
         return viewObstructionFadeEnabled() && viewObstructionFadeLivingEntities.get();
     }

@@ -7,12 +7,12 @@
 
 package combatant.client.mixins.sodium;
 
+import combatant.client.features.module.Modules;
+import combatant.client.features.module.modules.visuals.Freecam;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
-import combatant.client.features.module.Modules;
-import combatant.client.features.module.modules.visuals.Freecam;
 
 @Pseudo
 @Mixin(targets = "net.caffeinemc.mods.sodium.client.render.SodiumWorldRenderer", remap = false)
@@ -24,8 +24,10 @@ public abstract class SodiumWorldRendererFreecamMixin {
             argsOnly = true,
             ordinal = 0
     )
-    private boolean combatant$freecamUsesSpectatorOcclusionRules(boolean spectator) {
+    private boolean combatant$freecamDisablesSectionOcclusion(boolean useOcclusionCulling) {
+        if (!useOcclusionCulling) return false;
+
         Freecam freecam = Modules.get(Freecam.class);
-        return spectator || (freecam != null && freecam.isEnabled() && freecam.camEntity != null);
+        return freecam == null || !freecam.isEnabled() || freecam.camEntity == null;
     }
 }

@@ -195,8 +195,8 @@ public final class DeferredResourceBindings {
         if (reference == null) reference = textures.get(DeferredResource.MAIN_DEPTH);
         if (reference == null) return false;
 
-        int width = spec.resolution().width(reference.getWidth(0), settings);
-        int height = spec.resolution().height(reference.getHeight(0), settings);
+        int width = spec.width(reference.getWidth(0), settings);
+        int height = spec.height(reference.getHeight(0), settings);
         int sceneSamples = reference.texture() instanceof combatant.client.mixininterface.IMsaaTexture msaa
                 ? Math.max(1, msaa.combatant$getSamples()) : 1;
         int samples = spec.samples() == DeferredTextureSpec.SamplePolicy.MATCH_SCENE ? sceneSamples : 1;

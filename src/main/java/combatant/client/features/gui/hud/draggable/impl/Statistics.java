@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.hud.draggable.impl;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.config.SettingDef;
 import combatant.client.config.values.BooleanMapValue;
 import combatant.client.config.values.BooleanValue;
@@ -26,8 +27,6 @@ import combatant.client.features.module.modules.visuals.BlockESP;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.math.HudScale;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.util.session.SessionStatisticsTracker;
 import net.minecraft.client.Minecraft;
@@ -234,8 +233,8 @@ public final class Statistics extends DraggableHudElement {
         boolean showPlayTime = information.get(INFO_PLAY_TIME);
 
         TextRenderer fallback = textRenderer != null ? textRenderer : TextRenderer.get();
-        TextRenderer headerTextRenderer = Fonts.renderer("Inter", FontInfo.Type.Bold, fallback);
-        TextRenderer rowTextRenderer = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, fallback);
+        TextRenderer headerTextRenderer = BuiltinFontCatalog.INTER_BOLD.renderer(fallback);
+        TextRenderer rowTextRenderer = BuiltinFontCatalog.ONEST_MEDIUM.renderer(fallback);
         if (headerTextRenderer == null) headerTextRenderer = fallback;
         if (rowTextRenderer == null) rowTextRenderer = fallback;
 

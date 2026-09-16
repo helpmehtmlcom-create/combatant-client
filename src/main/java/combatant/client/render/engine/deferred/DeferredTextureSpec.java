@@ -13,6 +13,8 @@ import com.mojang.blaze3d.GpuFormat;
 public record DeferredTextureSpec(
         GpuFormat format,
         ResolutionClass resolution,
+        int fixedWidth,
+        int fixedHeight,
         SamplePolicy samples,
         boolean mipChain,
         boolean storageImage,
@@ -30,7 +32,8 @@ public record DeferredTextureSpec(
         INDIRECT_LIGHT,
         REFLECTION_TRACE,
         REFLECTION_OUTPUT,
-        REFLECTION_HISTORY;
+        REFLECTION_HISTORY,
+        CLOUD_RENDER;
 
         public float scale(DeferredRuntimeConfig.Snapshot settings) {
             if (settings == null) settings = DeferredRuntimeConfig.current();
@@ -43,6 +46,7 @@ public record DeferredTextureSpec(
                 case REFLECTION_TRACE -> settings.reflectionTraceScale();
                 case REFLECTION_OUTPUT -> settings.reflectionOutputScale();
                 case REFLECTION_HISTORY -> settings.reflectionHistoryScale();
+                case CLOUD_RENDER -> DeferredCloudConfig.current().renderScale();
             };
         }
 
@@ -78,24 +82,51 @@ public record DeferredTextureSpec(
         if (format == null) throw new IllegalArgumentException("format");
         if (resolution == null) resolution = ResolutionClass.FULL;
         if (samples == null) samples = SamplePolicy.SINGLE_SAMPLE;
+        boolean fixed = fixedWidth > 0 || fixedHeight > 0;
+        if (fixed && (fixedWidth <= 0 || fixedHeight <= 0)) {
+            throw new IllegalArgumentException("Fixed texture extent requires both width and height");
+        }
+        if (!fixed) {
+            fixedWidth = 0;
+            fixedHeight = 0;
+        }
         if (storageImage && !format.hasColorAspect()) {
             throw new IllegalArgumentException("Storage image requires a color format: " + format);
         }
     }
 
+    public int width(int fullWidth, DeferredRuntimeConfig.Snapshot settings) {
+        return fixedWidth > 0 ? fixedWidth : resolution.width(fullWidth, settings);
+    }
+
+    public int height(int fullHeight, DeferredRuntimeConfig.Snapshot settings) {
+        return fixedHeight > 0 ? fixedHeight : resolution.height(fullHeight, settings);
+    }
+
+    public boolean fixedExtent() {
+        return fixedWidth > 0;
+    }
+
     public static DeferredTextureSpec attachment(GpuFormat format, SamplePolicy samples) {
-        return new DeferredTextureSpec(format, ResolutionClass.FULL, samples, false, false, true);
+        return new DeferredTextureSpec(format, ResolutionClass.FULL, 0, 0, samples, false, false, true);
     }
 
     public static DeferredTextureSpec compute(GpuFormat format, ResolutionClass resolution, boolean mipChain) {
         return new DeferredTextureSpec(
-                format, resolution, SamplePolicy.SINGLE_SAMPLE, mipChain, true, false
+                format, resolution, 0, 0, SamplePolicy.SINGLE_SAMPLE, mipChain, true, false
         );
     }
 
     public static DeferredTextureSpec computeAttachment(GpuFormat format, ResolutionClass resolution) {
         return new DeferredTextureSpec(
-                format, resolution, SamplePolicy.SINGLE_SAMPLE, false, true, true
+                format, resolution, 0, 0, SamplePolicy.SINGLE_SAMPLE, false, true, true
+        );
+    }
+
+    public static DeferredTextureSpec fixedCompute(GpuFormat format, int width, int height, boolean mipChain) {
+        return new DeferredTextureSpec(
+                format, ResolutionClass.FULL, Math.max(1, width), Math.max(1, height),
+                SamplePolicy.SINGLE_SAMPLE, mipChain, true, false
         );
     }
 }

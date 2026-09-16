@@ -16,7 +16,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
-/** Native separable Gaussian blur for mask/glow effects. Raster remains the compatibility path. */
+/** Constant-cost separable mask blur for glow/outline effects. Raster remains the capability/runtime fallback. */
 public final class SeparableMaskBlurComputeBackend implements AutoCloseable {
     private static final int LOCAL_SIZE = 8;
     private static final Identifier SHADER = Identifier.fromNamespaceAndPath("combatant", "mask_blur");
@@ -46,7 +46,7 @@ public final class SeparableMaskBlurComputeBackend implements AutoCloseable {
     }
 
     /**
-     * Performs the same horizontal+vertical Gaussian mask blur as Shader ESP. The second pass
+     * Performs the same horizontal+vertical fixed-kernel mask blur as Shader ESP. The second pass
      * rejects pixels covered by {@code originalMask}, matching the raster shader's discard path.
      */
     public @Nullable GpuTextureView blur(CombatantRhi rhi,
@@ -108,7 +108,7 @@ public final class SeparableMaskBlurComputeBackend implements AutoCloseable {
         float safeRadius = Math.max(0.0f, Math.min(radius, 63.0f));
         Std430Writer writer = new Std430Writer(PARAMS_LAYOUT, 1)
                 .putVec4(0, "texelRadius", 1.0f / Math.max(1, width), 1.0f / Math.max(1, height),
-                        safeRadius, Math.max(0.5f, safeRadius * 0.5f))
+                        safeRadius, 0.0f)
                 .putVec4(0, "direction", dx, dy, rejectMask ? 1.0f : 0.0f, 0.0f);
         paramsBuffer.upload(writer.buffer(), 0L);
 

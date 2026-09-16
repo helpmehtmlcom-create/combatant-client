@@ -2,6 +2,7 @@
 
 #moj_import <combatant:ui_aa.glsl>
 #moj_import <combatant:ui_stroke.glsl>
+#moj_import <combatant:shader_esp_palette.glsl>
 
 /*
  * This file is part of the Combatant Client distribution.
@@ -36,39 +37,6 @@ vec2 warpedLocal(vec4 local) {
 float normalizeAngle(float angleDeg) {
     float outAngle = mod(angleDeg, 360.0);
     return outAngle < 0.0 ? outAngle + 360.0 : outAngle;
-}
-
-float cyclicMix(float value) {
-    float wrapped = fract(value);
-    return wrapped < 0.5 ? wrapped * 2.0 : (1.0 - wrapped) * 2.0;
-}
-
-vec3 hsb2rgb(vec3 c) {
-    vec3 rgb = clamp(abs(mod(c.x * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
-    rgb = rgb * rgb * (3.0 - 2.0 * rgb);
-    return c.z * mix(vec3(1.0), rgb, c.y);
-}
-
-vec3 paletteColor(int mode, float t, vec3 primary, vec3 secondary) {
-    float p = fract(t);
-    if (mode == 1) {
-        return hsb2rgb(vec3(p, 1.0, 1.0));
-    }
-    if (mode == 2) {
-        return hsb2rgb(vec3(p, 0.58, 1.0));
-    }
-    if (mode == 3) {
-        float hue = p < 0.5 ? -p : p;
-        return hsb2rgb(vec3(hue, 0.50, 1.0));
-    }
-    if (mode == 4) {
-        float v = 0.38 + 0.62 * cyclicMix(p);
-        return primary * v;
-    }
-    if (mode == 5 || mode == 6 || mode == 7) {
-        return mix(primary, secondary, cyclicMix(p));
-    }
-    return primary;
 }
 
 float circularDistance(float a, float b) {
@@ -155,25 +123,27 @@ void main() {
         float capAa = max(max(softness, fwidth(capRadius)), 0.0001);
         float startCapD = length(frag - arcPoint(center, radius, startDeg)) - capRadius;
         float endCapD = length(frag - arcPoint(center, radius, startDeg + sweepDeg)) - capRadius;
+        float completionFade = 1.0 - smoothstep(342.0, 359.5, sweepDeg);
         float startCap = 1.0 - smoothstep(0.0, capAa, startCapD);
-        float endCap = 1.0 - smoothstep(0.0, capAa, endCapD);
+        float endCap = (1.0 - smoothstep(0.0, capAa, endCapD)) * completionFade;
         float capGlowAa = max(glowRadius + capAa, capAa);
         float startCapGlow = 1.0 - smoothstep(0.0, capGlowAa, startCapD);
-        float endCapGlow = 1.0 - smoothstep(0.0, capGlowAa, endCapD);
+        float endCapGlow = (1.0 - smoothstep(0.0, capGlowAa, endCapD)) * completionFade;
         strokeFill = max(strokeFill, max(startCap, endCap));
         glowFill = max(glowFill, max(startCapGlow, endCapGlow));
     }
 
-    float paletteT = angleDeg / 360.0 * angularCycles + angularOffset;
+    float palettePhaseDeg = (angleDeg / 360.0 * angularCycles + angularOffset) * 360.0;
     vec3 primary = v_Color.rgb;
-    vec3 arcColor = paletteColor(colorMode, paletteT, primary, secondary.rgb);
+    vec3 arcColor = shaderEspPaletteColor(colorMode, palettePhaseDeg, primary, secondary.rgb);
     vec3 trackColor = mix(arcColor * 0.34, vec3(0.0), 0.18);
 
     float head = 0.0;
     if (sweepDeg > 0.001 && sweepDeg < 359.99) {
         float headPhase = fract(normalizeAngle(startDeg + sweepDeg) / 360.0);
         head = 1.0 - smoothstep(0.0, 0.035, circularDistance(angleDeg / 360.0, headPhase));
-        head *= strokeFill;
+        float completionFade = 1.0 - smoothstep(342.0, 359.5, sweepDeg);
+        head *= strokeFill * completionFade;
     }
 
     vec3 hotColor = mix(arcColor, vec3(1.0), clamp(headBoost, 0.0, 1.0));

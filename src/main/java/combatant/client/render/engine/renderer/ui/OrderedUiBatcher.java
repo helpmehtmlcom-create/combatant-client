@@ -325,8 +325,8 @@ public final class OrderedUiBatcher {
         UiRenderDispatcher.submitOrderedBatcher(this, finish);
     }
 
-    /** Executes a compiler-owned opaque ordered pass. Never call directly from facade code. */
-    void executeCompiled(boolean finish) {
+    /** Executes a compiler-owned capture-dependent ordered sequence. Never call directly from facade code. */
+    void executeCaptureAware(boolean finish) {
         if (!active) return;
         flushing = true;
         pendingDrawsScratch.clear();
@@ -475,10 +475,16 @@ public final class OrderedUiBatcher {
                     flushPendingDraws(pendingDraws);
                     boolean capturedScene = batch.backdropRequest.requiresCapturedScene();
                     boolean uiUnderlayScene = batch.backdropRequest.usesUiUnderlayAsScene();
+                    boolean currentTargetScene =
+                            batch.backdropRequest.sceneSource() == UiBackdropRequest.SceneSource.CURRENT_TARGET;
+                    // Deferred extraction can outlive a Mojang framebuffer generation during reload/resize.
+                    // Resolve logical CURRENT_TARGET at replay time instead of retaining its old texture view.
                     GpuTextureView blurSourceView = uiUnderlayScene
                             ? uiUnderlayView
-                            : capturedScene ? liquidSourceView : batch.view;
-                    GpuSampler blurSourceSampler = (uiUnderlayScene || capturedScene)
+                            : capturedScene ? liquidSourceView
+                            : currentTargetScene ? mainColorView
+                            : batch.view;
+                    GpuSampler blurSourceSampler = (uiUnderlayScene || capturedScene || currentTargetScene)
                             ? PostProcessManager.getSampler()
                             : batch.sampler;
                     int blurPassCalls = prepareSharedBlur(mc, blurSourceView, blurSourceSampler, screenW, screenH, uiScale,
@@ -502,7 +508,8 @@ public final class OrderedUiBatcher {
                         continue;
                     }
                     // Captured-scene blur must never degrade to the accumulated HUD target.
-                    if (capturedScene || uiUnderlayScene || batch.view == mainColorView) {
+                    if (capturedScene || uiUnderlayScene || currentTargetScene
+                            || blurSourceView == mainColorView) {
                         continue;
                     }
                 }
@@ -750,7 +757,7 @@ public final class OrderedUiBatcher {
     /**
      * Executes ordinary draw/text batches interleaved with item batches without entering the
      * capture-aware blur/glass replay. Item boundaries flush only the pending RHI draw segment,
-     * preserving exact order while avoiding all legacy effect setup and per-entry effect branches.
+     * preserving exact order while avoiding repeated effect setup and per-entry effect branches.
      */
     void executeCompiledMixedItems(boolean finish) {
         if (!active) return;
@@ -890,7 +897,7 @@ public final class OrderedUiBatcher {
     /**
      * Executes a compiler-classified item-only submission. Item atlas preparation remains an
      * explicit pre-draw stage, while the submission itself is no longer hidden inside the generic
-     * OrderedSpecial replay path.
+     * special ordered-effect replay path.
      */
     void executeCompiledItems(boolean finish) {
         if (!active) return;
@@ -1202,7 +1209,8 @@ public final class OrderedUiBatcher {
                                           float uiScale,
                                           Renderer2D.BlurQuality blurQuality,
                                           float offsetPx) {
-        if (sourceView == null || sourceSampler == null) {
+        if (sourceView == null || sourceSampler == null
+                || sourceView.isClosed() || sourceView.texture().isClosed()) {
             return 0;
         }
         Renderer2D.BlurQuality quality = blurQuality != null ? blurQuality : Renderer2D.DEFAULT_BLUR_QUALITY;

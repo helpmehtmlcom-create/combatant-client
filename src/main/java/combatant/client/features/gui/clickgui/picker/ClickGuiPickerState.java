@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.clickgui.picker;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 
 import combatant.client.features.theme.Theme;
 import combatant.client.render.engine.text.*;
@@ -511,7 +512,7 @@ public final class ClickGuiPickerState {
         ClickGuiRenderer.drawText(font, shown, textX, textY, textSize, color, false);
         if (clipped) ScissorFunction.pop();
 
-        TextRenderer icons = Fonts.renderer("Icons", FontInfo.Type.Regular, ClickGuiRenderer.getInterRegular());
+        TextRenderer icons = BuiltinFontCatalog.ICONS.renderer(ClickGuiRenderer.getInterRegular());
         String icon = "s";
         float iconSize = 8f * SCALE;
         float iconW = ClickGuiRenderer.textWidth(icons, icon, iconSize);

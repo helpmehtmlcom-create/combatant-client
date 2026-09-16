@@ -7,6 +7,7 @@
 
 package combatant.client.features.module.modules.combat;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
@@ -44,8 +45,6 @@ import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.core.ViewportContext;
 import combatant.client.render.engine.math.HudScale;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.helpers.ScreenProjection;
 import combatant.client.render.helpers.TickDelta;
@@ -885,7 +884,7 @@ public class AutoBow extends Module {
             return;
         }
 
-        TextRenderer renderer = Fonts.renderer("OnestMedium", FontInfo.Type.Regular, textRenderer);
+        TextRenderer renderer = BuiltinFontCatalog.ONEST_MEDIUM.renderer(textRenderer);
         float width = (float) renderer.getWidth(state.label, false) * TEXT_SCALE;
         float height = (float) renderer.getHeight(false) * TEXT_SCALE;
         float x = centerX - width * 0.5f;

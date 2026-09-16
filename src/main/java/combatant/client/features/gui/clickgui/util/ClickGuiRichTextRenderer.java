@@ -7,12 +7,11 @@
 
 package combatant.client.features.gui.clickgui.util;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.svg.SvgRenderOptions;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextGlyphFallback;
 import combatant.client.render.engine.text.TextRenderer;
 import net.minecraft.network.chat.Component;
@@ -81,10 +80,11 @@ public final class ClickGuiRichTextRenderer {
 
     private static TextRenderer font(Style style) {
         if (style != null && style.isBold()) {
-            return Fonts.renderer("InterMedium", FontInfo.Type.Regular, ClickGuiRenderer.getInterMedium());
+            return BuiltinFontCatalog.INTER_MEDIUM.renderer(ClickGuiRenderer.getInterMedium());
         }
         if (style != null && style.isItalic()) {
-            return Fonts.renderer("Inter", FontInfo.Type.Italic, ClickGuiRenderer.getInterRegular());
+            // Inter has no dedicated italic builtin face; use the typed regular fallback explicitly.
+            return BuiltinFontCatalog.INTER_REGULAR.renderer(ClickGuiRenderer.getInterRegular());
         }
         return ClickGuiRenderer.getInterMedium();
     }

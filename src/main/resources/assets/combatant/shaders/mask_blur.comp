@@ -14,48 +14,30 @@ layout(binding = 1) uniform sampler2D u_Mask;
 layout(binding = 2, rgba8) writeonly uniform image2D u_Output;
 
 layout(std430, binding = 3) readonly buffer MaskBlurParams {
-    vec4 u_TexelRadius; // xy = texel size, z = radius, w = sigma
+    vec4 u_TexelRadius; // xy = texel size, z = visual radius, w = reserved sigma
     vec4 u_Direction;   // xy = direction, z = reject original mask
 };
 
-const int LOCAL_EXTENT = 8;
-const int MAX_RADIUS = 63;
-const int TILE_MAJOR = LOCAL_EXTENT + MAX_RADIUS * 2;
-const int TILE_TEXELS = TILE_MAJOR * LOCAL_EXTENT;
-shared vec4 s_Tile[TILE_TEXELS];
+/*
+ * Five bilinear samples approximate a nine-tap Gaussian kernel. The previous implementation
+ * evaluated exp() in a radius-sized loop for every output pixel, so a large ESP glow scaled
+ * linearly up to 127 taps per pixel. This kernel has constant cost independent of radius.
+ */
+const float CENTER_WEIGHT = 0.2270270270;
+const float INNER_WEIGHT = 0.3162162162;
+const float OUTER_WEIGHT = 0.0702702703;
+const float INNER_OFFSET = 1.3846153846;
+const float OUTER_OFFSET = 3.2307692308;
 
-float gaussian(float x, float sigma) {
-    float s = max(sigma, 0.5);
-    return exp(-(x * x) / (2.0 * s * s));
-}
-
-vec4 fetchPremultiplied(ivec2 pixel, ivec2 sourceSize) {
-    vec4 value = texelFetch(u_Texture, clamp(pixel, ivec2(0), sourceSize - ivec2(1)), 0);
+vec4 samplePremultiplied(vec2 uv) {
+    vec4 value = texture(u_Texture, clamp(uv, vec2(0.0), vec2(1.0)));
     value.rgb *= value.a;
     return value;
 }
 
 void main() {
-    ivec2 local = ivec2(gl_LocalInvocationID.xy);
-    ivec2 groupBase = ivec2(gl_WorkGroupID.xy) * LOCAL_EXTENT;
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
     ivec2 outputSize = imageSize(u_Output);
-    ivec2 sourceSize = max(textureSize(u_Texture, 0), ivec2(1));
-    bool vertical = abs(u_Direction.y) > abs(u_Direction.x);
-
-    // One workgroup cooperatively loads the complete Gaussian halo once. At radius 63 this
-    // consumes ~17 KiB of shared memory instead of issuing up to 127 texture reads per output.
-    int lane = local.y * LOCAL_EXTENT + local.x;
-    for (int index = lane; index < TILE_TEXELS; index += LOCAL_EXTENT * LOCAL_EXTENT) {
-        int major = index % TILE_MAJOR;
-        int minor = index / TILE_MAJOR;
-        ivec2 sourcePixel = vertical
-                ? groupBase + ivec2(minor, major - MAX_RADIUS)
-                : groupBase + ivec2(major - MAX_RADIUS, minor);
-        s_Tile[index] = fetchPremultiplied(sourcePixel, sourceSize);
-    }
-    barrier();
-
-    ivec2 pixel = groupBase + local;
     if (any(greaterThanEqual(pixel, outputSize))) return;
 
     vec2 uv = (vec2(pixel) + vec2(0.5)) / vec2(outputSize);
@@ -64,22 +46,23 @@ void main() {
         return;
     }
 
-    int radius = clamp(int(u_TexelRadius.z + 0.5), 0, MAX_RADIUS);
-    int major = (vertical ? local.y : local.x) + MAX_RADIUS;
-    int minor = vertical ? local.x : local.y;
-    int center = minor * TILE_MAJOR + major;
-
-    float weight = gaussian(0.0, u_TexelRadius.w);
-    vec4 accum = s_Tile[center] * weight;
-    float weightSum = weight;
-    for (int i = 1; i <= MAX_RADIUS; ++i) {
-        if (i > radius) break;
-        weight = gaussian(float(i), u_TexelRadius.w);
-        accum += (s_Tile[center - i] + s_Tile[center + i]) * weight;
-        weightSum += weight * 2.0;
+    float radius = clamp(u_TexelRadius.z, 0.0, 63.0);
+    if (radius <= 0.01) {
+        vec4 value = texture(u_Texture, uv);
+        imageStore(u_Output, pixel, value);
+        return;
     }
 
-    vec4 blurred = accum / max(weightSum, 0.0001);
-    vec3 rgb = blurred.a > 0.0001 ? blurred.rgb / blurred.a : vec3(0.0);
-    imageStore(u_Output, pixel, vec4(rgb, blurred.a));
+    // Scale the fixed kernel so its outer sample lands near the requested visual radius.
+    float kernelScale = max(radius / 3.2307692308, 0.25);
+    vec2 stepUv = u_TexelRadius.xy * u_Direction.xy * kernelScale;
+
+    vec4 accum = samplePremultiplied(uv) * CENTER_WEIGHT;
+    accum += (samplePremultiplied(uv - stepUv * INNER_OFFSET)
+            + samplePremultiplied(uv + stepUv * INNER_OFFSET)) * INNER_WEIGHT;
+    accum += (samplePremultiplied(uv - stepUv * OUTER_OFFSET)
+            + samplePremultiplied(uv + stepUv * OUTER_OFFSET)) * OUTER_WEIGHT;
+
+    vec3 rgb = accum.a > 0.0001 ? accum.rgb / accum.a : vec3(0.0);
+    imageStore(u_Output, pixel, vec4(rgb, accum.a));
 }

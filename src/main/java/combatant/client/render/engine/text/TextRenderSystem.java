@@ -20,7 +20,6 @@ import combatant.client.render.engine.renderer.ui.clip.UiMsaaClipLayer;
 import combatant.client.render.engine.rhi.GpuMeshHandle;
 import combatant.client.render.engine.rhi.RhiDrawCommand;
 import combatant.client.render.engine.rhi.resource.GlyphAtlasManager;
-import combatant.client.render.engine.text.backend.*;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import combatant.client.render.engine.uniform.impl.MsdfTextUniforms;
 import combatant.client.render.engine.uniform.impl.UiClipUniforms;

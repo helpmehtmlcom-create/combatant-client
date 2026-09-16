@@ -119,8 +119,8 @@ float combatant_encode_distance(float distanceValue) {
     return clamp((log2(1.0 + max(distanceValue, 0.0)) + 1.0) / 17.0, 1.0 / 255.0, 1.0);
 }
 
-float combatant_unpack_unorm8(uint packed, uint shift) {
-    return float((packed >> shift) & 255u) / 255.0;
+float combatant_unpack_unorm8(uint packedValue, uint shift) {
+    return float((packedValue >> shift) & 255u) / 255.0;
 }
 
 bool combatant_has_map(uint mask, uint bit) {

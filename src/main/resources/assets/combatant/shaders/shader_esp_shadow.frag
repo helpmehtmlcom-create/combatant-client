@@ -13,52 +13,47 @@ uniform sampler2D u_Texture;
 uniform sampler2D u_Mask;
 
 layout (std140) uniform ShaderEspBlur {
-    vec4 u_TexelRadius; // xy = texel size, z = radius, w = sigma
+    vec4 u_TexelRadius; // xy = texel size, z = visual radius, w = reserved sigma
     vec4 u_Direction;   // xy = blur direction
 };
 
 in vec2 v_TexCoord;
 
-float gaussian(float x, float sigma) {
-    float s = max(sigma, 0.5);
-    return exp(-(x * x) / (2.0 * s * s));
+const float CENTER_WEIGHT = 0.2270270270;
+const float INNER_WEIGHT = 0.3162162162;
+const float OUTER_WEIGHT = 0.0702702703;
+const float INNER_OFFSET = 1.3846153846;
+const float OUTER_OFFSET = 3.2307692308;
+
+vec4 samplePremultiplied(vec2 uv) {
+    vec4 value = texture(u_Texture, uv);
+    value.rgb *= value.a;
+    return value;
 }
 
 void main() {
     vec2 uv = v_TexCoord;
 
+    // Vertical/final pass removes the original model so glow/outline stays outside the silhouette.
     if (abs(u_Direction.x) < 0.0001 && texture(u_Mask, uv).a > 0.0) {
         discard;
     }
 
     float radius = clamp(u_TexelRadius.z, 0.0, 63.0);
-    int iradius = int(radius + 0.5);
-    vec2 stepUv = u_TexelRadius.xy * u_Direction.xy;
-
-    vec4 pixelColor = texture(u_Texture, uv);
-    pixelColor.rgb *= pixelColor.a;
-
-    float weight = gaussian(0.0, u_TexelRadius.w);
-    vec4 accum = pixelColor * weight;
-    float weightSum = weight;
-
-    for (int i = 1; i < 64; i++) {
-        if (i > iradius) {
-            break;
-        }
-
-        vec2 offset = float(i) * stepUv;
-        vec4 left = texture(u_Texture, uv - offset);
-        vec4 right = texture(u_Texture, uv + offset);
-        left.rgb *= left.a;
-        right.rgb *= right.a;
-
-        weight = gaussian(float(i), u_TexelRadius.w);
-        accum += (left + right) * weight;
-        weightSum += weight * 2.0;
+    if (radius <= 0.01) {
+        color = texture(u_Texture, uv);
+        return;
     }
 
-    vec4 blurred = accum / max(weightSum, 0.0001);
-    vec3 rgb = blurred.a > 0.0001 ? blurred.rgb / blurred.a : vec3(0.0);
-    color = vec4(rgb, blurred.a);
+    float kernelScale = max(radius / 3.2307692308, 0.25);
+    vec2 stepUv = u_TexelRadius.xy * u_Direction.xy * kernelScale;
+
+    vec4 accum = samplePremultiplied(uv) * CENTER_WEIGHT;
+    accum += (samplePremultiplied(uv - stepUv * INNER_OFFSET)
+            + samplePremultiplied(uv + stepUv * INNER_OFFSET)) * INNER_WEIGHT;
+    accum += (samplePremultiplied(uv - stepUv * OUTER_OFFSET)
+            + samplePremultiplied(uv + stepUv * OUTER_OFFSET)) * OUTER_WEIGHT;
+
+    vec3 rgb = accum.a > 0.0001 ? accum.rgb / accum.a : vec3(0.0);
+    color = vec4(rgb, accum.a);
 }

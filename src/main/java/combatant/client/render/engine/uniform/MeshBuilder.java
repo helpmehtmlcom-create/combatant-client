@@ -13,17 +13,13 @@
 
 package combatant.client.render.engine.uniform;
 
-import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
-import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.phys.Vec3;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.color.RenderColor;
-import combatant.client.render.engine.guard.LegacyRenderPath;
-import combatant.client.render.engine.guard.RenderArchitectureGuard;
 import combatant.client.render.engine.renderer.RenderWarp;
 import combatant.client.render.engine.renderer.RenderWarpStack;
 
@@ -44,8 +40,7 @@ import static org.lwjgl.system.MemoryUtil.*;
  * builder itself is no longer needed to release its native memory.</p>
  */
 public final class MeshBuilder implements AutoCloseable {
-    private static final boolean DEBUG =
-            FabricLoader.getInstance().isDevelopmentEnvironment() || Boolean.getBoolean("combatant.render.debug");
+    private static final boolean DEBUG = developmentEnvironment() || Boolean.getBoolean("combatant.render.debug");
     private static final int DEFAULT_VERTEX_CAPACITY = Integer.getInteger("combatant.render.mesh.defaultVertices", 4096);
     private static final int DEFAULT_INDEX_CAPACITY = Integer.getInteger("combatant.render.mesh.defaultIndices", 8192);
     private static final int MAX_BUFFER_BYTES = Integer.MAX_VALUE - 8;
@@ -64,6 +59,14 @@ public final class MeshBuilder implements AutoCloseable {
     private boolean building;
     private boolean worldCameraAnchored;
     private double cameraX, cameraZ;
+
+    private static boolean developmentEnvironment() {
+        try {
+            return FabricLoader.getInstance().isDevelopmentEnvironment();
+        } catch (RuntimeException | LinkageError ignored) {
+            return false;
+        }
+    }
 
     public MeshBuilder(RenderPipeline pipeline) {
         this(Objects.requireNonNull(pipeline.getVertexFormatBinding(0)), pipeline.getPrimitiveTopology());
@@ -618,33 +621,6 @@ public final class MeshBuilder implements AutoCloseable {
         return indicesCount * Integer.BYTES;
     }
 
-    /**
-     * Emergency compatibility upload. This path is locked after the RHI migration and is not allowed as production
-     * behavior. Use CombatantRHI.dynamicMeshes().upload(mesh) instead.
-     */
-    @Deprecated
-    public GpuBuffer getVertexBuffer() {
-        RenderArchitectureGuard.requireAllowed(LegacyRenderPath.IMMEDIATE_MESH_UPLOAD, "MeshBuilder#getVertexBuffer");
-        return RenderSystem.getDevice().createBuffer(
-                () -> "combatant-immediate-vertices",
-                GpuBuffer.USAGE_VERTEX | GpuBuffer.USAGE_COPY_DST,
-                vertexBufferView()
-        );
-    }
-
-    /**
-     * Emergency compatibility upload. This path is locked after the RHI migration and is not allowed as production
-     * behavior. Use CombatantRHI.dynamicMeshes().upload(mesh) instead.
-     */
-    @Deprecated
-    public GpuBuffer getIndexBuffer() {
-        RenderArchitectureGuard.requireAllowed(LegacyRenderPath.IMMEDIATE_MESH_UPLOAD, "MeshBuilder#getIndexBuffer");
-        return RenderSystem.getDevice().createBuffer(
-                () -> "combatant-immediate-indices",
-                GpuBuffer.USAGE_INDEX | GpuBuffer.USAGE_COPY_DST,
-                indexBufferView()
-        );
-    }
 
     public com.mojang.blaze3d.IndexType getIndexType() {
         // indices() stores 32-bit values.

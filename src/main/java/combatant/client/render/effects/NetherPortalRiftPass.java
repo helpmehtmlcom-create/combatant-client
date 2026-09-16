@@ -15,6 +15,7 @@ import net.minecraft.world.level.block.Blocks;
 import combatant.client.mixins.accessors.EntityAccessor;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
+import combatant.client.render.engine.postprocess.PostProcessExecutionContext;
 import combatant.client.render.engine.postprocess.PostProcessPass;
 import combatant.client.render.engine.renderer.FullScreenRenderer;
 import combatant.client.render.engine.uniform.impl.HeatUniforms;
@@ -44,7 +45,10 @@ public final class NetherPortalRiftPass implements PostProcessPass {
     }
 
     @Override
-    public boolean render(GpuTextureView src, GpuTextureView dst, float tickDelta) {
+    public boolean render(PostProcessExecutionContext execution) {
+        if (execution == null) return false;
+        GpuTextureView src = execution.source();
+        GpuTextureView dst = execution.destination();
         if (RuntimeGate.isPanic()) {
             strength = 0.0f;
             lastUpdateMs = 0L;

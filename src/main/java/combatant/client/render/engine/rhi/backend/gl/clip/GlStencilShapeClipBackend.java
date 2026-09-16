@@ -156,22 +156,6 @@ public final class GlStencilShapeClipBackend implements ShapeClipBackend {
         }
     }
 
-    @Override
-    public boolean prepareMainTarget() {
-        return framebuffers.ensureForMainFramebuffer();
-    }
-
-    @Override
-    public boolean prepare(@Nullable GpuTextureView colorView, @Nullable GpuTextureView depthView) {
-        boolean ok = framebuffers.ensure(colorView, depthView);
-        if (!ok) lastFailure = framebuffers.lastFailure();
-        return ok;
-    }
-
-    @Override
-    public boolean clearMainTarget() {
-        return framebuffers.clearMainFramebufferStencil();
-    }
 
     void setStencilAvailable(boolean available) {
         stencilAvailable = available;

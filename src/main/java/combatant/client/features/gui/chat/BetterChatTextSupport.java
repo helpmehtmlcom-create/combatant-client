@@ -5,8 +5,7 @@
  */
 package combatant.client.features.gui.chat;
 
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.render.engine.text.TextGlyphFallback;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.engine.text.VanillaTextRenderer;
@@ -17,23 +16,23 @@ final class BetterChatTextSupport {
     private BetterChatTextSupport() { }
 
     static TextRenderer interRegular() {
-        return Fonts.renderer("Inter", FontInfo.Type.Regular, TextRenderer.get());
+        return BuiltinFontCatalog.INTER_REGULAR.renderer(TextRenderer.get());
     }
 
     static TextRenderer iosevkaRegular() {
-        return Fonts.renderer("Iosevka", FontInfo.Type.Regular, TextRenderer.get());
+        return BuiltinFontCatalog.IOSEVKA_REGULAR.renderer(TextRenderer.get());
     }
 
     static TextRenderer iosevkaItalic() {
-        return Fonts.renderer("Iosevka", FontInfo.Type.Italic, iosevkaRegular());
+        return BuiltinFontCatalog.IOSEVKA_ITALIC.renderer(iosevkaRegular());
     }
 
     static TextRenderer iosevkaBold() {
-        return Fonts.renderer("Iosevka", FontInfo.Type.Bold, iosevkaRegular());
+        return BuiltinFontCatalog.IOSEVKA_BOLD.renderer(iosevkaRegular());
     }
 
     static TextRenderer iosevkaBoldItalic() {
-        return Fonts.renderer("Iosevka", FontInfo.Type.BoldItalic, iosevkaBold());
+        return BuiltinFontCatalog.IOSEVKA_BOLD_ITALIC.renderer(iosevkaBold());
     }
 
     static TextRenderer renderer(String key) {

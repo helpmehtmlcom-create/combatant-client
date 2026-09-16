@@ -7,9 +7,8 @@
 
 package combatant.client.features.gui.clickgui.settings;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.helpers.SystemCursor;
 
@@ -243,7 +242,7 @@ enum SettingRendererBridge {
                 UnifiedSettingsSkin.withAlpha(UnifiedSettingsSkin.accentGradientStart(1.0f), hovered ? 145 : 98)
         );
 
-        TextRenderer iconFont = Fonts.renderer("Icons", FontInfo.Type.Regular, UnifiedSettingsSkin.fontMedium());
+        TextRenderer iconFont = BuiltinFontCatalog.ICONS.renderer(UnifiedSettingsSkin.fontMedium());
         TextRenderer textFont = UnifiedSettingsSkin.fontMedium();
         float iconSize = UnifiedSettingsSkin.metric(16.0f, 7.4f);
         float textSize = UnifiedSettingsSkin.metric(11.5f, 5.7f);

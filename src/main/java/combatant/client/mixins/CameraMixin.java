@@ -32,6 +32,7 @@ import combatant.client.features.module.modules.visuals.CameraClip;
 import combatant.client.features.module.modules.visuals.FovControl;
 import combatant.client.features.module.modules.visuals.Freecam;
 import combatant.client.features.module.modules.visuals.Zoom;
+import combatant.client.util.render.CameraOcclusionPolicy;
 
 @Mixin(Camera.class)
 public abstract class CameraMixin {
@@ -81,8 +82,16 @@ public abstract class CameraMixin {
         float right = mod.rightOffset();
 
         if (back != 0.0f || up != 0.0f || right != 0.0f) {
-            // moveBy uses (surge, heave, sway); negative surge moves backward
+            // move uses (surge, heave, sway); negative surge moves backward. Vanilla has
+            // already prepared cullFrustum before this TAIL injection, so moving the camera
+            // without rebuilding it leaves section frustum tests anchored at the old position.
             move(-back, up, right);
+            Vec3 cameraPos = ((Camera) (Object) this).position();
+            combatant$prepareCullFrustum(
+                    getViewRotationMatrix(new Matrix4f()),
+                    combatant$createProjectionMatrixForCulling(),
+                    cameraPos
+            );
         }
     }
 
@@ -184,6 +193,14 @@ public abstract class CameraMixin {
         if (fc == null || !fc.isEnabled() || fc.camEntity == null) return;
 
         renderState.smartCull = false;
+    }
+
+    @Inject(method = "extractRenderState", at = @At("TAIL"))
+    private void combatant$disableInsideBlockSectionOcclusion(CameraRenderState renderState, float tickDelta, CallbackInfo ci) {
+        if (!renderState.smartCull) return;
+        if (CameraOcclusionPolicy.shouldDisableSectionOcclusion((Camera) (Object) this)) {
+            renderState.smartCull = false;
+        }
     }
 }
 

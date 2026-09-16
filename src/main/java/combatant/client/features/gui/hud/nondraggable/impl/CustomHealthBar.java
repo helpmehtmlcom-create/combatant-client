@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.hud.nondraggable.impl;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.util.resources.asset.UiScriptAsset;
 import java.util.LinkedHashMap;
 import net.minecraft.client.Minecraft;
@@ -30,7 +31,6 @@ import combatant.client.render.engine.renderer.ui.runtime.render.UiRenderContext
 import combatant.client.render.engine.renderer.ui.runtime.script.CachedUiScriptRuntime;
 import combatant.client.render.engine.renderer.ui.runtime.script.UiScriptModule;
 import combatant.client.render.engine.renderer.ui.runtime.script.UiScriptModuleHandle;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.runtime.RuntimeGate;
 
@@ -163,7 +163,7 @@ private static final float HEALTH_BAR_WIDTH = 81f;
     }
 
     private static TextRenderer getHealthTextRenderer() {
-        return Fonts.renderer("Iosevka");
+        return BuiltinFontCatalog.IOSEVKA_REGULAR.renderer();
     }
 
     private static int applyHealthAlpha(int argb, CustomHealthBar bm) {

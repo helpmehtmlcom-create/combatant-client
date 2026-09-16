@@ -7,9 +7,6 @@
 
 package combatant.client.render.engine.rhi;
 
-import combatant.client.render.engine.guard.LegacyRenderPath;
-
-import java.util.Map;
 import java.util.List;
 
 public record RhiStatsSnapshot(long frameId,
@@ -44,8 +41,6 @@ public record RhiStatsSnapshot(long frameId,
                                long uploadedIndexBytes,
                                long ringWraps,
                                long ringStalls,
-                               long immediateFallbackUploads,
-                               long temporaryOwnedMeshes,
                                long dynamicArenaAllocations,
                                long dynamicPersistentArenaAllocations,
                                long dynamicSpillArenaAllocations,
@@ -68,7 +63,5 @@ public record RhiStatsSnapshot(long frameId,
                                long dynamicArenaIndexCapacityObservedBytes,
                                long dynamicLargestVertexAllocationBytes,
                                long dynamicLargestIndexAllocationBytes,
-                               long legacyPathUses,
-                               Map<LegacyRenderPath, Long> legacyPathBreakdown,
                                List<RhiPipelineStatsSnapshot> pipelineBreakdown) {
 }

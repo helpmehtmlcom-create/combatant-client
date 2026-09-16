@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.hud.draggable.impl;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 
 import combatant.client.compat.xaero.XaeroMinimapIntegration;
 import combatant.client.config.values.*;
@@ -46,8 +47,6 @@ import combatant.client.render.engine.math.HudScale;
 import combatant.client.render.engine.profiler.ProfilerPhase;
 import combatant.client.render.engine.profiler.RenderProfiler2D;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.helpers.ScissorFunction;
 import combatant.client.util.player.PlayerHealthResolver;
@@ -815,7 +814,7 @@ public final class TargetHud extends DraggableHudElement {
         }
 
         String text = "x" + snapshot.count();
-        TextRenderer badgeRenderer = Fonts.renderer("Inter", FontInfo.Type.Bold, textRenderer);
+        TextRenderer badgeRenderer = BuiltinFontCatalog.INTER_BOLD.renderer(textRenderer);
         float pulse = AnimationUtility.easeOutBack(totemPopTextPulse, 1.12f);
         float groupScale = (0.86f + 0.14f * anim) * (1.0f + 0.13f * pulse);
         float textScale = TOTEM_BADGE_TEXT_SCALE * scaleFactor * groupScale;
@@ -929,7 +928,7 @@ public final class TargetHud extends DraggableHudElement {
 
         String name = target.getName().getString();
         String letter = name.isEmpty() ? "?" : name.substring(0, 1).toUpperCase(Locale.ROOT);
-        TextRenderer faceRenderer = Fonts.renderer("Inter", FontInfo.Type.Bold, textRenderer);
+        TextRenderer faceRenderer = BuiltinFontCatalog.INTER_BOLD.renderer(textRenderer);
         float textScale = PLACEHOLDER_TEXT_SCALE * scale.get().floatValue() * HudScale.scale(
                 mc.getWindow().getGuiScaledWidth(),
                 mc.getWindow().getGuiScaledHeight()
@@ -999,8 +998,8 @@ public final class TargetHud extends DraggableHudElement {
         String moduleStatus = resolveModuleStatus(target);
         String metaText = moduleStatus != null ? moduleStatus : distanceText;
         float panelWidth = drawWidth - PANEL_INSET * 4f * scaleFactor;
-        TextRenderer labelRenderer = Fonts.renderer("Inter", FontInfo.Type.Bold, textRenderer);
-        TextRenderer metaRenderer = Fonts.renderer("Inter", FontInfo.Type.Bold, textRenderer);
+        TextRenderer labelRenderer = BuiltinFontCatalog.INTER_BOLD.renderer(textRenderer);
+        TextRenderer metaRenderer = BuiltinFontCatalog.INTER_BOLD.renderer(textRenderer);
         boolean arcMode = isArcHealthMode();
         float hpTextScale = (arcMode ? ARC_HP_TEXT_SCALE : HP_TEXT_SCALE) * scaleFactor;
         float hpWidth = measureText(labelRenderer, hpText, hpTextScale);
@@ -1298,7 +1297,7 @@ public final class TargetHud extends DraggableHudElement {
             );
         }
 
-        TextRenderer hpRenderer = Fonts.renderer("Inter", FontInfo.Type.Bold, textRenderer);
+        TextRenderer hpRenderer = BuiltinFontCatalog.INTER_BOLD.renderer(textRenderer);
         float hpScale = ARC_HP_TEXT_SCALE * scaleFactor;
         hpRenderer.begin(hpScale, false, false);
         try {
@@ -1421,7 +1420,7 @@ public final class TargetHud extends DraggableHudElement {
         int iconColor = HudRenderUtil.scaleAlpha(uiTextPrimary, alphaFactor);
         int textColor = HudRenderUtil.scaleAlpha(uiTextSecondary, alphaFactor);
 
-        TextRenderer chipRenderer = Fonts.renderer("Inter", FontInfo.Type.Bold, textRenderer);
+        TextRenderer chipRenderer = BuiltinFontCatalog.INTER_BOLD.renderer(textRenderer);
         float textScale = EFFECTS_TEXT_SCALE * scaleFactor;
         float textHeight = 0.0f;
         chipRenderer.begin(textScale, false, false);
@@ -1608,7 +1607,7 @@ public final class TargetHud extends DraggableHudElement {
         }
 
         List<EffectChip> chips = new ArrayList<>();
-        TextRenderer chipRenderer = Fonts.renderer("Inter", FontInfo.Type.Bold, textRenderer);
+        TextRenderer chipRenderer = BuiltinFontCatalog.INTER_BOLD.renderer(textRenderer);
         float textScale = EFFECTS_TEXT_SCALE * scale;
         int limit = Math.min(4, effects.size());
         float totalWidth = 0.0f;

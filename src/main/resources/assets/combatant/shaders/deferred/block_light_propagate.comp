@@ -1,0 +1,59 @@
+#version 430 core
+
+/*
+ * This file is part of the Combatant Client distribution.
+ * Copyright (c) 2026 pivosos2007.
+ *
+ * Licensed under the GNU General Public License v3.0.
+ */
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+layout(binding = 0) uniform sampler2D u_Seed;
+layout(binding = 1) uniform sampler2D u_PreviousRadiance;
+layout(binding = 2, rgba16f) writeonly uniform image2D u_NextRadiance;
+layout(std430, binding = 3) readonly buffer BlockLightVolumeData {
+    vec4 volumeSizeAndColumns;
+    vec4 atlasSizeAndRows;
+    vec4 originAndAttenuation;
+} u_Volume;
+
+ivec3 volumeSize() {
+    return ivec3(u_Volume.volumeSizeAndColumns.xyz + vec3(0.5));
+}
+
+ivec2 atlasPixel(ivec3 voxel) {
+    int columns = max(1, int(u_Volume.volumeSizeAndColumns.w + 0.5));
+    int sliceColumn = voxel.z % columns;
+    int sliceRow = voxel.z / columns;
+    return ivec2(sliceColumn * volumeSize().x + voxel.x,
+                 sliceRow * volumeSize().y + voxel.y);
+}
+
+vec3 neighborRadiance(ivec3 voxel) {
+    ivec3 size = volumeSize();
+    if (any(lessThan(voxel, ivec3(0))) || any(greaterThanEqual(voxel, size))) return vec3(0.0);
+    return max(texelFetch(u_PreviousRadiance, atlasPixel(voxel), 0).rgb, vec3(0.0));
+}
+
+void main() {
+    ivec3 voxel = ivec3(gl_GlobalInvocationID.xyz);
+    ivec3 size = volumeSize();
+    if (any(greaterThanEqual(voxel, size))) return;
+
+    ivec2 pixel = atlasPixel(voxel);
+    vec4 seed = texelFetch(u_Seed, pixel, 0);
+    vec3 result = max(seed.rgb, vec3(0.0));
+
+    // Exact block dampening is injected by the producer. One light level is always lost per cell,
+    // while opaque cells can attenuate the full signal. No material/type inference happens here.
+    float attenuation = max(max(seed.a, 0.0), max(u_Volume.originAndAttenuation.w, 0.0));
+    result = max(result, neighborRadiance(voxel + ivec3( 1, 0, 0)) - vec3(attenuation));
+    result = max(result, neighborRadiance(voxel + ivec3(-1, 0, 0)) - vec3(attenuation));
+    result = max(result, neighborRadiance(voxel + ivec3(0,  1, 0)) - vec3(attenuation));
+    result = max(result, neighborRadiance(voxel + ivec3(0, -1, 0)) - vec3(attenuation));
+    result = max(result, neighborRadiance(voxel + ivec3(0, 0,  1)) - vec3(attenuation));
+    result = max(result, neighborRadiance(voxel + ivec3(0, 0, -1)) - vec3(attenuation));
+
+    imageStore(u_NextRadiance, pixel, vec4(max(result, vec3(0.0)), 1.0));
+}

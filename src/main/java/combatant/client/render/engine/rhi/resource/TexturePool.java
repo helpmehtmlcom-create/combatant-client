@@ -22,13 +22,6 @@ public final class TexturePool implements AutoCloseable {
         this.leakTracker = leakTracker;
     }
 
-    /**
-     * Compatibility constructor for legacy tests/tools.
-     */
-    public TexturePool() {
-        this(new ResourceLeakTracker());
-    }
-
     public void register(GpuTexture texture) {
         if (texture != null) leakTracker.register(texture);
     }

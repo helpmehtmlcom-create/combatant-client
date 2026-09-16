@@ -7,6 +7,7 @@
 
 package combatant.client.features.module.modules.visuals;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.config.values.*;
 import combatant.client.features.gui.hud.HudRenderSpace;
 import combatant.client.features.module.*;
@@ -59,8 +60,6 @@ import combatant.client.render.engine.core.ViewportContext;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.renderer.ui.ItemBatchRenderer;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.RuntimeTextLayout;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.engine.text.WorldTextRenderer;
@@ -1062,7 +1061,7 @@ public class NameTags extends Module {
         }
 
         String text = "x" + entry.totemPopCount();
-        TextRenderer badgeRenderer = Fonts.renderer("InterMedium", FontInfo.Type.Regular, fallbackRenderer);
+        TextRenderer badgeRenderer = BuiltinFontCatalog.INTER_MEDIUM.renderer(fallbackRenderer);
         double textScale = TOTEM_BADGE_TEXT_SCALE * (0.94 + 0.06 * anim);
         double textX = iconX + iconSize + TOTEM_BADGE_TEXT_GAP;
         double textH = WorldTextRenderer.measure(badgeRenderer, "Ag", textScale, false).height();
@@ -1570,7 +1569,7 @@ public class NameTags extends Module {
         renderer.item(totemBadgeStack(), iconX, iconY, Math.max(0.1f, iconSize / 16.0f), 911, Renderer2D.ITEM_OVERLAY_NONE, null);
 
         String text = "x" + count;
-        TextRenderer badgeRenderer = Fonts.renderer("InterMedium", FontInfo.Type.Regular, fallbackRenderer);
+        TextRenderer badgeRenderer = BuiltinFontCatalog.INTER_MEDIUM.renderer(fallbackRenderer);
         float textScale = TOTEM_BADGE_TEXT_SCALE * (0.94f + 0.06f * anim);
         float textX = iconX + iconSize + TOTEM_BADGE_TEXT_GAP;
         float textH = (float) badgeRenderer.getHeight(false) * textScale;
@@ -1632,10 +1631,10 @@ public class NameTags extends Module {
     }
 
     private void ensureFontCache(TextRenderer fallback) {
-        cachedNameTr = Fonts.renderer("InterMedium", FontInfo.Type.Regular, fallback);
-        cachedHpTr = Fonts.renderer("InterMedium", FontInfo.Type.Regular, cachedNameTr);
-        cachedLevelTr = Fonts.renderer("InterMedium", FontInfo.Type.Regular, fallback);
-        cachedTimeTr = Fonts.renderer("InterMedium", FontInfo.Type.Regular, fallback);
+        cachedNameTr = BuiltinFontCatalog.INTER_MEDIUM.renderer(fallback);
+        cachedHpTr = BuiltinFontCatalog.INTER_MEDIUM.renderer(cachedNameTr);
+        cachedLevelTr = BuiltinFontCatalog.INTER_MEDIUM.renderer(fallback);
+        cachedTimeTr = BuiltinFontCatalog.INTER_MEDIUM.renderer(fallback);
     }
 
     public void onResourceReload() {

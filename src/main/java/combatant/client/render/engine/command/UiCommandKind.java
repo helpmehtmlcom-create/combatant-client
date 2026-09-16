@@ -10,11 +10,7 @@ package combatant.client.render.engine.command;
 public enum UiCommandKind {
     SHAPE,
     PATH,
-    PRIMITIVE,
     TEXTURE,
-    TEXT,
     ITEM,
-    BLUR_REGION,
-    LIQUID_GLASS_REGION,
     EFFECT_REGION
 }

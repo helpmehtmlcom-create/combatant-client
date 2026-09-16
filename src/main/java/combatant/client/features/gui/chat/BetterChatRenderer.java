@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.chat;
 
+import combatant.client.render.engine.text.BuiltinFontCatalog;
 import com.mojang.blaze3d.platform.InputConstants;
 import combatant.client.mixins.accessors.SuggestionWindowAccessor;
 import combatant.client.util.screen.ClientScreen;
@@ -45,9 +46,8 @@ import combatant.client.mixins.accessors.TextFieldWidgetAccessor;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.renderer.Renderer2D;
+import combatant.client.render.engine.renderer.ui.UiBlurResources;
 import combatant.client.render.engine.svg.SvgRenderOptions;
-import combatant.client.render.engine.text.FontInfo;
-import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextGlyphFallback;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.helpers.ClipFunction;
@@ -458,7 +458,7 @@ public enum BetterChatRenderer {
         MessageClipBounds clipBounds = frame.messageClipBounds(PADDING);
         if (clipBounds != null) {
             if (!frame.bubbles().isEmpty()) {
-                Renderer2D.requestLiquidGlassBlurBeforeNextShapeClip();
+                UiBlurResources.requestBeforeNextShapeClip();
             }
             float clipRadius = Math.min(RADIUS, clipBounds.h() * 0.5f);
             chatClip = ClipFunction.pushRoundedRectAnalyticRequired(
@@ -1958,7 +1958,7 @@ lastHoverWasOutsideSuggest = false;
         drawRoundedRect(x + 1f, y + 1f, w - 2f, h - 2f, Math.max(0f, radius - 1f), tint);
         drawRoundedRectStrokeGradient(x, y, w, h, radius, 0.7f, strokeA, strokeB);
 
-        TextRenderer icons = Fonts.renderer("Icons", FontInfo.Type.Regular, BetterChatTextSupport.interRegular());
+        TextRenderer icons = BuiltinFontCatalog.ICONS.renderer(BetterChatTextSupport.interRegular());
         String icon = "s";
         float iconSize = h * 0.50f;
         float iconW = BetterChatTextSupport.width(icons, icon, iconSize);

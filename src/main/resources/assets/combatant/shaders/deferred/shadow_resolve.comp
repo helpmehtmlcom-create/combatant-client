@@ -11,24 +11,59 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(binding = 0) uniform sampler2D u_ResolvedDepth;
 layout(binding = 1) uniform sampler2D u_ShadowDepth;
-layout(binding = 2, r8) writeonly uniform image2D u_ShadowVisibility;
+layout(binding = 2) uniform sampler2D u_GbufferGeometry;
+layout(binding = 3) uniform sampler2D u_GbufferDepth;
+layout(binding = 4, r8) writeonly uniform image2D u_ShadowVisibility;
 
 struct ShadowCascade {
     mat4 viewProjection;
     vec4 atlasScaleBias;
     vec4 splitRange;
+    // xy: atlas texel size, z: cascade world units per shadow texel.
+    vec4 shadowTexel;
 };
 
-layout(std430, binding = 3) readonly buffer ShadowCascadeData {
+layout(std430, binding = 5) readonly buffer ShadowCascadeData {
     ShadowCascade cascades[];
 } u_Shadow;
 
-layout(std430, binding = 4) readonly buffer ShadowResolveCamera {
+layout(std430, binding = 6) readonly buffer ShadowResolveCamera {
     mat4 inverseProjection;
     mat4 inverseView;
     vec4 depthTransform;
     vec4 viewportAndFar;
+    // x: cascade blend fraction, y: normal offset (texels), z: receiver-plane bias (texels),
+    // w: minimum PCF filter radius (texels).
+    vec4 shadowParams0;
+    // x: blocker-search radius (texels), y: PCSS penumbra scale (texels / normalized depth),
+    // z: maximum penumbra radius (texels).
+    vec4 shadowParams1;
 } u_Camera;
+
+const vec2 POISSON[16] = vec2[](
+    vec2(-0.94201624, -0.39906216), vec2(0.94558609, -0.76890725),
+    vec2(-0.09418410, -0.92938870), vec2(0.34495938, 0.29387760),
+    vec2(-0.91588581, 0.45771432), vec2(-0.81544232, -0.87912464),
+    vec2(-0.38277543, 0.27676845), vec2(0.97484398, 0.75648379),
+    vec2(0.44323325, -0.97511554), vec2(0.53742981, -0.47373420),
+    vec2(-0.26496911, -0.41893023), vec2(0.79197514, 0.19090188),
+    vec2(-0.24188840, 0.99706507), vec2(-0.81409955, 0.91437590),
+    vec2(0.19984126, 0.78641367), vec2(0.14383161, -0.14100790)
+);
+
+struct ShadowProjection {
+    vec2 localUv;
+    vec2 atlasUv;
+    float depth;
+    bool valid;
+};
+
+vec3 decodeOctahedral(vec2 encoded) {
+    vec2 f = encoded * 2.0 - 1.0;
+    vec3 n = vec3(f, 1.0 - abs(f.x) - abs(f.y));
+    if (n.z < 0.0) n.xy = (1.0 - abs(n.yx)) * sign(n.xy);
+    return normalize(n);
+}
 
 vec3 reconstructCameraRelativeWorld(vec2 uv, float depth) {
     vec2 ndcXY = uv * 2.0 - 1.0;
@@ -47,6 +82,112 @@ float viewDistance(vec2 uv, float depth) {
     return max(0.0, -(viewH.z / viewH.w));
 }
 
+ShadowProjection projectShadow(ShadowCascade cascade, vec3 worldRelative) {
+    ShadowProjection result;
+    vec4 clip = cascade.viewProjection * vec4(worldRelative, 1.0);
+    result.valid = abs(clip.w) >= 1e-7;
+    result.localUv = vec2(0.0);
+    result.atlasUv = vec2(0.0);
+    result.depth = 0.0;
+    if (!result.valid) return result;
+
+    vec3 ndc = clip.xyz / clip.w;
+    result.localUv = ndc.xy * 0.5 + 0.5;
+    result.valid = all(greaterThanEqual(result.localUv, vec2(0.0)))
+            && all(lessThanEqual(result.localUv, vec2(1.0)));
+    result.atlasUv = result.localUv * cascade.atlasScaleBias.xy + cascade.atlasScaleBias.zw;
+    result.depth = ndc.z * u_Camera.depthTransform.z + u_Camera.depthTransform.w;
+    return result;
+}
+
+float receiverPlaneBias(ShadowCascade cascade, vec3 worldRelative, vec3 normalWorld, float receiverDepth) {
+    float worldTexel = max(cascade.shadowTexel.z, 1e-6);
+    vec3 reference = abs(normalWorld.y) < 0.95 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = normalize(cross(reference, normalWorld));
+    vec3 bitangent = normalize(cross(normalWorld, tangent));
+
+    ShadowProjection tangentProjection = projectShadow(cascade, worldRelative + tangent * worldTexel);
+    ShadowProjection bitangentProjection = projectShadow(cascade, worldRelative + bitangent * worldTexel);
+    float tangentSlope = tangentProjection.valid ? abs(tangentProjection.depth - receiverDepth) : 0.0;
+    float bitangentSlope = bitangentProjection.valid ? abs(bitangentProjection.depth - receiverDepth) : 0.0;
+    return max(tangentSlope, bitangentSlope) * u_Camera.shadowParams0.z;
+}
+
+float hash12(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+vec2 rotateOffset(vec2 value, float angle) {
+    float c = cos(angle);
+    float s = sin(angle);
+    return vec2(c * value.x - s * value.y, s * value.x + c * value.y);
+}
+
+vec2 clampAtlasUv(ShadowCascade cascade, vec2 atlasUv) {
+    vec2 halfTexel = cascade.shadowTexel.xy * 0.5;
+    vec2 minimum = cascade.atlasScaleBias.zw + halfTexel;
+    vec2 maximum = cascade.atlasScaleBias.zw + cascade.atlasScaleBias.xy - halfTexel;
+    return clamp(atlasUv, minimum, maximum);
+}
+
+bool blockerAt(float storedDepth, float receiverDepth, float bias) {
+    // Reversed-Z: a larger stored depth is a caster closer to the directional light.
+    return storedDepth > 0.0 && storedDepth > receiverDepth + bias;
+}
+
+float filteredCascadeVisibility(ShadowCascade cascade,
+                                vec3 worldRelative,
+                                vec3 normalWorld,
+                                float rotation,
+                                out bool valid) {
+    float worldTexel = max(cascade.shadowTexel.z, 1e-6);
+    vec3 receiver = worldRelative + normalWorld * worldTexel * u_Camera.shadowParams0.y;
+    ShadowProjection projected = projectShadow(cascade, receiver);
+    valid = projected.valid;
+    if (!valid) return 1.0;
+
+    float bias = receiverPlaneBias(cascade, receiver, normalWorld, projected.depth);
+    float blockerSearchRadius = max(u_Camera.shadowParams1.x, 0.0);
+    float blockerDepthSum = 0.0;
+    float blockerCount = 0.0;
+
+    for (int i = 0; i < 16; ++i) {
+        vec2 offset = rotateOffset(POISSON[i], rotation)
+                * cascade.shadowTexel.xy * blockerSearchRadius;
+        vec2 sampleUv = clampAtlasUv(cascade, projected.atlasUv + offset);
+        float storedDepth = textureLod(u_ShadowDepth, sampleUv, 0.0).r;
+        if (blockerAt(storedDepth, projected.depth, bias)) {
+            blockerDepthSum += storedDepth;
+            blockerCount += 1.0;
+        }
+    }
+
+    float filterRadius = max(u_Camera.shadowParams0.w, 0.0);
+    if (blockerCount > 0.0) {
+        float averageBlockerDepth = blockerDepthSum / blockerCount;
+        float receiverBlockerSeparation = max(averageBlockerDepth - projected.depth, 0.0);
+        float penumbra = receiverBlockerSeparation * max(u_Camera.shadowParams1.y, 0.0);
+        filterRadius += min(penumbra, max(u_Camera.shadowParams1.z, 0.0));
+    }
+
+    if (filterRadius <= 1e-4) {
+        float storedDepth = textureLod(u_ShadowDepth, projected.atlasUv, 0.0).r;
+        return blockerAt(storedDepth, projected.depth, bias) ? 0.0 : 1.0;
+    }
+
+    float visible = 0.0;
+    for (int i = 0; i < 16; ++i) {
+        vec2 offset = rotateOffset(POISSON[i], rotation)
+                * cascade.shadowTexel.xy * filterRadius;
+        vec2 sampleUv = clampAtlasUv(cascade, projected.atlasUv + offset);
+        float storedDepth = textureLod(u_ShadowDepth, sampleUv, 0.0).r;
+        visible += blockerAt(storedDepth, projected.depth, bias) ? 0.0 : 1.0;
+    }
+    return visible * (1.0 / 16.0);
+}
+
 void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
     ivec2 size = imageSize(u_ShadowVisibility);
@@ -54,13 +195,20 @@ void main() {
 
     vec2 uv = (vec2(pixel) + vec2(0.5)) / vec2(size);
     float depth = textureLod(u_ResolvedDepth, uv, 0.0).r;
-    if (depth <= 0.0) {
+    float gbufferDepth = textureLod(u_GbufferDepth, uv, 0.0).r;
+    float depthTolerance = max(1.0e-6, abs(gbufferDepth) * 1.0e-5);
+    if (depth <= 0.0 || gbufferDepth <= 0.0 || abs(depth - gbufferDepth) > depthTolerance) {
+        imageStore(u_ShadowVisibility, pixel, vec4(1.0));
+        return;
+    }
+
+    int cascadeCount = max(0, int(u_Shadow.cascades[0].splitRange.w + 0.5));
+    if (cascadeCount <= 0) {
         imageStore(u_ShadowVisibility, pixel, vec4(1.0));
         return;
     }
 
     float distanceValue = viewDistance(uv, depth);
-    int cascadeCount = max(0, int(u_Shadow.cascades[0].splitRange.w + 0.5));
     int cascadeIndex = -1;
     for (int i = 0; i < min(cascadeCount, 8); ++i) {
         vec2 split = u_Shadow.cascades[i].splitRange.xy;
@@ -75,25 +223,29 @@ void main() {
     }
 
     vec3 worldRelative = reconstructCameraRelativeWorld(uv, depth);
-    ShadowCascade cascade = u_Shadow.cascades[cascadeIndex];
-    vec4 shadowClip = cascade.viewProjection * vec4(worldRelative, 1.0);
-    if (abs(shadowClip.w) < 1e-7) {
-        imageStore(u_ShadowVisibility, pixel, vec4(1.0));
-        return;
+    vec3 normalView = decodeOctahedral(textureLod(u_GbufferGeometry, uv, 0.0).rg);
+    vec3 normalWorld = normalize(mat3(u_Camera.inverseView) * normalView);
+    float rotation = hash12(vec2(pixel) + vec2(float(cascadeIndex) * 17.0, 11.0)) * 6.28318530718;
+
+    bool primaryValid = false;
+    float visibility = filteredCascadeVisibility(
+            u_Shadow.cascades[cascadeIndex], worldRelative, normalWorld, rotation, primaryValid);
+    if (!primaryValid) visibility = 1.0;
+
+    float blendFraction = clamp(u_Camera.shadowParams0.x, 0.0, 0.49);
+    if (primaryValid && blendFraction > 0.0 && cascadeIndex + 1 < cascadeCount) {
+        vec2 split = u_Shadow.cascades[cascadeIndex].splitRange.xy;
+        float blendWidth = max((split.y - split.x) * blendFraction, 1e-5);
+        float blendStart = split.y - blendWidth;
+        float blend = smoothstep(blendStart, split.y, distanceValue);
+        if (blend > 0.0) {
+            bool nextValid = false;
+            float nextVisibility = filteredCascadeVisibility(
+                    u_Shadow.cascades[cascadeIndex + 1], worldRelative, normalWorld,
+                    rotation + 1.57079632679, nextValid);
+            if (nextValid) visibility = mix(visibility, nextVisibility, blend);
+        }
     }
 
-    vec3 shadowNdc = shadowClip.xyz / shadowClip.w;
-    vec2 localUv = shadowNdc.xy * 0.5 + 0.5;
-    if (any(lessThan(localUv, vec2(0.0))) || any(greaterThan(localUv, vec2(1.0)))) {
-        imageStore(u_ShadowVisibility, pixel, vec4(1.0));
-        return;
-    }
-
-    vec2 atlasUv = localUv * cascade.atlasScaleBias.xy + cascade.atlasScaleBias.zw;
-    float receiverDepth = shadowNdc.z * u_Camera.depthTransform.z + u_Camera.depthTransform.w;
-    float blockerDepth = textureLod(u_ShadowDepth, atlasUv, 0.0).r;
-
-    // Reversed-Z. A larger stored value is a nearer caster.
-    float visibility = (blockerDepth <= 0.0 || receiverDepth + 1e-5 >= blockerDepth) ? 1.0 : 0.0;
-    imageStore(u_ShadowVisibility, pixel, vec4(visibility));
+    imageStore(u_ShadowVisibility, pixel, vec4(clamp(visibility, 0.0, 1.0)));
 }

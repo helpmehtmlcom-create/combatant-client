@@ -51,13 +51,6 @@ public final class FramebufferPool implements AutoCloseable {
         this.leakTracker = leakTracker;
     }
 
-    /**
-     * Compatibility constructor for legacy tests/tools.
-     */
-    public FramebufferPool() {
-        this(new ResourceLeakTracker());
-    }
-
     public TextureTarget persistent(String name, int width, int height, boolean depth, String owner) {
         return persistent(FramebufferDescriptor.persistent(name, width, height, depth, owner));
     }
@@ -77,10 +70,6 @@ public final class FramebufferPool implements AutoCloseable {
             resizes++;
         }
         return fb;
-    }
-
-    public TextureTarget borrow(String name, int width, int height, boolean depth) {
-        return borrowTemporary(FramebufferDescriptor.temporary(name, width, height, depth, "legacy"));
     }
 
     public TextureTarget borrowTemporary(String name, int width, int height, boolean depth, String owner) {
@@ -104,15 +93,11 @@ public final class FramebufferPool implements AutoCloseable {
         return fb;
     }
 
-    public void release(TextureTarget framebuffer) {
-        releaseTemporary(framebuffer, "legacy");
-    }
-
     public void releaseTemporary(TextureTarget framebuffer, String owner) {
         if (framebuffer == null) return;
         String key = borrowedKeys.remove(framebuffer);
         if (key == null) {
-            key = "unknown|" + framebuffer.width + "x" + framebuffer.height + "|" + (owner == null ? "legacy" : owner);
+            key = "unknown|" + framebuffer.width + "x" + framebuffer.height + "|" + (owner == null ? "unknown" : owner);
         }
         temporary.computeIfAbsent(key, ignored -> new ArrayDeque<>()).add(framebuffer);
         releases++;
