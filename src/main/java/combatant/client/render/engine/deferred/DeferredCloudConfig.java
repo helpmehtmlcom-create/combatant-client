@@ -12,6 +12,7 @@ record DeferredCloudConfig(
         float renderScale,
         int primarySteps,
         int lightSteps,
+        int multiScatteringOrders,
         float maxPrimaryStepBlocks,
         int maxLayers,
         int maxWeatherSamples,
@@ -21,18 +22,20 @@ record DeferredCloudConfig(
         float temporalMinDepthThresholdBlocks,
         int shadowMapResolution,
         float shadowMapSpanBlocks,
-        int shadowSteps
+        int shadowSteps,
+        int shadowAltitudeSlices
 ) {
     private static final DeferredCloudConfig DEFAULT = new DeferredCloudConfig(
-            true, 0.5f, 48, 4, 8.0f, 8, 256,
+            true, 0.5f, 48, 4, 3, 8.0f, 8, 256,
             true, 0.92f, 0.08f, 12.0f,
-            256, 2048.0f, 56
+            256, 2048.0f, 56, 8
     );
 
     DeferredCloudConfig {
         renderScale = clamp(renderScale, 0.125f, 1.0f);
         primarySteps = clamp(primarySteps, 8, 192);
         lightSteps = clamp(lightSteps, 0, 8);
+        multiScatteringOrders = clamp(multiScatteringOrders, 1, 4);
         maxPrimaryStepBlocks = clamp(maxPrimaryStepBlocks, 0.5f, 64.0f);
         maxLayers = clamp(maxLayers, 1, 8);
         maxWeatherSamples = clamp(maxWeatherSamples, 4, 1024);
@@ -42,6 +45,7 @@ record DeferredCloudConfig(
         shadowMapResolution = clamp(shadowMapResolution, 32, 1024);
         shadowMapSpanBlocks = clamp(shadowMapSpanBlocks, 128.0f, 16384.0f);
         shadowSteps = clamp(shadowSteps, 8, 128);
+        shadowAltitudeSlices = clamp(shadowAltitudeSlices, 2, 16);
     }
 
     static DeferredCloudConfig current() {

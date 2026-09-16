@@ -20,10 +20,21 @@ struct CloudLayer {
     vec4 scaleShape;
     vec4 weatherOptics;
     vec4 coverageShape;
+    vec4 scatteringPolicy;
 };
 layout(std430, binding = COMBATANT_CLOUD_LAYER_BINDING) readonly buffer CloudLayerData {
     CloudLayer layers[];
 } u_Layers;
+
+struct CloudOptics {
+    float density;
+    float extinction;
+    float anisotropy;
+    float albedo;
+    float multiEnergy;
+    float multiExtinction;
+    float multiAnisotropy;
+};
 
 float combatant_cloud_hash31(vec3 p) {
     p = fract(p * 0.1031);
@@ -126,28 +137,53 @@ float combatant_cloud_layer_density(CloudLayer layer, vec3 localPosition, Weathe
     return max(0.0, shape * vertical * layer.altitudeDensity.z);
 }
 
-float combatant_cloud_density_at(vec3 localPosition, out float extinction, out float anisotropy) {
+CloudOptics combatant_cloud_optics_at(vec3 localPosition) {
     WeatherCell weather = combatant_cloud_sample_weather(localPosition.xz);
-    float density = 0.0;
+    CloudOptics result;
+    result.density = 0.0;
+    result.extinction = 0.0;
+    result.anisotropy = 0.0;
+    result.albedo = 0.0;
+    result.multiEnergy = 0.0;
+    result.multiExtinction = 0.0;
+    result.multiAnisotropy = 0.0;
+
     float weightedExtinction = 0.0;
     float weightedAnisotropy = 0.0;
+    float weightedAlbedo = 0.0;
+    float weightedMultiEnergy = 0.0;
+    float weightedMultiExtinction = 0.0;
+    float weightedMultiAnisotropy = 0.0;
     int layerCount = clamp(int(u_Data.counts.x), 0, COMBATANT_CLOUD_MAX_LAYERS);
     for (int i = 0; i < COMBATANT_CLOUD_MAX_LAYERS; ++i) {
         if (i >= layerCount) break;
         CloudLayer layer = u_Layers.layers[i];
         float d = combatant_cloud_layer_density(layer, localPosition, weather);
-        density += d;
+        result.density += d;
         weightedExtinction += d * layer.weatherOptics.w;
         weightedAnisotropy += d * layer.scaleShape.w;
+        weightedAlbedo += d * layer.scatteringPolicy.x;
+        weightedMultiEnergy += d * layer.scatteringPolicy.y;
+        weightedMultiExtinction += d * layer.scatteringPolicy.z;
+        weightedMultiAnisotropy += d * layer.scatteringPolicy.w;
     }
-    if (density > 1e-6) {
-        extinction = weightedExtinction / density;
-        anisotropy = weightedAnisotropy / density;
-    } else {
-        extinction = 0.0;
-        anisotropy = 0.0;
+    if (result.density > 1e-6) {
+        float inverseDensity = 1.0 / result.density;
+        result.extinction = max(0.0, weightedExtinction * inverseDensity);
+        result.anisotropy = clamp(weightedAnisotropy * inverseDensity, -0.9, 0.9);
+        result.albedo = clamp(weightedAlbedo * inverseDensity, 0.0, 1.0);
+        result.multiEnergy = clamp(weightedMultiEnergy * inverseDensity, 0.0, 0.98);
+        result.multiExtinction = clamp(weightedMultiExtinction * inverseDensity, 0.01, 1.0);
+        result.multiAnisotropy = clamp(weightedMultiAnisotropy * inverseDensity, 0.0, 1.0);
     }
-    return density;
+    return result;
+}
+
+float combatant_cloud_density_at(vec3 localPosition, out float extinction, out float anisotropy) {
+    CloudOptics optics = combatant_cloud_optics_at(localPosition);
+    extinction = optics.extinction;
+    anisotropy = optics.anisotropy;
+    return optics.density;
 }
 
 float combatant_cloud_optical_density_at(vec3 localPosition) {

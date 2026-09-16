@@ -150,7 +150,8 @@ final class DeferredCloudShadowSource implements AutoCloseable {
                 .putVec4(0, "cameraTime", (float) (camera.x - originX), (float) camera.y,
                         (float) (camera.z - originZ), timeSeconds)
                 .putVec4(0, "grid", spacing, width, depth, cloudField.weatherCount())
-                .putVec4(0, "counts", cloudField.layerCount(), config.shadowSteps(), active ? 1.0f : 0.0f, 0.0f)
+                .putVec4(0, "counts", cloudField.layerCount(), config.shadowSteps(), active ? 1.0f : 0.0f,
+                        config.shadowAltitudeSlices())
                 .putVec4(0, "sunDirection", sun.directionX(), sun.directionY(), sun.directionZ(), sun.valid() ? 1.0f : 0.0f)
                 .putVec4(0, "noiseDomain", wrapOrigin(field.valid() ? field.originBlockX() : 0),
                         wrapOrigin(field.valid() ? field.originBlockZ() : 0), seedPhase(weather.modelSeed()), 0.0f)
@@ -160,7 +161,8 @@ final class DeferredCloudShadowSource implements AutoCloseable {
 
         context.advancedShaders().dispatch(new ComputeDispatchCommand(
                 "Combatant cloud shadow map", mapPipeline(),
-                groups(shadowMap.descriptor().width()), groups(shadowMap.descriptor().height()), 1,
+                groups(shadowMap.descriptor().width()),
+                groups(Math.max(1, shadowMap.descriptor().height() / config.shadowAltitudeSlices())), 1,
                 List.of(
                         new StorageBinding(1, data, 0L, writer.byteSize(), StorageAccess.READ_ONLY),
                         new StorageBinding(2, fieldSource.weatherData(), 0L,
@@ -197,7 +199,8 @@ final class DeferredCloudShadowSource implements AutoCloseable {
                 .putVec4(0, "camera", (float) camera.x, (float) camera.y, (float) camera.z, 0.0f)
                 .putVec4(0, "mapDomain", mapOriginRelativeX, mapOriginRelativeZ, span, 0.0f)
                 .putVec4(0, "sunDirection", sun.directionX(), sun.directionY(), sun.directionZ(), active ? 1.0f : 0.0f)
-                .putVec4(0, "cloudBounds", minCloudY, maxCloudY, isVulkan(context) ? 1.0f : 0.0f, 0.0f);
+                .putVec4(0, "cloudBounds", minCloudY, maxCloudY, isVulkan(context) ? 1.0f : 0.0f,
+                        config.shadowAltitudeSlices());
         RhiStorageBuffer data = resolveData();
         data.upload(writer.buffer(), 0L);
 

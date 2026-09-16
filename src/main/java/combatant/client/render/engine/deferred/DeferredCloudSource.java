@@ -7,7 +7,6 @@
 package combatant.client.render.engine.deferred;
 
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.AddressMode;
 import com.mojang.blaze3d.textures.FilterMode;
 import com.mojang.blaze3d.textures.GpuSampler;
 import com.mojang.blaze3d.textures.GpuTextureView;
@@ -59,14 +58,14 @@ final class DeferredCloudSource implements AutoCloseable {
             .member("lightingPolicy", Std430Type.VEC4)
             .build();
     private static final ShaderResourceLayout RENDER_LAYOUT = new ShaderResourceLayout(List.of(
-            new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(1, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
             new ShaderResourceSlot(2, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
             new ShaderResourceSlot(3, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(4, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(5, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(6, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
-            new ShaderResourceSlot(7, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY)
+            new ShaderResourceSlot(7, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
+            new ShaderResourceSlot(8, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
     ));
     private final DeferredCloudConfig config = DeferredCloudConfig.current();
     private final DeferredCloudFieldSource fieldSource;
@@ -83,12 +82,12 @@ final class DeferredCloudSource implements AutoCloseable {
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.cloud.render", DeferredStage.SKY_COMPOSITE)
                 .priority(25)
-                .read(DeferredResource.SKY_RADIANCE, DeferredResource.RESOLVED_DEPTH)
-                .write(DeferredResource.CLOUD_RADIANCE, DeferredResource.CLOUD_DEPTH, DeferredResource.CLOUD_FLOW)
+                .read(DeferredResource.RESOLVED_DEPTH, DeferredResource.SKY_DIFFUSE_SH)
+                .write(DeferredResource.CLOUD_RADIANCE, DeferredResource.CLOUD_DEPTH, DeferredResource.CLOUD_REPROJECTION_DATA)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.primaryView().current() != null
-                        && context.isValid(DeferredResource.SKY_RADIANCE)
-                        && context.isValid(DeferredResource.RESOLVED_DEPTH))
+                        && context.isValid(DeferredResource.RESOLVED_DEPTH)
+                        && context.isValid(DeferredResource.SKY_DIFFUSE_SH))
                 .execute(this::render)
                 .build());
     }
@@ -109,13 +108,13 @@ final class DeferredCloudSource implements AutoCloseable {
         ensureOwner(context.rhi());
         ensureBuffers();
         DeferredPrimaryViewSource.FrameView view = context.primaryView().current();
-        GpuTextureView sky = requireTexture(context, DeferredResource.SKY_RADIANCE);
         GpuTextureView resolvedDepth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
+        RhiStorageBuffer skyDiffuseSh = requireBuffer(context, DeferredResource.SKY_DIFFUSE_SH);
         if (view == null) return;
 
         RhiStorageImage cloudRadiance = requireImage(context, DeferredResource.CLOUD_RADIANCE);
         RhiStorageImage cloudDepth = requireImage(context, DeferredResource.CLOUD_DEPTH);
-        RhiStorageImage cloudFlow = requireImage(context, DeferredResource.CLOUD_FLOW);
+        RhiStorageImage cloudReprojectionData = requireImage(context, DeferredResource.CLOUD_REPROJECTION_DATA);
         int cloudWidth = cloudRadiance.descriptor().width();
         int cloudHeight = cloudRadiance.descriptor().height();
         DeferredCloudFieldSource.FrameData cloudField = fieldSource.prepareFrame(context);
@@ -128,10 +127,6 @@ final class DeferredCloudSource implements AutoCloseable {
         Std430Writer renderWriter = renderWriter(context, view, profile, field, weather, weatherCount, layerCount, active);
         renderData.upload(renderWriter.buffer(), 0L);
 
-        GpuSampler skySampler = RenderSystem.getSamplerCache().getSampler(
-                AddressMode.REPEAT, AddressMode.CLAMP_TO_EDGE,
-                FilterMode.LINEAR, FilterMode.LINEAR, false
-        );
         GpuSampler depthSampler = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
         context.advancedShaders().dispatch(new ComputeDispatchCommand(
                 "Combatant volumetric cloud render", renderPipeline(),
@@ -139,16 +134,14 @@ final class DeferredCloudSource implements AutoCloseable {
                 List.of(
                         new StorageBinding(3, renderData, 0L, renderWriter.byteSize(), StorageAccess.READ_ONLY),
                         new StorageBinding(4, fieldSource.weatherData(), 0L, fieldSource.weatherData().descriptor().byteSize(), StorageAccess.READ_ONLY),
-                        new StorageBinding(5, fieldSource.layerData(), 0L, fieldSource.layerData().descriptor().byteSize(), StorageAccess.READ_ONLY)
+                        new StorageBinding(5, fieldSource.layerData(), 0L, fieldSource.layerData().descriptor().byteSize(), StorageAccess.READ_ONLY),
+                        new StorageBinding(8, skyDiffuseSh, 0L, skyDiffuseSh.descriptor().byteSize(), StorageAccess.READ_ONLY)
                 ),
-                List.of(
-                        new SampledTextureBinding(0, sky, skySampler),
-                        new SampledTextureBinding(6, resolvedDepth, depthSampler)
-                ),
+                List.of(new SampledTextureBinding(6, resolvedDepth, depthSampler)),
                 List.of(
                         new StorageImageBinding(1, cloudRadiance, StorageAccess.WRITE_ONLY),
                         new StorageImageBinding(2, cloudDepth, StorageAccess.WRITE_ONLY),
-                        new StorageImageBinding(7, cloudFlow, StorageAccess.WRITE_ONLY)
+                        new StorageImageBinding(7, cloudReprojectionData, StorageAccess.WRITE_ONLY)
                 )
         ));
     }
@@ -188,7 +181,8 @@ final class DeferredCloudSource implements AutoCloseable {
                 .putVec4(0, "sunDirection", sun.directionX(), sun.directionY(), sun.directionZ(), sun.valid() ? 1.0f : 0.0f)
                 .putVec4(0, "sunRadiance", sun.radianceRed(), sun.radianceGreen(), sun.radianceBlue(), sun.angularRadiusRadians())
                 .putVec4(0, "noiseDomain", wrappedOriginX, wrappedOriginZ, seedPhase, 0.0f)
-                .putVec4(0, "lightingPolicy", profile.ambientResponse(), profile.lightSampleDistanceBlocks(), 0.0f, 0.0f);
+                .putVec4(0, "lightingPolicy", profile.ambientResponse(), profile.lightSampleDistanceBlocks(),
+                        config.multiScatteringOrders(), 0.0f);
     }
 
     private void ensureOwner(CombatantRhi rhi) {
@@ -238,6 +232,13 @@ final class DeferredCloudSource implements AutoCloseable {
     private static boolean isVulkan(DeferredPassContext context) {
         String backendName = context.rhi().capabilities().backendName();
         return backendName != null && backendName.toLowerCase(java.util.Locale.ROOT).contains("vulkan");
+    }
+
+
+    private static RhiStorageBuffer requireBuffer(DeferredPassContext context, DeferredResource resource) {
+        RhiStorageBuffer value = context.resources().buffer(resource);
+        if (value == null) throw new IllegalStateException("Deferred buffer is not bound: " + resource);
+        return value;
     }
 
     private static RhiStorageImage requireImage(DeferredPassContext context, DeferredResource resource) {

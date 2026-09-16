@@ -21,6 +21,7 @@ public final class CloudProfileRegistry {
                 java.util.List.of(new CloudLayerProfile(
                         128.0f, 224.0f, 1.0f, 0.0f,
                         640.0f, 72.0f, 0.45f, 0.45f,
+                        0.985f, 0.55f, 0.35f, 0.5f,
                         1.0f, 0.75f, 0.5f, 0.035f,
                         0.16f, 0.68f, 0.82f, 0.22f
                 )),

@@ -68,9 +68,10 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
             new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(1, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(2, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
-            new ShaderResourceSlot(3, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
+            new ShaderResourceSlot(3, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(4, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
-            new ShaderResourceSlot(5, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY)
+            new ShaderResourceSlot(5, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
+            new ShaderResourceSlot(6, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY)
     ));
 
     private final DeferredCloudConfig config = DeferredCloudConfig.current();
@@ -82,9 +83,9 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.cloud.temporal", DeferredStage.SKY_COMPOSITE)
                 .priority(35)
-                .read(DeferredResource.CLOUD_RADIANCE, DeferredResource.CLOUD_DEPTH, DeferredResource.CLOUD_FLOW,
+                .read(DeferredResource.CLOUD_RADIANCE, DeferredResource.CLOUD_DEPTH, DeferredResource.CLOUD_REPROJECTION_DATA,
                         DeferredResource.HISTORY_CLOUD_RADIANCE,
-                        DeferredResource.HISTORY_CLOUD_DEPTH,
+                        DeferredResource.HISTORY_CLOUD_REPROJECTION_DEPTH,
                         DeferredResource.HISTORY_CLOUD_CONFIDENCE)
                 .write(DeferredResource.CLOUD_TEMPORAL_RADIANCE,
                         DeferredResource.CLOUD_TEMPORAL_DEPTH,
@@ -92,7 +93,7 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.isValid(DeferredResource.CLOUD_RADIANCE)
                         && context.isValid(DeferredResource.CLOUD_DEPTH)
-                        && context.isValid(DeferredResource.CLOUD_FLOW)
+                        && context.isValid(DeferredResource.CLOUD_REPROJECTION_DATA)
                         && context.primaryView().current() != null)
                 .execute(this::resolve)
                 .build());
@@ -100,14 +101,16 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
                 .priority(40)
                 .read(DeferredResource.CLOUD_TEMPORAL_RADIANCE,
                         DeferredResource.CLOUD_TEMPORAL_DEPTH,
-                        DeferredResource.CLOUD_TEMPORAL_CONFIDENCE)
+                        DeferredResource.CLOUD_TEMPORAL_CONFIDENCE,
+                        DeferredResource.CLOUD_REPROJECTION_DATA)
                 .write(DeferredResource.HISTORY_CLOUD_RADIANCE,
-                        DeferredResource.HISTORY_CLOUD_DEPTH,
+                        DeferredResource.HISTORY_CLOUD_REPROJECTION_DEPTH,
                         DeferredResource.HISTORY_CLOUD_CONFIDENCE)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.isValid(DeferredResource.CLOUD_TEMPORAL_RADIANCE)
                         && context.isValid(DeferredResource.CLOUD_TEMPORAL_DEPTH)
-                        && context.isValid(DeferredResource.CLOUD_TEMPORAL_CONFIDENCE))
+                        && context.isValid(DeferredResource.CLOUD_TEMPORAL_CONFIDENCE)
+                        && context.isValid(DeferredResource.CLOUD_REPROJECTION_DATA))
                 .execute(this::storeHistory)
                 .build());
     }
@@ -133,15 +136,15 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
 
         GpuTextureView currentRadiance = requireTexture(context, DeferredResource.CLOUD_RADIANCE);
         GpuTextureView currentDepth = requireTexture(context, DeferredResource.CLOUD_DEPTH);
-        GpuTextureView currentFlow = requireTexture(context, DeferredResource.CLOUD_FLOW);
+        GpuTextureView currentReprojectionData = requireTexture(context, DeferredResource.CLOUD_REPROJECTION_DATA);
         GpuTextureView historyRadiance = context.resources().texture(DeferredResource.HISTORY_CLOUD_RADIANCE);
-        GpuTextureView historyDepth = context.resources().texture(DeferredResource.HISTORY_CLOUD_DEPTH);
+        GpuTextureView historyDepth = context.resources().texture(DeferredResource.HISTORY_CLOUD_REPROJECTION_DEPTH);
         GpuTextureView historyConfidence = context.resources().texture(DeferredResource.HISTORY_CLOUD_CONFIDENCE);
         boolean historyValid = config.temporalEnabled()
                 && context.primaryView().hasTemporalHistory()
                 && previous != null
                 && context.isValid(DeferredResource.HISTORY_CLOUD_RADIANCE)
-                && context.isValid(DeferredResource.HISTORY_CLOUD_DEPTH)
+                && context.isValid(DeferredResource.HISTORY_CLOUD_REPROJECTION_DEPTH)
                 && context.isValid(DeferredResource.HISTORY_CLOUD_CONFIDENCE)
                 && historyRadiance != null
                 && historyDepth != null
@@ -187,7 +190,7 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
                 List.of(
                         new SampledTextureBinding(0, currentRadiance, linear),
                         new SampledTextureBinding(1, currentDepth, nearest),
-                        new SampledTextureBinding(2, currentFlow, linear),
+                        new SampledTextureBinding(2, currentReprojectionData, linear),
                         new SampledTextureBinding(3, historyRadiance, linear),
                         new SampledTextureBinding(4, historyDepth, nearest),
                         new SampledTextureBinding(5, historyConfidence, linear)
@@ -205,8 +208,9 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
         GpuTextureView radiance = requireTexture(context, DeferredResource.CLOUD_TEMPORAL_RADIANCE);
         GpuTextureView depth = requireTexture(context, DeferredResource.CLOUD_TEMPORAL_DEPTH);
         GpuTextureView confidence = requireTexture(context, DeferredResource.CLOUD_TEMPORAL_CONFIDENCE);
+        GpuTextureView reprojectionData = requireTexture(context, DeferredResource.CLOUD_REPROJECTION_DATA);
         RhiStorageImage historyRadiance = requireImage(context, DeferredResource.HISTORY_CLOUD_RADIANCE);
-        RhiStorageImage historyDepth = requireImage(context, DeferredResource.HISTORY_CLOUD_DEPTH);
+        RhiStorageImage historyDepth = requireImage(context, DeferredResource.HISTORY_CLOUD_REPROJECTION_DEPTH);
         RhiStorageImage historyConfidence = requireImage(context, DeferredResource.HISTORY_CLOUD_CONFIDENCE);
         GpuSampler nearest = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
         GpuSampler linear = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
@@ -217,12 +221,13 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
                 List.of(
                         new SampledTextureBinding(0, radiance, linear),
                         new SampledTextureBinding(1, depth, nearest),
-                        new SampledTextureBinding(2, confidence, nearest)
+                        new SampledTextureBinding(2, confidence, nearest),
+                        new SampledTextureBinding(3, reprojectionData, linear)
                 ),
                 List.of(
-                        new StorageImageBinding(3, historyRadiance, StorageAccess.WRITE_ONLY),
-                        new StorageImageBinding(4, historyDepth, StorageAccess.WRITE_ONLY),
-                        new StorageImageBinding(5, historyConfidence, StorageAccess.WRITE_ONLY)
+                        new StorageImageBinding(4, historyRadiance, StorageAccess.WRITE_ONLY),
+                        new StorageImageBinding(5, historyDepth, StorageAccess.WRITE_ONLY),
+                        new StorageImageBinding(6, historyConfidence, StorageAccess.WRITE_ONLY)
                 )
         ));
     }
