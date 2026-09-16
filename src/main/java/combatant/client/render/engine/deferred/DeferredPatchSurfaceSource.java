@@ -45,6 +45,7 @@ import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
+import org.joml.Vector4f;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -109,11 +110,6 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
             new ShaderResourceSlot(5, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
     ));
 
-    private static final ShaderResourceLayout WATER_BOUNDARY_LAYOUT = new ShaderResourceLayout(List.of(
-            new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
-            new ShaderResourceSlot(11, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
-    ));
-
     private static final ShaderResourceLayout WATER_LAYOUT = new ShaderResourceLayout(List.of(
             new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(1, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
@@ -129,19 +125,24 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
             new ShaderResourceSlot(11, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
     ));
 
+    private static final ShaderResourceLayout WATER_BOUNDARY_LAYOUT = new ShaderResourceLayout(List.of(
+            new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(11, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
+    ));
+
     private CombatantRhi owner;
     private RhiPatchPipeline heightPipeline;
     private RhiPatchPipeline waterPipeline;
     private RhiPatchPipeline waterBoundaryPipeline;
     private PipelineKey heightKey;
     private PipelineKey waterKey;
-    private PipelineKey waterBoundaryKey;
+    private BoundaryPipelineKey waterBoundaryKey;
     private RhiStorageBuffer cameraBuffer;
     private RhiStorageBuffer waterFrameBuffer;
     private RenderPipeline waterFallbackPipeline;
-    private RenderPipeline waterBoundaryFallbackPipeline;
     private FallbackPipelineKey waterFallbackKey;
-    private BoundaryFallbackPipelineKey waterBoundaryFallbackKey;
+    private RenderPipeline waterBoundaryFallbackPipeline;
+    private GpuFormat waterBoundaryFallbackFormat;
     private long heightActivationGeneration = Long.MIN_VALUE;
     private long waterActivationGeneration = Long.MIN_VALUE;
     private boolean heightNativeFailed;
@@ -168,12 +169,13 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
                 .execute(this::drawHeight)
                 .build());
 
-        passes.add(DeferredPassSpec.builder("world.water-medium-boundary", DeferredStage.WATER_MEDIUM_BOUNDARY)
+        passes.add(DeferredPassSpec.builder("world.water.medium-boundary", DeferredStage.WATER_MEDIUM_BOUNDARY)
                 .read(DeferredResource.RESOLVED_DEPTH)
-                .write(DeferredResource.WATER_MEDIUM_BOUNDARY, DeferredResource.WATER_MEDIUM_BOUNDARY_DEPTH)
+                .write(DeferredResource.WATER_MEDIUM_BOUNDARY)
                 .requires(RhiShaderStage.VERTEX, RhiShaderStage.FRAGMENT)
-                .when(this::waterBoundaryAvailable)
-                .execute(this::drawWaterBoundary)
+                .when(context -> context.primaryView().current() != null
+                        && context.isValid(DeferredResource.RESOLVED_DEPTH))
+                .execute(this::drawWaterMediumBoundary)
                 .build());
 
         passes.add(DeferredPassSpec.builder("world.water-surface", DeferredStage.WATER_SURFACE)
@@ -183,7 +185,11 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
                         DeferredResource.REFLECTION_CONFIDENCE,
                         DeferredResource.SKY_SPECULAR_RADIANCE,
                         DeferredResource.SCENE_RADIANCE)
-                .write(DeferredResource.SCENE_COLOR, DeferredResource.VELOCITY, DeferredResource.MOTION_VALIDITY)
+                .write(DeferredResource.SCENE_COLOR,
+                        DeferredResource.RASTER_MOTION_VELOCITY,
+                        DeferredResource.RASTER_MOTION_VALIDITY,
+                        DeferredResource.RASTER_TEMPORAL_COVERAGE,
+                        DeferredResource.RASTER_REACTIVE_MASK)
                 .requires(RhiShaderStage.VERTEX, RhiShaderStage.FRAGMENT)
                 .when(this::waterAvailable)
                 .execute(this::drawWater)
@@ -213,14 +219,6 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
                 && context.resources().texture(DeferredResource.GBUFFER_MATERIAL) != null
                 && context.resources().texture(DeferredResource.GBUFFER_MATERIAL_ID) != null
                 && WaterSurfaceExtractor.hasHeightPatches();
-    }
-
-    private boolean waterBoundaryAvailable(DeferredPassContext context) {
-        return context.primaryView().current() != null
-                && context.resources().texture(DeferredResource.WATER_MEDIUM_BOUNDARY) != null
-                && context.resources().texture(DeferredResource.WATER_MEDIUM_BOUNDARY_DEPTH) != null
-                && context.resources().texture(DeferredResource.RESOLVED_DEPTH) != null
-                && context.isValid(DeferredResource.RESOLVED_DEPTH);
     }
 
     private boolean waterAvailable(DeferredPassContext context) {
@@ -291,35 +289,32 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
         }
     }
 
-    private void drawWaterBoundary(DeferredPassContext context) {
+    private void drawWaterMediumBoundary(DeferredPassContext context) {
         ensureOwner(context.rhi());
         DeferredPrimaryViewSource.FrameView camera = context.primaryView().current();
         if (camera == null) return;
 
         GpuTextureView boundary = requireTexture(context, DeferredResource.WATER_MEDIUM_BOUNDARY);
-        GpuTextureView boundaryDepth = requireTexture(context, DeferredResource.WATER_MEDIUM_BOUNDARY_DEPTH);
-        GpuTextureView opaqueDepth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
-        var encoder = RenderSystem.getDevice().createCommandEncoder();
-        encoder.clearColorTexture(boundary.texture(), new org.joml.Vector4f(0.0f, 0.0f, 0.0f, 0.0f));
-        encoder.clearDepthTexture(boundaryDepth.texture(), 0.0);
+        GpuTextureView resolvedDepth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
+        RenderSystem.getDevice().createCommandEncoder().clearColorTexture(
+                boundary.texture(), new Vector4f(0.0f, 0.0f, 0.0f, 0.0f));
 
-        if (!WaterSurfacePatchRouting.replacementActive() || !WaterSurfaceExtractor.hasWaterPatches()) return;
-        List<WaterSurfaceExtractor.WaterPatch> patches = collectWaterPatches(waterActivationGeneration);
+        List<WaterSurfaceExtractor.WaterPatch> patches = collectAllWaterPatches();
         if (patches.isEmpty()) return;
 
         WaterFrameUniforms.Frame waterFrame = buildWaterFrame(context, camera, boundary, false);
         uploadWaterFrame(waterFrame);
+        GpuSampler nearest = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
 
         if (context.rhi().capabilities().nativeTessellationSubmission() && !waterBoundaryNativeFailed) {
             try {
-                RhiPatchPipeline pipeline = waterBoundaryPipeline(boundary, boundaryDepth);
+                RhiPatchPipeline pipeline = waterBoundaryPipeline(boundary);
                 GpuMeshHandle mesh = buildWaterMesh(patches, camera.cameraPosition());
                 context.advancedShaders().drawPatches(new PatchDrawCommand(
-                        "Combatant water medium boundary (tessellated)", pipeline, List.of(boundary), boundaryDepth, mesh,
+                        "Combatant water medium boundary", pipeline, boundary, null, mesh,
                         List.of(new StorageBinding(11, waterFrameBuffer(), 0L,
                                 WATER_FRAME_LAYOUT.arrayStride(), StorageAccess.READ_ONLY)),
-                        List.of(new SampledTextureBinding(0, opaqueDepth,
-                                RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST))), List.of()
+                        List.of(new SampledTextureBinding(0, resolvedDepth, nearest)), List.of()
                 ));
                 return;
             } catch (Throwable error) {
@@ -328,31 +323,20 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
                 DebugLog.warnOnChange(
                         "deferred.water-medium-boundary.tessellation.failed",
                         error.getClass().getSimpleName() + "|" + error.getMessage(),
-                        "[Deferred] tessellated water medium-boundary path failed; using graphics fallback: %s: %s",
+                        "[Deferred] tessellated water-medium boundary failed; using graphics fallback: %s: %s",
                         error.getClass().getSimpleName(), error.getMessage());
             }
         }
 
-        try {
-            GpuMeshHandle mesh = buildWaterFallbackMesh(patches, camera.cameraPosition());
-            RenderPipeline pipeline = waterBoundaryFallbackPipeline(boundary, boundaryDepth);
-            GpuBufferSlice frameUniform = WaterFrameUniforms.write(waterFrame);
-            context.rhi().drawMesh(RhiDrawCommand.builder("Combatant water medium boundary (triangle fallback)")
-                    .pipeline(pipeline)
-                    .colorAttachment(0, boundary)
-                    .depthAttachment(boundaryDepth)
-                    .mesh(mesh)
-                    .uniform("WaterFrame", frameUniform)
-                    .sampler("u_OpaqueDepth", opaqueDepth,
-                            RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST))
-                    .build());
-        } catch (Throwable error) {
-            DebugLog.warnOnChange(
-                    "deferred.water-medium-boundary.fallback.failed",
-                    error.getClass().getSimpleName() + "|" + error.getMessage(),
-                    "[Deferred] water medium-boundary fallback failed; medium transition map remains invalid: %s: %s",
-                    error.getClass().getSimpleName(), error.getMessage());
-        }
+        GpuMeshHandle mesh = buildWaterFallbackMesh(patches, camera.cameraPosition());
+        GpuBufferSlice frameUniform = WaterFrameUniforms.write(waterFrame);
+        context.rhi().drawMesh(RhiDrawCommand.builder("Combatant water medium boundary (triangle fallback)")
+                .pipeline(waterBoundaryFallbackPipeline(boundary))
+                .colorAttachment(boundary)
+                .mesh(mesh)
+                .uniform("WaterFrame", frameUniform)
+                .sampler("u_OpaqueDepth", resolvedDepth, nearest)
+                .build());
     }
 
     private void drawWater(DeferredPassContext context) {
@@ -371,17 +355,28 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
 
         GpuTextureView scene = requireTexture(context, DeferredResource.SCENE_COLOR);
         GpuTextureView depth = requireTexture(context, DeferredResource.MAIN_DEPTH);
-        GpuTextureView velocity = context.resources().texture(DeferredResource.VELOCITY);
-        GpuTextureView motionValidity = context.resources().texture(DeferredResource.MOTION_VALIDITY);
+        GpuTextureView velocity = context.resources().texture(DeferredResource.RASTER_MOTION_VELOCITY);
+        GpuTextureView motionValidity = context.resources().texture(DeferredResource.RASTER_MOTION_VALIDITY);
+        GpuTextureView temporalCoverage = context.resources().texture(DeferredResource.RASTER_TEMPORAL_COVERAGE);
+        GpuTextureView reactiveMask = context.resources().texture(DeferredResource.RASTER_REACTIVE_MASK);
         boolean motionMrt = velocity != null
                 && motionValidity != null
+                && temporalCoverage != null
+                && reactiveMask != null
                 && velocity.getWidth(0) == scene.getWidth(0)
                 && velocity.getHeight(0) == scene.getHeight(0)
                 && motionValidity.getWidth(0) == scene.getWidth(0)
                 && motionValidity.getHeight(0) == scene.getHeight(0)
+                && temporalCoverage.getWidth(0) == scene.getWidth(0)
+                && temporalCoverage.getHeight(0) == scene.getHeight(0)
+                && reactiveMask.getWidth(0) == scene.getWidth(0)
+                && reactiveMask.getHeight(0) == scene.getHeight(0)
                 && samples(velocity) == samples(scene)
-                && samples(motionValidity) == samples(scene);
-        List<GpuTextureView> colors = motionMrt ? List.of(scene, velocity, motionValidity) : List.of(scene);
+                && samples(motionValidity) == samples(scene)
+                && samples(temporalCoverage) == samples(scene)
+                && samples(reactiveMask) == samples(scene);
+        List<GpuTextureView> colors = motionMrt
+                ? List.of(scene, velocity, motionValidity, temporalCoverage, reactiveMask) : List.of(scene);
         WaterFrameUniforms.Frame waterFrame = buildWaterFrame(context, camera, scene, motionMrt);
         uploadWaterFrame(waterFrame);
 
@@ -413,7 +408,8 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
         try {
             GpuMeshHandle mesh = buildWaterFallbackMesh(patches, camera.cameraPosition());
             RenderPipeline pipeline = waterFallbackPipeline(scene, motionMrt ? velocity : null,
-                    motionMrt ? motionValidity : null, depth);
+                    motionMrt ? motionValidity : null, motionMrt ? temporalCoverage : null,
+                    motionMrt ? reactiveMask : null, depth);
             GpuBufferSlice frameUniform = WaterFrameUniforms.write(waterFrame);
             RhiDrawCommand.Builder draw = RhiDrawCommand.builder("Combatant water surfaces (triangle fallback)")
                     .pipeline(pipeline)
@@ -424,6 +420,8 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
             if (motionMrt) {
                 draw.colorAttachment(1, velocity);
                 draw.colorAttachment(2, motionValidity);
+                draw.colorAttachment(3, temporalCoverage);
+                draw.colorAttachment(4, reactiveMask);
             }
             bindWaterFallbackTextures(draw, context);
             context.rhi().drawMesh(draw.build());
@@ -455,21 +453,6 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
         return heightPipeline;
     }
 
-    private RhiPatchPipeline waterBoundaryPipeline(GpuTextureView boundary, GpuTextureView depth) {
-        PipelineKey key = new PipelineKey(List.of(boundary.texture().getFormat()),
-                depth.texture().getFormat(), samples(boundary));
-        if (waterBoundaryPipeline != null && key.equals(waterBoundaryKey)) return waterBoundaryPipeline;
-        closeWaterBoundaryPipeline();
-        waterBoundaryKey = key;
-        waterBoundaryPipeline = owner.advancedShaders().createPatchPipeline(new PatchPipelineDescriptor(
-                "combatant-water-medium-boundary", WATER_PATCH_VERTEX, WATER_PATCH_TESS_CONTROL, WATER_TESS_EVALUATION,
-                null, WATER_BOUNDARY_FRAGMENT, WATER_LAYOUT_SPEC, 4, WATER_BOUNDARY_LAYOUT,
-                AdvancedBlendMode.OPAQUE, AdvancedDepthMode.READ_WRITE_GREATER_EQUAL, AdvancedCullMode.NONE,
-                key.colorFormats(), key.depthFormat(), key.samples()
-        ));
-        return waterBoundaryPipeline;
-    }
-
     private RhiPatchPipeline waterPipeline(List<GpuTextureView> colors, GpuTextureView depth) {
         PipelineKey key = new PipelineKey(colors.stream().map(v -> v.texture().getFormat()).toList(),
                 depth.texture().getFormat(), samples(colors.getFirst()));
@@ -485,14 +468,55 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
         return waterPipeline;
     }
 
+    private RhiPatchPipeline waterBoundaryPipeline(GpuTextureView boundary) {
+        BoundaryPipelineKey key = new BoundaryPipelineKey(boundary.texture().getFormat());
+        if (waterBoundaryPipeline != null && key.equals(waterBoundaryKey)) return waterBoundaryPipeline;
+        closeWaterBoundaryPipeline();
+        waterBoundaryKey = key;
+        waterBoundaryPipeline = owner.advancedShaders().createPatchPipeline(new PatchPipelineDescriptor(
+                "combatant-water-medium-boundary", WATER_PATCH_VERTEX, WATER_PATCH_TESS_CONTROL, WATER_TESS_EVALUATION,
+                null, WATER_BOUNDARY_FRAGMENT, WATER_LAYOUT_SPEC, 4, WATER_BOUNDARY_LAYOUT,
+                AdvancedBlendMode.OPAQUE, AdvancedDepthMode.DISABLED, AdvancedCullMode.NONE,
+                key.colorFormat(), null, 1
+        ));
+        return waterBoundaryPipeline;
+    }
+
+    private RenderPipeline waterBoundaryFallbackPipeline(GpuTextureView boundary) {
+        GpuFormat format = boundary.texture().getFormat();
+        if (waterBoundaryFallbackPipeline != null && format == waterBoundaryFallbackFormat) {
+            return waterBoundaryFallbackPipeline;
+        }
+        waterBoundaryFallbackFormat = format;
+        ExtendedRenderPipelineBuilder builder = new ExtendedRenderPipelineBuilder(CombatantRenderPipelines.meshUniforms())
+                .withLocation(id("pipeline/world_water_medium_boundary_" + format.name().toLowerCase(Locale.ROOT)))
+                .withVertexFormat(CombatantVertexFormats.WATER_FORWARD_PATCH, PrimitiveTopology.TRIANGLES)
+                .withVertexShader(WATER_FALLBACK_VERTEX)
+                .withFragmentShader(WATER_BOUNDARY_FALLBACK_FRAGMENT)
+                .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+                .withDepthWrite(false)
+                .withCull(false)
+                .withColorTarget(0, format)
+                .withSampler("u_OpaqueDepth")
+                .withUniform("WaterFrame", UniformType.UNIFORM_BUFFER)
+                .withDomain(PipelineDomain.WORLD)
+                .withTransformPolicy(TransformPolicy.NONE);
+        waterBoundaryFallbackPipeline = CombatantRenderPipelines.registerAddonPipeline(builder.build());
+        return waterBoundaryFallbackPipeline;
+    }
+
     private RenderPipeline waterFallbackPipeline(GpuTextureView scene,
                                                  GpuTextureView velocity,
                                                  GpuTextureView motionValidity,
+                                                 GpuTextureView temporalCoverage,
+                                                 GpuTextureView reactiveMask,
                                                  GpuTextureView depth) {
         FallbackPipelineKey key = new FallbackPipelineKey(
                 scene.texture().getFormat(),
                 velocity != null ? velocity.texture().getFormat() : null,
                 motionValidity != null ? motionValidity.texture().getFormat() : null,
+                temporalCoverage != null ? temporalCoverage.texture().getFormat() : null,
+                reactiveMask != null ? reactiveMask.texture().getFormat() : null,
                 depth.texture().getFormat());
         if (waterFallbackPipeline != null && key.equals(waterFallbackKey)) return waterFallbackPipeline;
         waterFallbackKey = key;
@@ -527,33 +551,14 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
         if (key.motionValidityFormat() != null) {
             builder.withColorTarget(2, key.motionValidityFormat(), BlendFunction.TRANSLUCENT, ColorTargetState.WRITE_ALL);
         }
+        if (key.temporalCoverageFormat() != null) {
+            builder.withColorTarget(3, key.temporalCoverageFormat(), BlendFunction.TRANSLUCENT, ColorTargetState.WRITE_ALL);
+        }
+        if (key.reactiveMaskFormat() != null) {
+            builder.withColorTarget(4, key.reactiveMaskFormat(), BlendFunction.TRANSLUCENT, ColorTargetState.WRITE_ALL);
+        }
         waterFallbackPipeline = CombatantRenderPipelines.registerAddonPipeline(builder.build());
         return waterFallbackPipeline;
-    }
-
-    private RenderPipeline waterBoundaryFallbackPipeline(GpuTextureView boundary, GpuTextureView depth) {
-        BoundaryFallbackPipelineKey key = new BoundaryFallbackPipelineKey(
-                boundary.texture().getFormat(), depth.texture().getFormat());
-        if (waterBoundaryFallbackPipeline != null && key.equals(waterBoundaryFallbackKey)) {
-            return waterBoundaryFallbackPipeline;
-        }
-        waterBoundaryFallbackKey = key;
-        waterBoundaryFallbackPipeline = CombatantRenderPipelines.registerAddonPipeline(
-                new ExtendedRenderPipelineBuilder(CombatantRenderPipelines.meshUniforms())
-                        .withLocation(id("pipeline/world_water_medium_boundary_fallback_" + Integer.toHexString(key.hashCode())))
-                        .withVertexFormat(CombatantVertexFormats.WATER_FORWARD_PATCH, PrimitiveTopology.TRIANGLES)
-                        .withVertexShader(WATER_FALLBACK_VERTEX)
-                        .withFragmentShader(WATER_BOUNDARY_FALLBACK_FRAGMENT)
-                        .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-                        .withDepthWrite(true)
-                        .withCull(false)
-                        .withColorTarget(0, key.boundaryFormat(), BlendFunction.TRANSLUCENT, ColorTargetState.WRITE_ALL)
-                        .withSampler("u_OpaqueDepth")
-                        .withUniform("WaterFrame", UniformType.UNIFORM_BUFFER)
-                        .withDomain(PipelineDomain.WORLD)
-                        .withTransformPolicy(TransformPolicy.NONE)
-                        .build());
-        return waterBoundaryFallbackPipeline;
     }
 
     private WaterFrameUniforms.Frame buildWaterFrame(DeferredPassContext context,
@@ -611,8 +616,8 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
                 new float[]{profile.windX(), profile.windZ(), profile.windCoupling(), profile.rainRippleContribution()},
                 new float[]{medium.medium().gpuCode(), medium.insideWater() ? 1.0f : 0.0f,
                         hasSsr ? 1.0f : 0.0f, hasSky ? 1.0f : 0.0f},
-                new float[]{Float.intBitsToFloat(medium.fluidTypeId()), medium.boundarySurfaceY(),
-                        medium.boundarySource().gpuCode(), medium.boundarySurfaceValid() ? 1.0f : 0.0f},
+                new float[]{medium.boundarySurfaceY(), medium.boundarySource().gpuCode(),
+                        medium.fluidTypeId(), medium.boundarySurfaceValid() ? 1.0f : 0.0f},
                 new float[]{profile.absorptionR(), profile.absorptionG(), profile.absorptionB(),
                         profile.refractionProbeDistance()},
                 new float[]{profile.scatteringR(), profile.scatteringG(), profile.scatteringB(), rain},
@@ -635,7 +640,8 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
                 .putMat4(0, "previousView", frame.previousView())
                 .putMat4(0, "previousProjection", frame.previousProjection());
         String[] names = {"currentCameraTime", "previousCameraTime", "viewport", "depthTransform", "deformation0",
-                "deformation1", "mediumReflection", "mediumBoundary", "opticalAbsorption", "opticalScattering", "reflectionMeta"};
+                "deformation1", "mediumReflection", "mediumBoundary", "opticalAbsorption", "opticalScattering",
+                "reflectionMeta"};
         for (int i = 0; i < names.length; i++) {
             float[] value = vectors[i];
             writer.putVec4(0, names[i], value[0], value[1], value[2], value[3]);
@@ -765,7 +771,7 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
                 .vec2(patch.uvs()[i * 2], patch.uvs()[i * 2 + 1])
                 .vec2(patch.localSurfaceCoordinates()[i * 2], patch.localSurfaceCoordinates()[i * 2 + 1])
                 .color(r, g, b, a)
-                .vec4(patch.flowX(), patch.flowZ(), patch.cellBaseY(), blockLight)
+                .vec4(patch.flowX(), patch.flowZ(), patch.ao()[i], blockLight)
                 .vec4(patch.displacementScale(), patch.minTessFactor(), patch.maxTessFactor(), patch.distanceFadeStart())
                 .vec4(patch.distanceFadeEnd(), skyLight, patch.flowStrength(), patch.surfaceNormalX())
                 .vec4(patch.transmission(), patch.fallbackThickness(), patch.surfaceNormalY(), patch.surfaceNormalZ())
@@ -773,7 +779,7 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
                 .uint(patch.fluidTypeId())
                 .uint(patch.mapMask())
                 .uint(patch.featureMask())
-                .uint(patch.surfaceFlags() | (patch.fluidConnectivity() << 8))
+                .uint(patch.surfaceFlags())
                 .uint(patch.packedSurface())
                 .next();
     }
@@ -863,6 +869,13 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
         return view;
     }
 
+    private static List<WaterSurfaceExtractor.WaterPatch> collectAllWaterPatches() {
+        return WaterSurfaceExtractor.snapshot().values().stream()
+                .sorted(Comparator.comparingLong(WaterSurfaceExtractor.SectionPatchMesh::sectionKey))
+                .flatMap(section -> section.waterPatches().stream())
+                .toList();
+    }
+
     private static List<WaterSurfaceExtractor.WaterPatch> collectWaterPatches(long minGenerationExclusive) {
         return WaterSurfaceExtractor.snapshot().values().stream()
                 .filter(section -> section.generation() > minGenerationExclusive)
@@ -929,7 +942,7 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
         }
         waterBoundaryKey = null;
         waterBoundaryFallbackPipeline = null;
-        waterBoundaryFallbackKey = null;
+        waterBoundaryFallbackFormat = null;
     }
 
     private void closeWaterPipeline() {
@@ -944,8 +957,8 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
 
     private void closeOwned() {
         closeHeightPipeline();
-        closeWaterPipeline();
         closeWaterBoundaryPipeline();
+        closeWaterPipeline();
         if (cameraBuffer != null) {
             try { cameraBuffer.close(); } catch (Throwable ignored) { }
             cameraBuffer = null;
@@ -990,9 +1003,11 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
         }
     }
 
-    private record BoundaryFallbackPipelineKey(GpuFormat boundaryFormat, GpuFormat depthFormat) { }
+    private record BoundaryPipelineKey(GpuFormat colorFormat) {
+    }
 
     private record FallbackPipelineKey(GpuFormat sceneFormat, GpuFormat velocityFormat,
-                                       GpuFormat motionValidityFormat, GpuFormat depthFormat) {
+                                       GpuFormat motionValidityFormat, GpuFormat temporalCoverageFormat,
+                                       GpuFormat reactiveMaskFormat, GpuFormat depthFormat) {
     }
 }

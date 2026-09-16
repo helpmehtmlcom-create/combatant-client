@@ -92,6 +92,7 @@ public final class DeferredWorldPipeline {
     private final DeferredSecondaryViewRegistry secondaryViews = new DeferredSecondaryViewRegistry();
     private final DeferredPrimaryViewSource primaryView = new DeferredPrimaryViewSource();
     private final DeferredTemporalHistoryRegistry temporalHistory = new DeferredTemporalHistoryRegistry();
+    private final DeferredObjectMotionTracker objectMotion = new DeferredObjectMotionTracker();
     private final DeferredWorldRenderStateSource worldStateSource = new DeferredWorldRenderStateSource();
     private WorldRenderState worldRenderState = WorldRenderState.unknown(0L);
 
@@ -539,6 +540,8 @@ public final class DeferredWorldPipeline {
         Object currentWorld = Minecraft.getInstance().level;
         if (worldOwner != currentWorld) {
             physicalResources.reset();
+            objectMotion.reset();
+            DeferredTemporalCoverageBridge.reset();
             primaryView.beginWorld(currentWorld);
             worldStateSource.reset();
             worldRenderState = worldStateSource.current();
@@ -574,6 +577,7 @@ public final class DeferredWorldPipeline {
         DeferredHistoryDescriptor history = primaryView.historyDescriptor();
         resourceBindings.beginFrame(frameId, history.epoch());
         temporalHistory.beginFrame(frameId, history, resourceBindings, frameSettings);
+        objectMotion.beginFrame(frameId, history.epoch());
         secondaryViews.beginFrame(frameId);
         clearedThisFrame = false;
         lightingResolvedThisFrame = false;
@@ -721,6 +725,8 @@ public final class DeferredWorldPipeline {
         postGeometryExecuted = false;
         primaryView.reset();
         temporalHistory.reset(DeferredHistoryResetReason.RENDERER_RESET);
+        objectMotion.reset();
+        DeferredTemporalCoverageBridge.reset();
         worldStateSource.reset();
         worldRenderState = worldStateSource.current();
     }
@@ -731,6 +737,38 @@ public final class DeferredWorldPipeline {
 
     public DeferredTemporalHistoryRegistry temporalHistory() {
         return temporalHistory;
+    }
+
+    /** Producer-side entity transform history attached during vanilla render-state extraction. */
+    public @Nullable DeferredMotionState captureEntityMotion(
+            net.minecraft.world.entity.Entity entity,
+            net.minecraft.client.renderer.entity.state.EntityRenderState state) {
+        if (!enabled() || entity == null || state == null) return null;
+        beginDeferredFrameState();
+        DeferredHistoryDescriptor history = primaryView.historyDescriptor();
+        objectMotion.beginFrame(frameStateId, history.epoch());
+        return objectMotion.captureEntity(entity, state);
+    }
+
+    /** Producer-side block-entity transform history attached during vanilla state extraction. */
+    public @Nullable DeferredMotionState captureBlockEntityMotion(
+            net.minecraft.world.level.block.entity.BlockEntity blockEntity,
+            net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState state) {
+        if (!enabled() || blockEntity == null || state == null) return null;
+        beginDeferredFrameState();
+        DeferredHistoryDescriptor history = primaryView.historyDescriptor();
+        objectMotion.beginFrame(frameStateId, history.epoch());
+        return objectMotion.captureBlockEntity(blockEntity, state);
+    }
+
+    /** Frame-local MRT target for explicit water/particle/portal/custom temporal producers. */
+    public DeferredTemporalCoverageBridge.ProducerTarget temporalCoverageTarget(
+            DeferredTemporalCoverageProducer producer) {
+        if (!enabled()) {
+            return DeferredTemporalCoverageBridge.target(producer, Long.MIN_VALUE);
+        }
+        beginDeferredFrameState();
+        return DeferredTemporalCoverageBridge.target(producer, frameStateId);
     }
 
     /** Explicit semantic world contract frozen for the current deferred frame. */

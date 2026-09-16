@@ -26,19 +26,53 @@ public enum DeferredResource {
             DeferredTextureSpec.attachment(GpuFormat.RGBA8_UNORM, MATCH_SCENE)),
     GBUFFER_MATERIAL_ID(FrameGraphResourceKey.transientTexture("world.gbuffer.material_id"),
             DeferredTextureSpec.attachment(GpuFormat.R32_UINT, MATCH_SCENE)),
+    /** Canonical single-sample pre-translucency velocity: currentUV - previousUV. */
     VELOCITY(FrameGraphResourceKey.transientTexture("world.velocity"),
             DeferredTextureSpec.computeAttachment(GpuFormat.RG16_FLOAT, DeferredTextureSpec.ResolutionClass.FULL)),
+    /** Validity paired with {@link #VELOCITY}; zero never means "stationary and valid" by itself. */
     MOTION_VALIDITY(FrameGraphResourceKey.transientTexture("world.velocity.validity"),
             DeferredTextureSpec.computeAttachment(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.FULL)),
+    /** Raster producer attachment. Matches scene MSAA and is resolved explicitly after translucency. */
+    RASTER_MOTION_VELOCITY(FrameGraphResourceKey.transientTexture("world.temporal.raster_velocity"),
+            DeferredTextureSpec.attachment(GpuFormat.RG16_FLOAT, MATCH_SCENE)),
+    /** Per-sample raster motion validity, paired with {@link #RASTER_MOTION_VELOCITY}. */
+    RASTER_MOTION_VALIDITY(FrameGraphResourceKey.transientTexture("world.temporal.raster_motion_validity"),
+            DeferredTextureSpec.attachment(GpuFormat.R8_UNORM, MATCH_SCENE)),
+    /** Per-sample raster ownership. Distinguishes uncovered from covered-with-invalid-motion. */
+    RASTER_TEMPORAL_COVERAGE(FrameGraphResourceKey.transientTexture("world.temporal.raster_coverage"),
+            DeferredTextureSpec.attachment(GpuFormat.R8_UNORM, MATCH_SCENE)),
+    /** Per-sample explicit reactive signal for water/translucency/particles/portals. */
+    RASTER_REACTIVE_MASK(FrameGraphResourceKey.transientTexture("world.temporal.raster_reactive"),
+            DeferredTextureSpec.attachment(GpuFormat.R8_UNORM, MATCH_SCENE)),
+    /** Canonical single-sample post-translucency velocity for final temporal consumers. */
+    FINAL_VELOCITY(FrameGraphResourceKey.transientTexture("world.temporal.final_velocity"),
+            DeferredTextureSpec.computeAttachment(GpuFormat.RG16_FLOAT, DeferredTextureSpec.ResolutionClass.FULL)),
+    /** Canonical post-translucency validity paired with {@link #FINAL_VELOCITY}. */
+    FINAL_MOTION_VALIDITY(FrameGraphResourceKey.transientTexture("world.temporal.final_motion_validity"),
+            DeferredTextureSpec.computeAttachment(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.FULL)),
     RESOLVED_DEPTH(FrameGraphResourceKey.transientTexture("world.depth.resolved"),
+            DeferredTextureSpec.computeAttachment(GpuFormat.R32_FLOAT, DeferredTextureSpec.ResolutionClass.FULL)),
+    /** Scene depth at the final temporal-consumer boundary, after translucent world submission. */
+    FINAL_RESOLVED_DEPTH(FrameGraphResourceKey.transientTexture("world.depth.final_resolved"),
             DeferredTextureSpec.computeAttachment(GpuFormat.R32_FLOAT, DeferredTextureSpec.ResolutionClass.FULL)),
     GBUFFER_DEPTH(FrameGraphResourceKey.transientTexture("world.gbuffer.depth"),
             DeferredTextureSpec.compute(GpuFormat.R32_FLOAT, DeferredTextureSpec.ResolutionClass.FULL, false)),
     DEPTH_PYRAMID(FrameGraphResourceKey.transientTexture("world.depth.pyramid"),
             DeferredTextureSpec.compute(GpuFormat.R32_FLOAT, DeferredTextureSpec.ResolutionClass.FULL, true)),
+    /** Pre-translucency disocclusion used by SSR/AO/other opaque temporal consumers. */
     DISOCCLUSION_MASK(FrameGraphResourceKey.transientTexture("world.temporal.disocclusion"),
             DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.FULL, false)),
+    /** Final-frame disocclusion paired with FINAL_* motion/depth for future TAA/TAAU. */
+    FINAL_DISOCCLUSION_MASK(FrameGraphResourceKey.transientTexture("world.temporal.final_disocclusion"),
+            DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.FULL, false)),
+    /**
+     * Compatibility name for the pre-translucency reactive mask. Opaque temporal consumers use
+     * this resource; final-frame consumers must use {@link #FINAL_REACTIVE_MASK}.
+     */
     REACTIVE_MASK(FrameGraphResourceKey.transientTexture("world.temporal.reactive"),
+            DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.FULL, false)),
+    /** Reactive coverage at the final temporal boundary from explicit forward producers. */
+    FINAL_REACTIVE_MASK(FrameGraphResourceKey.transientTexture("world.temporal.reactive.final"),
             DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.FULL, false)),
     SHADOW_DEPTH(FrameGraphResourceKey.transientTexture("world.shadow.depth"), null),
     SHADOW_CASCADE_DATA(FrameGraphResourceKey.transientBuffer("world.shadow.cascades"), null),
@@ -90,6 +124,9 @@ public enum DeferredResource {
             DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.FULL, false)),
     SKY_COMPOSITED_RADIANCE(FrameGraphResourceKey.transientTexture("world.environment.sky_composited_radiance"),
             DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.FULL, false)),
+    /** Single-sample screen-space water/air boundary consumed by froxel medium injection. */
+    WATER_MEDIUM_BOUNDARY(FrameGraphResourceKey.transientTexture("world.water.medium_boundary"),
+            DeferredTextureSpec.computeAttachment(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.FULL)),
     CLOUD_RADIANCE(FrameGraphResourceKey.transientTexture("world.cloud.radiance"),
             DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
     CLOUD_DEPTH(FrameGraphResourceKey.transientTexture("world.cloud.depth"),
@@ -115,15 +152,11 @@ public enum DeferredResource {
                             * DeferredCloudConfig.current().shadowAltitudeSlices(), false)),
     CLOUD_SHADOW_VISIBILITY(FrameGraphResourceKey.transientTexture("world.cloud.shadow_visibility"),
             DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.FULL, false)),
-    WATER_MEDIUM_BOUNDARY(FrameGraphResourceKey.transientTexture("world.water.medium_boundary"),
-            DeferredTextureSpec.computeAttachment(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.FULL)),
-    WATER_MEDIUM_BOUNDARY_DEPTH(FrameGraphResourceKey.transientTexture("world.water.medium_boundary_depth"),
-            DeferredTextureSpec.attachment(GpuFormat.D32_FLOAT, DeferredTextureSpec.SamplePolicy.SINGLE_SAMPLE)),
-    FROXEL_MEDIA_SEGMENT_RADIANCE(FrameGraphResourceKey.transientVolume("world.media.froxel.segment_radiance"), null),
-    FROXEL_MEDIA_SEGMENT_TRANSMITTANCE(FrameGraphResourceKey.transientVolume("world.media.froxel.segment_transmittance"), null),
-    FROXEL_MEDIA_PROPERTIES(FrameGraphResourceKey.transientVolume("world.media.froxel.properties"), null),
-    FROXEL_MEDIA_INTEGRATED_RADIANCE(FrameGraphResourceKey.transientVolume("world.media.froxel.integrated_radiance"), null),
-    FROXEL_MEDIA_INTEGRATED_TRANSMITTANCE(FrameGraphResourceKey.transientVolume("world.media.froxel.integrated_transmittance"), null),
+    FROXEL_MEDIA_SEGMENT_RADIANCE(FrameGraphResourceKey.transientTexture("world.media.froxel.segment_radiance"), null),
+    FROXEL_MEDIA_SEGMENT_TRANSMITTANCE(FrameGraphResourceKey.transientTexture("world.media.froxel.segment_transmittance"), null),
+    FROXEL_MEDIA_PROPERTIES(FrameGraphResourceKey.transientTexture("world.media.froxel.properties"), null),
+    FROXEL_MEDIA_INTEGRATED_RADIANCE(FrameGraphResourceKey.transientTexture("world.media.froxel.integrated_radiance"), null),
+    FROXEL_MEDIA_INTEGRATED_TRANSMITTANCE(FrameGraphResourceKey.transientTexture("world.media.froxel.integrated_transmittance"), null),
     SCENE_RADIANCE(FrameGraphResourceKey.transientTexture("world.scene_radiance"),
             DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.FULL, false)),
     INDIRECT_TRACE_DATA(FrameGraphResourceKey.transientBuffer("world.indirect_trace_data"), null),
