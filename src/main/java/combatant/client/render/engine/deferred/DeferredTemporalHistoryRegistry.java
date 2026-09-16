@@ -8,7 +8,6 @@
 package combatant.client.render.engine.deferred;
 
 import com.mojang.blaze3d.textures.GpuTextureView;
-import combatant.client.render.engine.framegraph.FrameGraphResourceKind;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.EnumMap;
@@ -163,24 +162,8 @@ public final class DeferredTemporalHistoryRegistry {
     private boolean bindAndValidatePrevious(Definition definition, DeferredResourceBindings bound) {
         if (definition.previousResources.isEmpty()) return false;
         for (DeferredResource resource : definition.previousResources) {
-            if (!bound.isBound(resource) && resource.key().kind() == FrameGraphResourceKind.TEXTURE) {
-                bound.bindExisting(resource, settings);
-            }
-            if (!bound.isValid(resource)) return false;
-            switch (resource.key().kind()) {
-                case TEXTURE -> {
-                    if (bound.texture(resource) == null) return false;
-                }
-                case BUFFER -> {
-                    if (bound.buffer(resource) == null) return false;
-                }
-                case VOLUME -> {
-                    if (bound.storageVolume(resource) == null) return false;
-                }
-                case EXTERNAL -> {
-                    if (bound.texture(resource) == null) return false;
-                }
-            }
+            if (!bound.isBound(resource)) bound.bindExisting(resource, settings);
+            if (!bound.isValid(resource) || bound.texture(resource) == null) return false;
         }
         return true;
     }
@@ -192,12 +175,6 @@ public final class DeferredTemporalHistoryRegistry {
                 ? null : definition.currentResources.getFirst();
         if (representative == null) return new Shape(0, 0, "unknown");
 
-        if (representative.key().kind() == FrameGraphResourceKind.BUFFER) {
-            return new Shape(bound != null && bound.buffer(representative) != null ? 1 : 0, 1, "buffer");
-        }
-        if (representative.key().kind() == FrameGraphResourceKind.VOLUME) {
-            return new Shape(bound != null && bound.storageVolume(representative) != null ? 1 : 0, 1, "volume");
-        }
         GpuTextureView view = bound == null ? null : bound.texture(representative);
         int width = view == null ? 0 : view.getWidth(0);
         int height = view == null ? 0 : view.getHeight(0);
@@ -240,6 +217,21 @@ public final class DeferredTemporalHistoryRegistry {
                 DeferredHistoryStorageMode.STORE_AFTER_CONSUME
         ));
         register(new Definition(
+                DeferredTemporalHistoryId.WATER_REFLECTIONS,
+                List.of(DeferredResource.WATER_REFLECTION_FILTERED_COLOR,
+                        DeferredResource.WATER_REFLECTION_FILTERED_CONFIDENCE,
+                        DeferredResource.WATER_REFLECTION_REPROJECTION,
+                        DeferredResource.WATER_REFLECTION_GEOMETRY,
+                        DeferredResource.WATER_REFLECTION_DEPTHS),
+                List.of(DeferredResource.HISTORY_WATER_REFLECTION,
+                        DeferredResource.HISTORY_WATER_REFLECTION_CONFIDENCE,
+                        DeferredResource.HISTORY_WATER_REFLECTION_SOURCE_DEPTH,
+                        DeferredResource.HISTORY_WATER_REFLECTION_HIT_DEPTH),
+                DeferredResource.HISTORY_WATER_REFLECTION_CONFIDENCE,
+                1, DeferredHistoryProducer.WATER, "world.water.reflection.history",
+                DeferredHistoryStorageMode.STORE_AFTER_CONSUME
+        ));
+        register(new Definition(
                 DeferredTemporalHistoryId.CLOUDS,
                 List.of(DeferredResource.CLOUD_TEMPORAL_RADIANCE, DeferredResource.CLOUD_TEMPORAL_DEPTH,
                         DeferredResource.CLOUD_TEMPORAL_CONFIDENCE),
@@ -249,14 +241,6 @@ public final class DeferredTemporalHistoryRegistry {
                 DeferredResource.HISTORY_CLOUD_CONFIDENCE,
                 1, DeferredHistoryProducer.CLOUDS, "world.cloud.history",
                 DeferredHistoryStorageMode.STORE_AFTER_CONSUME
-        ));
-        register(new Definition(
-                DeferredTemporalHistoryId.EXPOSURE,
-                List.of(DeferredResource.EXPOSURE),
-                List.of(DeferredResource.EXPOSURE),
-                null,
-                1, DeferredHistoryProducer.EXPOSURE, "world.post.exposure.reduce",
-                DeferredHistoryStorageMode.IN_PLACE
         ));
         register(new Definition(
                 DeferredTemporalHistoryId.TAA,

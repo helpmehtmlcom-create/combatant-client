@@ -669,9 +669,15 @@ public final class DeferredWorldPipeline {
         executeStage(DeferredStage.REFLECTION_HISTORY);
         executeStage(DeferredStage.REFLECTION_COMPOSITE);
         executeStage(DeferredStage.SKY_COMPOSITE);
+        executeStage(DeferredStage.WATER_MEDIUM_BOUNDARY);
         executeStage(DeferredStage.VOLUMETRIC_MEDIA_INJECT);
         executeStage(DeferredStage.VOLUMETRIC_MEDIA_INTEGRATE);
         executeStage(DeferredStage.VOLUMETRIC_MEDIA_COMPOSITE);
+        executeStage(DeferredStage.WATER_REFLECTION_TRACE);
+        executeStage(DeferredStage.WATER_REFLECTION_TEMPORAL);
+        executeStage(DeferredStage.WATER_REFLECTION_DENOISE);
+        executeStage(DeferredStage.WATER_REFLECTION_HISTORY);
+        executeStage(DeferredStage.WATER_REFLECTION_RESOLVE);
         executeStage(DeferredStage.WATER_SURFACE);
         executeStage(DeferredStage.PRE_TRANSLUCENCY);
     }

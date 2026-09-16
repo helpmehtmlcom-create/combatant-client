@@ -104,6 +104,7 @@ final class DeferredBackendPasses implements AutoCloseable {
     private final DeferredDisocclusionSource disocclusion = new DeferredDisocclusionSource();
     private final DeferredTemporalSignalSource temporalSignals = new DeferredTemporalSignalSource();
     private final DeferredReflectionDenoiseSource reflectionDenoise = new DeferredReflectionDenoiseSource();
+    private final DeferredWaterReflectionTemporalSource waterReflectionTemporal = new DeferredWaterReflectionTemporalSource();
     private final DeferredOpaqueCompositeSource opaqueComposite = new DeferredOpaqueCompositeSource();
     private final DeferredSkyCompositeSource skyComposite = new DeferredSkyCompositeSource();
     private final DeferredCloudFieldSource cloudField = new DeferredCloudFieldSource();
@@ -114,7 +115,6 @@ final class DeferredBackendPasses implements AutoCloseable {
     private final DeferredAtmosphereCompositeSource atmosphereComposite = new DeferredAtmosphereCompositeSource(froxelMedia);
     private final DeferredTemporalHistorySource temporalHistory = new DeferredTemporalHistorySource();
     private final DeferredTemporalResolveSource temporalResolve = new DeferredTemporalResolveSource();
-    private final DeferredHdrPostSource hdrPost = new DeferredHdrPostSource();
     private final DeferredPatchSurfaceSource patchSurfaces = new DeferredPatchSurfaceSource(reflectionCascades);
 
     void install(ArrayList<DeferredPassSpec> passes) {
@@ -213,6 +213,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         disocclusion.install(passes);
         temporalSignals.install(passes);
         reflectionDenoise.install(passes);
+        waterReflectionTemporal.install(passes);
         opaqueComposite.install(passes);
         skyComposite.install(passes);
         cloudShadows.install(passes);
@@ -222,7 +223,6 @@ final class DeferredBackendPasses implements AutoCloseable {
         atmosphereComposite.install(passes);
         temporalHistory.install(passes);
         temporalResolve.install(passes);
-        hdrPost.install(passes);
         patchSurfaces.install(passes);
     }
 
@@ -250,6 +250,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         disocclusion.prepare(rhi);
         temporalSignals.prepare(rhi);
         reflectionDenoise.prepare(rhi);
+        waterReflectionTemporal.prepare(rhi);
         opaqueComposite.prepare(rhi);
         skyComposite.prepare(rhi);
         cloudField.prepare(rhi);
@@ -260,7 +261,6 @@ final class DeferredBackendPasses implements AutoCloseable {
         atmosphereComposite.prepare(rhi);
         temporalHistory.prepare(rhi);
         temporalResolve.prepare(rhi);
-        hdrPost.prepare(rhi);
         patchSurfaces.prepare(rhi);
     }
 
@@ -288,6 +288,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         disocclusion.release(releaseOwner);
         temporalSignals.release(releaseOwner);
         reflectionDenoise.release(releaseOwner);
+        waterReflectionTemporal.release(releaseOwner);
         opaqueComposite.release(releaseOwner);
         skyComposite.release(releaseOwner);
         clouds.release(releaseOwner);
@@ -298,7 +299,6 @@ final class DeferredBackendPasses implements AutoCloseable {
         atmosphereComposite.release(releaseOwner);
         temporalHistory.release(releaseOwner);
         temporalResolve.release(releaseOwner);
-        hdrPost.release(releaseOwner);
         patchSurfaces.release(releaseOwner);
         owner = null;
     }
@@ -469,7 +469,6 @@ final class DeferredBackendPasses implements AutoCloseable {
             cloudTemporal.release(previous);
             atmosphereComposite.release(previous);
             temporalHistory.release(previous);
-            hdrPost.release(previous);
             patchSurfaces.release(previous);
         }
         owner = rhi;
@@ -572,7 +571,6 @@ final class DeferredBackendPasses implements AutoCloseable {
         clouds.close();
         atmosphereComposite.close();
         temporalHistory.close();
-        hdrPost.close();
         patchSurfaces.close();
         owner = null;
     }

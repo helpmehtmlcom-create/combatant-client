@@ -34,6 +34,14 @@ vec3 combatantReflectionDecodeOctahedral(vec2 encoded) {
     return normalize(n);
 }
 
+vec2 combatantReflectionEncodeOctahedral(vec3 normal) {
+    vec3 n = normalize(normal);
+    n /= max(abs(n.x) + abs(n.y) + abs(n.z), 1.0e-7);
+    vec2 encoded = n.xy;
+    if (n.z < 0.0) encoded = (1.0 - abs(encoded.yx)) * sign(encoded.xy);
+    return encoded * 0.5 + 0.5;
+}
+
 vec3 combatantReflectionReconstructView(CombatantReflectionTracePolicy policy, vec2 uv, float depth) {
     vec2 ndcXY = uv * 2.0 - 1.0;
     float ndcZ = depth * policy.depthTransform.x + policy.depthTransform.y;
