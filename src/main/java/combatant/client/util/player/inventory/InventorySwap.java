@@ -359,8 +359,14 @@ public final class InventorySwap {
         LocalPlayer player = mc.player;
         if (player == null || !isHotbarSlot(slot)) return false;
 
+        int clientSlot = clientSelectedSlot();
+        HotbarLease active = activeLease();
+        if (active != null) {
+            clientSlot = active.clientSlot;
+        }
+
         int resetAfterAge = player.tickCount + Math.max(0, ticksUntilReset) + 1;
-        hotbarLease = new HotbarLease(player.getUUID(), owner, slot, clientSelectedSlot(), resetAfterAge);
+        hotbarLease = new HotbarLease(player.getUUID(), owner, slot, clientSlot, resetAfterAge);
         if (!sendSelectedSlotIfNeeded(slot)) {
             hotbarLease = null;
             return false;

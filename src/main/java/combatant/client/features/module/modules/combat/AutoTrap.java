@@ -20,6 +20,7 @@ import combatant.client.features.relations.CategoryRules;
 import combatant.client.features.relations.CategoryType;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.util.aiming.RotationManager;
+import combatant.client.util.block.placer.BlockPlacer;
 import combatant.client.util.aiming.RotationTarget;
 import combatant.client.util.aiming.data.Rotation;
 import combatant.client.util.aiming.features.MovementCorrection;
@@ -333,38 +334,16 @@ public class AutoTrap extends Module {
     }
 
     private boolean performPlace(LocalPlayer player, PlacementTarget target, InteractionHand hand) {
-        if (mc.gameMode == null) return false;
-
         BlockHitResult hit = target.hit();
-        if (rotate.get()) {
-            Rotation rot = Rotation.lookingAt(hit.getLocation(), player.getEyePosition()).normalize();
-            RotationTarget rotTarget = new RotationTarget(
-                    rot,
-                    player,
-                    List.of(),
-                    1,
-                    4.0f,
-                    true,
-                    MovementCorrection.SILENT,
-                    null
-            );
-            RotationManager.INSTANCE.setRotationTarget(rotTarget, 30, this);
-            if (mc.getConnection() != null) {
-                mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
-                        rot.yaw(),
-                        rot.pitch(),
-                        player.onGround(),
-                        player.horizontalCollision
-                ));
-            }
-        }
-
-        InteractionResult result = mc.gameMode.useItemOn(player, hand, hit);
-        if (result != null && result.consumesAction()) {
-            player.swing(hand);
-            return true;
-        }
-        return false;
+        if (hit == null) return false;
+        return BlockPlacer.placeBlock(
+                this,
+                hit,
+                hand,
+                player.getInventory().getSelectedSlot(),
+                rotate.get(),
+                BlockPlacer.SwingMode.SERVER
+        );
     }
 
     private Player findTarget(LocalPlayer player, Level level, double maxRange) {

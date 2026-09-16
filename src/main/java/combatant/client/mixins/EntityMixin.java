@@ -141,6 +141,21 @@ public abstract class EntityMixin implements IEntity {
                 ? RotationManager.INSTANCE.getCurrentRotation().pitch()
                 : pitch;
     }
+    @ModifyVariable(
+            method = "calculateViewVector(FF)Lnet/minecraft/world/phys/Vec3;",
+            at = @At("HEAD"),
+            ordinal = 1,
+            argsOnly = true
+    )
+    private float combatant$rotationVectorYaw(float yaw) {
+        if (!((Object) this instanceof LocalPlayer)) {
+            return yaw;
+        }
+
+        return RotationManager.INSTANCE.getCurrentRotation() != null
+                ? RotationManager.INSTANCE.getCurrentRotation().yaw()
+                : yaw;
+    }
 
     @Redirect(
             method = "push(Lnet/minecraft/world/entity/Entity;)V",

@@ -17,6 +17,7 @@ import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.relations.CategoryRules;
 import combatant.client.features.relations.CategoryType;
 import combatant.client.util.aiming.RotationManager;
+import combatant.client.util.block.placer.BlockPlacer;
 import combatant.client.util.aiming.RotationTarget;
 import combatant.client.util.aiming.data.Rotation;
 import combatant.client.util.aiming.features.MovementCorrection;
@@ -361,35 +362,18 @@ public class CevBreaker extends Module {
     }
 
     private boolean placeObsidian(LocalPlayer player, PlacementTarget target) {
-        InteractionHand hand = InteractionHand.MAIN_HAND;
-        boolean leased = false;
+        InteractionHand hand = isObsidian(player.getOffhandItem()) ? InteractionHand.OFF_HAND : InteractionHand.MAIN_HAND;
+        int slot = hand == InteractionHand.MAIN_HAND ? findObsidianHotbarSlot(player) : -1;
+        if (hand == InteractionHand.MAIN_HAND && slot == -1) return false;
 
-        if (isObsidian(player.getOffhandItem())) {
-            hand = InteractionHand.OFF_HAND;
-        } else {
-            int slot = findObsidianHotbarSlot(player);
-            if (slot == -1) return false;
-
-            leased = InventorySwap.INSTANCE.leaseHotbar(this, slot, 2);
-            if (!leased) return false;
-        }
-
-        try {
-            if (rotate.get()) {
-                applyRotation(player, target.hit.getLocation());
-            }
-
-            InteractionResult result = mc.gameMode.useItemOn(player, hand, target.hit);
-            if (result != null && result.consumesAction()) {
-                player.swing(hand);
-                return true;
-            }
-            return false;
-        } finally {
-            if (leased) {
-                InventorySwap.INSTANCE.releaseHotbar(this);
-            }
-        }
+        return BlockPlacer.placeBlock(
+                this,
+                target.hit,
+                hand,
+                slot,
+                rotate.get(),
+                BlockPlacer.SwingMode.SERVER
+        );
     }
 
     private boolean placeCrystal(LocalPlayer player, BlockHitResult hit) {
