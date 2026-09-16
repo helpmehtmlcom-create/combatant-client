@@ -8,6 +8,10 @@
 package combatant.client.util.world;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
@@ -53,6 +57,71 @@ public enum ExplosionDamageUtil {
             EquipmentSlot.LEGS,
             EquipmentSlot.FEET
     };
+    private static final Map<ExposureCacheKey, ExposureDebug> EXPOSURE_CACHE = Collections.synchronizedMap(
+            new LinkedHashMap<>(128, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<ExposureCacheKey, ExposureDebug> eldest) {
+                    return size() > 256;
+                }
+            }
+    );
+    private static final Map<RaycastCacheKey, BlockHitResult> RAYCAST_CACHE = Collections.synchronizedMap(
+            new LinkedHashMap<>(256, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<RaycastCacheKey, BlockHitResult> eldest) {
+                    return size() > 512;
+                }
+            }
+    );
+    private static Holder<Enchantment> cachedProtection;
+    private static Holder<Enchantment> cachedBlastProtection;
+    private static Object cachedRegistryAccess;
+
+    public static float calculateCrystalDamage(Vec3 explosionPos, LivingEntity target) {
+        if (explosionPos == null || target == null) return 0.0f;
+        return getCrystalDamage(target, explosionPos, 0, false);
+    }
+
+    public static float calculateAnchorDamage(BlockPos anchorPos, LivingEntity target) {
+        if (anchorPos == null || target == null) return 0.0f;
+        return getExplosionDamage(target, Vec3.atCenterOf(anchorPos), 5.0f, 0, false);
+    }
+
+    public static float calculateBedDamage(BlockPos bedPos, LivingEntity target) {
+        if (bedPos == null || target == null) return 0.0f;
+        return getExplosionDamage(target, Vec3.atCenterOf(bedPos), 5.0f, 0, false);
+    }
+
+    public static boolean isSafeFromExplosion(Vec3 pos, LocalPlayer player, double maxSelfDamage) {
+        return isSafeFromExplosion(pos, CRYSTAL_POWER, player, maxSelfDamage);
+    }
+
+    public static boolean isSafeFromExplosion(Vec3 pos, float power, LocalPlayer player, double maxSelfDamage) {
+        if (pos == null || player == null) return false;
+        float selfDamage = getExplosionDamage(player, pos, power, 0, false);
+        if (Float.isNaN(selfDamage) || Float.isInfinite(selfDamage) || selfDamage > maxSelfDamage) {
+            return false;
+        }
+        float totalHealth = player.getHealth() + player.getAbsorptionAmount();
+        return selfDamage + 0.5f <= totalHealth;
+    }
+
+    public static boolean willPopTotem(double damage, LivingEntity entity) {
+        if (entity == null || !entity.isAlive() || entity.isRemoved()) return false;
+        if (Double.isNaN(damage) || Double.isInfinite(damage) || damage <= 0.0) return false;
+        boolean hasTotem = entity.getMainHandItem().is(net.minecraft.world.item.Items.TOTEM_OF_UNDYING)
+                || entity.getOffhandItem().is(net.minecraft.world.item.Items.TOTEM_OF_UNDYING);
+        float totalHealth = entity.getHealth() + entity.getAbsorptionAmount();
+        return hasTotem && damage >= totalHealth;
+    }
+
+    public static boolean isLethal(double damage, LivingEntity entity) {
+        if (entity == null || !entity.isAlive() || entity.isRemoved()) return false;
+        if (Double.isNaN(damage) || Double.isInfinite(damage) || damage <= 0.0) return false;
+        float totalHealth = entity.getHealth() + entity.getAbsorptionAmount();
+        return damage >= totalHealth;
+    }
+
 
     public static float getCrystalDamage(LivingEntity entity,
                                          Vec3 explosionPos,
@@ -234,6 +303,21 @@ public enum ExplosionDamageUtil {
     }
 
     private static ExposureDebug getExposureToExplosion(LivingEntity entity, Vec3 source, AABB box, Float maxBlastResistance, BlockPos ghostObsidianPos) {
+        Minecraft mc = Minecraft.getInstance();
+        long gameTime = mc != null && mc.level != null ? mc.level.getGameTime() : 0L;
+        ExposureCacheKey cacheKey = new ExposureCacheKey(
+                box.minX, box.minY, box.minZ,
+                box.maxX, box.maxY, box.maxZ,
+                source.x, source.y, source.z,
+                ghostObsidianPos,
+                maxBlastResistance,
+                gameTime
+        );
+        ExposureDebug cached = EXPOSURE_CACHE.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+
         double sizeX = box.maxX - box.minX;
         double sizeY = box.maxY - box.minY;
         double sizeZ = box.maxZ - box.minZ;
@@ -244,7 +328,9 @@ public enum ExplosionDamageUtil {
         double offsetZ = (1.0 - Math.floor(1.0 / stepZ) * stepZ) / 2.0;
 
         if (stepX < 0.0 || stepY < 0.0 || stepZ < 0.0) {
-            return new ExposureDebug(0.0f, 0, 0, null, null, null, false, false);
+            ExposureDebug empty = new ExposureDebug(0.0f, 0, 0, null, null, null, false, false);
+            EXPOSURE_CACHE.put(cacheKey, empty);
+            return empty;
         }
 
         int sampleCountX = estimateSampleCount(sizeX);
@@ -303,7 +389,7 @@ public enum ExplosionDamageUtil {
             }
         }
 
-        return new ExposureDebug(
+        ExposureDebug result = new ExposureDebug(
                 total <= 0 ? 0.0f : (float) hits / (float) total,
                 hits,
                 total,
@@ -313,6 +399,8 @@ public enum ExplosionDamageUtil {
                 blockedAtSampleCell,
                 blockedAtExplosionCell
         );
+        EXPOSURE_CACHE.put(cacheKey, result);
+        return result;
     }
 
     private static ExposureDebug getExposureToExplosionCapped(LivingEntity entity,
@@ -418,7 +506,22 @@ public enum ExplosionDamageUtil {
             return BlockHitResult.miss(context.getTo(), Direction.getApproximateNearest(0.0, 0.0, 1.0), BlockPos.containing(context.getTo()));
         }
 
-        return BlockGetter.traverseBlocks(context.getFrom(), context.getTo(), context, (innerContext, blockPos) -> {
+        long gameTime = mc.level.getGameTime();
+        Vec3 from = context.getFrom();
+        Vec3 to = context.getTo();
+        RaycastCacheKey rayKey = new RaycastCacheKey(
+                from.x, from.y, from.z,
+                to.x, to.y, to.z,
+                ghostObsidianPos,
+                maxBlastResistance,
+                gameTime
+        );
+        BlockHitResult cached = RAYCAST_CACHE.get(rayKey);
+        if (cached != null) {
+            return cached;
+        }
+
+        BlockHitResult result = BlockGetter.traverseBlocks(context.getFrom(), context.getTo(), context, (innerContext, blockPos) -> {
             boolean ghostBlock = ghostObsidianPos != null && blockPos.equals(ghostObsidianPos);
             var state = ghostBlock
                     ? net.minecraft.world.level.block.Blocks.OBSIDIAN.defaultBlockState()
@@ -426,11 +529,19 @@ public enum ExplosionDamageUtil {
             var fluidState = ghostBlock
                     ? Fluids.EMPTY.defaultFluidState()
                     : mc.level.getFluidState(blockPos);
+
+            if (!ghostBlock && state.isAir() && fluidState.isEmpty()) {
+                return null;
+            }
+
             if (maxBlastResistance != null && state.getBlock().getExplosionResistance() < maxBlastResistance) {
                 state = net.minecraft.world.level.block.Blocks.VOID_AIR.defaultBlockState();
             }
             if (maxBlastResistance != null && fluidState.getExplosionResistance() < maxBlastResistance) {
                 fluidState = Fluids.EMPTY.defaultFluidState();
+            }
+            if (state.isAir() && fluidState.isEmpty()) {
+                return null;
             }
 
             Vec3 start = innerContext.getFrom();
@@ -446,6 +557,9 @@ public enum ExplosionDamageUtil {
             Vec3 diff = innerContext.getFrom().subtract(innerContext.getTo());
             return BlockHitResult.miss(innerContext.getTo(), Direction.getApproximateNearest(diff.x, diff.y, diff.z), BlockPos.containing(innerContext.getTo()));
         });
+
+        RAYCAST_CACHE.put(rayKey, result);
+        return result;
     }
 
     private static String getBlockDebugName(BlockPos pos, BlockPos ghostObsidianPos) {
@@ -475,9 +589,73 @@ public enum ExplosionDamageUtil {
         if (mc == null || mc.level == null) return damage;
 
         DamageSource source = Explosion.getDefaultDamageSource(mc.level, mc.player);
-        float armor = entity.getArmorValue();
-        float toughness = (float) entity.getAttributeValue(Attributes.ARMOR_TOUGHNESS);
+        float armor = getEffectiveArmor(entity);
+        float toughness = getEffectiveToughness(entity);
         return CombatRules.getDamageAfterAbsorb(entity, damage, source, armor, toughness);
+    }
+
+    private static float getEffectiveArmor(LivingEntity entity) {
+        float armor = entity.getArmorValue();
+        if (armor > 0.0f) return armor;
+
+        float itemArmor = 0.0f;
+        for (EquipmentSlot slot : ARMOR_SLOTS) {
+            ItemStack stack = entity.getItemBySlot(slot);
+            if (stack == null || stack.isEmpty()) continue;
+            if (stack.is(net.minecraft.world.item.Items.NETHERITE_CHESTPLATE)
+                    || stack.is(net.minecraft.world.item.Items.DIAMOND_CHESTPLATE)) {
+                itemArmor += 8.0f;
+            } else if (stack.is(net.minecraft.world.item.Items.NETHERITE_LEGGINGS)
+                    || stack.is(net.minecraft.world.item.Items.DIAMOND_LEGGINGS)) {
+                itemArmor += 6.0f;
+            } else if (stack.is(net.minecraft.world.item.Items.NETHERITE_HELMET)
+                    || stack.is(net.minecraft.world.item.Items.DIAMOND_HELMET)) {
+                itemArmor += 3.0f;
+            } else if (stack.is(net.minecraft.world.item.Items.NETHERITE_BOOTS)
+                    || stack.is(net.minecraft.world.item.Items.DIAMOND_BOOTS)) {
+                itemArmor += 3.0f;
+            } else {
+                final float[] slotArmor = new float[]{0.0f};
+                stack.forEachModifier(slot, (attr, mod) -> {
+                    if (attr.is(Attributes.ARMOR)) {
+                        slotArmor[0] += (float) mod.amount();
+                    }
+                });
+                itemArmor += slotArmor[0];
+            }
+        }
+        return Math.max(armor, itemArmor);
+    }
+
+    private static float getEffectiveToughness(LivingEntity entity) {
+        float toughness = (float) entity.getAttributeValue(Attributes.ARMOR_TOUGHNESS);
+        if (toughness > 0.0f) return toughness;
+
+        float itemToughness = 0.0f;
+        for (EquipmentSlot slot : ARMOR_SLOTS) {
+            ItemStack stack = entity.getItemBySlot(slot);
+            if (stack == null || stack.isEmpty()) continue;
+            if (stack.is(net.minecraft.world.item.Items.NETHERITE_HELMET)
+                    || stack.is(net.minecraft.world.item.Items.NETHERITE_CHESTPLATE)
+                    || stack.is(net.minecraft.world.item.Items.NETHERITE_LEGGINGS)
+                    || stack.is(net.minecraft.world.item.Items.NETHERITE_BOOTS)) {
+                itemToughness += 3.0f;
+            } else if (stack.is(net.minecraft.world.item.Items.DIAMOND_HELMET)
+                    || stack.is(net.minecraft.world.item.Items.DIAMOND_CHESTPLATE)
+                    || stack.is(net.minecraft.world.item.Items.DIAMOND_LEGGINGS)
+                    || stack.is(net.minecraft.world.item.Items.DIAMOND_BOOTS)) {
+                itemToughness += 2.0f;
+            } else {
+                final float[] slotToughness = new float[]{0.0f};
+                stack.forEachModifier(slot, (attr, mod) -> {
+                    if (attr.is(Attributes.ARMOR_TOUGHNESS)) {
+                        slotToughness[0] += (float) mod.amount();
+                    }
+                });
+                itemToughness += slotToughness[0];
+            }
+        }
+        return Math.max(toughness, itemToughness);
     }
 
     private static float applyResistanceReduction(LivingEntity entity, float damage) {
@@ -491,7 +669,8 @@ public enum ExplosionDamageUtil {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.level == null || damage <= 0.0f) return Math.max(damage, 0.0f);
         float protection = getProtectionAmount(entity);
-        return protection > 0.0f ? CombatRules.getDamageAfterMagicAbsorb(damage, protection) : damage;
+        float cappedProtection = Math.min(protection, 20.0f);
+        return cappedProtection > 0.0f ? CombatRules.getDamageAfterMagicAbsorb(damage, cappedProtection) : damage;
     }
 
     private static float getProtectionAmount(LivingEntity entity) {
@@ -518,10 +697,51 @@ public enum ExplosionDamageUtil {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.level == null || key == null) return null;
 
-        Registry<Enchantment> registry = mc.level.registryAccess().lookupOrThrow(Registries.ENCHANTMENT);
+        var registryAccess = mc.level.registryAccess();
+        if (registryAccess != cachedRegistryAccess) {
+            cachedRegistryAccess = registryAccess;
+            cachedProtection = null;
+            cachedBlastProtection = null;
+        }
+
+        if (key.equals(Enchantments.PROTECTION)) {
+            if (cachedProtection == null) {
+                Registry<Enchantment> registry = registryAccess.lookupOrThrow(Registries.ENCHANTMENT);
+                Enchantment enchantment = registry.getValue(key);
+                cachedProtection = enchantment != null ? registry.wrapAsHolder(enchantment) : null;
+            }
+            return cachedProtection;
+        }
+        if (key.equals(Enchantments.BLAST_PROTECTION)) {
+            if (cachedBlastProtection == null) {
+                Registry<Enchantment> registry = registryAccess.lookupOrThrow(Registries.ENCHANTMENT);
+                Enchantment enchantment = registry.getValue(key);
+                cachedBlastProtection = enchantment != null ? registry.wrapAsHolder(enchantment) : null;
+            }
+            return cachedBlastProtection;
+        }
+
+        Registry<Enchantment> registry = registryAccess.lookupOrThrow(Registries.ENCHANTMENT);
         Enchantment enchantment = registry.getValue(key);
         return enchantment != null ? registry.wrapAsHolder(enchantment) : null;
     }
+
+    private record ExposureCacheKey(
+            double minX, double minY, double minZ,
+            double maxX, double maxY, double maxZ,
+            double srcX, double srcY, double srcZ,
+            BlockPos ghostObsidianPos,
+            Float maxBlastResistance,
+            long gameTime
+    ) {}
+
+    private record RaycastCacheKey(
+            double fromX, double fromY, double fromZ,
+            double toX, double toY, double toZ,
+            BlockPos ghostObsidianPos,
+            Float maxBlastResistance,
+            long gameTime
+    ) {}
 
     public record DamageDebug(
             String reason,

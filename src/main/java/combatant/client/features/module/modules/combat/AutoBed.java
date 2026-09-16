@@ -33,6 +33,7 @@ import combatant.client.util.combat.CombatRotationModeUtil;
 import combatant.client.util.combat.CombatEntityQuery;
 import combatant.client.util.combat.ExplosionDamageRules;
 import combatant.client.util.combat.ExplosionRenderUtil;
+import combatant.client.util.world.ExplosionDamageUtil;
 import combatant.client.util.combat.RubberHandUseUtil;
 import combatant.client.util.item.FoodUtil;
 import combatant.client.util.entity.simulation.PositionExtrapolation;
@@ -395,6 +396,10 @@ public class AutoBed extends Module {
         lastSelfDamageRejects = result.selfDamageRejects();
 
         AutoBedData renderData = bestExplode != null ? bestExplode : bestPlace;
+        if (bestPlace != null && target != null && ExplosionDamageUtil.willPopTotem(bestPlace.damage(), target)) {
+            // Prioritize lethal/pop bed placements
+            renderData = bestPlace;
+        }
         if (renderData != null) {
             setRenderCandidate(renderData);
             lowDamageMode = !ExplosionDamageRules.shouldOverrideMinDamage(target, renderData.damage(), faceplaceHealth.get())
@@ -1038,7 +1043,22 @@ public class AutoBed extends Module {
         return PositionExtrapolation.getBestForEntity(entity).getPositionInTicks(ticks);
     }
 
+    public float calculateBedDamage(BlockPos bedPos, LivingEntity target) {
+        return ExplosionDamageUtil.calculateBedDamage(bedPos, target);
+    }
+
+    public boolean isSafeDetonationDistance(Vec3 explosionVec) {
+        if (mc.player == null || explosionVec == null) return false;
+        return ExplosionDamageUtil.isSafeFromExplosion(explosionVec, 5.0f, mc.player, maxSelfDamage.get());
+    }
+
     private boolean shouldOverrideMaxSelfDamage(float damage, float selfDamage) {
+        if (mc.player != null) {
+            float playerHealth = mc.player.getHealth() + mc.player.getAbsorptionAmount();
+            if (selfDamage + 0.5f >= playerHealth) {
+                return false;
+            }
+        }
         return ExplosionDamageRules.shouldOverrideMaxSelfDamage(
                 mc.player,
                 target,
@@ -1049,9 +1069,14 @@ public class AutoBed extends Module {
     }
 
     private boolean isSafe(float damage, float selfDamage, boolean overrideDamage) {
+        if (mc.player != null && !overrideDamage) {
+            float playerHealth = mc.player.getHealth() + mc.player.getAbsorptionAmount();
+            if (selfDamage + 0.5f >= playerHealth) {
+                return false;
+            }
+        }
         return ExplosionDamageRules.isSafe(mc.player, selfDamage, overrideDamage);
     }
-
     private BlockHitResult getPlaceInteractResult(BlockPos footPos, BlockPos headPos) {
         return AutoBedInteractionUtil.getPlaceSupportInteract(
                 mc.level,

@@ -31,11 +31,13 @@ import combatant.client.events.impl.AttackEntityEvent;
 import combatant.client.events.impl.BlinkPacketEvent;
 import combatant.client.events.impl.EventTargetChanged;
 import combatant.client.events.impl.GameTickEvent;
+import combatant.client.util.player.NetworkStatsUtil;
 import combatant.client.util.target.TargetManager;
 import combatant.client.util.target.TargetingUtil;
 
+import java.util.Deque;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ThreadLocalRandom;
-
 /**
  * Headless incoming-packet backtrack controller adapted from LiquidBounce's Backtrack module.
  */
@@ -45,6 +47,7 @@ public final class BacktrackController {
     private volatile boolean enabled;
     private Config config = Config.defaults();
     private Entity target;
+    private final Deque<HitboxSample> hitboxHistory = new ConcurrentLinkedDeque<>();
     private int currentDelayMs = randomBetween(config.minDelayMs(), config.maxDelayMs());
     private int currentChance = ThreadLocalRandom.current().nextInt(0, 100);
     private long nextAllowedBacktrackMs;
@@ -52,8 +55,7 @@ public final class BacktrackController {
     private long lastAttackMs;
     private boolean shouldPause;
 
-    private BacktrackController() {
-    }
+    public record HitboxSample(long timestamp, Vec3 position, AABB boundingBox) {}
 
     private static boolean shouldAlwaysPass(Packet<?> packet) {
         if (packet == null) return false;
@@ -170,10 +172,56 @@ public final class BacktrackController {
         return target;
     }
 
+    public Deque<HitboxSample> getHitboxHistory() {
+        return hitboxHistory;
+    }
+
+    public Vec3 getInterpolatedPosition(long targetTimeMs) {
+        if (hitboxHistory.isEmpty()) {
+            return target != null ? target.position() : delayedPosition.getBase();
+        }
+        HitboxSample before = null;
+        HitboxSample after = null;
+        for (HitboxSample sample : hitboxHistory) {
+            if (sample.timestamp() <= targetTimeMs) {
+                if (before == null || sample.timestamp() > before.timestamp()) {
+                    before = sample;
+                }
+            }
+            if (sample.timestamp() >= targetTimeMs) {
+                if (after == null || sample.timestamp() < after.timestamp()) {
+                    after = sample;
+                }
+            }
+        }
+        if (before == null && after == null) return target != null ? target.position() : delayedPosition.getBase();
+        if (before == null) return after.position();
+        if (after == null) return before.position();
+        if (before.timestamp() == after.timestamp()) return before.position();
+
+        double factor = (double) (targetTimeMs - before.timestamp()) / (after.timestamp() - before.timestamp());
+        factor = Math.max(0.0, Math.min(1.0, factor));
+        return before.position().lerp(after.position(), factor);
+    }
+
+    public AABB getInterpolatedHitbox(long targetTimeMs) {
+        Vec3 pos = getInterpolatedPosition(targetTimeMs);
+        if (target != null) {
+            return target.getDimensions(target.getPose()).makeBoundingBox(pos);
+        }
+        return new AABB(pos, pos);
+    }
+
+    public AABB getPingInterpolatedHitbox() {
+        Minecraft mc = Minecraft.getInstance();
+        int ping = NetworkStatsUtil.getPing(mc);
+        int delay = ping > 0 ? ping : currentDelayMs;
+        return getInterpolatedHitbox(System.currentTimeMillis() - delay);
+    }
+
     public void setTarget(Entity target) {
         processTarget(target);
     }
-
     public boolean shouldRenderTrackedBody() {
         Entity currentTarget = target;
         if (!enabled
@@ -190,13 +238,15 @@ public final class BacktrackController {
 
     @EventHandler
     public void onAttack(AttackEntityEvent event) {
-        if (!enabled || config.targetMode() != TargetMode.ATTACK || event == null) {
+        if (!enabled || event == null) {
             return;
         }
 
         lastAttackMs = System.currentTimeMillis();
         currentChance = ThreadLocalRandom.current().nextInt(0, 100);
-        processTarget(event.getTarget());
+        if (event.getTarget() instanceof LivingEntity living && TargetingUtil.isValidCombatTarget(living)) {
+            processTarget(living);
+        }
     }
 
     @EventHandler
@@ -204,13 +254,11 @@ public final class BacktrackController {
         if (!enabled) {
             return;
         }
-        if (config.targetMode() != TargetMode.ATTACK) {
-            return;
-        }
-        if (event.currentSource == TargetManager.Source.ATTACK && event.current != null) {
+        if (event.current != null && TargetingUtil.isValidCombatTarget(event.current)) {
             lastAttackMs = System.currentTimeMillis();
-            currentChance = ThreadLocalRandom.current().nextInt(0, 100);
             processTarget(event.current);
+        } else if (event.current == null && (target != null || hasQueuedIncoming())) {
+            clear(true);
         }
     }
 
@@ -221,22 +269,36 @@ public final class BacktrackController {
         }
 
         Minecraft mc = Minecraft.getInstance();
-        if (mc == null || mc.level == null || mc.player == null) {
+        if (mc == null || mc.level == null || mc.player == null || mc.player.isDeadOrDying()) {
             clear(true);
             return;
         }
 
-        if (target != null && (target.isRemoved() || !target.isAlive() || target.level() != mc.level)) {
+        // Integrate with TargetManager: only backtrack active enemy combat targets
+        LivingEntity enemy = TargetManager.getTarget();
+        if (enemy == null || !TargetingUtil.isValidCombatTarget(enemy) || enemy.isDeadOrDying()) {
+            enemy = TargetManager.resolveTarget(mc.player, mc.level, config.maxRange(), TargetingUtil.TargetPriority.DISTANCE);
+        }
+
+        if (enemy != null && TargetingUtil.isValidCombatTarget(enemy) && !enemy.isDeadOrDying()) {
+            processTarget(enemy);
+        } else if (target != null || hasQueuedIncoming()) {
             clear(true);
         }
 
-        if (config.targetMode() == TargetMode.RANGE) {
-            LivingEntity enemy = findEnemy(mc, config.minRange(), config.maxRange());
-            if (enemy != null) {
-                processTarget(enemy);
-            } else if (target != null || hasQueuedIncoming()) {
-                clear(true);
+        // Accurately calculate target hitbox history and ping interpolation
+        if (target instanceof LivingEntity living && living.isAlive()) {
+            long now = System.currentTimeMillis();
+            Vec3 pos = delayedPosition.getBase() != null && !delayedPosition.getBase().equals(Vec3.ZERO)
+                    ? delayedPosition.getBase()
+                    : target.position();
+            AABB box = target.getDimensions(target.getPose()).makeBoundingBox(pos);
+            hitboxHistory.addLast(new HitboxSample(now, pos, box));
+            while (hitboxHistory.size() > 50 || (!hitboxHistory.isEmpty() && now - hitboxHistory.peekFirst().timestamp() > 1000L)) {
+                hitboxHistory.pollFirst();
             }
+        } else {
+            hitboxHistory.clear();
         }
 
         boolean hadQueuedIncoming = hasQueuedIncoming();
@@ -325,9 +387,9 @@ public final class BacktrackController {
 
         target = null;
         delayedPosition.setBase(Vec3.ZERO);
+        hitboxHistory.clear();
         shouldPause = false;
     }
-
     private void processTarget(Entity enemy) {
         if (!(enemy instanceof LivingEntity living)) {
             return;
@@ -448,27 +510,45 @@ public final class BacktrackController {
     }
 
     public record Config(
-            double minRange,
             double maxRange,
             int minDelayMs,
-            int maxDelayMs,
-            int minNextBacktrackDelayMs,
-            int maxNextBacktrackDelayMs,
-            int trackingBufferMs,
-            int chancePercent,
-            boolean pauseOnHurtTime,
-            int pauseHurtTime,
-            int lastAttackTimeToWorkMs,
-            TargetMode targetMode
+            int maxDelayMs
     ) {
         public Config {
-            if (targetMode == null) {
-                targetMode = TargetMode.ATTACK;
-            }
+            maxRange = Math.max(1.0, maxRange);
+            minDelayMs = Math.max(0, minDelayMs);
+            maxDelayMs = Math.max(minDelayMs, maxDelayMs);
         }
 
         public static Config defaults() {
-            return new Config(0.0, 3.0, 100, 150, 0, 10, 500, 100, false, 3, 1000, TargetMode.ATTACK);
+            return new Config(3.5, 100, 150);
         }
+
+        public Config(
+                double minRange,
+                double maxRange,
+                int minDelayMs,
+                int maxDelayMs,
+                int minNextBacktrackDelayMs,
+                int maxNextBacktrackDelayMs,
+                int trackingBufferMs,
+                int chancePercent,
+                boolean pauseOnHurtTime,
+                int pauseHurtTime,
+                int lastAttackTimeToWorkMs,
+                TargetMode targetMode
+        ) {
+            this(maxRange, minDelayMs, maxDelayMs);
+        }
+
+        public double minRange() { return 0.0; }
+        public int minNextBacktrackDelayMs() { return 0; }
+        public int maxNextBacktrackDelayMs() { return 10; }
+        public int trackingBufferMs() { return 500; }
+        public int chancePercent() { return 100; }
+        public boolean pauseOnHurtTime() { return false; }
+        public int pauseHurtTime() { return 3; }
+        public int lastAttackTimeToWorkMs() { return 1000; }
+        public TargetMode targetMode() { return TargetMode.ATTACK; }
     }
 }

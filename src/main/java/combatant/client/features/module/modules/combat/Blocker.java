@@ -19,13 +19,10 @@ import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.renderer.Renderer3D;
-import combatant.client.util.aiming.RestrictedSingleUseAction;
 import combatant.client.util.aiming.RotationManager;
-import combatant.client.util.aiming.RotationTarget;
-import combatant.client.util.aiming.data.Rotation;
-import combatant.client.util.aiming.features.MovementCorrection;
-import combatant.client.util.combat.CombatBlockUseUtil;
+import combatant.client.util.block.placer.BlockPlacer;
 import combatant.client.util.combat.ExplosionRenderUtil;
+import combatant.client.util.player.inventory.InventorySwap;
 import combatant.client.util.player.inventory.InventorySearchScope;
 import combatant.client.util.player.inventory.InventorySwapVisibility;
 import net.minecraft.client.Minecraft;
@@ -230,7 +227,6 @@ public class Blocker extends Module {
     }
 
     private void checkOverheadThreats(LocalPlayer player, Level level) {
-        if (!antiTnt.get() && !antiAnchor.get()) return;
         List<BlockPos> basePositions = resolveBasePositions(player);
         for (BlockPos base : basePositions) {
             BlockPos overhead = base.above(2);
@@ -240,6 +236,19 @@ public class Blocker extends Module {
             }
             if (antiAnchor.get() && state.is(Blocks.RESPAWN_ANCHOR)) {
                 queuePlacement(base.above(3));
+            }
+
+            // Incoming crystal detection above player's head
+            AABB headBox = new AABB(base.above(2)).minmax(new AABB(base.above(3))).inflate(1.5, 1.0, 1.5);
+            List<EndCrystal> overheadCrystals = level.getEntitiesOfClass(EndCrystal.class, headBox, Entity::isAlive);
+            if (!overheadCrystals.isEmpty()) {
+                if (clearCrystals.get()) {
+                    for (EndCrystal crystal : overheadCrystals) {
+                        clearCrystalsAt(player, level, crystal.blockPosition());
+                    }
+                }
+                queuePlacement(base.above(3));
+                queuePlacement(base.above(4));
             }
         }
     }
@@ -391,13 +400,13 @@ public class Blocker extends Module {
 
             if (isEntityBlocked(player, level, pos)) continue;
 
-            BlockHitResult hit = getPlaceHitResult(level, player, pos, air, rangeVal, wallRangeVal);
+            BlockHitResult hit = BlockPlacer.findOptimalPlacementHit(level, player, pos, rangeVal);
             if (hit != null) {
                 targets.add(new PlacementTarget(pos, hit, false));
             } else if (help && !air) {
                 BlockPos support = pos.below();
                 if (isReplaceable(level, support) && !isSafeBlock(level, support) && !isEntityBlocked(player, level, support)) {
-                    BlockHitResult supportHit = getPlaceHitResult(level, player, support, false, rangeVal, wallRangeVal);
+                    BlockHitResult supportHit = BlockPlacer.findOptimalPlacementHit(level, player, support, rangeVal);
                     if (supportHit != null) {
                         targets.add(new PlacementTarget(support, supportHit, true));
                     }
@@ -427,48 +436,45 @@ public class Blocker extends Module {
 
     private boolean placeTarget(LocalPlayer player, PlacementTarget target) {
         BlockHitResult hit = target.hit();
-        BlockPos pos = target.pos();
+        if (hit == null) return false;
 
-        RotationMode mode = rotationMode.get();
-        if (mode == RotationMode.NONE) {
-            return performPlaceAction(hit, pos);
-        } else if (mode == RotationMode.PACKET) {
-            Rotation rot = Rotation.lookingAt(hit.getLocation(), player.getEyePosition()).normalize();
-            if (mc.getConnection() != null) {
-                mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
-                        rot.yaw(),
-                        rot.pitch(),
-                        player.onGround(),
-                        player.horizontalCollision
-                ));
+        InteractionHand hand = null;
+        int hotbarSlot = -1;
+
+        if (isResistantBlock(player.getOffhandItem(), blockFilter.get())) {
+            hand = InteractionHand.OFF_HAND;
+        } else {
+            hotbarSlot = findResistantHotbarSlot(player, blockFilter.get());
+            if (hotbarSlot != -1) {
+                hand = InteractionHand.MAIN_HAND;
             }
-            return performPlaceAction(hit, pos);
-        } else { // SILENT
-            RotationTarget rotTarget = new RotationTarget(
-                    Rotation.lookingAt(hit.getLocation(), player.getEyePosition()).normalize(),
-                    null,
-                    List.of(),
-                    1,
-                    4.0f,
-                    true,
-                    MovementCorrection.SILENT,
-                    new RestrictedSingleUseAction(() -> performPlaceAction(hit, pos))
-            );
-            RotationManager.INSTANCE.setRotationTarget(rotTarget, ROTATION_PRIORITY, this);
-            return performPlaceAction(hit, pos);
         }
+
+        if (hand == null) return false;
+
+        boolean rotateVal = rotationMode.get() != RotationMode.NONE;
+        return BlockPlacer.placeBlock(
+                this,
+                hit,
+                hand,
+                hotbarSlot,
+                rotateVal,
+                BlockPlacer.SwingMode.CLIENT_AND_SERVER
+        );
     }
 
-    private boolean performPlaceAction(BlockHitResult hit, BlockPos targetPos) {
-        if (mc.player == null || mc.gameMode == null || hit == null) return false;
-
-        InteractionHand heldHand = getResistantHand(mc.player, blockFilter.get());
-        InventorySearchScope scope = swapScope.get();
-        InventorySwapVisibility visibility = swapVisibility.get();
-        boolean restore = restoreItem.get();
-
-        Predicate<ItemStack> predicate = resolvePredicate(mc.player, blockFilter.get(), scope);
-        return CombatBlockUseUtil.useHeldOrSwap(mc, heldHand, predicate, hit, scope, visibility, restore);
+    private int findResistantHotbarSlot(LocalPlayer player, BlockFilter filter) {
+        if (filter == BlockFilter.PREFER_OBSIDIAN) {
+            for (int i = 0; i < 9; i++) {
+                ItemStack stack = player.getInventory().getItem(i);
+                if (stack.is(Items.OBSIDIAN)) return i;
+            }
+        }
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = player.getInventory().getItem(i);
+            if (isResistantBlock(stack, filter)) return i;
+        }
+        return -1;
     }
 
     private void clearCrystalsAt(LocalPlayer player, Level level, BlockPos pos) {
@@ -514,83 +520,6 @@ public class Blocker extends Module {
             }
         }
         return positions.isEmpty() ? List.of(player.blockPosition()) : positions;
-    }
-
-    private BlockHitResult getPlaceHitResult(Level level, LocalPlayer player, BlockPos pos, boolean allowAir,
-                                             float range, float wallRange) {
-        Vec3 eyes = player.getEyePosition();
-        double bestDist = Double.MAX_VALUE;
-        BlockHitResult best = null;
-
-        for (Direction dir : Direction.values()) {
-            BlockPos neighbor = pos.relative(dir);
-            if (!level.isInWorldBounds(neighbor)) continue;
-
-            BlockState state = level.getBlockState(neighbor);
-            if (state.isAir() || state.canBeReplaced() || state.getCollisionShape(level, neighbor).isEmpty()) {
-                continue;
-            }
-
-            Direction clickFace = dir.getOpposite();
-            Vec3 normal = Vec3.atLowerCornerOf(clickFace.getUnitVec3i());
-            Vec3 hitVec = Vec3.atCenterOf(neighbor).add(normal.scale(0.5));
-            double distSq = eyes.distanceToSqr(hitVec);
-            if (distSq > range * range) continue;
-
-            if (!isVisibleOrWithinWallRange(level, player, eyes, hitVec, neighbor, distSq, wallRange)) {
-                continue;
-            }
-
-            if (distSq < bestDist) {
-                bestDist = distSq;
-                best = new BlockHitResult(hitVec, clickFace, neighbor, false);
-            }
-        }
-
-        if (best == null && allowAir) {
-            Vec3 hitVec = Vec3.atCenterOf(pos);
-            if (eyes.distanceToSqr(hitVec) <= range * range) {
-                best = new BlockHitResult(hitVec, Direction.UP, pos, false);
-            }
-        }
-
-        return best;
-    }
-
-    private boolean isVisibleOrWithinWallRange(Level level, LocalPlayer player, Vec3 eyes, Vec3 point,
-                                               BlockPos expected, double distSq, float wallRange) {
-        BlockHitResult wall = level.clip(new ClipContext(
-                eyes,
-                point,
-                ClipContext.Block.COLLIDER,
-                ClipContext.Fluid.NONE,
-                player
-        ));
-        if (wall == null || wall.getType() != HitResult.Type.BLOCK || expected.equals(wall.getBlockPos())) {
-            return true;
-        }
-        return distSq <= wallRange * wallRange;
-    }
-
-    private Predicate<ItemStack> resolvePredicate(LocalPlayer player, BlockFilter filter, InventorySearchScope scope) {
-        if (filter == BlockFilter.OBSIDIAN_ONLY) {
-            return s -> s != null && s.is(Items.OBSIDIAN);
-        }
-        if (filter == BlockFilter.PREFER_OBSIDIAN) {
-            InteractionHand heldObsidian = player.getOffhandItem().is(Items.OBSIDIAN) ? InteractionHand.OFF_HAND
-                    : (player.getMainHandItem().is(Items.OBSIDIAN) ? InteractionHand.MAIN_HAND : null);
-            if (CombatBlockUseUtil.hasHeldOrInventoryItem(heldObsidian, s -> s != null && s.is(Items.OBSIDIAN), scope)) {
-                return s -> s != null && s.is(Items.OBSIDIAN);
-            }
-        }
-        return s -> isResistantBlock(s, filter);
-    }
-
-    private InteractionHand getResistantHand(LocalPlayer player, BlockFilter filter) {
-        if (player == null) return null;
-        if (isResistantBlock(player.getOffhandItem(), filter)) return InteractionHand.OFF_HAND;
-        if (isResistantBlock(player.getMainHandItem(), filter)) return InteractionHand.MAIN_HAND;
-        return null;
     }
 
     private boolean isResistantBlock(ItemStack stack, BlockFilter filter) {

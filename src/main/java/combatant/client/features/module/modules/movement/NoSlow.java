@@ -25,13 +25,9 @@ import net.minecraft.world.phys.Vec3;
 )
 public final class NoSlow extends Module {
 
-    private final BooleanValue items = bool("noslowItems", "items", true);
-    private final EnumValue<WebMode> webs = enumSetting("noslowWebs", "webs", WebMode.VANILLA, WebMode.values());
-    private final BooleanValue soulSand = bool("noslowSoulSand", "soul_sand", true);
-    private final BooleanValue honey = bool("noslowHoney", "honey", true);
-    private final BooleanValue slime = bool("noslowSlime", "slime", true);
-    private final NumberValue<Float> forwardFactor = num("noslowForwardFactor", "forward_factor", 1.0f, 0.2f, 1.0f);
-    private final NumberValue<Float> strafeFactor = num("noslowStrafeFactor", "strafe_factor", 1.0f, 0.2f, 1.0f);
+    private final BooleanValue items = bool("items", true);
+    private final BooleanValue webs = bool("webs", true);
+    private final BooleanValue terrain = bool("terrain", true);
 
     public boolean shouldCancelItemSlowdown() {
         return isEnabled() && items.get();
@@ -41,26 +37,28 @@ public final class NoSlow extends Module {
         if (!shouldCancelItemSlowdown()) {
             return input;
         }
-
-        float f = forwardFactor.get();
-        float s = strafeFactor.get();
-        return new Vec2(input.x * s, input.y * f);
+        return input;
     }
 
     public WebMode getWebMode() {
-        return isEnabled() ? webs.get() : WebMode.VANILLA;
+        if (!isEnabled()) return WebMode.VANILLA;
+        return webs.get() ? WebMode.FAST : WebMode.VANILLA;
     }
 
     public boolean shouldCancelSoulSand() {
-        return isEnabled() && soulSand.get();
+        return isEnabled() && terrain.get();
     }
 
     public boolean shouldCancelHoney() {
-        return isEnabled() && honey.get();
+        return isEnabled() && terrain.get();
     }
 
     public boolean shouldCancelSlime() {
-        return isEnabled() && slime.get();
+        return isEnabled() && terrain.get();
+    }
+
+    public boolean shouldCancelBerryBush() {
+        return isEnabled() && terrain.get();
     }
 
     public enum WebMode {

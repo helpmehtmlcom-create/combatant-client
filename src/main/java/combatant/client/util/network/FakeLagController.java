@@ -27,14 +27,16 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import combatant.client.config.values.EnumValue;
 import combatant.client.events.EventHandler;
+import combatant.client.events.impl.AttackEntityEvent;
 import combatant.client.events.impl.BlinkPacketEvent;
 import combatant.client.events.impl.GameTickEvent;
+import combatant.client.events.impl.PacketEvent;
 import combatant.client.util.item.FoodUtil;
+import combatant.client.util.target.TargetManager;
 import combatant.client.util.target.TargetingUtil;
 
 import java.util.EnumSet;
 import java.util.concurrent.ThreadLocalRandom;
-
 /**
  * Headless fake-lag policy controller adapted from LiquidBounce's FakeLag module.
  */
@@ -43,10 +45,10 @@ public final class FakeLagController {
 
     private volatile boolean enabled;
     private Config config = Config.defaults();
-    private long nextDelayMs = randomDelay(config);
+    private long nextDelayMs = calculateDelay(config);
     private long recoilUntilMs;
     private boolean enemyNearby;
-
+    private int lastHurtTime;
     private FakeLagController() {
     }
 
@@ -103,10 +105,18 @@ public final class FakeLagController {
         return best;
     }
 
+    private static long calculateDelay(Config config) {
+        if (config == null) return 200L;
+        if (config.mode() == Mode.STATIC || config.mode() == Mode.CONSTANT) {
+            return config.latencyMs();
+        }
+        int min = Math.max(10, (int) (config.latencyMs() * 0.5));
+        int max = Math.max(min, config.latencyMs());
+        return ThreadLocalRandom.current().nextLong(min, max + 1);
+    }
+
     private static long randomDelay(Config config) {
-        int min = Math.max(0, Math.min(config.minDelayMs(), config.maxDelayMs()));
-        int max = Math.max(min, Math.max(config.minDelayMs(), config.maxDelayMs()));
-        return ThreadLocalRandom.current().nextInt(min, max + 1);
+        return calculateDelay(config);
     }
 
     public boolean isEnabled() {
@@ -119,8 +129,9 @@ public final class FakeLagController {
             enemyNearby = false;
             BlinkManager.INSTANCE.flush(TransferOrigin.OUTGOING);
         } else {
-            nextDelayMs = randomDelay(config);
+            nextDelayMs = calculateDelay(config);
             recoilUntilMs = 0L;
+            lastHurtTime = 0;
         }
     }
 
@@ -130,28 +141,89 @@ public final class FakeLagController {
 
     public void configure(Config config) {
         this.config = config != null ? config : Config.defaults();
-        this.nextDelayMs = randomDelay(this.config);
+        this.nextDelayMs = calculateDelay(this.config);
     }
 
     @EventHandler
-    public void onTick(GameTickEvent event) {
-        if (!enabled) {
+    public void onAttack(AttackEntityEvent event) {
+        if (!enabled || BlinkManager.INSTANCE.isBlinking()) {
+            return;
+        }
+        // Automatically flush packets when attacking to ensure hit registration
+        BlinkManager.INSTANCE.flush(TransferOrigin.OUTGOING);
+        recoilUntilMs = System.currentTimeMillis() + 150L;
+    }
+
+    @EventHandler
+    public void onPacket(PacketEvent event) {
+        if (!enabled || BlinkManager.INSTANCE.isBlinking() || event == null || event.getPacket() == null) {
             return;
         }
 
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc != null ? mc.player : null;
-        if (mc == null || mc.level == null || player == null) {
+        if (player == null) return;
+
+        Packet<?> packet = event.getPacket();
+        if (event.getOrigin() == TransferOrigin.INCOMING) {
+            boolean tookDamage = false;
+            if (packet instanceof ClientboundHurtAnimationPacket hurt && hurt.id() == player.getId()) {
+                tookDamage = true;
+            } else if (packet instanceof ClientboundDamageEventPacket dmg && dmg.entityId() == player.getId()) {
+                tookDamage = true;
+            } else if (packet instanceof ClientboundSetEntityMotionPacket motion && motion.id() == player.getId()) {
+                tookDamage = true;
+            } else if (packet instanceof ClientboundExplodePacket explosion
+                    && explosion.playerKnockback() != null
+                    && explosion.playerKnockback().isPresent()) {
+                tookDamage = true;
+            }
+
+            if (tookDamage) {
+                // Automatically flush packets when taking damage to ensure hit/knockback registration
+                BlinkManager.INSTANCE.flush(TransferOrigin.OUTGOING);
+                recoilUntilMs = System.currentTimeMillis() + 200L;
+            }
+        }
+    }
+
+    @EventHandler
+    public void onTick(GameTickEvent event) {
+        if (!enabled || BlinkManager.INSTANCE.isBlinking()) {
+            return;
+        }
+
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer player = mc != null ? mc.player : null;
+        if (mc == null || mc.level == null || player == null || player.isDeadOrDying()) {
             enemyNearby = false;
             return;
         }
 
-        enemyNearby = findEnemy(mc, config.minRange(), config.maxRange()) != null;
+        if (player.hurtTime > 0 && player.hurtTime != lastHurtTime) {
+            lastHurtTime = player.hurtTime;
+            BlinkManager.INSTANCE.flush(TransferOrigin.OUTGOING);
+            recoilUntilMs = System.currentTimeMillis() + 200L;
+            return;
+        }
+        lastHurtTime = player.hurtTime;
+
+        LivingEntity target = TargetManager.getTarget();
+        if (target != null && TargetingUtil.isValidCombatTarget(target)) {
+            enemyNearby = true;
+        } else {
+            enemyNearby = findEnemy(mc, 1.0, 6.0) != null;
+        }
     }
 
     @EventHandler
     public void onBlinkPacket(BlinkPacketEvent event) {
         if (!enabled || event.getOrigin() != TransferOrigin.OUTGOING) {
+            return;
+        }
+
+        // Suspend interval flushes and delay changes while Blink is actively withholding packets
+        if (BlinkManager.INSTANCE.isBlinking()) {
             return;
         }
 
@@ -167,13 +239,27 @@ public final class FakeLagController {
         }
 
         if (BlinkManager.INSTANCE.isAboveTime(nextDelayMs)) {
-            nextDelayMs = randomDelay(config);
+            nextDelayMs = calculateDelay(config);
             return;
         }
 
         Packet<?> packet = event.getPacket();
-        if (config.flushOn().stream().anyMatch(flushOn -> flushOn.test(packet)) || shouldPassOnSafetyPacket(packet, player)) {
-            recoilUntilMs = now + config.recoilTimeMs();
+        if (packet == null) {
+            if (config.mode() == Mode.STATIC || config.mode() == Mode.CONSTANT || enemyNearby) {
+                event.setAction(BlinkManager.Action.QUEUE);
+            }
+            return;
+        }
+
+        if (shouldPassOnSafetyPacket(packet, player)) {
+            recoilUntilMs = now + 150L;
+            return;
+        }
+
+        if (packet instanceof ServerboundInteractPacket || packet instanceof ServerboundSwingPacket) {
+            // Attack packet safety: flush immediately for hit registration
+            BlinkManager.INSTANCE.flush(TransferOrigin.OUTGOING);
+            recoilUntilMs = now + 150L;
             return;
         }
 
@@ -181,7 +267,7 @@ public final class FakeLagController {
             return;
         }
 
-        if (config.mode() == Mode.CONSTANT) {
+        if (config.mode() == Mode.STATIC || config.mode() == Mode.CONSTANT) {
             event.setAction(BlinkManager.Action.QUEUE);
             return;
         }
@@ -192,7 +278,10 @@ public final class FakeLagController {
 
         Vec3 serverPosition = BlinkManager.INSTANCE.getQueuedMovePositions().stream().findFirst().orElse(player.position());
         AABB serverBox = player.getDimensions(player.getPose()).makeBoundingBox(serverPosition);
-        LivingEntity enemy = findEnemy(mc, config.minRange(), config.maxRange());
+        LivingEntity enemy = TargetManager.getTarget();
+        if (enemy == null || !TargetingUtil.isValidCombatTarget(enemy)) {
+            enemy = findEnemy(mc, 1.0, 6.0);
+        }
         if (enemy == null) {
             return;
         }
@@ -207,8 +296,9 @@ public final class FakeLagController {
     }
 
     public enum Mode implements EnumValue.IdProvider {
-        CONSTANT("constant"),
-        DYNAMIC("dynamic");
+        DYNAMIC("dynamic"),
+        STATIC("static"),
+        CONSTANT("constant");
 
         private final String id;
 
@@ -239,21 +329,27 @@ public final class FakeLagController {
     }
 
     public record Config(
-            double minRange,
-            double maxRange,
-            int minDelayMs,
-            int maxDelayMs,
-            int recoilTimeMs,
-            Mode mode,
-            EnumSet<FlushOn> flushOn
+            int latencyMs,
+            Mode mode
     ) {
         public Config {
             if (mode == null) mode = Mode.DYNAMIC;
-            flushOn = flushOn == null ? EnumSet.noneOf(FlushOn.class) : EnumSet.copyOf(flushOn);
+            latencyMs = Math.max(0, latencyMs);
         }
 
         public static Config defaults() {
-            return new Config(2.0, 5.0, 300, 600, 250, Mode.DYNAMIC, EnumSet.noneOf(FlushOn.class));
+            return new Config(200, Mode.DYNAMIC);
         }
+
+        public Config(double minRange, double maxRange, int minDelayMs, int maxDelayMs, int recoilTimeMs, Mode mode, EnumSet<FlushOn> flushOn) {
+            this(maxDelayMs > 0 ? maxDelayMs : 200, mode != null ? mode : Mode.DYNAMIC);
+        }
+
+        public double minRange() { return 1.0; }
+        public double maxRange() { return 6.0; }
+        public int minDelayMs() { return (int) (latencyMs * 0.5); }
+        public int maxDelayMs() { return latencyMs; }
+        public int recoilTimeMs() { return 150; }
+        public EnumSet<FlushOn> flushOn() { return EnumSet.noneOf(FlushOn.class); }
     }
 }

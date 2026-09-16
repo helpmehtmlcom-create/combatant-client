@@ -18,7 +18,6 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import combatant.client.config.common.CommonSettingSchemas;
 import combatant.client.config.values.BooleanValue;
-import combatant.client.config.values.EnumValue;
 import combatant.client.config.values.NumberValue;
 import combatant.client.config.values.RGBAColorValue;
 import combatant.client.features.module.Module;
@@ -42,33 +41,16 @@ import combatant.client.util.network.BacktrackController;
 )
 public final class Backtrack extends Module {
 
-    private final NumberValue<Float> minRange = numCommon(
-            "backtrackMinRange",
-            "range_min",
-            CommonSettingSchemas.COMBAT_BACKTRACK_RANGE_MIN,
-            0.0f,
-            0.0f,
-            10.0f
-    );
-
     private final NumberValue<Float> maxRange = numCommon(
             "backtrackMaxRange",
             "range_max",
             CommonSettingSchemas.COMBAT_BACKTRACK_RANGE_MAX,
-            3.0f,
-            0.0f,
-            10.0f
+            3.5f,
+            1.0f,
+            6.0f
     );
 
-    private final NumberValue<Integer> minDelay = numCommon(
-            "backtrackMinDelay",
-            "delay_min",
-            CommonSettingSchemas.COMBAT_BACKTRACK_DELAY_MIN,
-            100,
-            0,
-            1000
-    );
-    private final NumberValue<Integer> maxDelay = numCommon(
+    private final NumberValue<Integer> delay = numCommon(
             "backtrackMaxDelay",
             "delay_max",
             CommonSettingSchemas.COMBAT_BACKTRACK_DELAY_MAX,
@@ -76,76 +58,6 @@ public final class Backtrack extends Module {
             0,
             1000
     );
-
-    private final NumberValue<Integer> minNextBacktrackDelay = numCommon(
-            "backtrackMinNextDelay",
-            "next_delay_min",
-            CommonSettingSchemas.COMBAT_BACKTRACK_NEXT_DELAY_MIN,
-            0,
-            0,
-            2000
-    );
-
-    private final NumberValue<Integer> maxNextBacktrackDelay = numCommon(
-            "backtrackMaxNextDelay",
-            "next_delay_max",
-            CommonSettingSchemas.COMBAT_BACKTRACK_NEXT_DELAY_MAX,
-            10,
-            0,
-            2000
-    );
-
-    private final NumberValue<Integer> trackingBuffer = numCommon(
-            "backtrackTrackingBuffer",
-            "tracking_buffer",
-            CommonSettingSchemas.COMBAT_BACKTRACK_TRACKING_BUFFER,
-            500,
-            0,
-            2000
-    );
-
-    private final NumberValue<Float> chance = numCommon(
-            "backtrackChance",
-            "chance",
-            CommonSettingSchemas.COMBAT_BACKTRACK_CHANCE,
-            100.0f,
-            0.0f,
-            100.0f
-    );
-
-    private final BooleanValue pauseOnHurtTime = boolCommon(
-            "backtrackPauseOnHurtTime",
-            "pause_on_hurt_time",
-            CommonSettingSchemas.COMBAT_BACKTRACK_PAUSE_ON_HURT_TIME,
-            false
-    );
-
-    private final NumberValue<Integer> hurtTime = visibleWhen(numCommon(
-            "backtrackHurtTime",
-            "hurt_time",
-            CommonSettingSchemas.COMBAT_BACKTRACK_HURT_TIME,
-            3,
-            0,
-            10
-    ), pauseOnHurtTime::get);
-
-    private final EnumValue<BacktrackController.TargetMode> targetMode = enumCommon(
-            "backtrackTargetMode",
-            "target_mode",
-            CommonSettingSchemas.COMBAT_BACKTRACK_TARGET_MODE,
-            BacktrackController.TargetMode.ATTACK,
-            BacktrackController.TargetMode.class
-    );
-
-    private final NumberValue<Integer> lastAttackTime = visibleWhen(numCommon(
-            "backtrackLastAttackTime",
-            "last_attack_time",
-            CommonSettingSchemas.COMBAT_BACKTRACK_LAST_ATTACK_TIME,
-            1000,
-            0,
-            5000
-    ), () -> targetMode.get() == BacktrackController.TargetMode.ATTACK);
-
     private final BooleanValue render = boolCommon(
             "backtrackRender",
             "render",
@@ -382,29 +294,11 @@ public final class Backtrack extends Module {
     }
 
     private BacktrackController.Config buildConfig() {
-        float min = minRange.get();
-        float max = maxRange.get();
-        if (targetMode.get() == BacktrackController.TargetMode.ATTACK) {
-            min = 0.0f;
-        }
-        int minDelayMs = minDelay.get();
-        int maxDelayMs = maxDelay.get();
-        int minNextDelayMs = minNextBacktrackDelay.get();
-        int maxNextDelayMs = maxNextBacktrackDelay.get();
-
+        int d = delay.get();
         return new BacktrackController.Config(
-                Math.min(min, max),
-                Math.max(min, max),
-                Math.min(minDelayMs, maxDelayMs),
-                Math.max(minDelayMs, maxDelayMs),
-                Math.min(minNextDelayMs, maxNextDelayMs),
-                Math.max(minNextDelayMs, maxNextDelayMs),
-                trackingBuffer.get(),
-                Math.round(chance.get()),
-                pauseOnHurtTime.get(),
-                hurtTime.get(),
-                lastAttackTime.get(),
-                targetMode.get()
+                maxRange.get(),
+                Math.max(0, (int) (d * 0.6)),
+                d
         );
     }
 }

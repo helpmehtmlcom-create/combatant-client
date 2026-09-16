@@ -50,7 +50,7 @@ public class Burrow extends Module {
     public enum BurrowBlock {
         OBSIDIAN,
         ENDER_CHEST,
-        ANVIL
+        ANCHOR
     }
 
     public enum RubberbandMode {
@@ -101,7 +101,9 @@ public class Burrow extends Module {
 
         BlockPos feetPos = player.blockPosition();
         BlockState feetState = level.getBlockState(feetPos);
-        if (!feetState.canBeReplaced()) {
+
+        // Automatically detect if the player is already burrowed to prevent duplicate execution
+        if (!feetState.canBeReplaced() && !feetState.isAir()) {
             setEnabled(false);
             return;
         }
@@ -133,49 +135,35 @@ public class Burrow extends Module {
         double z = player.getZ();
         boolean collision = player.horizontalCollision;
 
-        // Send jump/position packets upward
+        // Send upward jump/position packets
         connection.send(new ServerboundMovePlayerPacket.Pos(x, y + 0.42, z, false, collision));
         connection.send(new ServerboundMovePlayerPacket.Pos(x, y + 0.75, z, false, collision));
         connection.send(new ServerboundMovePlayerPacket.Pos(x, y + 1.01, z, false, collision));
         connection.send(new ServerboundMovePlayerPacket.Pos(x, y + 1.14, z, false, collision));
 
-        // Placement hit result
-        BlockHitResult hitResult = resolvePlacementHit(level, feetPos);
+        // Find optimal placement hit result via BlockPlacer
+        combatant.client.util.block.placer.BlockPlacer.SwingMode swingMode =
+                combatant.client.util.block.placer.BlockPlacer.SwingMode.CLIENT_AND_SERVER;
 
-        // Rotate if enabled
-        if (rotate.get() && hitResult != null) {
-            Rotation rot = Rotation.lookingAt(hitResult.getLocation(), player.getEyePosition());
-            connection.send(new ServerboundMovePlayerPacket.Rot(
-                    rot.yaw(),
-                    rot.pitch(),
-                    false,
-                    collision
-            ));
+        BlockHitResult hitResult = combatant.client.util.block.placer.BlockPlacer.findOptimalPlacementHit(
+                level, player, feetPos, 4.5
+        );
+
+        if (hitResult == null) {
+            BlockPos below = feetPos.below();
+            Vec3 hitVec = new Vec3(feetPos.getX() + 0.5, feetPos.getY(), feetPos.getZ() + 0.5);
+            hitResult = new BlockHitResult(hitVec, Direction.UP, below, false);
         }
 
-        // Place block at feet position
-        if (hand == InteractionHand.OFF_HAND) {
-            gameMode.useItemOn(player, InteractionHand.OFF_HAND, hitResult);
-            player.swing(InteractionHand.OFF_HAND);
-        } else {
-            boolean leased = InventorySwap.INSTANCE.leaseHotbar(this, hotbarSlot, 1);
-            if (leased) {
-                try {
-                    gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hitResult);
-                    player.swing(InteractionHand.MAIN_HAND);
-                } finally {
-                    InventorySwap.INSTANCE.releaseHotbar(this);
-                }
-            } else {
-                int prevSlot = InventorySwap.INSTANCE.clientSelectedSlot();
-                InventorySwap.INSTANCE.selectHotbar(hotbarSlot);
-                gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hitResult);
-                player.swing(InteractionHand.MAIN_HAND);
-                if (prevSlot >= 0 && prevSlot < 9) {
-                    InventorySwap.INSTANCE.selectHotbar(prevSlot);
-                }
-            }
-        }
+        // Execute silent placement with hotbar lease through unified BlockPlacer
+        combatant.client.util.block.placer.BlockPlacer.placeBlock(
+                this,
+                hitResult,
+                hand,
+                hotbarSlot,
+                rotate.get(),
+                swingMode
+        );
 
         // Send rubberband teleport packet to glitch into block
         double spoofHeight = height.get();
@@ -191,7 +179,7 @@ public class Burrow extends Module {
             }
         }
 
-        // Automatically toggle/disable module after execution
+        // Automatically disable module after execution
         setEnabled(false);
     }
 
@@ -203,33 +191,7 @@ public class Burrow extends Module {
         return switch (blockType.get()) {
             case OBSIDIAN -> block == Blocks.OBSIDIAN || block == Blocks.CRYING_OBSIDIAN;
             case ENDER_CHEST -> block == Blocks.ENDER_CHEST;
-            case ANVIL -> block == Blocks.ANVIL || block == Blocks.CHIPPED_ANVIL || block == Blocks.DAMAGED_ANVIL;
+            case ANCHOR -> block == Blocks.RESPAWN_ANCHOR;
         };
-    }
-
-    private BlockHitResult resolvePlacementHit(Level level, BlockPos feetPos) {
-        BlockPos below = feetPos.below();
-        BlockState belowState = level.getBlockState(below);
-        if (!belowState.isAir() && !belowState.canBeReplaced()) {
-            Vec3 hitVec = new Vec3(feetPos.getX() + 0.5, feetPos.getY(), feetPos.getZ() + 0.5);
-            return new BlockHitResult(hitVec, Direction.UP, below, false);
-        }
-
-        for (Direction dir : Direction.Plane.HORIZONTAL) {
-            BlockPos neighbor = feetPos.relative(dir);
-            BlockState state = level.getBlockState(neighbor);
-            if (!state.isAir() && !state.canBeReplaced()) {
-                Direction clickFace = dir.getOpposite();
-                Vec3 hitVec = Vec3.atCenterOf(neighbor).add(Vec3.atLowerCornerOf(clickFace.getUnitVec3i()).scale(0.5));
-                return new BlockHitResult(hitVec, clickFace, neighbor, false);
-            }
-        }
-
-        return new BlockHitResult(
-                new Vec3(feetPos.getX() + 0.5, feetPos.getY(), feetPos.getZ() + 0.5),
-                Direction.UP,
-                feetPos,
-                false
-        );
     }
 }

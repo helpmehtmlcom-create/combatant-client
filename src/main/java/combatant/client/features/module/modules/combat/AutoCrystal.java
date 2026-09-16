@@ -105,6 +105,17 @@ public class AutoCrystal extends Module {
             );
     private final BooleanValue renderSelfDamage = boolCommon("autocrystalRenderSelfDamage", CommonSettingSchemas.RENDER_SELF_DAMAGE, true);
     private final BooleanValue drawDamage = boolCommon("autocrystalRenderDamage", CommonSettingSchemas.RENDER_DAMAGE, true);
+    private final NumberValue<Float> speed = num(
+            "speed",
+            20.0f,
+            1.0f,
+            20.0f
+    );
+    private final BooleanValue antiSuicide = boolCommon(
+            "autocrystalAntiSuicide",
+            "anti_suicide",
+            true
+    );
     private final BooleanValue placeEnabled = boolCommon("autocrystalPlace", CommonSettingSchemas.PLACE, true);
     private final NumberValue<Integer> placeDelay =
             visibleWhen(numCommon(
@@ -125,7 +136,6 @@ public class AutoCrystal extends Module {
                     0,
                     1000
             ), breakEnabled::get);
-
     public enum ExecutionOrder {
         BREAK_PLACE,
         PLACE_BREAK,
@@ -910,6 +920,12 @@ public class AutoCrystal extends Module {
     }
 
     private boolean shouldOverrideMaxSelfDamage(float damage, float selfDamage) {
+        if (antiSuicide.get() && mc.player != null) {
+            float playerHealth = mc.player.getHealth() + mc.player.getAbsorptionAmount();
+            if (selfDamage + 0.5f >= playerHealth) {
+                return false;
+            }
+        }
         return AutoCrystalDamageRules.shouldOverrideMaxSelfDamage(
                 mc.player,
                 target,
@@ -920,9 +936,14 @@ public class AutoCrystal extends Module {
     }
 
     private boolean isSafe(float damage, float selfDamage, boolean overrideDamage) {
+        if (antiSuicide.get() && mc.player != null) {
+            float playerHealth = mc.player.getHealth() + mc.player.getAbsorptionAmount();
+            if (selfDamage + 0.5f >= playerHealth) {
+                return false;
+            }
+        }
         return AutoCrystalDamageRules.isSafe(mc.player, selfDamage, overrideDamage);
     }
-
     private boolean tryBreakCrystal() {
         if (!breakEnabled.get() || !hasBreakDelayElapsed() || mc.player == null) {
             return false;
@@ -1144,13 +1165,16 @@ public class AutoCrystal extends Module {
     }
 
     private boolean hasPlaceDelayElapsed() {
-        return System.currentTimeMillis() - lastPlaceMs >= Math.max(0, placeDelay.get());
+        long spdDelay = speed.get() >= 20.0f ? 0L : (long) (1000.0 / Math.max(1.0f, speed.get()));
+        long effectiveDelay = Math.max(spdDelay, (long) Math.max(0, placeDelay.get()));
+        return System.currentTimeMillis() - lastPlaceMs >= effectiveDelay;
     }
 
     private boolean hasBreakDelayElapsed() {
-        return System.currentTimeMillis() - lastBreakMs >= Math.max(0, breakDelay.get());
+        long spdDelay = speed.get() >= 20.0f ? 0L : (long) (1000.0 / Math.max(1.0f, speed.get()));
+        long effectiveDelay = Math.max(spdDelay, (long) Math.max(0, breakDelay.get()));
+        return System.currentTimeMillis() - lastBreakMs >= effectiveDelay;
     }
-
     private boolean hasBasePlaceDelayElapsed() {
         return System.currentTimeMillis() - lastBasePlaceMs >= Math.max(0, basePlaceDelay.get());
     }

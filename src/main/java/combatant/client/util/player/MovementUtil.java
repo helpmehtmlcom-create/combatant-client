@@ -22,6 +22,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.Vec2;
 import combatant.client.util.aiming.RotationManager;
 
 public enum MovementUtil {
@@ -83,11 +84,15 @@ public enum MovementUtil {
     }
 
     /**
-     * Returns base sprinting speed scaled by potion effects.
+     * Returns base sprinting speed scaled by potion effects (speed +20%/lvl, slowness -15%/lvl).
      */
     public static double getBaseMoveSpeed(Player player) {
         double base = 0.2873;
         return applySpeedPotionEffects(player, base);
+    }
+
+    public static double getBaseMoveSpeed(LocalPlayer player) {
+        return getBaseMoveSpeed((Player) player);
     }
 
     /**
@@ -99,12 +104,17 @@ public enum MovementUtil {
     }
 
     /**
-     * Returns the slipperiness / friction of the block beneath the player.
+     * Returns the slipperiness / friction of the block beneath the player,
+     * accounting for custom friction on blocks like ice, slime, and soul sand.
      */
     public static float getBlockFriction(Player player) {
         if (player == null || player.level() == null) return 0.6f;
         BlockPos pos = getVelocityAffectingPos(player);
-        return player.level().getBlockState(pos).getBlock().getFriction();
+        BlockState state = player.level().getBlockState(pos);
+        if (state.is(Blocks.SLIME_BLOCK)) {
+            return 0.8f;
+        }
+        return state.getBlock().getFriction();
     }
 
     /**
@@ -125,6 +135,10 @@ public enum MovementUtil {
         if (player == null) return 0.91f;
         if (player.isInWater()) return 0.8f;
         if (player.isInLava()) return 0.5f;
+        BlockPos pos = getVelocityAffectingPos(player);
+        if (player.level() != null && player.level().getBlockState(pos).is(Blocks.SOUL_SAND)) {
+            return 0.4f * 0.91f;
+        }
         float slipperiness = getBlockFriction(player);
         return player.onGround() ? slipperiness * 0.91f : 0.91f;
     }
@@ -166,7 +180,7 @@ public enum MovementUtil {
     }
 
     /**
-     * Jump motion calculation with custom base motion.
+     * Jump motion calculation with custom base motion taking into account Jump Boost.
      */
     public static float getJumpMotion(Player player, float baseJumpMotion) {
         if (player == null) return baseJumpMotion;
@@ -316,5 +330,33 @@ public enum MovementUtil {
         double x = dirX * useSpeed + prevX;
         double z = dirZ * useSpeed + prevZ;
         return new Vec3(x, currentVelocity.y, z);
+    }
+
+    /**
+     * Uniform directional velocity adjustment (strafe).
+     */
+    public static void strafe(LocalPlayer player, double speed) {
+        if (player == null) return;
+        if (!isMoving()) {
+            player.setDeltaMovement(0.0, player.getDeltaMovement().y, 0.0);
+            return;
+        }
+        float yaw = getMovementDirectionYaw(player, player.getYRot());
+        setMotion(player, speed, yaw);
+    }
+
+    /**
+     * Uniform directional velocity adjustment (strafe) with blend strength.
+     */
+    public static void strafe(LocalPlayer player, double speed, double strength) {
+        if (player == null || player.input == null) return;
+        if (!isMoving()) {
+            player.setDeltaMovement(0.0, player.getDeltaMovement().y, 0.0);
+            return;
+        }
+        Vec2 input = player.input.getMoveVector();
+        Vec3 movementInput = new Vec3(input.x, 0.0, input.y);
+        Vec3 strafed = withStrafe(player.getDeltaMovement(), movementInput, player.getYRot(), speed, strength);
+        player.setDeltaMovement(strafed.x, player.getDeltaMovement().y, strafed.z);
     }
 }

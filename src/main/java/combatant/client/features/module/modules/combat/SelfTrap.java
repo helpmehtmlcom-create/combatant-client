@@ -15,26 +15,21 @@ import combatant.client.events.impl.RotationUpdateEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
-import combatant.client.features.relations.CategoryRules;
-import combatant.client.features.relations.CategoryType;
 import combatant.client.util.aiming.RotationManager;
-import combatant.client.util.aiming.RotationTarget;
-import combatant.client.util.aiming.data.Rotation;
-import combatant.client.util.aiming.features.MovementCorrection;
+import combatant.client.util.block.placer.BlockPlacer;
 import combatant.client.util.player.inventory.InventorySwap;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
@@ -57,19 +52,29 @@ public class SelfTrap extends Module {
 
     private final Minecraft mc = Minecraft.getInstance();
 
+    public enum SelfTrapMode {
+        FULL,
+        HEAD
+    }
+
+    public enum TrapBlock {
+        OBSIDIAN,
+        ENDER_CHEST,
+        ANCHOR
+    }
+
     private final EnumValue<SelfTrapMode> mode =
-            enumSetting("selftrap_mode", "mode", SelfTrapMode.HEAD, SelfTrapMode.values());
+            enumSetting("selftrap_mode", "mode", SelfTrapMode.FULL, SelfTrapMode.values());
     private final NumberValue<Integer> blocksPerTick =
-            num("selftrap_blocks_per_tick", "blocks_per_tick", 2, 1, 4);
+            num("selftrap_blocks_per_tick", "blocks_per_tick", 4, 1, 8);
+    private final EnumValue<TrapBlock> blockType =
+            enumSetting("selftrap_block", "block", TrapBlock.OBSIDIAN, TrapBlock.values());
     private final BooleanValue rotate =
             bool("selftrap_rotate", "rotate", true);
-    private final BooleanValue airPlace =
-            bool("selftrap_air_place", "air_place", false);
 
     @Override
     public void onDisable() {
         RotationManager.INSTANCE.clear(this);
-        InventorySwap.INSTANCE.releaseHotbar(this);
     }
 
     @EventHandler(priority = 25)
@@ -79,7 +84,7 @@ public class SelfTrap extends Module {
 
         LocalPlayer player = mc.player;
         Level level = mc.level;
-        if (player == null || level == null || mc.gameMode == null || mc.getConnection() == null) {
+        if (player == null || level == null || mc.gameMode == null) {
             return;
         }
 
@@ -94,197 +99,107 @@ public class SelfTrap extends Module {
             return;
         }
 
-        // Sort lower Y blocks first so base/side supports are placed before roof blocks
+        // Prioritize bottom-to-top placement order so blocks always have valid attachable faces
         requiredPositions.sort(Comparator.comparingInt((BlockPos p) -> p.getY())
                 .thenComparingDouble(p -> player.getEyePosition().distanceToSqr(Vec3.atCenterOf(p))));
 
         int maxBlocks = blocksPerTick.get();
         int placedCount = 0;
         Set<BlockPos> placedThisTick = new HashSet<>();
-        boolean leased = false;
 
-        try {
-            for (BlockPos pos : requiredPositions) {
-                if (placedCount >= maxBlocks) break;
-                if (!isReplaceable(level, pos, placedThisTick)) continue;
-
-                PlacementTarget target = resolvePlacementTarget(level, player, pos, placedThisTick);
-                if (target == null) continue;
-
-                InteractionHand hand;
-                if (hasObsidianInOffhand(player)) {
-                    hand = InteractionHand.OFF_HAND;
-                } else {
-                    int slot = findObsidianSlot(player);
-                    if (slot == -1) break;
-
-                    if (!InventorySwap.INSTANCE.isHotbarLeasedBy(this)) {
-                        leased = InventorySwap.INSTANCE.leaseHotbar(this, slot, 2);
-                        if (!leased) break;
-                    }
-                    hand = InteractionHand.MAIN_HAND;
-                }
-
-                if (performPlace(player, target, hand)) {
-                    placedCount++;
-                    placedThisTick.add(target.pos());
-
-                    // If a helper block was placed, immediately try to place the main block if budget allows
-                    if (target.isHelper() && placedCount < maxBlocks) {
-                        PlacementTarget nextTarget = resolvePlacementTarget(level, player, pos, placedThisTick);
-                        if (nextTarget != null && performPlace(player, nextTarget, hand)) {
-                            placedCount++;
-                            placedThisTick.add(nextTarget.pos());
-                        }
-                    }
-                }
-            }
-        } finally {
-            if (leased) {
-                InventorySwap.INSTANCE.releaseHotbar(this);
-            }
-        }
-    }
-
-    private boolean performPlace(LocalPlayer player, PlacementTarget target, InteractionHand hand) {
-        if (mc.gameMode == null) return false;
-
-        BlockHitResult hit = target.hit();
-        if (rotate.get()) {
-            Rotation rot = Rotation.lookingAt(hit.getLocation(), player.getEyePosition()).normalize();
-            RotationTarget rotTarget = new RotationTarget(
-                    rot,
-                    player,
-                    List.of(),
-                    1,
-                    4.0f,
-                    true,
-                    MovementCorrection.SILENT,
-                    null
-            );
-            RotationManager.INSTANCE.setRotationTarget(rotTarget, 30, this);
-            if (mc.getConnection() != null) {
-                mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
-                        rot.yaw(),
-                        rot.pitch(),
-                        player.onGround(),
-                        player.horizontalCollision
-                ));
-            }
-        }
-
-        InteractionResult result = mc.gameMode.useItemOn(player, hand, hit);
-        if (result != null && result.consumesAction()) {
-            player.swing(hand);
-            return true;
-        }
-        return false;
-    }
-
-    private PlacementTarget resolvePlacementTarget(Level level, LocalPlayer player, BlockPos pos, Set<BlockPos> placedThisTick) {
-        if (!isReplaceable(level, pos, placedThisTick) || isEntityBlocked(player, level, pos)) {
-            return null;
-        }
-
-        BlockHitResult directHit = getPlaceHitResult(level, player, pos, airPlace.get(), placedThisTick);
-        if (directHit != null) {
-            return new PlacementTarget(pos, directHit, false);
-        }
-
-        if (airPlace.get()) {
-            return null;
-        }
-
-        // AirPlace is false: search for adjacent support helper blocks
-        for (Direction dir : Direction.Plane.HORIZONTAL) {
-            BlockPos sideTop = pos.relative(dir);
-            if (isReplaceable(level, sideTop, placedThisTick) && !isEntityBlocked(player, level, sideTop)) {
-                BlockHitResult sideTopHit = getPlaceHitResult(level, player, sideTop, false, placedThisTick);
-                if (sideTopHit != null) {
-                    return new PlacementTarget(sideTop, sideTopHit, true);
-                }
-
-                BlockPos sideMid = sideTop.below();
-                if (isReplaceable(level, sideMid, placedThisTick) && !isEntityBlocked(player, level, sideMid)) {
-                    BlockHitResult sideMidHit = getPlaceHitResult(level, player, sideMid, false, placedThisTick);
-                    if (sideMidHit != null) {
-                        return new PlacementTarget(sideMid, sideMidHit, true);
-                    }
-
-                    BlockPos sideBottom = sideMid.below();
-                    if (isReplaceable(level, sideBottom, placedThisTick) && !isEntityBlocked(player, level, sideBottom)) {
-                        BlockHitResult sideBottomHit = getPlaceHitResult(level, player, sideBottom, false, placedThisTick);
-                        if (sideBottomHit != null) {
-                            return new PlacementTarget(sideBottom, sideBottomHit, true);
-                        }
-                    }
-                }
-            }
-        }
-
-        return null;
-    }
-
-    private BlockHitResult getPlaceHitResult(Level level, LocalPlayer player, BlockPos pos, boolean allowAir, Set<BlockPos> placedThisTick) {
-        Vec3 eyes = player.getEyePosition();
-        double bestDist = Double.MAX_VALUE;
-        BlockHitResult best = null;
-        double range = 5.0;
-
-        for (Direction dir : Direction.values()) {
-            BlockPos neighbor = pos.relative(dir);
-            if (!isSolid(level, neighbor, placedThisTick)) {
+        for (BlockPos pos : requiredPositions) {
+            if (placedCount >= maxBlocks) break;
+            if (!isReplaceable(level, pos, placedThisTick) || isEntityBlocked(player, level, pos)) {
                 continue;
             }
 
-            Direction clickFace = dir.getOpposite();
-            Vec3 hitVec = Vec3.atCenterOf(neighbor).add(Vec3.atLowerCornerOf(clickFace.getUnitVec3i()).scale(0.5));
-            double distSq = eyes.distanceToSqr(hitVec);
-            if (distSq > range * range) continue;
+            BlockHitResult hit = BlockPlacer.findOptimalPlacementHit(level, player, pos, 5.0);
 
-            if (distSq < bestDist) {
-                bestDist = distSq;
-                best = new BlockHitResult(hitVec, clickFace, neighbor, false);
+            // If direct face not found, check support block directly below to anchor placement
+            if (hit == null) {
+                BlockPos support = pos.below();
+                if (isReplaceable(level, support, placedThisTick) && !isEntityBlocked(player, level, support)) {
+                    BlockHitResult supportHit = BlockPlacer.findOptimalPlacementHit(level, player, support, 5.0);
+                    if (supportHit != null) {
+                        if (placeBlockAt(player, supportHit)) {
+                            placedThisTick.add(support);
+                            placedCount++;
+                            if (placedCount >= maxBlocks) break;
+                            hit = BlockPlacer.findOptimalPlacementHit(level, player, pos, 5.0);
+                        }
+                    }
+                }
+            }
+
+            if (hit != null) {
+                if (placeBlockAt(player, hit)) {
+                    placedThisTick.add(pos);
+                    placedCount++;
+                }
+            }
+        }
+    }
+
+    private boolean placeBlockAt(LocalPlayer player, BlockHitResult hit) {
+        if (hit == null) return false;
+
+        InteractionHand hand = null;
+        int slot = -1;
+        TrapBlock blockChoice = blockType.get();
+
+        if (isTargetBlock(player.getOffhandItem(), blockChoice)) {
+            hand = InteractionHand.OFF_HAND;
+        } else {
+            slot = findBlockSlot(player, blockChoice);
+            if (slot != -1) {
+                hand = InteractionHand.MAIN_HAND;
             }
         }
 
-        if (best == null && allowAir) {
-            Vec3 hitVec = Vec3.atCenterOf(pos);
-            if (eyes.distanceToSqr(hitVec) <= range * range) {
-                best = new BlockHitResult(hitVec, Direction.UP, pos, false);
-            }
-        }
+        if (hand == null) return false;
 
-        return best;
+        return BlockPlacer.placeBlock(
+                this,
+                hit,
+                hand,
+                slot,
+                rotate.get(),
+                BlockPlacer.SwingMode.CLIENT_AND_SERVER
+        );
     }
 
     private List<BlockPos> getRequiredTrapPositions(LocalPlayer player, Level level) {
-        SelfTrapMode m = mode.get();
-        if (m == SelfTrapMode.SMART && !isEnemyThreatPresent(player, level)) {
-            return List.of();
-        }
-
         List<BlockPos> basePositions = resolveBasePositions(player);
         List<BlockPos> required = new ArrayList<>();
+        SelfTrapMode m = mode.get();
 
         for (BlockPos base : basePositions) {
-            // Head block at (x, y+2, z)
+            // Level 0: Surround feet (NORTH, EAST, SOUTH, WEST) for full-body enclosing
+            if (m == SelfTrapMode.FULL) {
+                for (Direction dir : Direction.Plane.HORIZONTAL) {
+                    BlockPos surround = base.relative(dir);
+                    if (!required.contains(surround)) {
+                        required.add(surround);
+                    }
+                }
+            }
+
+            // Level 1: Upper sides (surrounding head/eye level)
+            BlockPos upper = base.above();
+            for (Direction dir : Direction.Plane.HORIZONTAL) {
+                BlockPos upperSide = upper.relative(dir);
+                if (!required.contains(upperSide)) {
+                    required.add(upperSide);
+                }
+            }
+
+            // Level 2: Top / Head roof directly above player
             BlockPos headPos = base.above(2);
             if (!required.contains(headPos)) {
                 required.add(headPos);
             }
-
-            // FULL or SMART (when triggered): head block plus 4 upper side blocks (x±1, y+1, z), (x, y+1, z±1)
-            if (m == SelfTrapMode.FULL || m == SelfTrapMode.SMART) {
-                BlockPos upper = base.above();
-                for (Direction dir : Direction.Plane.HORIZONTAL) {
-                    BlockPos side = upper.relative(dir);
-                    if (!required.contains(side)) {
-                        required.add(side);
-                    }
-                }
-            }
         }
+
         return required;
     }
 
@@ -308,43 +223,6 @@ public class SelfTrap extends Module {
         return positions.isEmpty() ? List.of(player.blockPosition()) : positions;
     }
 
-    private boolean isEnemyThreatPresent(LocalPlayer player, Level level) {
-        for (Player other : level.players()) {
-            if (!isEnemyPlayer(other)) continue;
-
-            double distSq = player.distanceToSqr(other);
-            if (distSq <= 5.0 * 5.0) {
-                return true;
-            }
-
-            if (other.getY() > player.getY()) {
-                double dx = other.getX() - player.getX();
-                double dz = other.getZ() - player.getZ();
-                if (dx * dx + dz * dz <= 5.0 * 5.0) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private boolean isEnemyPlayer(Player other) {
-        if (other == null || other == mc.player || !other.isAlive() || other.isSpectator()) {
-            return false;
-        }
-        CategoryType type = CategoryRules.determine(other.getGameProfile().name());
-        return type != CategoryType.FRIEND && type != CategoryType.BEDWARS_SELF;
-    }
-
-    private boolean isSolid(Level level, BlockPos pos, Set<BlockPos> placedThisTick) {
-        if (placedThisTick != null && placedThisTick.contains(pos)) {
-            return true;
-        }
-        if (!level.isInWorldBounds(pos)) return false;
-        BlockState state = level.getBlockState(pos);
-        return !state.isAir() && !state.canBeReplaced() && !state.getCollisionShape(level, pos).isEmpty();
-    }
-
     private boolean isReplaceable(Level level, BlockPos pos, Set<BlockPos> placedThisTick) {
         if (placedThisTick != null && placedThisTick.contains(pos)) {
             return false;
@@ -365,42 +243,34 @@ public class SelfTrap extends Module {
         return false;
     }
 
-    private boolean hasObsidianInOffhand(LocalPlayer player) {
-        ItemStack offhand = player.getOffhandItem();
-        return offhand.is(Items.OBSIDIAN) || offhand.is(Items.CRYING_OBSIDIAN);
+    private boolean isTargetBlock(ItemStack stack, TrapBlock type) {
+        if (stack == null || stack.isEmpty() || !(stack.getItem() instanceof BlockItem blockItem)) {
+            return false;
+        }
+        Block block = blockItem.getBlock();
+        return switch (type) {
+            case OBSIDIAN -> block == Blocks.OBSIDIAN || block == Blocks.CRYING_OBSIDIAN;
+            case ENDER_CHEST -> block == Blocks.ENDER_CHEST;
+            case ANCHOR -> block == Blocks.RESPAWN_ANCHOR;
+        };
     }
 
-    private int findObsidianSlot(LocalPlayer player) {
+    private int findBlockSlot(LocalPlayer player, TrapBlock type) {
         int selected = InventorySwap.INSTANCE.clientSelectedSlot();
         if (selected >= 0 && selected < 9) {
             ItemStack held = player.getInventory().getItem(selected);
-            if (held.is(Items.OBSIDIAN)) {
+            if (isTargetBlock(held, type)) {
                 return selected;
             }
         }
 
         for (int slot = 0; slot < 9; slot++) {
             ItemStack stack = player.getInventory().getItem(slot);
-            if (stack.is(Items.OBSIDIAN)) {
-                return slot;
-            }
-        }
-
-        for (int slot = 0; slot < 9; slot++) {
-            ItemStack stack = player.getInventory().getItem(slot);
-            if (stack.is(Items.CRYING_OBSIDIAN)) {
+            if (isTargetBlock(stack, type)) {
                 return slot;
             }
         }
 
         return -1;
     }
-
-    public enum SelfTrapMode {
-        HEAD,
-        FULL,
-        SMART
-    }
-
-    private record PlacementTarget(BlockPos pos, BlockHitResult hit, boolean isHelper) {}
 }

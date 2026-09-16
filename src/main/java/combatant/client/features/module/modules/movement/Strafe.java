@@ -47,31 +47,12 @@ import java.util.List;
 )
 public final class Strafe extends Module {
 
-    private static final int ROTATION_PRIORITY = 15;
-
     private final Minecraft mc = Minecraft.getInstance();
-    private final EnumValue<Mode> mode = enumMode("mode", Mode.MATRIX);
+    private final EnumValue<Mode> mode = enumMode("mode", Mode.NCP);
+    private final BooleanValue jump = bool("jump", false);
     private final NumberValue<Float> speed =
-            visibleWhen(num("speed", 0.42f, 0.0f, 1.0f), this::isMatrixMode);
-    private final NumberValue<Float> grimEffectiveDegrees =
-            visibleWhen(num("grim_effective_degrees", 45.0f, 0.0f, 90.0f), this::isGrimMode);
-    private final BooleanValue grimOverrideCrosshairTarget =
-            visibleWhen(bool("grim_override_crosshair_target", false), this::isGrimMode);
-    private float lastYaw;
-    private float lastPitch;
+            visibleWhen(num("speed", 0.2873f, 0.1f, 1.0f), () -> mode.get() == Mode.VANILLA);
 
-    private static float resolveMatrixYaw(LocalPlayer player, float fallbackYaw) {
-        if (player == null) {
-            return fallbackYaw;
-        }
-        return Mth.wrapDegrees(MovementUtil.getMovementDirectionYaw(player, fallbackYaw));
-    }
-
-    private static void setHorizontalVelocity(LocalPlayer player, float yaw, double speed) {
-        double x = Math.cos(Math.toRadians(yaw + 90.0f)) * speed;
-        double z = Math.sin(Math.toRadians(yaw + 90.0f)) * speed;
-        player.setDeltaMovement(x, player.getDeltaMovement().y, z);
-    }
 
     @EventHandler(priority = 2000)
     private void onGameTick(GameTickEvent event) {
@@ -80,162 +61,25 @@ public final class Strafe extends Module {
             return;
         }
 
-        boolean moving = MovementUtil.isMoving();
-        float yaw = player.getYRot();
-
-        if (isMatrixMode()) {
-            handleMatrixMode(player, moving, yaw);
-            lastYaw = yaw;
-            lastPitch = 0.0f;
-        } else if (isGrimMode()) {
-            handleGrimMode(player, moving, yaw);
-            lastYaw = yaw;
-            lastPitch = 0.0f;
-        }
-    }
-
-    @EventHandler(priority = 2000)
-    private void onCrosshairTargetUpdate(CrosshairTargetUpdateEvent event) {
-        LocalPlayer player = mc.player;
-        if (!shouldOverrideGrimCrosshair(player)) {
+        if (!canOperate(player)) {
             return;
         }
 
-        float yaw = resolveGrimYaw(player, player.getYRot());
-        float pitch = player.getXRot();
-        HitResult hitResult = raycastRotationPoint(player, event.getTickDelta(), yaw, pitch);
-        event.setHitResult(hitResult);
-        event.setTargetedEntity(hitResult instanceof EntityHitResult entityHit ? entityHit.getEntity() : null);
-    }
-
-    @Override
-    public void onEnable() {
-        LocalPlayer player = mc.player;
-        lastYaw = player != null ? player.getYRot() : 0.0f;
-        lastPitch = player != null ? player.getXRot() : 0.0f;
-    }
-
-    @Override
-    public void onDisable() {
-        RotationManager.INSTANCE.clear(this);
-    }
-
-    private void handleMatrixMode(LocalPlayer player, boolean moving, float yaw) {
-        if (moving) {
-            yaw = resolveMatrixYaw(player, yaw);
-            double motion = speed.get() * 1.5f;
-            setHorizontalVelocity(player, yaw, motion);
-        } else {
-            setHorizontalVelocity(player, yaw, 0.0);
-        }
-
-        player.setDeltaMovement(player.getDeltaMovement().x, player.getDeltaMovement().y, player.getDeltaMovement().z);
-    }
-
-    private void handleGrimMode(LocalPlayer player, boolean moving, float yaw) {
-        if (!moving) {
-            return;
-        }
-        if (OmniItemUtils.isProjectileWeaponInHand(player)) {
+        if (!MovementUtil.isMoving()) {
             return;
         }
 
-        yaw = resolveGrimYaw(player, yaw);
-        KillAura killAura = Modules.get(KillAura.class);
-        if (killAura != null && killAura.getCurrentTarget() != null) {
-            return;
+        if (jump.get() && player.onGround()) {
+            player.jumpFromGround();
         }
 
-        RotationTarget target = new RotationTarget(
-                new Rotation(yaw, player.getXRot(), true),
-                player,
-                List.of(),
-                1,
-                1.0f,
-                false,
-                MovementCorrection.SILENT,
-                null
-        );
-        RotationManager.INSTANCE.setRotationTarget(target, ROTATION_PRIORITY, this);
-    }
+        double moveSpeed = switch (mode.get()) {
+            case VANILLA -> speed.get();
+            case NCP -> Math.max(MovementUtil.getHorizontalMotion(player), MovementUtil.getBaseMoveSpeed(player));
+            case STRICT -> MovementUtil.getBaseMoveSpeed(player);
+        };
 
-    private boolean shouldOverrideGrimCrosshair(LocalPlayer player) {
-        if (!isEnabled()
-                || !isGrimMode()
-                || !grimOverrideCrosshairTarget.get()
-                || !canOperate(player)
-                || !MovementUtil.isMoving()) {
-            return false;
-        }
-        if (OmniItemUtils.isProjectileWeaponInHand(player)) {
-            return false;
-        }
-        KillAura killAura = Modules.get(KillAura.class);
-        return killAura == null || killAura.getCurrentTarget() == null;
-    }
-
-    private HitResult raycastRotationPoint(LocalPlayer player, float tickDelta, float yaw, float pitch) {
-        Vec3 start = player.getEyePosition(tickDelta);
-        Vec3 direction = Vec3.directionFromRotation(pitch, yaw).normalize();
-
-        double entityRange = player.entityInteractionRange();
-        double blockRange = player.blockInteractionRange();
-        Vec3 blockEnd = start.add(direction.scale(blockRange));
-
-        HitResult blockHit = mc.level.clip(new ClipContext(
-                start,
-                blockEnd,
-                ClipContext.Block.OUTLINE,
-                ClipContext.Fluid.NONE,
-                player
-        ));
-
-        double entityRangeSq = entityRange * entityRange;
-        if (blockHit.getType() != HitResult.Type.MISS) {
-            entityRangeSq = Math.min(entityRangeSq, start.distanceToSqr(blockHit.getLocation()));
-        }
-
-        Vec3 entityEnd = start.add(direction.scale(entityRange));
-        EntityHitResult entityHit = ProjectileUtil.getEntityHitResult(
-                player,
-                start,
-                entityEnd,
-                player.getBoundingBox().expandTowards(direction.scale(entityRange)).inflate(1.0),
-                this::isCrosshairCandidate,
-                entityRangeSq
-        );
-
-        return entityHit != null ? entityHit : blockHit;
-    }
-
-    private boolean isCrosshairCandidate(Entity entity) {
-        if (!EntitySelector.CAN_BE_PICKED.test(entity)) {
-            return false;
-        }
-        return entity instanceof LivingEntity living && living.isAlive();
-    }
-
-    private float resolveGrimYaw(LocalPlayer player, float yaw) {
-        if (player == null || mc.options == null) {
-            return yaw;
-        }
-
-        boolean left = mc.options.keyLeft.isDown();
-        boolean right = mc.options.keyRight.isDown();
-        if (left == right) {
-            return yaw;
-        }
-
-        float delta = left ? -grimEffectiveDegrees.get() : grimEffectiveDegrees.get();
-        return yaw + delta;
-    }
-
-    private boolean isMatrixMode() {
-        return mode.get() == Mode.MATRIX;
-    }
-
-    private boolean isGrimMode() {
-        return mode.get() == Mode.GRIM;
+        MovementUtil.strafe(player, moveSpeed);
     }
 
     private boolean canOperate(LocalPlayer player) {
@@ -246,8 +90,9 @@ public final class Strafe extends Module {
         return Modules.get(Freecam.class) != null && Modules.get(Freecam.class).isEnabled();
     }
 
-    private enum Mode {
-        MATRIX,
-        GRIM
+    public enum Mode {
+        VANILLA,
+        NCP,
+        STRICT
     }
 }

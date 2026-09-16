@@ -36,9 +36,12 @@ import combatant.client.events.impl.GameTickEvent;
 import combatant.client.events.impl.PacketEvent;
 
 import combatant.client.util.logging.DebugLog;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.Level;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -50,8 +53,9 @@ public final class BlinkManager {
 
     private static final ThreadLocal<Boolean> SILENT_PACKET_HANDLING = ThreadLocal.withInitial(() -> false);
 
-    private final ConcurrentLinkedQueue<PacketSnapshot> packetQueue = new ConcurrentLinkedQueue<>();
-
+    private final Deque<PacketSnapshot> packetQueue = new ConcurrentLinkedDeque<>();
+    private volatile boolean blinking;
+    private ResourceKey<Level> lastDimension;
     private BlinkManager() {
     }
 
@@ -141,6 +145,7 @@ public final class BlinkManager {
         if (packet == null) return false;
         try {
             if (packet instanceof ClientboundPlayerPositionPacket
+                    || packet instanceof ClientboundRespawnPacket
                     || packet instanceof ClientboundDisconnectPacket
                     || packet instanceof ClientboundLoginDisconnectPacket) {
                 return true;
@@ -153,12 +158,29 @@ public final class BlinkManager {
         }
     }
 
-    public ConcurrentLinkedQueue<PacketSnapshot> getPacketQueue() {
+    public boolean isBlinking() {
+        return blinking;
+    }
+
+    public void setBlinking(boolean blinking) {
+        this.blinking = blinking;
+    }
+
+    public Deque<PacketSnapshot> getPacketQueue() {
         return packetQueue;
     }
 
     public boolean isLagging() {
         return !packetQueue.isEmpty();
+    }
+
+    public void emergencyFlush() {
+        while (!packetQueue.isEmpty()) {
+            PacketSnapshot snapshot = packetQueue.poll();
+            if (snapshot != null) {
+                flushSnapshot(snapshot);
+            }
+        }
     }
 
     public List<Vec3> getQueuedMovePositions() {
@@ -183,11 +205,30 @@ public final class BlinkManager {
     public void onTick(GameTickEvent event) {
         try {
             if (!hasOpenConnection()) {
-                packetQueue.clear();
+                emergencyFlush();
                 return;
             }
 
-            if (fireEvent(null, TransferOrigin.OUTGOING) == Action.FLUSH) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc != null && mc.player != null && mc.player.isDeadOrDying()) {
+                emergencyFlush();
+                return;
+            }
+
+            if (mc != null && mc.level != null) {
+                ResourceKey<Level> currentDimension = mc.level.dimension();
+                if (lastDimension != null && !lastDimension.equals(currentDimension)) {
+                    emergencyFlush();
+                }
+                lastDimension = currentDimension;
+            }
+
+            if (packetQueue.size() > 200) {
+                emergencyFlush();
+                return;
+            }
+
+            if (!blinking && fireEvent(null, TransferOrigin.OUTGOING) == Action.FLUSH) {
                 flush(TransferOrigin.OUTGOING);
             }
             if (fireEvent(null, TransferOrigin.INCOMING) == Action.FLUSH) {
@@ -215,6 +256,24 @@ public final class BlinkManager {
         }
 
         try {
+            if (packet instanceof ClientboundRespawnPacket
+                    || packet instanceof ClientboundDisconnectPacket
+                    || packet instanceof ClientboundLoginDisconnectPacket) {
+                emergencyFlush();
+                return;
+            }
+
+            if (origin == TransferOrigin.INCOMING
+                    && packet instanceof ClientboundSetHealthPacket health
+                    && health.getHealth() <= 0.0f) {
+                emergencyFlush();
+                return;
+            }
+
+            if (packetQueue.size() >= 200) {
+                emergencyFlush();
+            }
+
             Action action = fireEvent(packet, origin);
             if (action == Action.FLUSH) {
                 flush(origin);

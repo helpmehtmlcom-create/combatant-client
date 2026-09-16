@@ -252,6 +252,7 @@ public final class Speed extends Module {
                 && !player.isInWater()
                 && !player.isInLava()
                 && !player.onClimbable()
+                && !player.horizontalCollision
                 && !player.isPassenger()
                 && !player.isFallFlying();
     }

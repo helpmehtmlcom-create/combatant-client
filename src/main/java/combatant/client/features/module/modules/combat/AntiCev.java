@@ -15,6 +15,7 @@ import combatant.client.events.impl.RotationUpdateEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.util.block.placer.BlockPlacer;
 import combatant.client.util.player.inventory.InventorySwap;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -23,12 +24,12 @@ import net.minecraft.core.Direction;
 import net.minecraft.network.protocol.game.ServerboundInteractPacket;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.boss.enderdragon.EndCrystal;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
@@ -176,7 +177,7 @@ public class AntiCev extends Module {
     private void blockCevRay(BlockPos headPos, Level level, LocalPlayer player) {
         // Priority 1: Intermediate space directly above head (headPos at y+2) if broken/replaceable
         if (isReplaceable(level, headPos) && !isPlayerIntersecting(player, headPos)) {
-            if (placeObsidian(headPos)) {
+            if (placeObsidian(headPos, player, level)) {
                 return;
             }
         }
@@ -184,7 +185,7 @@ public class AntiCev extends Module {
         // Priority 2: Above the head block (pos.above(3) / ceiling)
         BlockPos ceiling = headPos.above();
         if (isReplaceable(level, ceiling) && !isEntityBlocked(level, ceiling)) {
-            if (placeObsidian(ceiling)) {
+            if (placeObsidian(ceiling, player, level)) {
                 return;
             }
         }
@@ -192,66 +193,38 @@ public class AntiCev extends Module {
         // Priority 3: Higher blast ray absorption block at pos.above(4)
         BlockPos highCeiling = ceiling.above();
         if (isReplaceable(level, highCeiling) && !isEntityBlocked(level, highCeiling)) {
-            placeObsidian(highCeiling);
+            placeObsidian(highCeiling, player, level);
         }
     }
 
-    private boolean placeObsidian(BlockPos target) {
-        if (mc.player == null || mc.level == null || mc.gameMode == null) return false;
+    private boolean placeObsidian(BlockPos target, LocalPlayer player, Level level) {
+        if (player == null || level == null || mc.gameMode == null) return false;
 
-        BlockHitResult hit = getPlaceHitResult(mc.level, mc.player, target);
+        BlockHitResult hit = BlockPlacer.findOptimalPlacementHit(level, player, target, 5.0);
         if (hit == null) return false;
 
-        // Check offhand for obsidian
-        if (isObsidian(mc.player.getOffhandItem())) {
-            InteractionResult result = mc.gameMode.useItemOn(mc.player, InteractionHand.OFF_HAND, hit);
-            mc.player.swing(InteractionHand.OFF_HAND);
-            return result != InteractionResult.FAIL;
-        }
+        InteractionHand hand = null;
+        int hotbarSlot = -1;
 
-        // Hotbar leasing for obsidian
-        int hotbarSlot = findObsidianHotbarSlot(mc.player);
-        if (hotbarSlot == -1) return false;
-
-        if (InventorySwap.INSTANCE.leaseHotbar(this, hotbarSlot, 1)) {
-            try {
-                InteractionResult result = mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
-                mc.player.swing(InteractionHand.MAIN_HAND);
-                return result != InteractionResult.FAIL;
-            } finally {
-                InventorySwap.INSTANCE.releaseHotbar(this);
+        if (isObsidian(player.getOffhandItem())) {
+            hand = InteractionHand.OFF_HAND;
+        } else {
+            hotbarSlot = findObsidianHotbarSlot(player);
+            if (hotbarSlot != -1) {
+                hand = InteractionHand.MAIN_HAND;
             }
         }
 
-        return false;
-    }
+        if (hand == null) return false;
 
-    private BlockHitResult getPlaceHitResult(Level level, LocalPlayer player, BlockPos pos) {
-        Vec3 eyes = player.getEyePosition();
-        double bestDist = Double.MAX_VALUE;
-        BlockHitResult best = null;
-
-        for (Direction dir : Direction.values()) {
-            BlockPos neighbor = pos.relative(dir);
-            if (!level.isInWorldBounds(neighbor)) continue;
-
-            BlockState state = level.getBlockState(neighbor);
-            if (state.isAir() || state.canBeReplaced() || state.getCollisionShape(level, neighbor).isEmpty()) {
-                continue;
-            }
-
-            Direction clickFace = dir.getOpposite();
-            Vec3 hitVec = Vec3.atCenterOf(neighbor).add(Vec3.atLowerCornerOf(clickFace.getUnitVec3i()).scale(0.5));
-            double distSq = eyes.distanceToSqr(hitVec);
-            if (distSq > 36.0) continue; // 6 blocks reach
-
-            if (distSq < bestDist) {
-                bestDist = distSq;
-                best = new BlockHitResult(hitVec, clickFace, neighbor, false);
-            }
-        }
-
-        return best;
+        return BlockPlacer.placeBlock(
+                this,
+                hit,
+                hand,
+                hotbarSlot,
+                true,
+                BlockPlacer.SwingMode.CLIENT_AND_SERVER
+        );
     }
 
     private int findObsidianHotbarSlot(LocalPlayer player) {
