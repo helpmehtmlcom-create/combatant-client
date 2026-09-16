@@ -11,10 +11,10 @@ import net.minecraft.resources.Identifier;
 
 import java.util.List;
 
-/** Explicit cloud-domain contract selected by the dimension profile. */
+/** Explicit cloud-system contract selected by the dimension profile. */
 public record CloudProfile(
         Identifier id,
-        List<CloudLayerProfile> layers,
+        List<CloudDomainProfile> domains,
         float maxRayDistanceBlocks,
         float ambientResponse,
         float lightSampleDistanceBlocks,
@@ -26,11 +26,11 @@ public record CloudProfile(
 
     public CloudProfile {
         if (id == null) id = WorldRenderState.NONE;
-        layers = layers == null ? List.of() : List.copyOf(layers);
+        domains = domains == null ? List.of() : List.copyOf(domains);
         maxRayDistanceBlocks = finiteNonNegative(maxRayDistanceBlocks);
         ambientResponse = clamp(finite(ambientResponse, 0.0f), 0.0f, 4.0f);
         lightSampleDistanceBlocks = clamp(finite(lightSampleDistanceBlocks, 1.0f), 0.25f, 256.0f);
-        valid = valid && !layers.isEmpty() && maxRayDistanceBlocks > 0.0f;
+        valid = valid && !domains.isEmpty() && maxRayDistanceBlocks > 0.0f;
     }
 
     private static float finiteNonNegative(float value) {

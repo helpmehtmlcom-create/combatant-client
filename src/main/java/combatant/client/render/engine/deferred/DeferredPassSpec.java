@@ -27,6 +27,7 @@ public record DeferredPassSpec(
         List<FrameGraphResourceUse> resources,
         FrameGraphExecutionDomain executionDomain,
         Set<RhiShaderStage> requiredShaderStages,
+        Set<DeferredResource> optionalReads,
         boolean externallyDriven,
         DeferredPassCondition condition,
         DeferredPassExecutor executor
@@ -39,6 +40,7 @@ public record DeferredPassSpec(
         requiredShaderStages = requiredShaderStages == null || requiredShaderStages.isEmpty()
                 ? Set.of()
                 : Set.copyOf(requiredShaderStages);
+        optionalReads = optionalReads == null || optionalReads.isEmpty() ? Set.of() : Set.copyOf(optionalReads);
         executionDomain = executionDomain == null
                 ? (requiredShaderStages.contains(RhiShaderStage.COMPUTE)
                 ? FrameGraphExecutionDomain.COMPUTE : FrameGraphExecutionDomain.GRAPHICS)
@@ -65,6 +67,8 @@ public record DeferredPassSpec(
         private final DeferredStage stage;
         private final EnumMap<DeferredResource, FrameGraphAccess> resources = new EnumMap<>(DeferredResource.class);
         private final EnumSet<RhiShaderStage> requiredStages = EnumSet.noneOf(RhiShaderStage.class);
+        private final EnumSet<DeferredResource> optionalReads = EnumSet.noneOf(DeferredResource.class);
+        private final EnumSet<DeferredResource> requiredReads = EnumSet.noneOf(DeferredResource.class);
         private FrameGraphExecutionDomain executionDomain;
         private int priority;
         private boolean externallyDriven;
@@ -82,15 +86,23 @@ public record DeferredPassSpec(
         }
 
         public Builder read(DeferredResource... values) {
-            return use(FrameGraphAccess.READ, values);
+            return use(FrameGraphAccess.READ, false, values);
+        }
+
+        /**
+         * Declares a fallback-capable read. The dependency still participates in planning/barriers
+         * when a producer exists, but runtime produced-state is not required for the pass to run.
+         */
+        public Builder optionalRead(DeferredResource... values) {
+            return use(FrameGraphAccess.READ, true, values);
         }
 
         public Builder write(DeferredResource... values) {
-            return use(FrameGraphAccess.WRITE, values);
+            return use(FrameGraphAccess.WRITE, false, values);
         }
 
         public Builder readWrite(DeferredResource... values) {
-            return use(FrameGraphAccess.READ_WRITE, values);
+            return use(FrameGraphAccess.READ_WRITE, false, values);
         }
 
         /** Declares a native copy/clear/update pass with transfer-stage hazard semantics. */
@@ -112,7 +124,7 @@ public record DeferredPassSpec(
             return this;
         }
 
-        /** Evaluated before implicit allocation so disabled optional branches stay physically lazy. */
+        /** Evaluated before pass GPU access; disabled producers therefore never publish logical validity. */
         public Builder when(DeferredPassCondition condition) {
             this.condition = condition == null ? DeferredPassCondition.ALWAYS : condition;
             return this;
@@ -135,15 +147,24 @@ public record DeferredPassSpec(
                     : (requiredStages.contains(RhiShaderStage.COMPUTE)
                     ? FrameGraphExecutionDomain.COMPUTE : FrameGraphExecutionDomain.GRAPHICS);
             return new DeferredPassSpec(
-                    id, stage, priority, uses, domain, requiredStages, externallyDriven, condition, executor
+                    id, stage, priority, uses, domain, requiredStages, optionalReads, externallyDriven, condition, executor
             );
         }
 
-        private Builder use(FrameGraphAccess access, DeferredResource... values) {
+        private Builder use(FrameGraphAccess access, boolean optionalRead, DeferredResource... values) {
             if (values == null) return this;
             for (DeferredResource resource : values) {
                 if (resource == null) continue;
-                resources.merge(resource, access, Builder::mergeAccess);
+                FrameGraphAccess merged = resources.merge(resource, access, Builder::mergeAccess);
+                if (access.reads()) {
+                    if (optionalRead && !requiredReads.contains(resource) && merged == FrameGraphAccess.READ) {
+                        optionalReads.add(resource);
+                    } else {
+                        requiredReads.add(resource);
+                        optionalReads.remove(resource);
+                    }
+                }
+                if (merged.writes()) optionalReads.remove(resource);
             }
             return this;
         }

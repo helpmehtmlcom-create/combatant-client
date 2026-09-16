@@ -20,18 +20,22 @@ import java.util.List;
  */
 public final class OverworldWeatherProvider implements WeatherProvider {
     private static final Identifier ID = DimensionRenderProfileRegistry.OVERWORLD_WEATHER;
-    private static final int GRID = 9;
-    private static final int SPACING = 32;
+    private static final int LOCAL_GRID = 9;
+    private static final int LOCAL_SPACING = 32;
+    private static final int MACRO_GRID = 17;
+    private static final int MACRO_SPACING = 512;
     private static final double PRESSURE_SCALE = 1.0 / 384.0;
     private static final double SECONDARY_SCALE = 1.0 / 1536.0;
     private static final double TICKS_PER_SECOND = 20.0;
 
     private int lastOriginX = Integer.MIN_VALUE;
     private int lastOriginZ = Integer.MIN_VALUE;
-    private int lastY = Integer.MIN_VALUE;
+    private int lastMacroOriginX = Integer.MIN_VALUE;
+    private int lastMacroOriginZ = Integer.MIN_VALUE;
     private long lastWeatherBucket = Long.MIN_VALUE;
     private long revision;
     private WeatherFieldState cachedField = WeatherFieldState.EMPTY;
+    private WeatherFieldState cachedMacroField = WeatherFieldState.EMPTY;
 
     @Override
     public Identifier id() {
@@ -53,56 +57,69 @@ public final class OverworldWeatherProvider implements WeatherProvider {
         float thunder = clamp01(level.getThunderLevel(clamp01(partialTick)));
 
         int centerX = floor(cameraPosition.x);
-        int centerY = floor(cameraPosition.y);
         int centerZ = floor(cameraPosition.z);
-        int originX = floorDiv(centerX, SPACING) * SPACING - (GRID / 2) * SPACING;
-        int originZ = floorDiv(centerZ, SPACING) * SPACING - (GRID / 2) * SPACING;
-        int sampleY = floorDiv(centerY, 16) * 16;
-        long weatherBucket = (long) Math.floor(modelTicks / 20.0); // field evolves at 1 Hz; consumers interpolate spatially.
+        int referenceY = level.getSeaLevel();
+        int originX = floorDiv(centerX, LOCAL_SPACING) * LOCAL_SPACING - (LOCAL_GRID / 2) * LOCAL_SPACING;
+        int originZ = floorDiv(centerZ, LOCAL_SPACING) * LOCAL_SPACING - (LOCAL_GRID / 2) * LOCAL_SPACING;
+        int macroOriginX = floorDiv(centerX, MACRO_SPACING) * MACRO_SPACING - (MACRO_GRID / 2) * MACRO_SPACING;
+        int macroOriginZ = floorDiv(centerZ, MACRO_SPACING) * MACRO_SPACING - (MACRO_GRID / 2) * MACRO_SPACING;
+        long weatherBucket = (long) Math.floor(modelTicks / 20.0);
+        double simulationTicks = weatherBucket * 20.0;
 
-        if (originX != lastOriginX || originZ != lastOriginZ || sampleY != lastY || weatherBucket != lastWeatherBucket) {
-            cachedField = rebuild(level, climate, seed, modelTicks, rain, thunder, originX, originZ, sampleY);
+        if (originX != lastOriginX || originZ != lastOriginZ
+                || macroOriginX != lastMacroOriginX || macroOriginZ != lastMacroOriginZ
+                || weatherBucket != lastWeatherBucket) {
+            cachedField = rebuild(level, seed, simulationTicks, rain, thunder,
+                    originX, originZ, referenceY, LOCAL_GRID, LOCAL_SPACING);
+            cachedMacroField = rebuild(level, seed, simulationTicks, rain, thunder,
+                    macroOriginX, macroOriginZ, referenceY, MACRO_GRID, MACRO_SPACING);
             lastOriginX = originX;
             lastOriginZ = originZ;
-            lastY = sampleY;
+            lastMacroOriginX = macroOriginX;
+            lastMacroOriginZ = macroOriginZ;
             lastWeatherBucket = weatherBucket;
             revision++;
         }
 
-        WeatherSample camera = evaluate(level, climate == null ? null : climate.camera(), seed, modelTicks,
-                rain, thunder, centerX, centerY, centerZ);
-        return new WeatherState(ID, camera, cachedField, rain, thunder, seed, (long) modelTicks, true);
+        BiomeClimateSample cameraClimate = BiomeClimateSampler.sampleAt(level, centerX, referenceY, centerZ);
+        WeatherSample camera = evaluate(level, cameraClimate, seed, simulationTicks,
+                rain, thunder, centerX, referenceY, centerZ);
+        return new WeatherState(ID, camera, cachedField, cachedMacroField, rain, thunder, seed,
+                (long) simulationTicks, modelTicks / TICKS_PER_SECOND, true);
     }
 
     @Override
     public void reset() {
         lastOriginX = Integer.MIN_VALUE;
         lastOriginZ = Integer.MIN_VALUE;
-        lastY = Integer.MIN_VALUE;
+        lastMacroOriginX = Integer.MIN_VALUE;
+        lastMacroOriginZ = Integer.MIN_VALUE;
         lastWeatherBucket = Long.MIN_VALUE;
         revision++;
         cachedField = WeatherFieldState.EMPTY;
+        cachedMacroField = WeatherFieldState.EMPTY;
     }
 
     private WeatherFieldState rebuild(ClientLevel level,
-                                      BiomeClimateState climate,
                                       long seed,
                                       double timeTicks,
                                       float rain,
                                       float thunder,
                                       int originX,
                                       int originZ,
-                                      int sampleY) {
-        List<WeatherSample> samples = new ArrayList<>(GRID * GRID);
-        for (int z = 0; z < GRID; z++) {
-            for (int x = 0; x < GRID; x++) {
-                int wx = originX + x * SPACING;
-                int wz = originZ + z * SPACING;
+                                      int sampleY,
+                                      int gridSize,
+                                      int spacing) {
+        List<WeatherSample> samples = new ArrayList<>(gridSize * gridSize);
+        for (int z = 0; z < gridSize; z++) {
+            for (int x = 0; x < gridSize; x++) {
+                int wx = originX + x * spacing;
+                int wz = originZ + z * spacing;
                 BiomeClimateSample biome = BiomeClimateSampler.sampleAt(level, wx, sampleY, wz);
                 samples.add(evaluate(level, biome, seed, timeTicks, rain, thunder, wx, sampleY, wz));
             }
         }
-        return new WeatherFieldState(samples, GRID, GRID, SPACING, originX, originZ, sampleY, revision + 1L, true);
+        return new WeatherFieldState(samples, gridSize, gridSize, spacing, originX, originZ, sampleY, revision + 1L, true);
     }
 
     private static WeatherSample evaluate(ClientLevel level,

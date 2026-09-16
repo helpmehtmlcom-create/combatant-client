@@ -34,7 +34,7 @@ import net.minecraft.world.phys.Vec3;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Wind-aware temporal resolve and persistent history store for volumetric clouds. */
+/** Independent wind-aware temporal histories for low/mid, high and convective cloud domains. */
 final class DeferredCloudTemporalSource implements AutoCloseable {
     private static final int LOCAL_SIZE = 8;
     private static final Identifier RESOLVE_SHADER = id("deferred/cloud_temporal");
@@ -74,6 +74,25 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
             new ShaderResourceSlot(6, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY)
     ));
 
+    private static final TemporalGroup LOW_MID = new TemporalGroup(
+            "low_mid", DeferredTemporalHistoryId.CLOUDS,
+            DeferredResource.CLOUD_RADIANCE, DeferredResource.CLOUD_DEPTH, DeferredResource.CLOUD_REPROJECTION_DATA,
+            DeferredResource.CLOUD_TEMPORAL_RADIANCE, DeferredResource.CLOUD_TEMPORAL_DEPTH, DeferredResource.CLOUD_TEMPORAL_CONFIDENCE,
+            DeferredResource.HISTORY_CLOUD_RADIANCE, DeferredResource.HISTORY_CLOUD_REPROJECTION_DEPTH, DeferredResource.HISTORY_CLOUD_CONFIDENCE
+    );
+    private static final TemporalGroup HIGH = new TemporalGroup(
+            "high", DeferredTemporalHistoryId.CLOUDS_HIGH,
+            DeferredResource.CLOUD_HIGH_RADIANCE, DeferredResource.CLOUD_HIGH_DEPTH, DeferredResource.CLOUD_HIGH_REPROJECTION_DATA,
+            DeferredResource.CLOUD_HIGH_TEMPORAL_RADIANCE, DeferredResource.CLOUD_HIGH_TEMPORAL_DEPTH, DeferredResource.CLOUD_HIGH_TEMPORAL_CONFIDENCE,
+            DeferredResource.HISTORY_CLOUD_HIGH_RADIANCE, DeferredResource.HISTORY_CLOUD_HIGH_REPROJECTION_DEPTH, DeferredResource.HISTORY_CLOUD_HIGH_CONFIDENCE
+    );
+    private static final TemporalGroup CONVECTIVE = new TemporalGroup(
+            "convective", DeferredTemporalHistoryId.CLOUDS_CONVECTIVE,
+            DeferredResource.CLOUD_CONVECTIVE_RADIANCE, DeferredResource.CLOUD_CONVECTIVE_DEPTH, DeferredResource.CLOUD_CONVECTIVE_REPROJECTION_DATA,
+            DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_RADIANCE, DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_DEPTH, DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_CONFIDENCE,
+            DeferredResource.HISTORY_CLOUD_CONVECTIVE_RADIANCE, DeferredResource.HISTORY_CLOUD_CONVECTIVE_REPROJECTION_DEPTH, DeferredResource.HISTORY_CLOUD_CONVECTIVE_CONFIDENCE
+    );
+
     private final DeferredCloudConfig config = DeferredCloudConfig.current();
     private CombatantRhi owner;
     private RhiComputePipeline resolvePipeline;
@@ -81,37 +100,34 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
     private RhiStorageBuffer data;
 
     void install(ArrayList<DeferredPassSpec> passes) {
-        passes.add(DeferredPassSpec.builder("world.cloud.temporal", DeferredStage.SKY_COMPOSITE)
-                .priority(35)
-                .read(DeferredResource.CLOUD_RADIANCE, DeferredResource.CLOUD_DEPTH, DeferredResource.CLOUD_REPROJECTION_DATA,
-                        DeferredResource.HISTORY_CLOUD_RADIANCE,
-                        DeferredResource.HISTORY_CLOUD_REPROJECTION_DEPTH,
-                        DeferredResource.HISTORY_CLOUD_CONFIDENCE)
-                .write(DeferredResource.CLOUD_TEMPORAL_RADIANCE,
-                        DeferredResource.CLOUD_TEMPORAL_DEPTH,
-                        DeferredResource.CLOUD_TEMPORAL_CONFIDENCE)
+        installGroup(passes, LOW_MID, 35, 40);
+        installGroup(passes, HIGH, 36, 41);
+        installGroup(passes, CONVECTIVE, 37, 42);
+    }
+
+    private void installGroup(ArrayList<DeferredPassSpec> passes, TemporalGroup group, int resolvePriority, int historyPriority) {
+        passes.add(DeferredPassSpec.builder("world.cloud.temporal." + group.name(), DeferredStage.SKY_COMPOSITE)
+                .priority(resolvePriority)
+                .read(group.rawRadiance(), group.rawDepth(), group.reprojection(),
+                        group.historyRadiance(), group.historyDepth(), group.historyConfidence())
+                .write(group.temporalRadiance(), group.temporalDepth(), group.temporalConfidence())
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.isValid(DeferredResource.CLOUD_RADIANCE)
-                        && context.isValid(DeferredResource.CLOUD_DEPTH)
-                        && context.isValid(DeferredResource.CLOUD_REPROJECTION_DATA)
+                .when(context -> context.isValid(group.rawRadiance())
+                        && context.isValid(group.rawDepth())
+                        && context.isValid(group.reprojection())
                         && context.primaryView().current() != null)
-                .execute(this::resolve)
+                .execute(context -> resolve(context, group))
                 .build());
-        passes.add(DeferredPassSpec.builder("world.cloud.history", DeferredStage.SKY_COMPOSITE)
-                .priority(40)
-                .read(DeferredResource.CLOUD_TEMPORAL_RADIANCE,
-                        DeferredResource.CLOUD_TEMPORAL_DEPTH,
-                        DeferredResource.CLOUD_TEMPORAL_CONFIDENCE,
-                        DeferredResource.CLOUD_REPROJECTION_DATA)
-                .write(DeferredResource.HISTORY_CLOUD_RADIANCE,
-                        DeferredResource.HISTORY_CLOUD_REPROJECTION_DEPTH,
-                        DeferredResource.HISTORY_CLOUD_CONFIDENCE)
+        passes.add(DeferredPassSpec.builder("world.cloud.history." + group.name(), DeferredStage.SKY_COMPOSITE)
+                .priority(historyPriority)
+                .read(group.temporalRadiance(), group.temporalDepth(), group.temporalConfidence(), group.reprojection())
+                .write(group.historyRadiance(), group.historyDepth(), group.historyConfidence())
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.isValid(DeferredResource.CLOUD_TEMPORAL_RADIANCE)
-                        && context.isValid(DeferredResource.CLOUD_TEMPORAL_DEPTH)
-                        && context.isValid(DeferredResource.CLOUD_TEMPORAL_CONFIDENCE)
-                        && context.isValid(DeferredResource.CLOUD_REPROJECTION_DATA))
-                .execute(this::storeHistory)
+                .when(context -> context.isValid(group.temporalRadiance())
+                        && context.isValid(group.temporalDepth())
+                        && context.isValid(group.temporalConfidence())
+                        && context.isValid(group.reprojection()))
+                .execute(context -> storeHistory(context, group))
                 .build());
     }
 
@@ -128,39 +144,35 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
         owner = null;
     }
 
-    private void resolve(DeferredPassContext context) {
+    private void resolve(DeferredPassContext context, TemporalGroup group) {
         ensureOwner(context.rhi());
         DeferredPrimaryViewSource.FrameView current = context.primaryView().current();
         DeferredPrimaryViewSource.FrameView previous = context.primaryView().previous();
         if (current == null) return;
 
-        GpuTextureView currentRadiance = requireTexture(context, DeferredResource.CLOUD_RADIANCE);
-        GpuTextureView currentDepth = requireTexture(context, DeferredResource.CLOUD_DEPTH);
-        GpuTextureView currentReprojectionData = requireTexture(context, DeferredResource.CLOUD_REPROJECTION_DATA);
-        DeferredTemporalHistoryDescriptor cloudHistory = context.history(DeferredTemporalHistoryId.CLOUDS);
-        GpuTextureView historyRadiance = context.resources().texture(DeferredResource.HISTORY_CLOUD_RADIANCE);
-        GpuTextureView historyDepth = context.resources().texture(DeferredResource.HISTORY_CLOUD_REPROJECTION_DEPTH);
-        GpuTextureView historyConfidence = context.resources().texture(DeferredResource.HISTORY_CLOUD_CONFIDENCE);
+        GpuTextureView currentRadiance = requireTexture(context, group.rawRadiance());
+        GpuTextureView currentDepth = requireTexture(context, group.rawDepth());
+        GpuTextureView currentReprojectionData = requireTexture(context, group.reprojection());
+        DeferredTemporalHistoryDescriptor cloudHistory = context.history(group.historyId());
+        GpuTextureView historyRadiance = context.resources().texture(group.historyRadiance());
+        GpuTextureView historyDepth = context.resources().texture(group.historyDepth());
+        GpuTextureView historyConfidence = context.resources().texture(group.historyConfidence());
         boolean historyValid = config.temporalEnabled()
                 && cloudHistory.valid()
                 && previous != null
                 && historyRadiance != null
                 && historyDepth != null
                 && historyConfidence != null;
-
         if (!historyValid) {
             historyRadiance = currentRadiance;
             historyDepth = currentDepth;
             historyConfidence = currentDepth;
         }
 
-        RhiStorageImage outputRadiance = requireImage(context, DeferredResource.CLOUD_TEMPORAL_RADIANCE);
-        RhiStorageImage outputDepth = requireImage(context, DeferredResource.CLOUD_TEMPORAL_DEPTH);
-        RhiStorageImage outputConfidence = requireImage(context, DeferredResource.CLOUD_TEMPORAL_CONFIDENCE);
-
-        Vec3 cameraDelta = previous == null
-                ? Vec3.ZERO
-                : current.cameraPosition().subtract(previous.cameraPosition());
+        RhiStorageImage outputRadiance = requireImage(context, group.temporalRadiance());
+        RhiStorageImage outputDepth = requireImage(context, group.temporalDepth());
+        RhiStorageImage outputConfidence = requireImage(context, group.temporalConfidence());
+        Vec3 cameraDelta = previous == null ? Vec3.ZERO : current.cameraPosition().subtract(previous.cameraPosition());
         float deltaSeconds = Math.max(0.0f, Math.min(context.frame().frameDeltaSeconds(), 0.25f));
 
         Std430Writer writer = new Std430Writer(DATA_LAYOUT, 1)
@@ -170,11 +182,8 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
                 .putMat4(0, "previousProjection", previous == null ? current.projection() : previous.projection())
                 .putVec4(0, "cameraDelta", (float) cameraDelta.x, (float) cameraDelta.y, (float) cameraDelta.z, 0.0f)
                 .putVec4(0, "timing", deltaSeconds, 0.0f, 0.0f, 0.0f)
-                .putVec4(0, "policy",
-                        isVulkan(context) ? 1.0f : 0.0f,
-                        historyValid ? 1.0f : 0.0f,
-                        config.temporalHistoryWeight(),
-                        config.temporalDepthThresholdFraction())
+                .putVec4(0, "policy", isVulkan(context) ? 1.0f : 0.0f, historyValid ? 1.0f : 0.0f,
+                        config.temporalHistoryWeight(), config.temporalDepthThresholdFraction())
                 .putVec4(0, "thresholds", config.temporalMinDepthThresholdBlocks(), 0.20f, 0.10f, 0.04f);
         RhiStorageBuffer buffer = data();
         buffer.upload(writer.buffer(), 0L);
@@ -182,7 +191,7 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
         GpuSampler linear = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
         GpuSampler nearest = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
         context.advancedShaders().dispatch(new ComputeDispatchCommand(
-                "Combatant cloud temporal resolve", resolvePipeline(),
+                "Combatant cloud temporal resolve " + group.name(), resolvePipeline(),
                 groups(outputRadiance.descriptor().width()), groups(outputRadiance.descriptor().height()), 1,
                 List.of(new StorageBinding(9, buffer, 0L, writer.byteSize(), StorageAccess.READ_ONLY)),
                 List.of(
@@ -201,19 +210,19 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
         ));
     }
 
-    private void storeHistory(DeferredPassContext context) {
+    private void storeHistory(DeferredPassContext context, TemporalGroup group) {
         ensureOwner(context.rhi());
-        GpuTextureView radiance = requireTexture(context, DeferredResource.CLOUD_TEMPORAL_RADIANCE);
-        GpuTextureView depth = requireTexture(context, DeferredResource.CLOUD_TEMPORAL_DEPTH);
-        GpuTextureView confidence = requireTexture(context, DeferredResource.CLOUD_TEMPORAL_CONFIDENCE);
-        GpuTextureView reprojectionData = requireTexture(context, DeferredResource.CLOUD_REPROJECTION_DATA);
-        RhiStorageImage historyRadiance = requireImage(context, DeferredResource.HISTORY_CLOUD_RADIANCE);
-        RhiStorageImage historyDepth = requireImage(context, DeferredResource.HISTORY_CLOUD_REPROJECTION_DEPTH);
-        RhiStorageImage historyConfidence = requireImage(context, DeferredResource.HISTORY_CLOUD_CONFIDENCE);
+        GpuTextureView radiance = requireTexture(context, group.temporalRadiance());
+        GpuTextureView depth = requireTexture(context, group.temporalDepth());
+        GpuTextureView confidence = requireTexture(context, group.temporalConfidence());
+        GpuTextureView reprojectionData = requireTexture(context, group.reprojection());
+        RhiStorageImage historyRadiance = requireImage(context, group.historyRadiance());
+        RhiStorageImage historyDepth = requireImage(context, group.historyDepth());
+        RhiStorageImage historyConfidence = requireImage(context, group.historyConfidence());
         GpuSampler nearest = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
         GpuSampler linear = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
         context.advancedShaders().dispatch(new ComputeDispatchCommand(
-                "Combatant cloud history store", historyPipeline(),
+                "Combatant cloud history store " + group.name(), historyPipeline(),
                 groups(historyRadiance.descriptor().width()), groups(historyRadiance.descriptor().height()), 1,
                 List.of(),
                 List.of(
@@ -228,7 +237,7 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
                         new StorageImageBinding(6, historyConfidence, StorageAccess.WRITE_ONLY)
                 )
         ));
-        context.temporalHistory().commit(DeferredTemporalHistoryId.CLOUDS);
+        context.temporalHistory().commit(group.historyId());
     }
 
     private void ensureOwner(CombatantRhi rhi) {
@@ -238,7 +247,6 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
     }
 
     private RhiComputePipeline resolvePipeline() {
-        if (owner == null) throw new IllegalStateException("Cloud temporal source has no RHI owner");
         if (resolvePipeline == null) resolvePipeline = owner.advancedShaders().createComputePipeline(
                 new ComputePipelineDescriptor("combatant-cloud-temporal", RESOLVE_SHADER, RESOLVE_LAYOUT)
         );
@@ -246,7 +254,6 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
     }
 
     private RhiComputePipeline historyPipeline() {
-        if (owner == null) throw new IllegalStateException("Cloud temporal source has no RHI owner");
         if (historyPipeline == null) historyPipeline = owner.advancedShaders().createComputePipeline(
                 new ComputePipelineDescriptor("combatant-cloud-history-store", HISTORY_SHADER, HISTORY_LAYOUT)
         );
@@ -254,7 +261,6 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
     }
 
     private RhiStorageBuffer data() {
-        if (owner == null) throw new IllegalStateException("Cloud temporal source has no RHI owner");
         if (data == null) data = owner.advancedShaders().createStorageBuffer(new StorageBufferDescriptor(
                 "combatant-cloud-temporal-data", DATA_LAYOUT, 1, StorageAccess.READ_ONLY, false
         ));
@@ -301,5 +307,20 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
 
     private static Identifier id(String path) {
         return Identifier.fromNamespaceAndPath("combatant", path);
+    }
+
+    private record TemporalGroup(
+            String name,
+            DeferredTemporalHistoryId historyId,
+            DeferredResource rawRadiance,
+            DeferredResource rawDepth,
+            DeferredResource reprojection,
+            DeferredResource temporalRadiance,
+            DeferredResource temporalDepth,
+            DeferredResource temporalConfidence,
+            DeferredResource historyRadiance,
+            DeferredResource historyDepth,
+            DeferredResource historyConfidence
+    ) {
     }
 }

@@ -14,8 +14,13 @@ record DeferredCloudConfig(
         int lightSteps,
         int multiScatteringOrders,
         float maxPrimaryStepBlocks,
-        int maxLayers,
+        int maxDomains,
         int maxWeatherSamples,
+        int maxMacroWeatherSamples,
+        int occupancyWidth,
+        int occupancyHeight,
+        int occupancyDepth,
+        int occupancyMipLevels,
         boolean temporalEnabled,
         float temporalHistoryWeight,
         float temporalDepthThresholdFraction,
@@ -26,7 +31,8 @@ record DeferredCloudConfig(
         int shadowAltitudeSlices
 ) {
     private static final DeferredCloudConfig DEFAULT = new DeferredCloudConfig(
-            true, 0.5f, 48, 4, 3, 8.0f, 8, 256,
+            true, 0.5f, 48, 4, 3, 8.0f, 8, 256, 512,
+            64, 32, 64, 7,
             true, 0.92f, 0.08f, 12.0f,
             256, 2048.0f, 56, 8
     );
@@ -37,8 +43,14 @@ record DeferredCloudConfig(
         lightSteps = clamp(lightSteps, 0, 8);
         multiScatteringOrders = clamp(multiScatteringOrders, 1, 4);
         maxPrimaryStepBlocks = clamp(maxPrimaryStepBlocks, 0.5f, 64.0f);
-        maxLayers = clamp(maxLayers, 1, 8);
+        maxDomains = clamp(maxDomains, 1, 8);
         maxWeatherSamples = clamp(maxWeatherSamples, 4, 1024);
+        maxMacroWeatherSamples = clamp(maxMacroWeatherSamples, 4, 2048);
+        occupancyWidth = clamp(occupancyWidth, 16, 128);
+        occupancyHeight = clamp(occupancyHeight, 8, 96);
+        occupancyDepth = clamp(occupancyDepth, 16, 128);
+        int maximumOccupancyMips = 32 - Integer.numberOfLeadingZeros(Math.max(occupancyWidth, Math.max(occupancyHeight, occupancyDepth)));
+        occupancyMipLevels = clamp(occupancyMipLevels, 1, maximumOccupancyMips);
         temporalHistoryWeight = clamp(temporalHistoryWeight, 0.0f, 0.98f);
         temporalDepthThresholdFraction = clamp(temporalDepthThresholdFraction, 0.001f, 0.5f);
         temporalMinDepthThresholdBlocks = clamp(temporalMinDepthThresholdBlocks, 0.25f, 256.0f);

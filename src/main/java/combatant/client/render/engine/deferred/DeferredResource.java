@@ -145,6 +145,43 @@ public enum DeferredResource {
             DeferredTextureSpec.compute(GpuFormat.R32_FLOAT, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
     HISTORY_CLOUD_CONFIDENCE(FrameGraphResourceKey.persistentTexture("world.history.cloud_confidence"),
             DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
+    CLOUD_HIGH_RADIANCE(FrameGraphResourceKey.transientTexture("world.cloud.high.radiance"),
+            DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
+    CLOUD_HIGH_DEPTH(FrameGraphResourceKey.transientTexture("world.cloud.high.depth"),
+            DeferredTextureSpec.compute(GpuFormat.R32_FLOAT, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
+    CLOUD_HIGH_REPROJECTION_DATA(FrameGraphResourceKey.transientTexture("world.cloud.high.reprojection_data"),
+            DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
+    CLOUD_HIGH_TEMPORAL_RADIANCE(FrameGraphResourceKey.transientTexture("world.cloud.high.temporal_radiance"),
+            DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
+    CLOUD_HIGH_TEMPORAL_DEPTH(FrameGraphResourceKey.transientTexture("world.cloud.high.temporal_depth"),
+            DeferredTextureSpec.compute(GpuFormat.R32_FLOAT, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
+    CLOUD_HIGH_TEMPORAL_CONFIDENCE(FrameGraphResourceKey.transientTexture("world.cloud.high.temporal_confidence"),
+            DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
+    HISTORY_CLOUD_HIGH_RADIANCE(FrameGraphResourceKey.persistentTexture("world.history.cloud_high_radiance"),
+            DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
+    HISTORY_CLOUD_HIGH_REPROJECTION_DEPTH(FrameGraphResourceKey.persistentTexture("world.history.cloud_high_reprojection_depth"),
+            DeferredTextureSpec.compute(GpuFormat.R32_FLOAT, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
+    HISTORY_CLOUD_HIGH_CONFIDENCE(FrameGraphResourceKey.persistentTexture("world.history.cloud_high_confidence"),
+            DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
+    CLOUD_CONVECTIVE_RADIANCE(FrameGraphResourceKey.transientTexture("world.cloud.convective.radiance"),
+            DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
+    CLOUD_CONVECTIVE_DEPTH(FrameGraphResourceKey.transientTexture("world.cloud.convective.depth"),
+            DeferredTextureSpec.compute(GpuFormat.R32_FLOAT, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
+    CLOUD_CONVECTIVE_REPROJECTION_DATA(FrameGraphResourceKey.transientTexture("world.cloud.convective.reprojection_data"),
+            DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
+    CLOUD_CONVECTIVE_TEMPORAL_RADIANCE(FrameGraphResourceKey.transientTexture("world.cloud.convective.temporal_radiance"),
+            DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
+    CLOUD_CONVECTIVE_TEMPORAL_DEPTH(FrameGraphResourceKey.transientTexture("world.cloud.convective.temporal_depth"),
+            DeferredTextureSpec.compute(GpuFormat.R32_FLOAT, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
+    CLOUD_CONVECTIVE_TEMPORAL_CONFIDENCE(FrameGraphResourceKey.transientTexture("world.cloud.convective.temporal_confidence"),
+            DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
+    HISTORY_CLOUD_CONVECTIVE_RADIANCE(FrameGraphResourceKey.persistentTexture("world.history.cloud_convective_radiance"),
+            DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
+    HISTORY_CLOUD_CONVECTIVE_REPROJECTION_DEPTH(FrameGraphResourceKey.persistentTexture("world.history.cloud_convective_reprojection_depth"),
+            DeferredTextureSpec.compute(GpuFormat.R32_FLOAT, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
+    HISTORY_CLOUD_CONVECTIVE_CONFIDENCE(FrameGraphResourceKey.persistentTexture("world.history.cloud_convective_confidence"),
+            DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.CLOUD_RENDER, false)),
+    CLOUD_OCCUPANCY(FrameGraphResourceKey.transientVolume("world.cloud.occupancy"), null),
     CLOUD_SHADOW_MAP(FrameGraphResourceKey.transientTexture("world.cloud.shadow_map"),
             DeferredTextureSpec.fixedCompute(GpuFormat.R32_FLOAT,
                     DeferredCloudConfig.current().shadowMapResolution(),
@@ -190,22 +227,22 @@ public enum DeferredResource {
             DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.REFLECTION_OUTPUT, false)),
     REFLECTION_CONFIDENCE(FrameGraphResourceKey.transientTexture("world.reflection.confidence"),
             DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.REFLECTION_OUTPUT, false)),
-    /** Raw dedicated water SSR radiance before temporal reconstruction/fallback composition. */
+    /** Raw dedicated water SSR radiance traced from the actual deformed forward surface. */
     WATER_REFLECTION_TRACE_COLOR(FrameGraphResourceKey.transientTexture("world.water.reflection.trace_color"),
             DeferredTextureSpec.computeAttachment(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.FULL)),
-    /** Raw dedicated water SSR confidence; zero is an explicit screen-space miss. */
+    /** Confidence of the raw water SSR hit. */
     WATER_REFLECTION_TRACE_CONFIDENCE(FrameGraphResourceKey.transientTexture("world.water.reflection.trace_confidence"),
             DeferredTextureSpec.computeAttachment(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.FULL)),
-    /** xy previous UV, z explicit water motion validity, w current water coverage. */
+    /** Previous-UV and deformation-motion validity emitted by the water trace pass. */
     WATER_REFLECTION_REPROJECTION(FrameGraphResourceKey.transientTexture("world.water.reflection.reprojection"),
             DeferredTextureSpec.computeAttachment(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.FULL)),
-    /** xy oct-encoded deformed normal, z roughness, w explicit water coverage. */
+    /** Encoded deformed source normal and roughness used by temporal/spatial validation. */
     WATER_REFLECTION_GEOMETRY(FrameGraphResourceKey.transientTexture("world.water.reflection.geometry"),
             DeferredTextureSpec.computeAttachment(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.FULL)),
-    /** x/y current/expected-previous source depth, z/w current/expected-previous SSR hit depth. */
+    /** Current/previous source depth and current/previous reflected-hit depth. */
     WATER_REFLECTION_DEPTHS(FrameGraphResourceKey.transientTexture("world.water.reflection.depths"),
             DeferredTextureSpec.computeAttachment(GpuFormat.RGBA32_FLOAT, DeferredTextureSpec.ResolutionClass.FULL)),
-    /** Current-frame off-screen cascade fallback evaluated from the water reflection ray. */
+    /** Water-specific reflection-cascade fallback sampled using the water reflection ray. */
     WATER_REFLECTION_CASCADE_COLOR(FrameGraphResourceKey.transientTexture("world.water.reflection.cascade_color"),
             DeferredTextureSpec.computeAttachment(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.FULL)),
     WATER_REFLECTION_CASCADE_CONFIDENCE(FrameGraphResourceKey.transientTexture("world.water.reflection.cascade_confidence"),
@@ -291,11 +328,11 @@ public enum DeferredResource {
     EXPOSURE(FrameGraphResourceKey.persistentBuffer("world.exposure"), null);
 
     private final FrameGraphResourceKey key;
-    private final DeferredTextureSpec textureSpec;
+    private final DeferredPhysicalResourceSpec physicalSpec;
 
-    DeferredResource(FrameGraphResourceKey key, DeferredTextureSpec textureSpec) {
+    DeferredResource(FrameGraphResourceKey key, DeferredPhysicalResourceSpec physicalSpec) {
         this.key = key;
-        this.textureSpec = textureSpec;
+        this.physicalSpec = physicalSpec;
     }
 
     public FrameGraphResourceKey key() {
@@ -303,6 +340,24 @@ public enum DeferredResource {
     }
 
     public DeferredTextureSpec textureSpec() {
-        return textureSpec;
+        return physicalSpec instanceof DeferredTextureSpec texture ? texture : null;
+    }
+
+    public DeferredPhysicalResourceSpec physicalSpec() {
+        return physicalSpec;
+    }
+
+    /**
+     * True when this deferred resource is physically owned by the generic frame-graph pool.
+     * The current terrain G-buffer remains a legacy raster-target path because its MSAA resolve
+     * contract still requires RenderTarget wrappers; it is bound explicitly and never duplicated
+     * by the graph allocator.
+     */
+    public boolean graphManagedPhysicalResource() {
+        if (physicalSpec == null) return false;
+        return switch (this) {
+            case GBUFFER_SURFACE, GBUFFER_GEOMETRY, GBUFFER_AUXILIARY, GBUFFER_MATERIAL, GBUFFER_MATERIAL_ID -> false;
+            default -> true;
+        };
     }
 }

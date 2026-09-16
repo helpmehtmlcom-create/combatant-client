@@ -163,7 +163,11 @@ public final class DeferredTemporalHistoryRegistry {
         if (definition.previousResources.isEmpty()) return false;
         for (DeferredResource resource : definition.previousResources) {
             if (!bound.isBound(resource)) bound.bindExisting(resource, settings);
-            if (!bound.isValid(resource) || bound.texture(resource) == null) return false;
+            if (!bound.isValid(resource)) return false;
+            boolean physicalPresent = bound.texture(resource) != null
+                    || bound.buffer(resource) != null
+                    || bound.storageVolume(resource) != null;
+            if (!physicalPresent) return false;
         }
         return true;
     }
@@ -176,11 +180,16 @@ public final class DeferredTemporalHistoryRegistry {
         if (representative == null) return new Shape(0, 0, "unknown");
 
         GpuTextureView view = bound == null ? null : bound.texture(representative);
-        int width = view == null ? 0 : view.getWidth(0);
-        int height = view == null ? 0 : view.getHeight(0);
-        DeferredTextureSpec spec = representative.textureSpec();
-        String format = spec == null || spec.format() == null ? "external" : spec.format().toString();
-        return new Shape(width, height, format);
+        if (view != null) {
+            int width = view.getWidth(0);
+            int height = view.getHeight(0);
+            DeferredTextureSpec spec = representative.textureSpec();
+            String format = spec == null || spec.format() == null ? "external" : spec.format().toString();
+            return new Shape(width, height, format);
+        }
+        if (bound != null && bound.buffer(representative) != null) return new Shape(0, 0, "buffer");
+        if (bound != null && bound.storageVolume(representative) != null) return new Shape(0, 0, "volume");
+        return new Shape(0, 0, "unknown");
     }
 
     private DeferredTemporalHistoryDescriptor unavailable(DeferredTemporalHistoryId id) {
@@ -217,21 +226,6 @@ public final class DeferredTemporalHistoryRegistry {
                 DeferredHistoryStorageMode.STORE_AFTER_CONSUME
         ));
         register(new Definition(
-                DeferredTemporalHistoryId.WATER_REFLECTIONS,
-                List.of(DeferredResource.WATER_REFLECTION_FILTERED_COLOR,
-                        DeferredResource.WATER_REFLECTION_FILTERED_CONFIDENCE,
-                        DeferredResource.WATER_REFLECTION_REPROJECTION,
-                        DeferredResource.WATER_REFLECTION_GEOMETRY,
-                        DeferredResource.WATER_REFLECTION_DEPTHS),
-                List.of(DeferredResource.HISTORY_WATER_REFLECTION,
-                        DeferredResource.HISTORY_WATER_REFLECTION_CONFIDENCE,
-                        DeferredResource.HISTORY_WATER_REFLECTION_SOURCE_DEPTH,
-                        DeferredResource.HISTORY_WATER_REFLECTION_HIT_DEPTH),
-                DeferredResource.HISTORY_WATER_REFLECTION_CONFIDENCE,
-                1, DeferredHistoryProducer.WATER, "world.water.reflection.history",
-                DeferredHistoryStorageMode.STORE_AFTER_CONSUME
-        ));
-        register(new Definition(
                 DeferredTemporalHistoryId.CLOUDS,
                 List.of(DeferredResource.CLOUD_TEMPORAL_RADIANCE, DeferredResource.CLOUD_TEMPORAL_DEPTH,
                         DeferredResource.CLOUD_TEMPORAL_CONFIDENCE),
@@ -240,6 +234,48 @@ public final class DeferredTemporalHistoryRegistry {
                         DeferredResource.HISTORY_CLOUD_CONFIDENCE),
                 DeferredResource.HISTORY_CLOUD_CONFIDENCE,
                 1, DeferredHistoryProducer.CLOUDS, "world.cloud.history",
+                DeferredHistoryStorageMode.STORE_AFTER_CONSUME
+        ));
+        register(new Definition(
+                DeferredTemporalHistoryId.CLOUDS_HIGH,
+                List.of(DeferredResource.CLOUD_HIGH_TEMPORAL_RADIANCE, DeferredResource.CLOUD_HIGH_TEMPORAL_DEPTH,
+                        DeferredResource.CLOUD_HIGH_TEMPORAL_CONFIDENCE),
+                List.of(DeferredResource.HISTORY_CLOUD_HIGH_RADIANCE,
+                        DeferredResource.HISTORY_CLOUD_HIGH_REPROJECTION_DEPTH,
+                        DeferredResource.HISTORY_CLOUD_HIGH_CONFIDENCE),
+                DeferredResource.HISTORY_CLOUD_HIGH_CONFIDENCE,
+                1, DeferredHistoryProducer.CLOUDS, "world.cloud.high.history",
+                DeferredHistoryStorageMode.STORE_AFTER_CONSUME
+        ));
+        register(new Definition(
+                DeferredTemporalHistoryId.CLOUDS_CONVECTIVE,
+                List.of(DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_RADIANCE, DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_DEPTH,
+                        DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_CONFIDENCE),
+                List.of(DeferredResource.HISTORY_CLOUD_CONVECTIVE_RADIANCE,
+                        DeferredResource.HISTORY_CLOUD_CONVECTIVE_REPROJECTION_DEPTH,
+                        DeferredResource.HISTORY_CLOUD_CONVECTIVE_CONFIDENCE),
+                DeferredResource.HISTORY_CLOUD_CONVECTIVE_CONFIDENCE,
+                1, DeferredHistoryProducer.CLOUDS, "world.cloud.convective.history",
+                DeferredHistoryStorageMode.STORE_AFTER_CONSUME
+        ));
+        register(new Definition(
+                DeferredTemporalHistoryId.EXPOSURE,
+                List.of(DeferredResource.EXPOSURE),
+                List.of(DeferredResource.EXPOSURE),
+                null, 1, DeferredHistoryProducer.EXPOSURE, "world.post.exposure",
+                DeferredHistoryStorageMode.IN_PLACE
+        ));
+        register(new Definition(
+                DeferredTemporalHistoryId.WATER_REFLECTIONS,
+                List.of(DeferredResource.WATER_REFLECTION_FILTERED_COLOR,
+                        DeferredResource.WATER_REFLECTION_FILTERED_CONFIDENCE,
+                        DeferredResource.WATER_REFLECTION_DEPTHS),
+                List.of(DeferredResource.HISTORY_WATER_REFLECTION,
+                        DeferredResource.HISTORY_WATER_REFLECTION_CONFIDENCE,
+                        DeferredResource.HISTORY_WATER_REFLECTION_SOURCE_DEPTH,
+                        DeferredResource.HISTORY_WATER_REFLECTION_HIT_DEPTH),
+                DeferredResource.HISTORY_WATER_REFLECTION_CONFIDENCE,
+                1, DeferredHistoryProducer.WATER, "world.water.reflection.history",
                 DeferredHistoryStorageMode.STORE_AFTER_CONSUME
         ));
         register(new Definition(

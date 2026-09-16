@@ -8,38 +8,58 @@
 package combatant.client.render.engine.deferred;
 
 import com.mojang.blaze3d.textures.GpuTextureView;
+import combatant.client.render.engine.framegraph.FrameGraphAccess;
+import combatant.client.render.engine.framegraph.FrameGraphPhysicalPlan;
 import combatant.client.render.engine.framegraph.FrameGraphResourceKind;
 import combatant.client.render.engine.framegraph.FrameGraphResourceLifetime;
 import combatant.client.render.engine.rhi.CombatantRhi;
+import combatant.client.render.engine.rhi.resource.FrameGraphPhysicalResource;
+import combatant.client.render.engine.rhi.resource.FrameGraphPhysicalResourcePool;
+import combatant.client.render.engine.rhi.shader.RhiResourceBarrier;
 import combatant.client.render.engine.rhi.shader.RhiStorageBuffer;
 import combatant.client.render.engine.rhi.shader.RhiStorageImage;
 import combatant.client.render.engine.rhi.shader.RhiStorageVolume;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.EnumMap;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
-/** Non-owning bindings of logical graph resources to current-frame RHI objects. */
+/**
+ * Non-owning logical bindings for deferred resources.
+ *
+ * <p>Explicit maps contain true external targets and the small set of legacy source-owned
+ * resources. Graph-managed resources resolve directly through {@link FrameGraphPhysicalResourcePool};
+ * consumers never observe physical allocation IDs.</p>
+ */
 public final class DeferredResourceBindings {
     private final EnumMap<DeferredResource, GpuTextureView> textures = new EnumMap<>(DeferredResource.class);
     private final EnumMap<DeferredResource, RhiStorageBuffer> buffers = new EnumMap<>(DeferredResource.class);
     private final EnumMap<DeferredResource, RhiStorageImage> images = new EnumMap<>(DeferredResource.class);
     private final EnumMap<DeferredResource, RhiStorageVolume> volumes = new EnumMap<>(DeferredResource.class);
-    private final EnumMap<DeferredResource, DeferredResourceAllocator.Allocation> owned =
-            new EnumMap<>(DeferredResource.class);
-    private final DeferredResourceAllocator allocator;
+    private final Map<Integer, AliasState> activeAliases = new HashMap<>();
+    private final EnumSet<DeferredResource> graphAccessedThisFrame = EnumSet.noneOf(DeferredResource.class);
+
+    private @Nullable Object graphScope;
+    private @Nullable CombatantRhi graphOwner;
+    private FrameGraphPhysicalPlan graphPlan = FrameGraphPhysicalPlan.EMPTY;
     private long frameId = Long.MIN_VALUE;
     private long historyEpoch = Long.MIN_VALUE;
     private int outputWidth;
     private int outputHeight;
 
-    public DeferredResourceBindings(DeferredResourceAllocator allocator) {
-        if (allocator == null) throw new IllegalArgumentException("allocator");
-        this.allocator = allocator;
+    public DeferredResourceBindings() {
     }
 
-    /** Standalone bindings are useful for graph validation/tests and never allocate implicitly. */
-    public DeferredResourceBindings() {
-        this.allocator = null;
+    /**
+     * Source-compatibility constructor. DeferredResourceAllocator no longer owns production
+     * resources; passing one here has no ownership effect.
+     */
+    @Deprecated(forRemoval = true)
+    public DeferredResourceBindings(DeferredResourceAllocator ignored) {
+        if (ignored == null) throw new IllegalArgumentException("allocator");
     }
 
     public void beginFrame(long frameId) {
@@ -50,11 +70,12 @@ public final class DeferredResourceBindings {
         if (this.frameId == frameId && this.historyEpoch == historyEpoch) return;
         this.frameId = frameId;
         this.historyEpoch = historyEpoch;
-        if (allocator != null) allocator.beginFrame(frameId);
+        activeAliases.clear();
+        graphAccessedThisFrame.clear();
         clearBindings();
     }
 
-    /** Synchronizes persistent-resource validity after a mid-frame history invalidation. */
+    /** Temporal history semantics are tracked by DeferredTemporalHistoryRegistry, not allocation existence. */
     public void setHistoryEpoch(long historyEpoch) {
         if (this.historyEpoch == historyEpoch) return;
         this.historyEpoch = historyEpoch;
@@ -64,17 +85,17 @@ public final class DeferredResourceBindings {
             buffers.remove(resource);
             images.remove(resource);
             volumes.remove(resource);
-            owned.remove(resource);
         }
     }
 
-    /** Drops every non-owning logical binding after runtime/device/world teardown. */
+    /** Drops every non-owning binding after runtime/device/world teardown. */
     public void reset() {
         frameId = Long.MIN_VALUE;
         historyEpoch = Long.MIN_VALUE;
         outputWidth = 0;
         outputHeight = 0;
         clearBindings();
+        detachFrameGraph();
     }
 
     /** Output extent used by OUTPUT-resolution temporal/post resources. */
@@ -83,16 +104,34 @@ public final class DeferredResourceBindings {
         outputHeight = Math.max(0, height);
     }
 
+    void attachFrameGraph(Object scope, CombatantRhi owner, FrameGraphPhysicalPlan plan) {
+        if (scope == null) throw new IllegalArgumentException("scope");
+        if (owner == null) throw new IllegalArgumentException("owner");
+        if (plan == null) throw new IllegalArgumentException("plan");
+        if (graphScope != scope || graphOwner != owner || graphPlan != plan) activeAliases.clear();
+        graphScope = scope;
+        graphOwner = owner;
+        graphPlan = plan;
+    }
+
+    void detachFrameGraph() {
+        graphScope = null;
+        graphOwner = null;
+        graphPlan = FrameGraphPhysicalPlan.EMPTY;
+        activeAliases.clear();
+        graphAccessedThisFrame.clear();
+    }
+
     private void clearBindings() {
         textures.clear();
         buffers.clear();
         images.clear();
         volumes.clear();
-        owned.clear();
     }
 
     public void bindTexture(DeferredResource resource, @Nullable GpuTextureView view) {
         requireTextureResource(resource);
+        rejectDuplicateGraphOwnership(resource, view);
         if (view == null) textures.remove(resource); else textures.put(resource, view);
     }
 
@@ -100,11 +139,13 @@ public final class DeferredResourceBindings {
         if (resource == null || resource.key().kind() != FrameGraphResourceKind.BUFFER) {
             throw new IllegalArgumentException("Not a buffer resource: " + resource);
         }
+        rejectDuplicateGraphOwnership(resource, buffer);
         if (buffer == null) buffers.remove(resource); else buffers.put(resource, buffer);
     }
 
     public void bindStorageImage(DeferredResource resource, @Nullable RhiStorageImage image) {
         requireTextureResource(resource);
+        rejectDuplicateGraphOwnership(resource, image);
         if (image == null) {
             images.remove(resource);
         } else {
@@ -115,137 +156,146 @@ public final class DeferredResourceBindings {
 
     public void bindStorageVolume(DeferredResource resource, @Nullable RhiStorageVolume volume) {
         requireVolumeResource(resource);
+        rejectDuplicateGraphOwnership(resource, volume);
         if (volume == null) volumes.remove(resource); else volumes.put(resource, volume);
     }
 
     public @Nullable GpuTextureView texture(DeferredResource resource) {
+        GpuTextureView explicit = textures.get(resource);
+        if (explicit != null) return explicit;
+        FrameGraphPhysicalResource physical = graphPhysical(resource);
+        if (physical == null || physical.descriptor().kind() != FrameGraphResourceKind.TEXTURE) return null;
+        return physical.textureView();
+    }
+
+    /** Explicit external/legacy texture only; descriptor planning must not depend on a graph allocation. */
+    @Nullable GpuTextureView explicitTexture(DeferredResource resource) {
         return textures.get(resource);
     }
 
     public @Nullable RhiStorageBuffer buffer(DeferredResource resource) {
-        return buffers.get(resource);
+        RhiStorageBuffer explicit = buffers.get(resource);
+        if (explicit != null) return explicit;
+        FrameGraphPhysicalResource physical = graphPhysical(resource);
+        return physical == null ? null : physical.storageBuffer();
     }
 
     public @Nullable RhiStorageImage storageImage(DeferredResource resource) {
-        return images.get(resource);
+        RhiStorageImage explicit = images.get(resource);
+        if (explicit != null) return explicit;
+        FrameGraphPhysicalResource physical = graphPhysical(resource);
+        return physical == null ? null : physical.storageImage();
     }
 
     public @Nullable RhiStorageVolume storageVolume(DeferredResource resource) {
-        return volumes.get(resource);
+        RhiStorageVolume explicit = volumes.get(resource);
+        if (explicit != null) return explicit;
+        FrameGraphPhysicalResource physical = graphPhysical(resource);
+        return physical == null ? null : physical.storageVolume();
     }
 
     public boolean isBound(DeferredResource resource) {
+        if (resource == null) return false;
+        return textures.containsKey(resource) || buffers.containsKey(resource)
+                || images.containsKey(resource) || volumes.containsKey(resource)
+                || graphPhysical(resource) != null;
+    }
+
+    /**
+     * Logical validity means a producer has made this logical identity available. Merely having a
+     * reusable GPU allocation is insufficient, which is essential when transient aliases reuse it.
+     */
+    public boolean isValid(DeferredResource resource) {
+        if (resource == null) return false;
+        FrameGraphPhysicalPlan.LogicalResourcePlan logical = graphLogical(resource);
+        if (logical != null && logical.physicalAllocationId() >= 0) {
+            FrameGraphPhysicalResourcePool pool = graphPool();
+            return pool != null && pool.valid(graphScope, resource.key());
+        }
         return textures.containsKey(resource) || buffers.containsKey(resource)
                 || images.containsKey(resource) || volumes.containsKey(resource);
     }
 
-    /** True when the resource contains defined data for this frame/history generation. */
-    public boolean isValid(DeferredResource resource) {
-        DeferredResourceAllocator.Allocation allocation = owned.get(resource);
-        if (allocation != null) return allocationValid(resource, allocation);
-        if (allocator != null) {
-            DeferredResourceAllocator.Allocation persistent = allocator.current(resource);
-            if (persistent != null) return allocationValid(resource, persistent);
-        }
-        return isBound(resource);
-    }
-
-    /**
-     * Rebinds an already-owned allocation without creating it. This is primarily used for
-     * persistent history resources after beginFrame() clears the frame-local logical bindings.
-     */
+    /** Graph persistent resources remain physically bound across frames without lazy re-allocation. */
     public boolean bindExisting(DeferredResource resource) {
         return bindExisting(resource, DeferredRuntimeConfig.current());
     }
 
-    /**
-     * Rebinds persistent history only when its physical shape still matches the current frame
-     * policy. A runtime quality change therefore invalidates history rather than exposing a stale
-     * allocation with the old scale/mip contract to a temporal consumer.
-     */
     public boolean bindExisting(DeferredResource resource, DeferredRuntimeConfig.Snapshot settings) {
-        if (isBound(resource)) return isValid(resource);
-        if (allocator == null) return false;
-        DeferredResourceAllocator.Allocation allocation = allocator.current(resource);
-        if (allocation == null || !matchesCurrentPolicy(resource, allocation, settings)
-                || !allocationValid(resource, allocation)) return false;
-        owned.put(resource, allocation);
-        bindTexture(resource, allocation.view());
-        bindStorageImage(resource, allocation.storageImage());
-        return allocation.valid();
+        if (resource == null) return false;
+        if (graphLogical(resource) != null) return isBound(resource) && isValid(resource);
+        return isBound(resource) && isValid(resource);
     }
 
+    /** Called only after a producer completed successfully. */
     public void markWritten(DeferredResource resource) {
-        DeferredResourceAllocator.Allocation allocation = owned.get(resource);
-        if (allocation == null) return;
-        if (resource.key().lifetime() == FrameGraphResourceLifetime.PERSISTENT) {
-            allocation.markValid(historyEpoch);
-        } else {
-            allocation.markValid();
+        FrameGraphPhysicalPlan.LogicalResourcePlan logical = graphLogical(resource);
+        if (resource == null || logical == null || logical.physicalAllocationId() < 0) return;
+        FrameGraphPhysicalResourcePool pool = graphPool();
+        if (pool == null || graphScope == null) {
+            throw new IllegalStateException("Deferred frame-graph resource is not attached: " + resource);
         }
+        pool.markProduced(graphScope, resource.key());
     }
 
+    /**
+     * Compatibility name retained for pass sources. This no longer allocates anything: compile-time
+     * descriptor lowering and the graph pool must already have materialized the physical texture.
+     */
     public void ensureTexture(DeferredResource resource, CombatantRhi rhi) {
         ensureTexture(resource, rhi, DeferredRuntimeConfig.current());
     }
 
     public void ensureTexture(DeferredResource resource, CombatantRhi rhi, DeferredRuntimeConfig.Snapshot settings) {
+        if (resource == null || resource.key().kind() != FrameGraphResourceKind.TEXTURE) {
+            throw new IllegalArgumentException("Deferred resource is not a texture: " + resource);
+        }
+        ensurePhysicalResource(resource);
+    }
+
+    void ensurePhysicalResource(DeferredResource resource) {
+        if (!isGraphManaged(resource)) {
+            throw new IllegalArgumentException("Deferred resource has no graph-owned physical descriptor: " + resource);
+        }
         if (isBound(resource)) return;
-        if (allocator == null) {
-            throw new IllegalStateException("No deferred resource allocator is attached");
-        }
-        GpuTextureView reference = textures.get(DeferredResource.SCENE_COLOR);
-        if (reference == null) reference = textures.get(DeferredResource.MAIN_DEPTH);
-        if (reference == null) {
-            throw new IllegalStateException("Cannot size " + resource + " without scene color/depth");
-        }
-        int samples = reference.texture() instanceof combatant.client.mixininterface.IMsaaTexture msaa
-                ? Math.max(1, msaa.combatant$getSamples()) : 1;
-        DeferredResourceAllocator.Allocation allocation = allocator.acquire(
-                resource, reference.getWidth(0), reference.getHeight(0),
-                outputWidth > 0 ? outputWidth : reference.getWidth(0),
-                outputHeight > 0 ? outputHeight : reference.getHeight(0),
-                samples, rhi, settings
-        );
-        owned.put(resource, allocation);
-        bindTexture(resource, allocation.view());
-        bindStorageImage(resource, allocation.storageImage());
+        throw new IllegalStateException("Graph-owned deferred resource was not materialized: " + resource.key().name());
     }
 
-
-    private boolean matchesCurrentPolicy(DeferredResource resource,
-                                         DeferredResourceAllocator.Allocation allocation,
-                                         DeferredRuntimeConfig.Snapshot settings) {
-        DeferredTextureSpec spec = resource == null ? null : resource.textureSpec();
-        if (spec == null) return true;
-        GpuTextureView reference = textures.get(DeferredResource.SCENE_COLOR);
-        if (reference == null) reference = textures.get(DeferredResource.MAIN_DEPTH);
-        if (reference == null) return false;
-
-        int width = spec.width(reference.getWidth(0),
-                outputWidth > 0 ? outputWidth : reference.getWidth(0), settings);
-        int height = spec.height(reference.getHeight(0),
-                outputHeight > 0 ? outputHeight : reference.getHeight(0), settings);
-        int sceneSamples = reference.texture() instanceof combatant.client.mixininterface.IMsaaTexture msaa
-                ? Math.max(1, msaa.combatant$getSamples()) : 1;
-        int samples = spec.samples() == DeferredTextureSpec.SamplePolicy.MATCH_SCENE ? sceneSamples : 1;
-        int mipLevels = spec.mipChain()
-                ? 32 - Integer.numberOfLeadingZeros(Math.max(width, height)) : 1;
-        if (resource == DeferredResource.DEPTH_PYRAMID && settings != null
-                && settings.depthPyramidMaxMipLevels() > 0) {
-            mipLevels = Math.min(mipLevels, settings.depthPyramidMaxMipLevels());
-        }
-        return allocation.width() == width
-                && allocation.height() == height
-                && allocation.samples() == samples
-                && allocation.mipLevels() == mipLevels;
+    boolean isGraphManaged(DeferredResource resource) {
+        FrameGraphPhysicalPlan.LogicalResourcePlan logical = graphLogical(resource);
+        return logical != null && logical.physicalAllocationId() >= 0;
     }
 
-    private boolean allocationValid(DeferredResource resource, DeferredResourceAllocator.Allocation allocation) {
-        if (resource != null && resource.key().lifetime() == FrameGraphResourceLifetime.PERSISTENT) {
-            return allocation.validForEpoch(historyEpoch);
+    /**
+     * Activates an aliased logical identity immediately before its real GPU access. If the physical
+     * allocation was previously used by another logical resource, order the reuse and invalidate
+     * the retired logical identity before the new producer can write it.
+     */
+    void prepareGraphAccess(DeferredResource resource,
+                            FrameGraphAccess access,
+                            RhiResourceBarrier.Stage stage,
+                            CombatantRhi rhi) {
+        if (resource == null || access == null || stage == null || rhi == null) return;
+        FrameGraphPhysicalPlan.LogicalResourcePlan logical = graphLogical(resource);
+        if (logical == null || logical.physicalAllocationId() < 0) return;
+        graphAccessedThisFrame.add(resource);
+        FrameGraphPhysicalPlan.PhysicalAllocationPlan allocation = graphPlan.physical(logical.physicalAllocationId());
+        if (allocation == null || allocation.logicalResources().size() < 2) return;
+        FrameGraphPhysicalResource physical = graphPhysical(resource);
+        if (physical == null) throw new IllegalStateException("Missing physical allocation for " + resource.key().name());
+
+        RhiResourceBarrier.Access barrierAccess = barrierAccess(access);
+        AliasState previous = activeAliases.get(logical.physicalAllocationId());
+        if (previous != null && previous.resource() != resource) {
+            if (!access.writes()) {
+                throw new IllegalStateException("Aliased transient resource '" + resource.key().name()
+                        + "' became readable before its producer activated the allocation");
+            }
+            emitAliasBarrier(previous, stage, barrierAccess, physical, rhi);
+            FrameGraphPhysicalResourcePool pool = graphPool();
+            if (pool != null && graphScope != null) pool.invalidateLogical(graphScope, previous.resource().key());
         }
-        return allocation.valid();
+        activeAliases.put(logical.physicalAllocationId(), new AliasState(resource, stage, barrierAccess));
     }
 
     public long frameId() {
@@ -264,6 +314,61 @@ public final class DeferredResourceBindings {
         return outputHeight;
     }
 
+    FrameGraphPhysicalPlan physicalPlan() {
+        return graphPlan;
+    }
+
+    boolean hasGraphAccessThisFrame() {
+        return !graphAccessedThisFrame.isEmpty();
+    }
+
+    private @Nullable FrameGraphPhysicalPlan.LogicalResourcePlan graphLogical(DeferredResource resource) {
+        if (resource == null || graphScope == null || graphOwner == null) return null;
+        return graphPlan.logical(resource.key());
+    }
+
+    private @Nullable FrameGraphPhysicalResource graphPhysical(DeferredResource resource) {
+        FrameGraphPhysicalPlan.LogicalResourcePlan logical = graphLogical(resource);
+        FrameGraphPhysicalResourcePool pool = graphPool();
+        if (logical == null || logical.physicalAllocationId() < 0 || pool == null || graphScope == null) return null;
+        return pool.resolve(graphScope, resource.key());
+    }
+
+    private @Nullable FrameGraphPhysicalResourcePool graphPool() {
+        return graphOwner == null ? null : graphOwner.resources().frameGraphResources();
+    }
+
+    private static void emitAliasBarrier(AliasState previous,
+                                         RhiResourceBarrier.Stage destinationStage,
+                                         RhiResourceBarrier.Access destinationAccess,
+                                         FrameGraphPhysicalResource physical,
+                                         CombatantRhi rhi) {
+        RhiStorageBuffer buffer = physical.storageBuffer();
+        RhiStorageImage image = physical.storageImage();
+        RhiStorageVolume volume = physical.storageVolume();
+        rhi.advancedShaders().barrier(new RhiResourceBarrier(
+                previous.stage(), previous.access(), destinationStage, destinationAccess,
+                buffer == null ? List.of() : List.of(buffer),
+                image == null ? List.of() : List.of(image),
+                volume == null ? List.of() : List.of(volume)
+        ));
+    }
+
+    private static RhiResourceBarrier.Access barrierAccess(FrameGraphAccess access) {
+        return switch (access) {
+            case READ -> RhiResourceBarrier.Access.READ;
+            case WRITE -> RhiResourceBarrier.Access.WRITE;
+            case READ_WRITE -> RhiResourceBarrier.Access.READ_WRITE;
+        };
+    }
+
+    private static void rejectDuplicateGraphOwnership(DeferredResource resource, @Nullable Object value) {
+        if (value != null && resource != null && resource.graphManagedPhysicalResource()) {
+            throw new IllegalStateException("Graph-managed deferred resource cannot be manually rebound: "
+                    + resource.key().name());
+        }
+    }
+
     private static void requireTextureResource(DeferredResource resource) {
         if (resource == null || (resource.key().kind() != FrameGraphResourceKind.TEXTURE
                 && resource.key().kind() != FrameGraphResourceKind.EXTERNAL)) {
@@ -275,5 +380,10 @@ public final class DeferredResourceBindings {
         if (resource == null || resource.key().kind() != FrameGraphResourceKind.VOLUME) {
             throw new IllegalArgumentException("Not a volume resource: " + resource);
         }
+    }
+
+    private record AliasState(DeferredResource resource,
+                              RhiResourceBarrier.Stage stage,
+                              RhiResourceBarrier.Access access) {
     }
 }

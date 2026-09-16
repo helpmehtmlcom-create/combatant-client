@@ -12,11 +12,13 @@ public enum DeferredTemporalHistoryId {
     SCENE,
     INDIRECT_LIGHT,
     REFLECTIONS,
-    WATER_REFLECTIONS,
     CLOUDS,
+    CLOUDS_HIGH,
+    CLOUDS_CONVECTIVE,
     AMBIENT_OCCLUSION,
     FROXEL_MEDIA,
     EXPOSURE,
     WATER,
+    WATER_REFLECTIONS,
     TAA
 }

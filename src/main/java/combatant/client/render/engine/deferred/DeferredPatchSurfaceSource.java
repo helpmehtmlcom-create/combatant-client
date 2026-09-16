@@ -234,10 +234,10 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
         passes.add(DeferredPassSpec.builder("world.water-surface", DeferredStage.WATER_SURFACE)
                 .read(DeferredResource.MAIN_DEPTH,
                         DeferredResource.RESOLVED_DEPTH,
-                        DeferredResource.WATER_REFLECTION_COLOR,
-                        DeferredResource.WATER_REFLECTION_CONFIDENCE,
                         DeferredResource.SKY_SPECULAR_RADIANCE,
                         DeferredResource.SCENE_RADIANCE)
+                .optionalRead(DeferredResource.WATER_REFLECTION_COLOR,
+                        DeferredResource.WATER_REFLECTION_CONFIDENCE)
                 .write(DeferredResource.SCENE_COLOR,
                         DeferredResource.RASTER_MOTION_VELOCITY,
                         DeferredResource.RASTER_MOTION_VALIDITY,
@@ -420,12 +420,15 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
         GpuTextureView depths = requireTexture(context, DeferredResource.WATER_REFLECTION_DEPTHS);
         GpuTextureView cascadeReflection = requireTexture(context, DeferredResource.WATER_REFLECTION_CASCADE_COLOR);
         GpuTextureView cascadeConfidence = requireTexture(context, DeferredResource.WATER_REFLECTION_CASCADE_CONFIDENCE);
-        List<GpuTextureView> reflectionTargets = List.of(
-                reflection, confidence, reprojection, geometry, depths, cascadeReflection, cascadeConfidence);
-        for (GpuTextureView target : reflectionTargets) {
-            RenderSystem.getDevice().createCommandEncoder().clearColorTexture(
-                    target.texture(), new Vector4f(0.0f, 0.0f, 0.0f, 0.0f));
-        }
+        var encoder = RenderSystem.getDevice().createCommandEncoder();
+        Vector4f clear = new Vector4f(0.0f, 0.0f, 0.0f, 0.0f);
+        encoder.clearColorTexture(reflection.texture(), clear);
+        encoder.clearColorTexture(confidence.texture(), clear);
+        encoder.clearColorTexture(reprojection.texture(), clear);
+        encoder.clearColorTexture(geometry.texture(), clear);
+        encoder.clearColorTexture(depths.texture(), clear);
+        encoder.clearColorTexture(cascadeReflection.texture(), clear);
+        encoder.clearColorTexture(cascadeConfidence.texture(), clear);
 
         List<WaterSurfaceExtractor.WaterPatch> patches = collectWaterPatches(waterActivationGeneration);
         if (patches.isEmpty()) return;
@@ -439,10 +442,13 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
 
         if (context.rhi().capabilities().nativeTessellationSubmission() && !waterReflectionNativeFailed) {
             try {
-                RhiPatchPipeline pipeline = waterReflectionPipeline(reflectionTargets);
+                RhiPatchPipeline pipeline = waterReflectionPipeline(
+                        reflection, confidence, reprojection, geometry, depths, cascadeReflection, cascadeConfidence);
                 GpuMeshHandle mesh = buildWaterMesh(patches, camera.cameraPosition());
                 context.advancedShaders().drawPatches(new PatchDrawCommand(
-                        "Combatant water reflection trace", pipeline, reflectionTargets, null, mesh,
+                        "Combatant water reflection trace", pipeline,
+                        List.of(reflection, confidence, reprojection, geometry, depths, cascadeReflection, cascadeConfidence),
+                        null, mesh,
                         List.of(
                                 new StorageBinding(11, waterFrameBuffer(), 0L,
                                         WATER_FRAME_LAYOUT.arrayStride(), StorageAccess.READ_ONLY),
@@ -470,7 +476,8 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
         GpuBufferSlice traceUniform = WaterReflectionTraceUniforms.write(
                 waterReflectionFallbackFrame(context, camera, hasCascade));
         RhiDrawCommand.Builder draw = RhiDrawCommand.builder("Combatant water reflection trace (triangle fallback)")
-                .pipeline(waterReflectionFallbackPipeline(reflectionTargets))
+                .pipeline(waterReflectionFallbackPipeline(
+                        reflection, confidence, reprojection, geometry, depths, cascadeReflection, cascadeConfidence))
                 .colorAttachment(0, reflection)
                 .colorAttachment(1, confidence)
                 .colorAttachment(2, reprojection)
@@ -614,9 +621,15 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
         return waterPipeline;
     }
 
-    private RhiPatchPipeline waterReflectionPipeline(List<GpuTextureView> targets) {
-        WaterReflectionPipelineKey key = new WaterReflectionPipelineKey(
-                targets.stream().map(view -> view.texture().getFormat()).toList());
+    private RhiPatchPipeline waterReflectionPipeline(GpuTextureView color,
+                                                       GpuTextureView confidence,
+                                                       GpuTextureView reprojection,
+                                                       GpuTextureView geometry,
+                                                       GpuTextureView depths,
+                                                       GpuTextureView cascadeColor,
+                                                       GpuTextureView cascadeConfidence) {
+        WaterReflectionPipelineKey key = waterReflectionKey(
+                color, confidence, reprojection, geometry, depths, cascadeColor, cascadeConfidence);
         if (waterReflectionPipeline != null && key.equals(waterReflectionKey)) return waterReflectionPipeline;
         closeWaterReflectionPipeline();
         waterReflectionKey = key;
@@ -666,9 +679,15 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
         return waterBoundaryFallbackPipeline;
     }
 
-    private RenderPipeline waterReflectionFallbackPipeline(List<GpuTextureView> targets) {
-        WaterReflectionPipelineKey key = new WaterReflectionPipelineKey(
-                targets.stream().map(view -> view.texture().getFormat()).toList());
+    private RenderPipeline waterReflectionFallbackPipeline(GpuTextureView color,
+                                                             GpuTextureView confidence,
+                                                             GpuTextureView reprojection,
+                                                             GpuTextureView geometry,
+                                                             GpuTextureView depths,
+                                                             GpuTextureView cascadeColor,
+                                                             GpuTextureView cascadeConfidence) {
+        WaterReflectionPipelineKey key = waterReflectionKey(
+                color, confidence, reprojection, geometry, depths, cascadeColor, cascadeConfidence);
         if (waterReflectionFallbackPipeline != null && key.equals(waterReflectionFallbackKey)) {
             return waterReflectionFallbackPipeline;
         }
@@ -680,11 +699,14 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
                 .withFragmentShader(WATER_REFLECTION_FALLBACK_FRAGMENT)
                 .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
                 .withDepthWrite(false)
-                .withCull(false);
-        for (int i = 0; i < key.colorFormats().size(); i++) {
-            builder.withColorTarget(i, key.colorFormats().get(i));
-        }
-        builder
+                .withCull(false)
+                .withColorTarget(0, key.traceColorFormat())
+                .withColorTarget(1, key.traceConfidenceFormat())
+                .withColorTarget(2, key.reprojectionFormat())
+                .withColorTarget(3, key.geometryFormat())
+                .withColorTarget(4, key.depthsFormat())
+                .withColorTarget(5, key.cascadeColorFormat())
+                .withColorTarget(6, key.cascadeConfidenceFormat())
                 .withSampler("u_BlockAtlas")
                 .withSampler("u_AlbedoAtlas")
                 .withSampler("u_NormalHeightAtlas")
@@ -1307,8 +1329,30 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
     private record BoundaryPipelineKey(GpuFormat colorFormat) {
     }
 
-    private record WaterReflectionPipelineKey(List<GpuFormat> colorFormats) {
-        WaterReflectionPipelineKey { colorFormats = List.copyOf(colorFormats); }
+    private static WaterReflectionPipelineKey waterReflectionKey(GpuTextureView color,
+                                                                  GpuTextureView confidence,
+                                                                  GpuTextureView reprojection,
+                                                                  GpuTextureView geometry,
+                                                                  GpuTextureView depths,
+                                                                  GpuTextureView cascadeColor,
+                                                                  GpuTextureView cascadeConfidence) {
+        return new WaterReflectionPipelineKey(
+                color.texture().getFormat(), confidence.texture().getFormat(),
+                reprojection.texture().getFormat(), geometry.texture().getFormat(), depths.texture().getFormat(),
+                cascadeColor.texture().getFormat(), cascadeConfidence.texture().getFormat());
+    }
+
+    private record WaterReflectionPipelineKey(GpuFormat traceColorFormat,
+                                              GpuFormat traceConfidenceFormat,
+                                              GpuFormat reprojectionFormat,
+                                              GpuFormat geometryFormat,
+                                              GpuFormat depthsFormat,
+                                              GpuFormat cascadeColorFormat,
+                                              GpuFormat cascadeConfidenceFormat) {
+        private List<GpuFormat> colorFormats() {
+            return List.of(traceColorFormat, traceConfidenceFormat, reprojectionFormat, geometryFormat,
+                    depthsFormat, cascadeColorFormat, cascadeConfidenceFormat);
+        }
     }
 
     private record FallbackPipelineKey(GpuFormat sceneFormat, GpuFormat velocityFormat,

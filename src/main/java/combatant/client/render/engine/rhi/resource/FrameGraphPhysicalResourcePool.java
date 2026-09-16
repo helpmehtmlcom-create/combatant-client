@@ -92,6 +92,11 @@ public final class FrameGraphPhysicalResourcePool implements AutoCloseable {
         scope.valid.retainAll(nextLogical.keySet());
     }
 
+    /** True only while this logical graph currently has a materialized physical scope. */
+    public synchronized boolean hasScope(Object scopeToken) {
+        return scopeToken != null && scopes.containsKey(scopeToken);
+    }
+
     public synchronized FrameGraphPhysicalResource resolve(Object scopeToken, FrameGraphResourceKey logical) {
         Scope scope = scopes.get(scopeToken);
         if (scope == null || logical == null) return null;

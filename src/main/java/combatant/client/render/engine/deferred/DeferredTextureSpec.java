@@ -8,8 +8,13 @@
 package combatant.client.render.engine.deferred;
 
 import com.mojang.blaze3d.GpuFormat;
+import com.mojang.blaze3d.textures.GpuTexture;
+import combatant.client.render.engine.framegraph.FrameGraphPhysicalResourceDescriptor;
+import combatant.client.render.engine.framegraph.FrameGraphTextureDescriptor;
+import combatant.client.render.engine.rhi.shader.RhiTextureUsage;
+import combatant.client.render.engine.rhi.shader.StorageAccess;
 
-/** Default physical requirements for a lazily allocated world-graph texture. */
+/** Deferred logical texture requirements lowered into a FrameGraphTextureDescriptor before planning. */
 public record DeferredTextureSpec(
         GpuFormat format,
         ResolutionClass resolution,
@@ -19,7 +24,7 @@ public record DeferredTextureSpec(
         boolean mipChain,
         boolean storageImage,
         boolean renderAttachment
-) {
+) implements DeferredPhysicalResourceSpec {
     /**
      * Semantic resolution classes. The class is stable graph ABI; the actual scale is runtime
      * policy and can change without replacing resource keys or pass contracts.
@@ -116,6 +121,34 @@ public record DeferredTextureSpec(
         if (storageImage && !format.hasColorAspect()) {
             throw new IllegalArgumentException("Storage image requires a color format: " + format);
         }
+    }
+
+    @Override
+    public FrameGraphPhysicalResourceDescriptor descriptor(DeferredResource resource,
+                                                           int renderWidth,
+                                                           int renderHeight,
+                                                           int outputWidth,
+                                                           int outputHeight,
+                                                           int sceneSamples,
+                                                           DeferredRuntimeConfig.Snapshot settings) {
+        int width = width(renderWidth, outputWidth, settings);
+        int height = height(renderHeight, outputHeight, settings);
+        int samples = this.samples == SamplePolicy.MATCH_SCENE ? Math.max(1, sceneSamples) : 1;
+        int mipLevels = mipChain
+                ? 32 - Integer.numberOfLeadingZeros(Math.max(width, height)) : 1;
+        if (resource == DeferredResource.DEPTH_PYRAMID && settings != null
+                && settings.depthPyramidMaxMipLevels() > 0) {
+            mipLevels = Math.min(mipLevels, settings.depthPyramidMaxMipLevels());
+        }
+        if (samples > 1 && mipLevels > 1) {
+            throw new IllegalStateException("Multisampled deferred resources cannot have mip chains: " + resource);
+        }
+
+        int usage = GpuTexture.USAGE_TEXTURE_BINDING | GpuTexture.USAGE_COPY_SRC | GpuTexture.USAGE_COPY_DST;
+        if (storageImage) usage |= RhiTextureUsage.STORAGE_IMAGE;
+        if (renderAttachment) usage |= GpuTexture.USAGE_RENDER_ATTACHMENT;
+        return new FrameGraphTextureDescriptor(
+                width, height, samples, mipLevels, format, usage, StorageAccess.READ_WRITE);
     }
 
     public int width(int renderWidth, int outputWidth, DeferredRuntimeConfig.Snapshot settings) {

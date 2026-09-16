@@ -89,8 +89,7 @@ public final class DeferredWorldPipeline {
     private @Nullable GeometryTargets targets;
     private @Nullable GbufferViews sampleableTargets;
     private @Nullable Object worldOwner;
-    private final DeferredResourceAllocator physicalResources = new DeferredResourceAllocator();
-    private final DeferredResourceBindings resourceBindings = new DeferredResourceBindings(physicalResources);
+    private final DeferredResourceBindings resourceBindings = new DeferredResourceBindings();
     private final DeferredSecondaryViewRegistry secondaryViews = new DeferredSecondaryViewRegistry();
     private final DeferredPrimaryViewSource primaryView = new DeferredPrimaryViewSource();
     private final DeferredTemporalHistoryRegistry temporalHistory = new DeferredTemporalHistoryRegistry();
@@ -185,7 +184,7 @@ public final class DeferredWorldPipeline {
             primaryView.reset();
             worldStateSource.reset();
             worldRenderState = worldStateSource.current();
-            physicalResources.reset();
+            CombatantRenderSystem.deferredGraph().releasePhysicalResources(CombatantRenderSystem.rhi());
             geometryPipelineGeneration++;
             lifecycleState = LifecycleState.ACTIVE;
             DebugLog.renderThreadOnChange(
@@ -215,7 +214,8 @@ public final class DeferredWorldPipeline {
         Minecraft minecraft = Minecraft.getInstance();
         try {
             DeferredRuntimeAssets.reprepareAfterBackendSwitch(minecraft.getResourceManager());
-            physicalResources.reset();
+            CombatantRenderSystem.deferredGraph().releasePhysicalResources(CombatantRenderSystem.rhi());
+            resourceBindings.detachFrameGraph();
             primaryView.queueHistoryReset(DeferredHistoryResetReason.BACKEND_RECREATION);
         } catch (Throwable error) {
             requestedEnabled = false;
@@ -449,9 +449,10 @@ public final class DeferredWorldPipeline {
 
             // Keep direct terrain lighting in a Combatant-owned HDR target. Publishing it into the
             // mutable Minecraft scene target is only a compatibility step for forward opaque draws.
-            resourceBindings.ensureTexture(
-                    DeferredResource.DIRECT_LIGHTING_COLOR, CombatantRenderSystem.rhi(), frameSettings
-            );
+            DeferredPassContext lightingContext = passContext(DeferredStage.LIGHTING);
+            if (!CombatantRenderSystem.deferredGraph().prepareExternalPass("world.lighting.neutral", lightingContext)) {
+                throw new IllegalStateException("Deferred neutral-lighting graph pass is unavailable");
+            }
             GpuTextureView directLighting = resourceBindings.texture(DeferredResource.DIRECT_LIGHTING_COLOR);
             if (directLighting == null) {
                 throw new IllegalStateException("Deferred direct-lighting target is unavailable");
@@ -472,7 +473,7 @@ public final class DeferredWorldPipeline {
                             .sampler("u_AmbientVisibility", ambientVisibility, gbufferSampler)
                             .build()
             );
-            resourceBindings.markWritten(DeferredResource.DIRECT_LIGHTING_COLOR);
+            CombatantRenderSystem.deferredGraph().completeExternalPass("world.lighting.neutral", resourceBindings);
 
             // Forward compatibility rendering still targets Minecraft's scene image. Only terrain
             // pixels are published here; sky and other non-G-buffer producers remain untouched.
@@ -541,7 +542,8 @@ public final class DeferredWorldPipeline {
     private void beginDeferredFrameState() {
         Object currentWorld = Minecraft.getInstance().level;
         if (worldOwner != currentWorld) {
-            physicalResources.reset();
+            CombatantRenderSystem.deferredGraph().releasePhysicalResources(CombatantRenderSystem.rhi());
+            resourceBindings.detachFrameGraph();
             objectMotion.reset();
             DeferredTemporalCoverageBridge.reset();
             primaryView.beginWorld(currentWorld);
@@ -669,15 +671,9 @@ public final class DeferredWorldPipeline {
         executeStage(DeferredStage.REFLECTION_HISTORY);
         executeStage(DeferredStage.REFLECTION_COMPOSITE);
         executeStage(DeferredStage.SKY_COMPOSITE);
-        executeStage(DeferredStage.WATER_MEDIUM_BOUNDARY);
         executeStage(DeferredStage.VOLUMETRIC_MEDIA_INJECT);
         executeStage(DeferredStage.VOLUMETRIC_MEDIA_INTEGRATE);
         executeStage(DeferredStage.VOLUMETRIC_MEDIA_COMPOSITE);
-        executeStage(DeferredStage.WATER_REFLECTION_TRACE);
-        executeStage(DeferredStage.WATER_REFLECTION_TEMPORAL);
-        executeStage(DeferredStage.WATER_REFLECTION_DENOISE);
-        executeStage(DeferredStage.WATER_REFLECTION_HISTORY);
-        executeStage(DeferredStage.WATER_REFLECTION_RESOLVE);
         executeStage(DeferredStage.WATER_SURFACE);
         executeStage(DeferredStage.PRE_TRANSLUCENCY);
     }
@@ -740,7 +736,7 @@ public final class DeferredWorldPipeline {
     /** Releases optional persistent/history resources before a device switch or shutdown. */
     public void releasePhysicalResources() {
         RenderSystem.assertOnRenderThread();
-        physicalResources.close();
+        CombatantRenderSystem.deferredGraph().releasePhysicalResources(CombatantRenderSystem.rhi());
         resourceBindings.reset();
         secondaryViews.reset();
         worldOwner = null;
@@ -844,12 +840,20 @@ public final class DeferredWorldPipeline {
     }
 
     private void executeStage(DeferredStage stage) {
+        DeferredPassContext context = passContext(stage);
+        CombatantRenderSystem.deferredGraph().execute(
+                stage, context.frame(), resourceBindings, secondaryViews, primaryView,
+                temporalHistory, worldRenderState, frameSettings
+        );
+    }
+
+    private DeferredPassContext passContext(DeferredStage stage) {
         DeferredHistoryDescriptor history = primaryView.historyDescriptor();
         resourceBindings.setHistoryEpoch(history.epoch());
         temporalHistory.beginFrame(frameStateId, history, resourceBindings, frameSettings);
-        CombatantRenderSystem.deferredGraph().execute(
-                stage, CombatantRenderSystem.ensureFrameContext(), resourceBindings, secondaryViews, primaryView,
-                temporalHistory, worldRenderState, frameSettings
+        return new DeferredPassContext(
+                stage, CombatantRenderSystem.ensureFrameContext(), CombatantRenderSystem.rhi(),
+                resourceBindings, secondaryViews, primaryView, temporalHistory, worldRenderState, frameSettings
         );
     }
 

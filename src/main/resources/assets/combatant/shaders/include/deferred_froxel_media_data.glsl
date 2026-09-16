@@ -6,6 +6,8 @@ layout(std430, binding = 0) readonly buffer FroxelMediaData {
     mat4 inverseView;
     vec4 cameraTime;
     vec4 grid;
+    vec4 macroGrid;
+    vec4 macroOrigin;
     vec4 counts;
     vec4 noiseDomain;
     vec4 froxel;
@@ -27,6 +29,8 @@ layout(std430, binding = 0) readonly buffer FroxelMediaData {
     vec4 localLightTransport;
     vec4 directionalDirection;
     vec4 directionalRadiance;
+    vec4 cloudOccupancyDomain;
+    vec4 cloudOccupancyPolicy;
 } u_Data;
 
 #endif

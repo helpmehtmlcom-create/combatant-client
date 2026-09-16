@@ -55,6 +55,8 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
             .member("inverseView", Std430Type.MAT4)
             .member("cameraTime", Std430Type.VEC4)
             .member("grid", Std430Type.VEC4)
+            .member("macroGrid", Std430Type.VEC4)
+            .member("macroOrigin", Std430Type.VEC4)
             .member("counts", Std430Type.VEC4)
             .member("noiseDomain", Std430Type.VEC4)
             .member("froxel", Std430Type.VEC4)
@@ -76,6 +78,8 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
             .member("localLightTransport", Std430Type.VEC4)
             .member("directionalDirection", Std430Type.VEC4)
             .member("directionalRadiance", Std430Type.VEC4)
+            .member("cloudOccupancyDomain", Std430Type.VEC4)
+            .member("cloudOccupancyPolicy", Std430Type.VEC4)
             .build();
 
     private static final Std430StructLayout LOCAL_FOG_VOLUME_LAYOUT = Std430StructLayout.builder()
@@ -105,11 +109,13 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
             new ShaderResourceSlot(5, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(6, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(7, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(8, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(11, ShaderResourceKind.STORAGE_VOLUME, StorageAccess.WRITE_ONLY),
             new ShaderResourceSlot(12, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(13, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(14, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
-            new ShaderResourceSlot(15, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
+            new ShaderResourceSlot(15, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(16, ShaderResourceKind.SAMPLED_VOLUME, StorageAccess.READ_ONLY)
     ));
     private static final ShaderResourceLayout LIGHT_LAYOUT = new ShaderResourceLayout(List.of(
             new ShaderResourceSlot(0, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
@@ -152,6 +158,7 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
     private final DeferredFroxelConfig config = DeferredFroxelConfig.current();
     private final DeferredCloudFieldSource cloudField;
     private final DeferredCloudShadowSource cloudShadows;
+    private final DeferredCloudOccupancySource cloudOccupancy;
 
     private CombatantRhi owner;
     private RhiComputePipeline localFogCullPipeline;
@@ -175,11 +182,14 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
     private DeferredFroxelConfig.Grid allocatedGrid;
     private DeferredFroxelConfig.Grid frameGrid;
 
-    DeferredFroxelMediaSource(DeferredCloudFieldSource cloudField, DeferredCloudShadowSource cloudShadows) {
+    DeferredFroxelMediaSource(DeferredCloudFieldSource cloudField, DeferredCloudShadowSource cloudShadows,
+                              DeferredCloudOccupancySource cloudOccupancy) {
         if (cloudField == null) throw new IllegalArgumentException("cloudField");
         if (cloudShadows == null) throw new IllegalArgumentException("cloudShadows");
+        if (cloudOccupancy == null) throw new IllegalArgumentException("cloudOccupancy");
         this.cloudField = cloudField;
         this.cloudShadows = cloudShadows;
+        this.cloudOccupancy = cloudOccupancy;
     }
 
     void install(ArrayList<DeferredPassSpec> passes) {
@@ -189,6 +199,7 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
                         DeferredResource.AERIAL_PERSPECTIVE,
                         DeferredResource.AERIAL_TRANSMITTANCE,
                         DeferredResource.CLOUD_SHADOW_MAP,
+                        DeferredResource.CLOUD_OCCUPANCY,
                         DeferredResource.WATER_MEDIUM_BOUNDARY)
                 .write(DeferredResource.FROXEL_MEDIA_SEGMENT_RADIANCE,
                         DeferredResource.FROXEL_MEDIA_SEGMENT_TRANSMITTANCE,
@@ -200,6 +211,7 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
                         && context.isValid(DeferredResource.AERIAL_PERSPECTIVE)
                         && context.isValid(DeferredResource.AERIAL_TRANSMITTANCE)
                         && context.isValid(DeferredResource.CLOUD_SHADOW_MAP)
+                        && context.isValid(DeferredResource.CLOUD_OCCUPANCY)
                         && context.isValid(DeferredResource.WATER_MEDIUM_BOUNDARY))
                 .execute(this::inject)
                 .build());
@@ -281,6 +293,8 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
         GpuTextureView waterBoundary = requireTexture(context, DeferredResource.WATER_MEDIUM_BOUNDARY);
         DeferredCloudFieldSource.FrameData cloud = cloudField.prepareFrame(context);
         DeferredCloudShadowSource.FrameState shadow = cloudShadows.frameState(context, view, cloud);
+        DeferredCloudOccupancySource.FrameState occupancyState = cloudOccupancy.current();
+        RhiStorageVolume occupancyVolume = requireVolume(context, DeferredResource.CLOUD_OCCUPANCY);
         float mediaRange = ParticipatingMediaRange.resolveBlocks(context.worldState(), view.farPlane());
         prepareLocalFogVolumes(context, view, mediaRange);
         DeferredFroxelConfig.Grid grid = config.grid(depth.getWidth(0), depth.getHeight(0), mediaRange);
@@ -289,7 +303,7 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
         DeferredFroxelConfig.LocalFogBinGrid localFogBins = config.localFogBins(grid);
         ensureLocalFogBinBuffers(localFogBins);
 
-        Std430Writer writer = writer(context, view, grid, cloud, shadow);
+        Std430Writer writer = writer(context, view, grid, cloud, shadow, occupancyState);
         RhiStorageBuffer dataBuffer = data();
         dataBuffer.upload(writer.buffer(), 0L);
         cullLocalFogVolumes(context, localFogBins, writer.byteSize());
@@ -305,8 +319,10 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
                         new StorageBinding(0, dataBuffer, 0L, writer.byteSize(), StorageAccess.READ_ONLY),
                         new StorageBinding(5, cloudField.weatherData(), 0L,
                                 cloudField.weatherData().descriptor().byteSize(), StorageAccess.READ_ONLY),
-                        new StorageBinding(6, cloudField.layerData(), 0L,
-                                cloudField.layerData().descriptor().byteSize(), StorageAccess.READ_ONLY),
+                        new StorageBinding(6, cloudField.domainData(), 0L,
+                                cloudField.domainData().descriptor().byteSize(), StorageAccess.READ_ONLY),
+                        new StorageBinding(8, cloudField.macroWeatherData(), 0L,
+                                cloudField.macroWeatherData().descriptor().byteSize(), StorageAccess.READ_ONLY),
                         new StorageBinding(13, localFogVolumeData(), 0L,
                                 localFogVolumeData().descriptor().byteSize(), StorageAccess.READ_ONLY),
                         new StorageBinding(14, localFogBinCounts, 0L,
@@ -325,7 +341,8 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
                         new StorageVolumeBinding(1, segmentRadiance, StorageAccess.WRITE_ONLY),
                         new StorageVolumeBinding(2, segmentTransmittance, StorageAccess.WRITE_ONLY),
                         new StorageVolumeBinding(11, mediaProperties, StorageAccess.WRITE_ONLY)
-                )
+                ),
+                List.of(new SampledVolumeBinding(16, occupancyVolume, nearest))
         ));
         context.resources().bindStorageVolume(DeferredResource.FROXEL_MEDIA_SEGMENT_RADIANCE, segmentRadiance);
         context.resources().bindStorageVolume(DeferredResource.FROXEL_MEDIA_SEGMENT_TRANSMITTANCE, segmentTransmittance);
@@ -460,9 +477,11 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
                                 DeferredPrimaryViewSource.FrameView view,
                                 DeferredFroxelConfig.Grid froxelGrid,
                                 DeferredCloudFieldSource.FrameData cloud,
-                                DeferredCloudShadowSource.FrameState shadow) {
+                                DeferredCloudShadowSource.FrameState shadow,
+                                DeferredCloudOccupancySource.FrameState occupancy) {
         WeatherState weather = cloud.weather();
         WeatherFieldState field = cloud.field();
+        WeatherFieldState macro = cloud.macroField();
         CloudProfile cloudProfile = cloud.profile();
         ParticipatingMediumProfile medium = ParticipatingMediumProfileRegistry.resolve(context.worldState().mediumProfile());
         CameraMediumState cameraMedium = CameraMediumState.capture();
@@ -474,7 +493,12 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
         float spacing = field.valid() ? Math.max(1, field.spacingBlocks()) : 1.0f;
         int width = field.valid() ? field.gridWidth() : 0;
         int depth = field.valid() ? field.gridDepth() : 0;
-        float timeSeconds = weather.valid() ? weather.modelTimeTicks() / 20.0f : 0.0f;
+        float timeSeconds = weather.valid() ? (float) weather.renderAdvectionSeconds() : 0.0f;
+        float macroSpacing = macro.valid() ? Math.max(1, macro.spacingBlocks()) : 1.0f;
+        int macroWidth = macro.valid() ? macro.gridWidth() : 0;
+        int macroDepth = macro.valid() ? macro.gridDepth() : 0;
+        float macroOriginX = macro.valid() ? macro.originBlockX() - originX : 0.0f;
+        float macroOriginZ = macro.valid() ? macro.originBlockZ() - originZ : 0.0f;
         float maxDistanceKm = Math.max(0.064f, froxelGrid.maxDistanceBlocks() * 0.001f);
 
         return new Std430Writer(DATA_LAYOUT, 1)
@@ -483,7 +507,9 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
                 .putVec4(0, "cameraTime", (float) (camera.x - originX), (float) camera.y,
                         (float) (camera.z - originZ), timeSeconds)
                 .putVec4(0, "grid", spacing, width, depth, cloud.weatherCount())
-                .putVec4(0, "counts", cloud.layerCount(), cloudProfile.maxRayDistanceBlocks(), localFogVolumeCount,
+                .putVec4(0, "macroGrid", macroSpacing, macroWidth, macroDepth, cloud.macroWeatherCount())
+                .putVec4(0, "macroOrigin", macroOriginX, macroOriginZ, 0.0f, 0.0f)
+                .putVec4(0, "counts", cloud.domainCount(), cloudProfile.maxRayDistanceBlocks(), localFogVolumeCount,
                         cloud.active() ? 1.0f : 0.0f)
                 .putVec4(0, "noiseDomain",
                         wrapOrigin(field.valid() ? field.originBlockX() : 0),
@@ -525,7 +551,11 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
                 .putVec4(0, "directionalDirection", directional.directionX(), directional.directionY(),
                         directional.directionZ(), directional.valid() ? 1.0f : 0.0f)
                 .putVec4(0, "directionalRadiance", directional.radianceRed(), directional.radianceGreen(),
-                        directional.radianceBlue(), directional.valid() ? 1.0f : 0.0f);
+                        directional.radianceBlue(), directional.valid() ? 1.0f : 0.0f)
+                .putVec4(0, "cloudOccupancyDomain", occupancy.originLocalX(), occupancy.originLocalZ(),
+                        occupancy.minimumY(), occupancy.maximumY())
+                .putVec4(0, "cloudOccupancyPolicy", occupancy.spanXZ(), occupancy.active() ? 1.0f : 0.0f,
+                        0.0f, 0.0f);
     }
 
     private boolean mediumVolumeAvailable(DeferredPassContext context) {
