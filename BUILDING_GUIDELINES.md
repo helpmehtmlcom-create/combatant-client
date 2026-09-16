@@ -15,12 +15,12 @@ The project currently targets:
 - Minecraft 26.2
 - Fabric Loader 0.19.3
 - Fabric API 0.152.2+26.2
-- Sodium, preferably `sodium-fabric-0.9.0+mc26.2`
+- Sodium, preferably `sodium-fabric-0.9.1+mc26.2`
 
 Download the recommended Sodium build from Modrinth:
 
 ```text
-https://modrinth.com/mod/sodium/version/mc26.2-0.9.0-fabric
+https://modrinth.com/mod/sodium/version/mc26.2-0.9.1-fabric
 ```
 
 Use the Gradle wrapper from the repository. Do not install a separate Gradle version manually.

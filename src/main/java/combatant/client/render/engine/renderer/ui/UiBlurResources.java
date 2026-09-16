@@ -208,8 +208,7 @@ public final class UiBlurResources {
         TextureTarget target = ensureCurrentTargetSnapshot(minecraft);
         if (target == null || target.getColorTextureView() == null) return null;
         try {
-            if (!CombatantRenderSystem.rhi().textureBlitter().copyFast(
-                    sourceView, target.getColorTextureView())) {
+            if (!copyTexture(sourceView, target.getColorTextureView())) {
                 return null;
             }
         } catch (Throwable ignored) {
@@ -227,12 +226,21 @@ public final class UiBlurResources {
         if (source.getColorTexture() == null || target.getColorTexture() == null) return false;
 
         try {
-            return CombatantRenderSystem.rhi().textureBlitter().copyFast(
+            return copyTexture(
                     source.getColorTextureView(), target.getColorTextureView()
             );
         } catch (Throwable ignored) {
             return false;
         }
+    }
+
+    private static boolean copyTexture(GpuTextureView source, GpuTextureView target) {
+        if (source == null || target == null) return false;
+        if (CombatantRenderSystem.rhi().textureBlitter().copyFast(source, target)) {
+            return true;
+        }
+        PostProcessManager.copy(source, target);
+        return true;
     }
 
     public static void requestLiquidGlassBlur() {

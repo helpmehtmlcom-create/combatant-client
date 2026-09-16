@@ -24,6 +24,10 @@ Combatant is already usable, but it is not feature-complete. Some areas still ne
 
 - [`Configs and HUD Guide`](CONFIGS_AND_HUD.md) - config profiles, `.cbcfg` files, loading profiles, and HUD element setup.
 - [`Client Commands`](CLIENT_COMMANDS.md) - command syntax, aliases, descriptions, and optional mod requirements.
+- [`Documentation Maintenance`](DOCUMENTATION.md) - documentation index, version source of truth, and no-emoji writing rules.
+- [`Building Guidelines`](BUILDING_GUIDELINES.md) - source builds, development builds, native assets, and publishing commands.
+- [`Shaderpack Patches`](SHADERPACK_PATCHES.md) - Iris shaderpack patch targets and validation workflow.
+- [`Sound System`](SOUND_SYSTEM.md) - bundled sound replacement and sound registry notes.
 
 ## Logo wanted
 
@@ -68,7 +72,7 @@ Combatant includes optional compatibility integrations for Iris, ImmediatelyFast
 4. Download the required dependency jars:
    - Fabric API [`0.152.2+26.2`](https://modrinth.com/mod/fabric-api/version/0.152.2%2B26.2)
    - Sodium [`sodium-fabric-0.9.1+mc26.2`](https://modrinth.com/mod/sodium/version/mc26.2-0.9.1-fabric)
-5. Put `combatant-0.1.3.jar`, Fabric API, and Sodium into your Minecraft `mods` folder.
+5. Put `combatant-0.1.5.jar`, Fabric API, and Sodium into your Minecraft `mods` folder.
 6. Start the Fabric 26.2 profile.
 
 ## Renderer backends

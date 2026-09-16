@@ -171,7 +171,7 @@ public final class Sprint extends Module {
         }
 
         LocalPlayer player = mc.player;
-        if (!canOperate(player) || !player.isSprinting() || !hasMovementInput(player)) {
+        if (!canOperate(player) || !isServerOrLocalSprinting(player) || !hasMovementInput(player)) {
             return;
         }
 
