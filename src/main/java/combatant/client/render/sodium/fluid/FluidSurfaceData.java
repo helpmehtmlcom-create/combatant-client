@@ -32,6 +32,7 @@ public record FluidSurfaceData(
         float flowZ,
         boolean source,
         int amount,
+        int fluidConnectivity,
         ModelQuadFacing facing,
         boolean reversed,
         float[] x,
@@ -106,6 +107,7 @@ public record FluidSurfaceData(
                 (float) flow.z,
                 state != null && state.isSource(),
                 state == null ? 0 : state.getAmount(),
+                WaterSurfaceContract.fluidConnectivity(context.level(), context.worldPos(), state),
                 facing,
                 reversed,
                 x, y, z, u, v, color, ao, light,
@@ -129,6 +131,31 @@ public record FluidSurfaceData(
 
     public float[] cornerHeights() {
         return Arrays.copyOf(y, 4);
+    }
+
+    /** Producer-known stable fluid registry identity, suitable for GPU/debug contracts. */
+    public int fluidTypeId() {
+        return WaterSurfaceContract.stableFluidTypeId(fluidId);
+    }
+
+    public float flowStrength() {
+        return WaterSurfaceContract.flowStrength(flowX, flowZ);
+    }
+
+    public boolean still() {
+        return flowStrength() <= 1.0e-5f;
+    }
+
+    public int surfaceFlags() {
+        return WaterSurfaceContract.flags(this);
+    }
+
+    public boolean connected(int bit) {
+        return (fluidConnectivity & bit) != 0;
+    }
+
+    public float[] surfaceNormal() {
+        return WaterSurfaceContract.surfaceNormal(this);
     }
 
     private static float[] copy4(float[] values) {

@@ -19,10 +19,12 @@ public record DeferredPassContext(
         DeferredResourceBindings resources,
         DeferredSecondaryViewRegistry secondaryViews,
         DeferredPrimaryViewSource primaryView,
+        DeferredTemporalHistoryRegistry temporalHistory,
         WorldRenderState worldState,
         DeferredRuntimeConfig.Snapshot settings
 ) {
     public DeferredPassContext {
+        if (temporalHistory == null) temporalHistory = new DeferredTemporalHistoryRegistry();
         if (worldState == null) worldState = WorldRenderState.unknown(0L);
         if (settings == null) settings = DeferredRuntimeConfig.current();
     }
@@ -33,6 +35,10 @@ public record DeferredPassContext(
 
     public DeferredHistoryDescriptor history() {
         return primaryView.historyDescriptor();
+    }
+
+    public DeferredTemporalHistoryDescriptor history(DeferredTemporalHistoryId id) {
+        return temporalHistory.descriptor(id);
     }
 
     /** Persistent history is false here until a successful producer has initialized it. */

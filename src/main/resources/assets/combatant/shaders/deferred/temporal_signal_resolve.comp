@@ -20,6 +20,7 @@ layout(binding = 7, rgba16f) writeonly uniform image2D u_OutputColor;
 layout(binding = 8, r8) writeonly uniform image2D u_OutputConfidence;
 layout(binding = 9) uniform sampler2D u_DisocclusionMask;
 layout(std430, binding = 10) readonly buffer TemporalParams { vec4 params; } u_Temporal;
+layout(binding = 11) uniform sampler2D u_ReactiveMask;
 
 void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
@@ -34,7 +35,9 @@ void main() {
     float historyAccept = 0.0;
     vec4 history = current;
     float historyConfidence = 0.0;
-    float explicitHistoryAccept = 1.0 - step(0.5, textureLod(u_DisocclusionMask, uv, 0.0).r);
+    float disocclusionAccept = 1.0 - step(0.5, textureLod(u_DisocclusionMask, uv, 0.0).r);
+    float reactive = clamp(textureLod(u_ReactiveMask, uv, 0.0).r, 0.0, 1.0);
+    float explicitHistoryAccept = disocclusionAccept * (1.0 - reactive);
     if (inside && explicitHistoryAccept > 0.0) {
         float currentDepth = textureLod(u_CurrentDepth, uv, 0.0).r;
         float previousDepth = textureLod(u_HistoryDepth, previousUv, 0.0).r;

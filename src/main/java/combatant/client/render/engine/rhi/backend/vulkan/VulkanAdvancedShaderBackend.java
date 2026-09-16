@@ -38,6 +38,7 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 
 import static org.lwjgl.util.shaderc.Shaderc.*;
@@ -99,6 +100,20 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
         if (descriptor == null) throw new IllegalArgumentException("descriptor");
         validateStorageImageFormat(requireBackend(), descriptor);
         return RhiStorageImages.create(descriptor);
+    }
+
+    @Override
+    public RhiStorageVolume createStorageVolume(StorageVolumeDescriptor descriptor) {
+        requireOpen();
+        if (descriptor == null) throw new IllegalArgumentException("descriptor");
+        IVulkanBackendInfo backend = requireBackend();
+        if (!RhiCapabilities.current().imageLoadStore()) {
+            throw new UnsupportedOperationException("Native Vulkan 3D image load/store is unavailable");
+        }
+        if (!descriptor.format().hasColorAspect() || descriptor.format().componentCount() == 3) {
+            throw new UnsupportedOperationException("Unsupported Vulkan storage-volume format: " + descriptor.format());
+        }
+        return new VulkanStorageVolume(backend, descriptor, stats);
     }
 
     @Override
@@ -314,14 +329,14 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
         if (!(command.pipeline() instanceof VulkanComputePipeline pipeline) || pipeline.closed) {
             throw new IllegalArgumentException("Compute pipeline does not belong to the active Vulkan backend");
         }
-        validateBindings(pipeline.resources(), command.storageBindings(), command.sampledTextures(), command.storageImages());
+        validateBindings(pipeline.resources(), command.storageBindings(), command.sampledTextures(), command.storageImages(), command.storageVolumes());
 
         VulkanCommandEncoder encoder = currentEncoder();
         VkCommandBuffer commandBuffer = commandBuffer(encoder);
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.pipeline);
         bindResourceDescriptors(encoder, commandBuffer, pipeline.device,
                 pipeline.descriptorSetLayout, pipeline.pipelineLayout, VK_PIPELINE_BIND_POINT_COMPUTE,
-                pipeline.resources(), command.storageBindings(), command.sampledTextures(), command.storageImages(), pipeline.label());
+                pipeline.resources(), command.storageBindings(), command.sampledTextures(), command.storageImages(), command.storageVolumes(), pipeline.label());
         vkCmdDispatch(commandBuffer, command.groupsX(), command.groupsY(), command.groupsZ());
         stats.computeDispatch(command.groupsX(), command.groupsY(), command.groupsZ(), command.storageBindings().size());
     }
@@ -356,10 +371,11 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
                 dependency.pBufferMemoryBarriers(buffers);
             }
 
-            if (!barrier.images().isEmpty()) {
-                VkImageMemoryBarrier2.Buffer images = VkImageMemoryBarrier2.calloc(barrier.images().size(), stack);
-                for (int i = 0; i < barrier.images().size(); i++) {
-                    RhiStorageImage rhiImage = barrier.images().get(i);
+            int imageBarrierCount = barrier.images().size() + barrier.volumes().size();
+            if (imageBarrierCount > 0) {
+                VkImageMemoryBarrier2.Buffer images = VkImageMemoryBarrier2.calloc(imageBarrierCount, stack);
+                int imageIndex = 0;
+                for (RhiStorageImage rhiImage : barrier.images()) {
                     if (!(rhiImage.view() instanceof VulkanGpuTextureView view) || view.isClosed()) {
                         throw new IllegalArgumentException("Barrier image does not belong to the active Vulkan backend");
                     }
@@ -367,14 +383,14 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
                     if (texture == null || texture.isClosed()) {
                         throw new IllegalArgumentException("Barrier image texture is closed");
                     }
-                    VkImageSubresourceRange range = images.get(i).subresourceRange();
-                    range.aspectMask(VK_IMAGE_ASPECT_COLOR_BIT)
+                    VkImageMemoryBarrier2 imageBarrier = images.get(imageIndex++);
+                    imageBarrier.subresourceRange()
+                            .aspectMask(VK_IMAGE_ASPECT_COLOR_BIT)
                             .baseMipLevel(0)
                             .levelCount(rhiImage.descriptor().mipLevels())
                             .baseArrayLayer(0)
                             .layerCount(1);
-
-                    images.get(i).sType$Default()
+                    imageBarrier.sType$Default()
                             .srcStageMask(stageMask(barrier.sourceStage()))
                             .srcAccessMask(accessMask(barrier.sourceStage(), barrier.sourceAccess()))
                             .dstStageMask(stageMask(barrier.destinationStage()))
@@ -385,10 +401,33 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
                             .dstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
                             .image(texture.vkImage());
                 }
+                for (RhiStorageVolume rhiVolume : barrier.volumes()) {
+                    if (!(rhiVolume instanceof VulkanStorageVolume volume)) {
+                        throw new IllegalArgumentException("Barrier volume does not belong to the active Vulkan backend");
+                    }
+                    volume.ensureGeneralLayout(commandBuffer);
+                    VkImageMemoryBarrier2 imageBarrier = images.get(imageIndex++);
+                    imageBarrier.subresourceRange()
+                            .aspectMask(VK_IMAGE_ASPECT_COLOR_BIT)
+                            .baseMipLevel(0)
+                            .levelCount(volume.descriptor().mipLevels())
+                            .baseArrayLayer(0)
+                            .layerCount(1);
+                    imageBarrier.sType$Default()
+                            .srcStageMask(stageMask(barrier.sourceStage()))
+                            .srcAccessMask(accessMask(barrier.sourceStage(), barrier.sourceAccess()))
+                            .dstStageMask(stageMask(barrier.destinationStage()))
+                            .dstAccessMask(accessMask(barrier.destinationStage(), barrier.destinationAccess()))
+                            .oldLayout(VK_IMAGE_LAYOUT_GENERAL)
+                            .newLayout(VK_IMAGE_LAYOUT_GENERAL)
+                            .srcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                            .dstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                            .image(volume.image());
+                }
                 dependency.pImageMemoryBarriers(images);
             }
 
-            if (barrier.buffers().isEmpty() && barrier.images().isEmpty()) {
+            if (barrier.buffers().isEmpty() && barrier.images().isEmpty() && barrier.volumes().isEmpty()) {
                 VkMemoryBarrier2.Buffer memory = VkMemoryBarrier2.calloc(1, stack);
                 memory.get(0).sType$Default()
                         .srcStageMask(stageMask(barrier.sourceStage()))
@@ -430,7 +469,7 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
             depth = vkDepth;
         }
         validatePatchTarget(pipeline.descriptor, colors, depth);
-        validateBindings(pipeline.resources(), command.storageBindings(), command.sampledTextures(), command.storageImages());
+        validateBindings(pipeline.resources(), command.storageBindings(), command.sampledTextures(), command.storageImages(), List.of());
 
         GpuMeshHandle mesh = command.mesh();
         mesh.validateForDraw(command.label());
@@ -499,7 +538,7 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
                 vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipeline);
                 bindResourceDescriptors(encoder, commandBuffer, pipeline.device,
                         pipeline.descriptorSetLayout, pipeline.pipelineLayout, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                        pipeline.resources(), command.storageBindings(), command.sampledTextures(), command.storageImages(), pipeline.label());
+                        pipeline.resources(), command.storageBindings(), command.sampledTextures(), command.storageImages(), List.of(), pipeline.label());
 
                 vkCmdBindVertexBuffers(commandBuffer, 0,
                         stack.longs(vertex.vkBuffer()), stack.longs(0L));
@@ -629,6 +668,7 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
                                          List<StorageBinding> buffers,
                                          List<SampledTextureBinding> sampled,
                                          List<StorageImageBinding> images,
+                                         List<StorageVolumeBinding> volumes,
                                          String label) {
         if (descriptorSetLayout == 0L) return;
 
@@ -636,10 +676,10 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
             long descriptorSet = allocateDescriptorSet(
                     encoder, device, descriptorSetLayout, layout, stack, label);
 
-            int total = buffers.size() + sampled.size() + images.size();
+            int total = buffers.size() + sampled.size() + images.size() + volumes.size();
             VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(total, stack);
             List<VkDescriptorBufferInfo.Buffer> bufferInfos = new ArrayList<>(buffers.size());
-            List<VkDescriptorImageInfo.Buffer> imageInfos = new ArrayList<>(sampled.size() + images.size());
+            List<VkDescriptorImageInfo.Buffer> imageInfos = new ArrayList<>(sampled.size() + images.size() + volumes.size());
             int write = 0;
             long storageAlignment = storageBufferOffsetAlignment();
             long maxStorageRange = maxStorageBufferRange();
@@ -709,6 +749,23 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
                         .descriptorCount(1)
                         .pImageInfo(info);
             }
+            for (StorageVolumeBinding binding : volumes) {
+                if (!(binding.volume() instanceof VulkanStorageVolume volume)) {
+                    throw new IllegalArgumentException("Storage volume does not belong to the active Vulkan backend");
+                }
+                volume.ensureGeneralLayout(commandBuffer);
+                VkDescriptorImageInfo.Buffer info = VkDescriptorImageInfo.calloc(1, stack);
+                info.get(0).sampler(0L)
+                        .imageView(volume.imageView(binding.mipLevel()))
+                        .imageLayout(VK_IMAGE_LAYOUT_GENERAL);
+                imageInfos.add(info);
+                writes.get(write++).sType$Default()
+                        .dstSet(descriptorSet)
+                        .dstBinding(binding.binding())
+                        .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                        .descriptorCount(1)
+                        .pImageInfo(info);
+            }
             vkUpdateDescriptorSets(device, writes, null);
             vkCmdBindDescriptorSets(commandBuffer, bindPoint, pipelineLayout, 0,
                     stack.longs(descriptorSet), null);
@@ -738,7 +795,7 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
         DescriptorPoolKey key = new DescriptorPoolKey(
                 layout.count(ShaderResourceKind.STORAGE_BUFFER),
                 layout.count(ShaderResourceKind.SAMPLED_TEXTURE),
-                layout.count(ShaderResourceKind.STORAGE_IMAGE)
+                layout.count(ShaderResourceKind.STORAGE_IMAGE) + layout.count(ShaderResourceKind.STORAGE_VOLUME)
         );
         DescriptorPoolBatch batch = descriptorPools.get(key);
         if (batch == null || batch.allocatedSets >= batch.maxSets) {
@@ -794,14 +851,15 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
         return switch (kind) {
             case STORAGE_BUFFER -> VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             case SAMPLED_TEXTURE -> VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            case STORAGE_IMAGE -> VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+            case STORAGE_IMAGE, STORAGE_VOLUME -> VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
         };
     }
 
     private static void validateResourceLayout(ShaderResourceLayout layout, String owner) {
         RhiCapabilities caps = RhiCapabilities.current();
         for (ShaderResourceSlot slot : layout.slots()) {
-            if (slot.kind() == ShaderResourceKind.STORAGE_IMAGE && !caps.imageLoadStore()) {
+            if ((slot.kind() == ShaderResourceKind.STORAGE_IMAGE || slot.kind() == ShaderResourceKind.STORAGE_VOLUME)
+                    && !caps.imageLoadStore()) {
                 throw new UnsupportedOperationException(owner + " requires Vulkan image load/store support");
             }
         }
@@ -810,7 +868,9 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
     private static void validateBindings(ShaderResourceLayout layout,
                                          List<StorageBinding> buffers,
                                          List<SampledTextureBinding> sampled,
-                                         List<StorageImageBinding> images) {
+                                         List<StorageImageBinding> images,
+                                         List<StorageVolumeBinding> volumes) {
+        validateUniqueBindings(buffers, sampled, images, volumes);
         for (StorageBinding binding : buffers) {
             ShaderResourceSlot slot = layout.slot(binding.binding());
             if (slot == null || slot.kind() != ShaderResourceKind.STORAGE_BUFFER) {
@@ -830,14 +890,41 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
                 throw new IllegalArgumentException("No STORAGE_IMAGE slot declared at binding " + binding.binding());
             }
             validateAccess(slot, binding.access(), binding.binding());
+            validateExpectedFormat(slot, binding.image().descriptor().format(), binding.binding());
+        }
+        for (StorageVolumeBinding binding : volumes) {
+            ShaderResourceSlot slot = layout.slot(binding.binding());
+            if (slot == null || slot.kind() != ShaderResourceKind.STORAGE_VOLUME) {
+                throw new IllegalArgumentException("No STORAGE_VOLUME slot declared at binding " + binding.binding());
+            }
+            validateAccess(slot, binding.access(), binding.binding());
+            validateExpectedFormat(slot, binding.volume().descriptor().format(), binding.binding());
         }
         for (ShaderResourceSlot slot : layout.slots()) {
             boolean found = switch (slot.kind()) {
                 case STORAGE_BUFFER -> buffers.stream().anyMatch(b -> b.binding() == slot.binding());
                 case SAMPLED_TEXTURE -> sampled.stream().anyMatch(b -> b.binding() == slot.binding());
                 case STORAGE_IMAGE -> images.stream().anyMatch(b -> b.binding() == slot.binding());
+                case STORAGE_VOLUME -> volumes.stream().anyMatch(b -> b.binding() == slot.binding());
             };
             if (!found) throw new IllegalArgumentException("Missing " + slot.kind() + " binding " + slot.binding());
+        }
+    }
+
+    private static void validateUniqueBindings(List<StorageBinding> buffers,
+                                               List<SampledTextureBinding> sampled,
+                                               List<StorageImageBinding> images,
+                                               List<StorageVolumeBinding> volumes) {
+        Set<Integer> seen = new java.util.HashSet<>();
+        for (StorageBinding binding : buffers) requireUniqueBinding(seen, binding.binding());
+        for (SampledTextureBinding binding : sampled) requireUniqueBinding(seen, binding.binding());
+        for (StorageImageBinding binding : images) requireUniqueBinding(seen, binding.binding());
+        for (StorageVolumeBinding binding : volumes) requireUniqueBinding(seen, binding.binding());
+    }
+
+    private static void requireUniqueBinding(Set<Integer> seen, int binding) {
+        if (!seen.add(binding)) {
+            throw new IllegalArgumentException("Duplicate shader resource binding " + binding);
         }
     }
 
@@ -845,6 +932,13 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
         if (!slot.access().allows(actual)) {
             throw new IllegalArgumentException("Binding " + binding + " access " + actual
                     + " exceeds declared access " + slot.access());
+        }
+    }
+
+    private static void validateExpectedFormat(ShaderResourceSlot slot, com.mojang.blaze3d.GpuFormat actual, int binding) {
+        if (slot.format() != null && slot.format() != actual) {
+            throw new IllegalArgumentException("Binding " + binding + " format " + actual
+                    + " does not match declared shader image format " + slot.format());
         }
     }
 

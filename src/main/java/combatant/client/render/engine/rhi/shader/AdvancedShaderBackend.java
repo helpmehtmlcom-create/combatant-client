@@ -32,6 +32,11 @@ public interface AdvancedShaderBackend extends AutoCloseable {
         }
 
         @Override
+        public RhiStorageVolume createStorageVolume(StorageVolumeDescriptor descriptor) {
+            throw new UnsupportedOperationException("Native storage-volume backend is unavailable");
+        }
+
+        @Override
         public RhiComputePipeline createComputePipeline(ComputePipelineDescriptor descriptor) {
             throw new UnsupportedOperationException("Native compute backend is unavailable");
         }
@@ -70,6 +75,8 @@ public interface AdvancedShaderBackend extends AutoCloseable {
     RhiStorageBuffer createStorageBuffer(StorageBufferDescriptor descriptor);
 
     RhiStorageImage createStorageImage(StorageImageDescriptor descriptor);
+
+    RhiStorageVolume createStorageVolume(StorageVolumeDescriptor descriptor);
 
     RhiComputePipeline createComputePipeline(ComputePipelineDescriptor descriptor);
 

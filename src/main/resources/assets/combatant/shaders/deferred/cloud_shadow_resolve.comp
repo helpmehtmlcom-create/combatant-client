@@ -14,24 +14,13 @@ layout(std430, binding = 3) readonly buffer CloudShadowResolveData {
     vec4 cloudBounds;
 } u_Data;
 
-const int MAX_ALTITUDE_SLICES = 16;
+#moj_import <combatant:deferred_cloud_shadow_sampling.glsl>
 
 vec3 viewPosition(vec2 uv, float depth) {
     float ndcZ = u_Data.cloudBounds.z > 0.5 ? depth : depth * 2.0 - 1.0;
     vec4 value = u_Data.inverseProjection * vec4(uv * 2.0 - 1.0, ndcZ, 1.0);
     if (abs(value.w) < 1e-7) return vec3(0.0);
     return value.xyz / value.w;
-}
-
-float sampleShadowSlice(vec2 mapUv, int sliceIndex, int sliceCount) {
-    ivec2 atlasSize = textureSize(u_CloudShadowMap, 0);
-    int sliceHeight = max(1, atlasSize.y / max(sliceCount, 1));
-    sliceIndex = clamp(sliceIndex, 0, sliceCount - 1);
-    vec2 clampedUv = clamp(mapUv, vec2(0.0), vec2(1.0));
-    float x = clampedUv.x * float(max(atlasSize.x - 1, 0)) + 0.5;
-    float localY = clampedUv.y * float(max(sliceHeight - 1, 0)) + 0.5;
-    float y = float(sliceIndex * sliceHeight) + localY;
-    return textureLod(u_CloudShadowMap, vec2(x / float(atlasSize.x), y / float(atlasSize.y)), 0.0).r;
 }
 
 void main() {
@@ -49,29 +38,8 @@ void main() {
     vec3 view = viewPosition(uv, depth);
     vec3 relativeWorld = mat3(u_Data.inverseView) * view;
     float worldY = u_Data.camera.y + relativeWorld.y;
-    float minCloudY = u_Data.cloudBounds.x;
-    float maxCloudY = u_Data.cloudBounds.y;
-    if (worldY >= maxCloudY) {
-        imageStore(u_CloudShadowVisibility, pixel, vec4(1.0));
-        return;
-    }
-
-    vec3 sun = normalize(u_Data.sunDirection.xyz);
-    vec2 referenceRelative = relativeWorld.xz - sun.xz * (worldY - u_Data.mapDomain.w) / sun.y;
-    vec2 mapUv = (referenceRelative - u_Data.mapDomain.xy) / u_Data.mapDomain.z;
-    if (any(lessThan(mapUv, vec2(0.0))) || any(greaterThan(mapUv, vec2(1.0)))) {
-        imageStore(u_CloudShadowVisibility, pixel, vec4(1.0));
-        return;
-    }
-
-    int sliceCount = clamp(int(u_Data.cloudBounds.w), 1, MAX_ALTITUDE_SLICES);
-    float height01 = clamp((worldY - minCloudY) / max(maxCloudY - minCloudY, 1.0), 0.0, 1.0);
-    float slicePosition = height01 * float(max(sliceCount - 1, 0));
-    int slice0 = int(floor(slicePosition));
-    int slice1 = min(slice0 + 1, sliceCount - 1);
-    float sliceBlend = fract(slicePosition);
-    float visibility0 = sampleShadowSlice(mapUv, slice0, sliceCount);
-    float visibility1 = sampleShadowSlice(mapUv, slice1, sliceCount);
-    float visibility = clamp(mix(visibility0, visibility1, sliceBlend), 0.0, 1.0);
+    float visibility = combatant_sample_cloud_shadow(
+            u_CloudShadowMap, relativeWorld, worldY,
+            u_Data.mapDomain, u_Data.sunDirection, u_Data.cloudBounds);
     imageStore(u_CloudShadowVisibility, pixel, vec4(visibility, 0.0, 0.0, 0.0));
 }

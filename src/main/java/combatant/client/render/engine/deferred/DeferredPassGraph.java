@@ -19,6 +19,7 @@ import combatant.client.render.engine.rhi.CombatantRhi;
 import combatant.client.render.engine.rhi.shader.RhiResourceBarrier;
 import combatant.client.render.engine.rhi.shader.RhiStorageBuffer;
 import combatant.client.render.engine.rhi.shader.RhiStorageImage;
+import combatant.client.render.engine.rhi.shader.RhiStorageVolume;
 import combatant.client.render.engine.rhi.shader.RhiShaderStage;
 import combatant.client.render.engine.world.WorldRenderState;
 import combatant.client.util.logging.DebugLog;
@@ -107,7 +108,7 @@ public final class DeferredPassGraph {
 
     public void execute(DeferredStage stage, RenderFrameContext frame, DeferredResourceBindings resources) {
         execute(stage, frame, resources, new DeferredSecondaryViewRegistry(), new DeferredPrimaryViewSource(),
-                WorldRenderState.unknown(0L), DeferredRuntimeConfig.current());
+                new DeferredTemporalHistoryRegistry(), WorldRenderState.unknown(0L), DeferredRuntimeConfig.current());
     }
 
     public void execute(DeferredStage stage,
@@ -115,8 +116,8 @@ public final class DeferredPassGraph {
                         DeferredResourceBindings resources,
                         DeferredSecondaryViewRegistry secondaryViews,
                         DeferredPrimaryViewSource primaryView) {
-        execute(stage, frame, resources, secondaryViews, primaryView, WorldRenderState.unknown(0L),
-                DeferredRuntimeConfig.current());
+        execute(stage, frame, resources, secondaryViews, primaryView, new DeferredTemporalHistoryRegistry(),
+                WorldRenderState.unknown(0L), DeferredRuntimeConfig.current());
     }
 
     public void execute(DeferredStage stage,
@@ -124,11 +125,13 @@ public final class DeferredPassGraph {
                         DeferredResourceBindings resources,
                         DeferredSecondaryViewRegistry secondaryViews,
                         DeferredPrimaryViewSource primaryView,
+                        DeferredTemporalHistoryRegistry temporalHistory,
                         WorldRenderState worldState,
                         DeferredRuntimeConfig.Snapshot settings) {
         if (stage == null || frame == null || resources == null) return;
         if (secondaryViews == null) throw new IllegalArgumentException("secondaryViews");
         if (primaryView == null) throw new IllegalArgumentException("primaryView");
+        if (temporalHistory == null) throw new IllegalArgumentException("temporalHistory");
         List<DeferredPassSpec> snapshot;
         CompiledFrameGraph compiledSnapshot;
         synchronized (this) {
@@ -139,7 +142,7 @@ public final class DeferredPassGraph {
 
         CombatantRhi rhi = CombatantRenderSystem.rhi();
         DeferredPassContext context = new DeferredPassContext(
-                stage, frame, rhi, resources, secondaryViews, primaryView, worldState, settings
+                stage, frame, rhi, resources, secondaryViews, primaryView, temporalHistory, worldState, settings
         );
         try (RenderPhaseScope ignored = CombatantRenderSystem.phase(stage.renderPhase(), "deferred:" + stage.name().toLowerCase())) {
             for (int passIndex = 0; passIndex < snapshot.size(); passIndex++) {
@@ -253,8 +256,9 @@ public final class DeferredPassGraph {
 
             RhiStorageBuffer buffer = context.resources().buffer(resource);
             RhiStorageImage image = context.resources().storageImage(resource);
-            boolean genericTexture = image == null && context.resources().texture(resource) != null;
-            if (buffer == null && image == null && !genericTexture) continue;
+            RhiStorageVolume volume = context.resources().storageVolume(resource);
+            boolean genericTexture = image == null && volume == null && context.resources().texture(resource) != null;
+            if (buffer == null && image == null && volume == null && !genericTexture) continue;
 
             DeferredPassSpec producer = passes.get(dependency.producerIndex());
             DeferredPassSpec consumer = passes.get(dependency.consumerIndex());
@@ -270,7 +274,7 @@ public final class DeferredPassGraph {
                 ));
             }
 
-            if (buffer == null && image == null) continue;
+            if (buffer == null && image == null && volume == null) continue;
             BarrierKey key = new BarrierKey(
                     barrierStage(producer), sourceAccess,
                     barrierStage(consumer), destinationAccess
@@ -278,6 +282,7 @@ public final class DeferredPassGraph {
             BarrierResources values = grouped.computeIfAbsent(key, ignored -> new BarrierResources());
             if (buffer != null && !values.buffers.contains(buffer)) values.buffers.add(buffer);
             if (image != null && !values.images.contains(image)) values.images.add(image);
+            if (volume != null && !values.volumes.contains(volume)) values.volumes.add(volume);
         }
 
         for (Map.Entry<BarrierKey, BarrierResources> entry : grouped.entrySet()) {
@@ -286,7 +291,7 @@ public final class DeferredPassGraph {
             context.advancedShaders().barrier(new RhiResourceBarrier(
                     key.sourceStage, key.sourceAccess,
                     key.destinationStage, key.destinationAccess,
-                    resources.buffers, resources.images
+                    resources.buffers, resources.images, resources.volumes
             ));
         }
         for (BarrierKey key : genericTextureBarriers) {
@@ -336,5 +341,6 @@ public final class DeferredPassGraph {
     private static final class BarrierResources {
         private final ArrayList<RhiStorageBuffer> buffers = new ArrayList<>();
         private final ArrayList<RhiStorageImage> images = new ArrayList<>();
+        private final ArrayList<RhiStorageVolume> volumes = new ArrayList<>();
     }
 }

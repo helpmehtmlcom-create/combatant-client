@@ -55,7 +55,7 @@ public final class MaterialRegistry {
         }
 
         Map<DescriptorKey, ExplicitDescriptor> explicit = loadExplicitDescriptors(resources);
-        snapshot = new Snapshot(Set.copyOf(available), Map.copyOf(explicit), new HashMap<>(), new HashMap<>());
+        snapshot = new Snapshot(Set.copyOf(available), Map.copyOf(explicit), new HashMap<>(), new HashMap<>(), new HashMap<>());
         DebugLog.renderThread("[Materials] registry reload: textures=%d explicitDescriptors=%d",
                 available.size(), explicit.size());
     }
@@ -115,6 +115,7 @@ public final class MaterialRegistry {
         Scalars scalars;
         MaterialTessellationProfile tessellation;
         MaterialWeatherResponse weatherResponse;
+        MaterialTemporalPolicy temporalPolicy;
 
         if (explicit != null) {
             classification = explicit.applyClassification(producer);
@@ -126,11 +127,15 @@ public final class MaterialRegistry {
             weatherResponse = explicit.weatherResponse != null
                     ? explicit.weatherResponse
                     : MaterialWeatherResponse.NONE;
+            temporalPolicy = explicit.temporalPolicy != null
+                    ? explicit.temporalPolicy
+                    : defaultTemporalPolicy(classification);
             source = MaterialResolutionSource.EXPLICIT_DESCRIPTOR;
         } else {
             scalars = defaultScalars(classification);
             tessellation = defaultTessellation(classification.domain());
             weatherResponse = MaterialWeatherResponse.NONE;
+            temporalPolicy = defaultTemporalPolicy(classification);
             boolean labPbr = maps.containsKey(MaterialTextureSemantic.LABPBR_NORMAL)
                     || maps.containsKey(MaterialTextureSemantic.LABPBR_SPECULAR);
             if (classification.source() == MaterialResolutionSource.TAG) {
@@ -168,11 +173,15 @@ public final class MaterialRegistry {
                 scalars.clearcoatRoughness,
                 scalars.porosity,
                 scalars.thickness,
+                temporalPolicy,
                 weatherResponse,
                 tessellation
         );
         synchronized (state.weatherResponses) {
             state.weatherResponses.put(stableId, weatherResponse);
+        }
+        synchronized (state.temporalPolicies) {
+            state.temporalPolicies.put(stableId, temporalPolicy);
         }
         return descriptor;
     }
@@ -182,6 +191,14 @@ public final class MaterialRegistry {
         Snapshot state = snapshot;
         synchronized (state.weatherResponses) {
             return Map.copyOf(state.weatherResponses);
+        }
+    }
+
+    /** Exact reactive policy keyed by the stable material ID written to the G-buffer. */
+    public Map<Integer, MaterialTemporalPolicy> temporalPoliciesSnapshot() {
+        Snapshot state = snapshot;
+        synchronized (state.temporalPolicies) {
+            return Map.copyOf(state.temporalPolicies);
         }
     }
 
@@ -208,6 +225,7 @@ public final class MaterialRegistry {
                 scalars.clearcoatRoughness,
                 scalars.porosity,
                 scalars.thickness,
+                defaultTemporalPolicy(resolved),
                 MaterialWeatherResponse.NONE,
                 defaultTessellation(resolved.domain())
         );
@@ -232,6 +250,19 @@ public final class MaterialRegistry {
                     (traits & MaterialTrait.FOLIAGE.bit()) != 0 ? 0.35f : 0.0f,
                     0.0f, 0.25f, 0.5f, 1.0f);
         };
+    }
+
+    private static MaterialTemporalPolicy defaultTemporalPolicy(MaterialClassification classification) {
+        MaterialDomain domain = classification == null ? MaterialDomain.UNKNOWN : classification.domain();
+        int traits = classification == null ? 0 : classification.traitMask();
+        if (domain == MaterialDomain.PORTAL || domain == MaterialDomain.WATER) {
+            return MaterialTemporalPolicy.REJECT_HISTORY;
+        }
+        if (domain == MaterialDomain.TRANSLUCENT || domain == MaterialDomain.GLASS || domain == MaterialDomain.LAVA
+                || (traits & MaterialTrait.EMISSIVE.bit()) != 0) {
+            return MaterialTemporalPolicy.RESPONSIVE;
+        }
+        return MaterialTemporalPolicy.STABLE;
     }
 
     /** Height maps alone never opt a surface into patch topology. */
@@ -326,6 +357,10 @@ public final class MaterialRegistry {
             }
         }
 
+        MaterialTemporalPolicy temporalPolicy = json.has("temporalPolicy")
+                ? parseEnum(MaterialTemporalPolicy.class, json.get("temporalPolicy").getAsString())
+                : null;
+
         MaterialWeatherResponse weatherResponse = null;
         if (json.has("weatherResponse")) {
             JsonObject weather = json.getAsJsonObject("weatherResponse");
@@ -348,7 +383,7 @@ public final class MaterialRegistry {
                 optionalFloat(json, "emission"), optionalFloat(json, "heightScale"),
                 optionalFloat(json, "transmission"), optionalFloat(json, "subsurface"),
                 optionalFloat(json, "clearcoat"), optionalFloat(json, "clearcoatRoughness"),
-                optionalFloat(json, "porosity"), optionalFloat(json, "thickness"), weatherResponse, tess
+                optionalFloat(json, "porosity"), optionalFloat(json, "thickness"), temporalPolicy, weatherResponse, tess
         );
     }
 
@@ -452,6 +487,7 @@ public final class MaterialRegistry {
             Float clearcoatRoughness,
             Float porosity,
             Float thickness,
+            MaterialTemporalPolicy temporalPolicy,
             MaterialWeatherResponse weatherResponse,
             MaterialTessellationProfile tessellation
     ) {
@@ -506,7 +542,8 @@ public final class MaterialRegistry {
     private record Snapshot(Set<Identifier> available,
                             Map<DescriptorKey, ExplicitDescriptor> explicit,
                             Map<CacheKey, MaterialSurfaceDescriptor> cache,
-                            Map<Integer, MaterialWeatherResponse> weatherResponses) {
-        private static final Snapshot EMPTY = new Snapshot(Set.of(), Map.of(), new HashMap<>(), new HashMap<>());
+                            Map<Integer, MaterialWeatherResponse> weatherResponses,
+                            Map<Integer, MaterialTemporalPolicy> temporalPolicies) {
+        private static final Snapshot EMPTY = new Snapshot(Set.of(), Map.of(), new HashMap<>(), new HashMap<>(), new HashMap<>());
     }
 }

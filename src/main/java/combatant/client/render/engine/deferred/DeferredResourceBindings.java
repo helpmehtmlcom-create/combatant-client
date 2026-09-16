@@ -13,6 +13,7 @@ import combatant.client.render.engine.framegraph.FrameGraphResourceLifetime;
 import combatant.client.render.engine.rhi.CombatantRhi;
 import combatant.client.render.engine.rhi.shader.RhiStorageBuffer;
 import combatant.client.render.engine.rhi.shader.RhiStorageImage;
+import combatant.client.render.engine.rhi.shader.RhiStorageVolume;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.EnumMap;
@@ -22,6 +23,7 @@ public final class DeferredResourceBindings {
     private final EnumMap<DeferredResource, GpuTextureView> textures = new EnumMap<>(DeferredResource.class);
     private final EnumMap<DeferredResource, RhiStorageBuffer> buffers = new EnumMap<>(DeferredResource.class);
     private final EnumMap<DeferredResource, RhiStorageImage> images = new EnumMap<>(DeferredResource.class);
+    private final EnumMap<DeferredResource, RhiStorageVolume> volumes = new EnumMap<>(DeferredResource.class);
     private final EnumMap<DeferredResource, DeferredResourceAllocator.Allocation> owned =
             new EnumMap<>(DeferredResource.class);
     private final DeferredResourceAllocator allocator;
@@ -59,6 +61,7 @@ public final class DeferredResourceBindings {
             textures.remove(resource);
             buffers.remove(resource);
             images.remove(resource);
+            volumes.remove(resource);
             owned.remove(resource);
         }
     }
@@ -74,6 +77,7 @@ public final class DeferredResourceBindings {
         textures.clear();
         buffers.clear();
         images.clear();
+        volumes.clear();
         owned.clear();
     }
 
@@ -99,6 +103,11 @@ public final class DeferredResourceBindings {
         }
     }
 
+    public void bindStorageVolume(DeferredResource resource, @Nullable RhiStorageVolume volume) {
+        requireTextureResource(resource);
+        if (volume == null) volumes.remove(resource); else volumes.put(resource, volume);
+    }
+
     public @Nullable GpuTextureView texture(DeferredResource resource) {
         return textures.get(resource);
     }
@@ -111,8 +120,13 @@ public final class DeferredResourceBindings {
         return images.get(resource);
     }
 
+    public @Nullable RhiStorageVolume storageVolume(DeferredResource resource) {
+        return volumes.get(resource);
+    }
+
     public boolean isBound(DeferredResource resource) {
-        return textures.containsKey(resource) || buffers.containsKey(resource) || images.containsKey(resource);
+        return textures.containsKey(resource) || buffers.containsKey(resource)
+                || images.containsKey(resource) || volumes.containsKey(resource);
     }
 
     /** True when the resource contains defined data for this frame/history generation. */

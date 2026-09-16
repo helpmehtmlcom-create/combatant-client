@@ -8,20 +8,23 @@
 package combatant.client.render.engine.deferred;
 
 /**
- * Frame-local temporal history contract. Epoch changes whenever previous-frame data becomes
- * semantically incompatible with the current primary view.
+ * Frame-local primary-view history contract. Resource histories reuse the same epoch/reset
+ * semantics through {@link DeferredTemporalHistoryRegistry}.
  */
 public record DeferredHistoryDescriptor(
         long epoch,
         long currentFrameId,
         long previousFrameId,
+        int age,
         boolean valid,
         DeferredHistoryResetReason resetReason
 ) {
     public DeferredHistoryDescriptor {
+        age = Math.max(0, age);
         if (resetReason == null) resetReason = DeferredHistoryResetReason.RENDERER_RESET;
         if (valid && resetReason != DeferredHistoryResetReason.NONE) {
             throw new IllegalArgumentException("Valid history cannot carry reset reason " + resetReason);
         }
+        if (!valid && age != 0) age = 0;
     }
 }

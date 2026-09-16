@@ -45,8 +45,9 @@ final class DeferredDisocclusionSource implements AutoCloseable {
             new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(1, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(2, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
-            new ShaderResourceSlot(3, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
-            new ShaderResourceSlot(4, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
+            new ShaderResourceSlot(3, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(4, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
+            new ShaderResourceSlot(5, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
     ));
 
     private CombatantRhi owner;
@@ -55,16 +56,17 @@ final class DeferredDisocclusionSource implements AutoCloseable {
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.temporal.disocclusion", DeferredStage.PRE_TRANSLUCENCY_TEMPORAL_VALIDATION)
-                .read(DeferredResource.VELOCITY, DeferredResource.RESOLVED_DEPTH, DeferredResource.HISTORY_DEPTH)
+                .read(DeferredResource.VELOCITY, DeferredResource.MOTION_VALIDITY, DeferredResource.RESOLVED_DEPTH, DeferredResource.HISTORY_DEPTH)
                 .write(DeferredResource.DISOCCLUSION_MASK)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> temporalConsumersEnabled(context.settings())
-                        && context.primaryView().historyDescriptor().valid()
+                        && context.history(DeferredTemporalHistoryId.SCENE).valid()
                         && context.isValid(DeferredResource.VELOCITY)
+                        && context.isValid(DeferredResource.MOTION_VALIDITY)
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
                         && context.resources().texture(DeferredResource.VELOCITY) != null
-                        && context.resources().texture(DeferredResource.RESOLVED_DEPTH) != null
-                        && context.resources().bindExisting(DeferredResource.HISTORY_DEPTH, context.settings()))
+                        && context.resources().texture(DeferredResource.MOTION_VALIDITY) != null
+                        && context.resources().texture(DeferredResource.RESOLVED_DEPTH) != null)
                 .execute(this::render)
                 .build());
     }
@@ -84,13 +86,15 @@ final class DeferredDisocclusionSource implements AutoCloseable {
     private void render(DeferredPassContext context) {
         ensureOwner(context.rhi());
         GpuTextureView velocity = requireTexture(context, DeferredResource.VELOCITY);
+        GpuTextureView motionValidity = requireTexture(context, DeferredResource.MOTION_VALIDITY);
         GpuTextureView currentDepth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
         GpuTextureView historyDepth = requireTexture(context, DeferredResource.HISTORY_DEPTH);
         RhiStorageImage output = requireImage(context, DeferredResource.DISOCCLUSION_MASK);
 
         float depthThreshold = sharedDepthThreshold(context.settings());
+        float pixelScale = 1.0f / Math.max(1.0f, Math.min(output.descriptor().width(), output.descriptor().height()));
         Std430Writer writer = new Std430Writer(PARAMS_LAYOUT, 1)
-                .putVec4(0, "params", depthThreshold, 0.0f, 0.0f, 0.0f);
+                .putVec4(0, "params", depthThreshold, pixelScale, 1.5f, 0.0f);
         RhiStorageBuffer paramBuffer = params();
         paramBuffer.upload(writer.buffer(), 0L);
 
@@ -98,13 +102,14 @@ final class DeferredDisocclusionSource implements AutoCloseable {
         context.advancedShaders().dispatch(new ComputeDispatchCommand(
                 "Combatant temporal disocclusion mask",
                 pipeline(), groups(output.descriptor().width()), groups(output.descriptor().height()), 1,
-                List.of(new StorageBinding(4, paramBuffer, 0L, writer.byteSize(), StorageAccess.READ_ONLY)),
+                List.of(new StorageBinding(5, paramBuffer, 0L, writer.byteSize(), StorageAccess.READ_ONLY)),
                 List.of(
                         new SampledTextureBinding(0, velocity, nearest),
                         new SampledTextureBinding(1, currentDepth, nearest),
-                        new SampledTextureBinding(2, historyDepth, nearest)
+                        new SampledTextureBinding(2, historyDepth, nearest),
+                        new SampledTextureBinding(3, motionValidity, nearest)
                 ),
-                List.of(new StorageImageBinding(3, output, StorageAccess.WRITE_ONLY))
+                List.of(new StorageImageBinding(4, output, StorageAccess.WRITE_ONLY))
         ));
     }
 

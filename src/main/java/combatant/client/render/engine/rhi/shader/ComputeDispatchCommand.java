@@ -16,7 +16,8 @@ public record ComputeDispatchCommand(String label,
                                      int groupsZ,
                                      List<StorageBinding> storageBindings,
                                      List<SampledTextureBinding> sampledTextures,
-                                     List<StorageImageBinding> storageImages) {
+                                     List<StorageImageBinding> storageImages,
+                                     List<StorageVolumeBinding> storageVolumes) {
     public ComputeDispatchCommand {
         label = label == null || label.isBlank() ? "combatant-compute" : label;
         if (pipeline == null) throw new IllegalArgumentException("pipeline");
@@ -32,6 +33,20 @@ public record ComputeDispatchCommand(String label,
         storageImages = storageImages == null || storageImages.isEmpty()
                 ? List.of()
                 : List.copyOf(storageImages);
+        storageVolumes = storageVolumes == null || storageVolumes.isEmpty()
+                ? List.of()
+                : List.copyOf(storageVolumes);
+    }
+
+    public ComputeDispatchCommand(String label,
+                                  RhiComputePipeline pipeline,
+                                  int groupsX,
+                                  int groupsY,
+                                  int groupsZ,
+                                  List<StorageBinding> storageBindings,
+                                  List<SampledTextureBinding> sampledTextures,
+                                  List<StorageImageBinding> storageImages) {
+        this(label, pipeline, groupsX, groupsY, groupsZ, storageBindings, sampledTextures, storageImages, List.of());
     }
 
 }
