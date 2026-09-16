@@ -27,3 +27,59 @@ When a learning is promoted to a skill, add these fields:
 ```
 
 ---
+## [LRN-20260916-001] best_practice
+**Logged**: 2026-09-16T11:45:00Z
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+### Summary
+Minecraft 26.2 Mojang mappings convention for player inventory and input access.
+### Details
+In Minecraft 26.2:
+1. Player selected hotbar slot is retrieved via `player.getInventory().getSelectedSlot()` rather than direct field access.
+2. Movement inputs are stored inside `player.input.keyPresses` (an instance of `Input` record).
+3. Effect holders use `MobEffects.HASTE` and `MobEffects.MINING_FATIGUE` directly from `BuiltInRegistries.MOB_EFFECT`.
+### Suggested Action
+Always verify accessors against deobfuscated Minecraft 26.2 JAR via `javap` before refactoring utility classes.
+### Metadata
+- Source: compilation_fixes
+- Related Files: src/main/java/combatant/client/util/block/mining/MiningDamageCalculator.java, src/main/java/combatant/client/util/player/inventory/manager/InventoryManager.java
+- Tags: minecraft26_2, mappings, input, inventory
+
+---
+
+## [LRN-20260916-002] best_practice
+**Logged**: 2026-09-16T12:00:00Z
+**Priority**: medium
+**Status**: resolved
+**Area**: frontend
+### Summary
+Complete module descriptions in @ModuleInfo eliminate ClickGUI and command confusion.
+### Details
+Previously, 90+ modules lacked descriptive text, showing `//todo Description` or empty placeholders in tooltips.
+Populating `description = "..."` for every module ensures clear player understanding of module mechanics, protections, and anti-cheat behaviors in the ClickGUI search, settings headers, and the `.modules` command.
+### Suggested Action
+Enforce that every new module declared with `@ModuleInfo` must provide a non-empty, player-facing `description` attribute explaining its function and usage.
+### Metadata
+- Source: user_feedback
+- Related Files: src/main/java/combatant/client/features/module/ModuleInfo.java, src/main/java/combatant/client/features/module/modules/
+- Tags: ux, clickgui, documentation, modules
+
+---
+
+## [LRN-20260916-003] best_practice
+**Logged**: 2026-09-16T12:15:00Z
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+### Summary
+EventBus polymorphic dispatch with CopyOnWrite exact-handler arrays and fallback hierarchy cache.
+### Details
+Event dispatch in a utility client must achieve zero allocation on hot tick/render loops while supporting inheritance (e.g. `PacketEvent.Receive` is a subclass of `PacketEvent`). Precomputing flattened subscriber hierarchies and checking `hasListeners` guards prevents unnecessary event object allocations when no module listens.
+### Suggested Action
+Maintain cached flat subscriber arrays updated on registration/unregistration rather than traversing class hierarchy at dispatch time.
+### Metadata
+- Source: performance_audit
+- Related Files: src/main/java/combatant/client/events/EventBus.java, src/main/java/combatant/client/mixins/ConnectionMixin.java
+- Tags: eventbus, performance, zero_allocation
+
