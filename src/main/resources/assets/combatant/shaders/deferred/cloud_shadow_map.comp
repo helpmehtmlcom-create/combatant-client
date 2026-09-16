@@ -1,0 +1,75 @@
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(binding = 0, r32f) writeonly uniform image2D u_CloudShadowMap;
+
+layout(std430, binding = 1) readonly buffer CloudShadowMapData {
+    vec4 cameraTime;
+    vec4 grid;
+    vec4 counts;
+    vec4 sunDirection;
+    vec4 noiseDomain;
+    vec4 mapDomain;
+} u_Data;
+
+const int MAX_SHADOW_STEPS = 128;
+
+#define COMBATANT_CLOUD_WEATHER_BINDING 2
+#define COMBATANT_CLOUD_LAYER_BINDING 3
+#moj_import <combatant:deferred_cloud_density.glsl>
+
+bool cloudBounds(out float minY, out float maxY) {
+    minY = 1e20;
+    maxY = -1e20;
+    int layerCount = clamp(int(u_Data.counts.x), 0, COMBATANT_CLOUD_MAX_LAYERS);
+    for (int i = 0; i < COMBATANT_CLOUD_MAX_LAYERS; ++i) {
+        if (i >= layerCount) break;
+        minY = min(minY, u_Layers.layers[i].altitudeDensity.x);
+        maxY = max(maxY, u_Layers.layers[i].altitudeDensity.y);
+    }
+    return layerCount > 0 && maxY > minY;
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(u_CloudShadowMap);
+    if (any(greaterThanEqual(pixel, size))) return;
+    if (u_Data.counts.z <= 0.5 || u_Data.sunDirection.w <= 0.5 || u_Data.sunDirection.y <= 0.02) {
+        imageStore(u_CloudShadowMap, pixel, vec4(1.0));
+        return;
+    }
+
+    float minY;
+    float maxY;
+    if (!cloudBounds(minY, maxY)) {
+        imageStore(u_CloudShadowMap, pixel, vec4(1.0));
+        return;
+    }
+
+    vec3 sun = normalize(u_Data.sunDirection.xyz);
+    float referenceY = u_Data.mapDomain.w;
+    float startT = max(0.0, (minY - referenceY) / sun.y);
+    float endT = (maxY - referenceY) / sun.y;
+    if (endT <= startT) {
+        imageStore(u_CloudShadowMap, pixel, vec4(1.0));
+        return;
+    }
+
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(size);
+    vec2 referenceRelative = u_Data.mapDomain.xy + uv * u_Data.mapDomain.z;
+    vec3 referenceLocal = vec3(
+            u_Data.cameraTime.x + referenceRelative.x,
+            referenceY,
+            u_Data.cameraTime.z + referenceRelative.y
+    );
+    int steps = clamp(int(u_Data.counts.y), 8, MAX_SHADOW_STEPS);
+    float stepLength = (endT - startT) / float(steps);
+    float opticalDepth = 0.0;
+    float jitter = combatant_cloud_hash31(vec3(pixel, u_Data.noiseDomain.z * 127.0));
+    for (int i = 0; i < MAX_SHADOW_STEPS; ++i) {
+        if (i >= steps || opticalDepth >= 20.0) break;
+        float t = startT + (float(i) + jitter) * stepLength;
+        opticalDepth += combatant_cloud_optical_density_at(referenceLocal + sun * t) * stepLength;
+    }
+    imageStore(u_CloudShadowMap, pixel, vec4(exp(-min(opticalDepth, 20.0)), 0.0, 0.0, 0.0));
+}

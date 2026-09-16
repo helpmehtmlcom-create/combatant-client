@@ -17,6 +17,7 @@ public record DimensionRenderProfile(
         Identifier celestialModel,
         Identifier mediumProfile,
         Identifier weatherProvider,
+        Identifier cloudProfile,
         Identifier ambientPalette,
         Identifier exposureProfile,
         Identifier postProfile
@@ -28,6 +29,7 @@ public record DimensionRenderProfile(
         if (celestialModel == null) celestialModel = WorldRenderState.NONE;
         if (mediumProfile == null) mediumProfile = WorldRenderState.NEUTRAL;
         if (weatherProvider == null) weatherProvider = WorldRenderState.NONE;
+        if (cloudProfile == null) cloudProfile = WorldRenderState.NONE;
         if (ambientPalette == null) ambientPalette = WorldRenderState.NEUTRAL;
         if (exposureProfile == null) exposureProfile = WorldRenderState.NEUTRAL;
         if (postProfile == null) postProfile = WorldRenderState.NEUTRAL;

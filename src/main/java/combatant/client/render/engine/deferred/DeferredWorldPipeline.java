@@ -425,6 +425,7 @@ public final class DeferredWorldPipeline {
             }
             boolean shadowValid = resourceBindings.isValid(DeferredResource.SHADOW_COLOR);
             boolean ambientOcclusionValid = resourceBindings.isValid(DeferredResource.AMBIENT_OCCLUSION);
+            boolean cloudShadowValid = resourceBindings.isValid(DeferredResource.CLOUD_SHADOW_VISIBILITY);
             if (!resourceBindings.isValid(DeferredResource.ENVIRONMENT_IRRADIANCE)) {
                 throw new IllegalStateException("Deferred lighting requires environment irradiance contract");
             }
@@ -433,10 +434,13 @@ public final class DeferredWorldPipeline {
                     ? resourceBindings.texture(DeferredResource.SHADOW_COLOR) : inputs.surface();
             GpuTextureView ambientVisibility = ambientOcclusionValid
                     ? resourceBindings.texture(DeferredResource.AMBIENT_OCCLUSION) : inputs.surface();
+            GpuTextureView cloudShadowVisibility = cloudShadowValid
+                    ? resourceBindings.texture(DeferredResource.CLOUD_SHADOW_VISIBILITY) : inputs.surface();
             boolean zeroToOneDepth = CombatantRenderSystem.rhi().capabilities().backendName() != null
                     && CombatantRenderSystem.rhi().capabilities().backendName().toLowerCase(Locale.ROOT).contains("vulkan");
             DeferredLightingUniforms.update(
-                    state, worldRenderState, primaryView.current(), zeroToOneDepth, shadowValid, ambientOcclusionValid
+                    state, worldRenderState, primaryView.current(), zeroToOneDepth, shadowValid, ambientOcclusionValid,
+                    cloudShadowValid
             );
 
             // Keep direct terrain lighting in a Combatant-owned HDR target. Publishing it into the
@@ -460,6 +464,7 @@ public final class DeferredWorldPipeline {
                             .sampler("u_EnvironmentIrradiance", environmentIrradiance, gbufferSampler)
                             .sampler("u_ResolvedDepth", resolvedDepth, gbufferSampler)
                             .sampler("u_ShadowVisibility", shadowVisibility, gbufferSampler)
+                            .sampler("u_CloudShadowVisibility", cloudShadowVisibility, gbufferSampler)
                             .sampler("u_AmbientVisibility", ambientVisibility, gbufferSampler)
                             .build()
             );

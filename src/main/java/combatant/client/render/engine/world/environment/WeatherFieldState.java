@@ -29,5 +29,12 @@ public record WeatherFieldState(
         gridWidth = Math.max(0, gridWidth);
         gridDepth = Math.max(0, gridDepth);
         spacingBlocks = Math.max(0, spacingBlocks);
+        long requiredSamples = (long) gridWidth * (long) gridDepth;
+        valid = valid
+                && gridWidth > 0
+                && gridDepth > 0
+                && spacingBlocks > 0
+                && requiredSamples <= Integer.MAX_VALUE
+                && samples.size() >= requiredSamples;
     }
 }

@@ -251,7 +251,7 @@ public final class SodiumSecondaryTerrainSource {
                 if (flatIndex < 0 || flatIndex >= snapshot.sections().size()) continue;
                 SectionEntry entry = snapshot.sections().get(flatIndex);
                 RenderSection section = entry.section();
-                // Mutable lifecycle flags are deliberately checked only on the render thread.
+                // Mutable lifecycle flags are checked only on the render thread.
                 if (section == null || section.isDisposed() || !section.isBuilt()) continue;
                 RenderRegion region = entry.region();
                 ChunkRenderList list = byRegion.computeIfAbsent(region, ChunkRenderList::new);

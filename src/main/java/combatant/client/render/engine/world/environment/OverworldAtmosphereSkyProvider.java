@@ -6,6 +6,7 @@
  */
 package combatant.client.render.engine.world.environment;
 
+import combatant.client.render.engine.world.AerialPerspectiveLayout;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.FilterMode;
 import com.mojang.blaze3d.textures.GpuSampler;
@@ -83,7 +84,8 @@ public final class OverworldAtmosphereSkyProvider implements SkyEnvironmentProvi
             new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(1, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(2, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
-            new ShaderResourceSlot(3, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
+            new ShaderResourceSlot(3, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(4, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY)
     ));
 
     private CombatantRhi owner;
@@ -139,7 +141,7 @@ public final class OverworldAtmosphereSkyProvider implements SkyEnvironmentProvi
         dispatchSky(context.rhi(), targets.atmosphereTransmittance(), targets.atmosphereMultiScattering(),
                 targets.skyRadiance(), linear);
         dispatchAerial(context.rhi(), targets.atmosphereTransmittance(), targets.atmosphereMultiScattering(),
-                targets.aerialPerspective(), linear);
+                targets.aerialPerspective(), targets.aerialTransmittance(), linear);
     }
 
     @Override
@@ -153,6 +155,9 @@ public final class OverworldAtmosphereSkyProvider implements SkyEnvironmentProvi
         DirectionalLightDescriptor sun = context.worldState().celestialState().sun();
         DirectionalLightDescriptor moon = context.worldState().celestialState().moon();
         double cameraY = context.view() != null ? context.view().cameraPosition().y : 0.0;
+        float aerialDistanceKm = context.view() != null && context.view().farPlane() > 0.0f
+                ? Math.max(0.064f, context.view().farPlane() * 0.001f)
+                : 1.024f;
         float observerRadius = a.planetRadiusKm() + (float) Math.max(0.0, cameraY * 0.001);
         observerRadius = Math.min(observerRadius, a.atmosphereRadiusKm() - 0.001f);
 
@@ -168,7 +173,8 @@ public final class OverworldAtmosphereSkyProvider implements SkyEnvironmentProvi
                 .putVec4(0, "sunRadiance", sun.radianceRed(), sun.radianceGreen(), sun.radianceBlue(), sun.valid() ? 1.0f : 0.0f)
                 .putVec4(0, "moonDirection", moon.directionX(), moon.directionY(), moon.directionZ(), moon.angularRadiusRadians())
                 .putVec4(0, "moonRadiance", moon.radianceRed(), moon.radianceGreen(), moon.radianceBlue(), moon.valid() ? 1.0f : 0.0f)
-                .putVec4(0, "aerial", 1.024f, 32.0f, 16.0f, 0.0f);
+                .putVec4(0, "aerial", aerialDistanceKm, AerialPerspectiveLayout.ZENITH_SLICES,
+                        AerialPerspectiveLayout.AZIMUTH_SLICES, 0.0f);
         params.upload(writer.buffer(), 0L);
     }
 
@@ -206,16 +212,20 @@ public final class OverworldAtmosphereSkyProvider implements SkyEnvironmentProvi
     }
 
     private void dispatchAerial(CombatantRhi rhi, RhiStorageImage transmittance, RhiStorageImage multiscatter,
-                                RhiStorageImage target, GpuSampler sampler) {
+                                RhiStorageImage radianceTarget, RhiStorageImage transmittanceTarget,
+                                GpuSampler sampler) {
         rhi.advancedShaders().dispatch(new ComputeDispatchCommand(
                 "Combatant atmosphere aerial perspective LUT", aerialPipeline(),
-                groups(target.descriptor().width()), groups(target.descriptor().height()), 1,
+                groups(radianceTarget.descriptor().width()), groups(radianceTarget.descriptor().height()), 1,
                 List.of(new StorageBinding(3, params, 0L, PARAMS_LAYOUT.arrayStride(), StorageAccess.READ_ONLY)),
                 List.of(
                         new SampledTextureBinding(0, transmittance.view(), sampler),
                         new SampledTextureBinding(1, multiscatter.view(), sampler)
                 ),
-                List.of(new StorageImageBinding(2, target, StorageAccess.WRITE_ONLY))
+                List.of(
+                        new StorageImageBinding(2, radianceTarget, StorageAccess.WRITE_ONLY),
+                        new StorageImageBinding(4, transmittanceTarget, StorageAccess.WRITE_ONLY)
+                )
         ));
     }
 

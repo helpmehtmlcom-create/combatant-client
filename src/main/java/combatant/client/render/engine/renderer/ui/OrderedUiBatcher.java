@@ -473,10 +473,16 @@ public final class OrderedUiBatcher {
                     flushPendingDraws(pendingDraws);
                     boolean capturedScene = batch.backdropRequest.requiresCapturedScene();
                     boolean uiUnderlayScene = batch.backdropRequest.usesUiUnderlayAsScene();
+                    boolean currentTargetScene =
+                            batch.backdropRequest.sceneSource() == UiBackdropRequest.SceneSource.CURRENT_TARGET;
+                    // Deferred extraction can outlive a Mojang framebuffer generation during reload/resize.
+                    // Resolve logical CURRENT_TARGET at replay time instead of retaining its old texture view.
                     GpuTextureView blurSourceView = uiUnderlayScene
                             ? uiUnderlayView
-                            : capturedScene ? liquidSourceView : batch.view;
-                    GpuSampler blurSourceSampler = (uiUnderlayScene || capturedScene)
+                            : capturedScene ? liquidSourceView
+                            : currentTargetScene ? mainColorView
+                            : batch.view;
+                    GpuSampler blurSourceSampler = (uiUnderlayScene || capturedScene || currentTargetScene)
                             ? PostProcessManager.getSampler()
                             : batch.sampler;
                     int blurPassCalls = prepareSharedBlur(mc, blurSourceView, blurSourceSampler, screenW, screenH, uiScale,
@@ -500,7 +506,8 @@ public final class OrderedUiBatcher {
                         continue;
                     }
                     // Captured-scene blur must never degrade to the accumulated HUD target.
-                    if (capturedScene || uiUnderlayScene || batch.view == mainColorView) {
+                    if (capturedScene || uiUnderlayScene || currentTargetScene
+                            || blurSourceView == mainColorView) {
                         continue;
                     }
                 }
@@ -1199,7 +1206,8 @@ public final class OrderedUiBatcher {
                                           float uiScale,
                                           Renderer2D.BlurQuality blurQuality,
                                           float offsetPx) {
-        if (sourceView == null || sourceSampler == null) {
+        if (sourceView == null || sourceSampler == null
+                || sourceView.isClosed() || sourceView.texture().isClosed()) {
             return 0;
         }
         Renderer2D.BlurQuality quality = blurQuality != null ? blurQuality : Renderer2D.DEFAULT_BLUR_QUALITY;

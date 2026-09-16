@@ -46,7 +46,8 @@ public interface SkyEnvironmentProvider {
             RhiStorageImage skyRadiance,
             RhiStorageImage atmosphereTransmittance,
             RhiStorageImage atmosphereMultiScattering,
-            RhiStorageImage aerialPerspective
+            RhiStorageImage aerialPerspective,
+            RhiStorageImage aerialTransmittance
     ) {
     }
 }

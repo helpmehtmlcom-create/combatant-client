@@ -278,11 +278,11 @@ float prismHash(vec2 p) {
 }
 
 vec3 decodePackedRgb(float packedValue) {
-    float packed = clamp(floor(packedValue + 0.5), 0.0, 16777215.0);
-    float r = floor(packed / 65536.0);
-    packed -= r * 65536.0;
-    float g = floor(packed / 256.0);
-    float b = packed - g * 256.0;
+    float packedRgb = clamp(floor(packedValue + 0.5), 0.0, 16777215.0);
+    float r = floor(packedRgb / 65536.0);
+    packedRgb -= r * 65536.0;
+    float g = floor(packedRgb / 256.0);
+    float b = packedRgb - g * 256.0;
     return vec3(r, g, b) / 255.0;
 }
 

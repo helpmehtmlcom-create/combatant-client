@@ -10,7 +10,7 @@ package combatant.client.render.engine.deferred;
 /**
  * Quality/budget policy for optional non-terrain shadow casters in secondary views.
  *
- * <p>These switches deliberately affect only shadow-caster coverage. They never decide what an
+ * <p>These switches affect only shadow-caster coverage. They never decide what an
  * object is: entity/block-entity identity comes from Minecraft's typed scene structures.</p>
  */
 record DeferredSecondaryCasterConfig(

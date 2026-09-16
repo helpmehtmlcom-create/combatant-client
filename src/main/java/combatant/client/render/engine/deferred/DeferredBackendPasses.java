@@ -102,6 +102,11 @@ final class DeferredBackendPasses implements AutoCloseable {
     private final DeferredReflectionDenoiseSource reflectionDenoise = new DeferredReflectionDenoiseSource();
     private final DeferredOpaqueCompositeSource opaqueComposite = new DeferredOpaqueCompositeSource();
     private final DeferredSkyCompositeSource skyComposite = new DeferredSkyCompositeSource();
+    private final DeferredCloudFieldSource cloudField = new DeferredCloudFieldSource();
+    private final DeferredCloudSource clouds = new DeferredCloudSource(cloudField);
+    private final DeferredCloudTemporalSource cloudTemporal = new DeferredCloudTemporalSource();
+    private final DeferredCloudShadowSource cloudShadows = new DeferredCloudShadowSource(cloudField);
+    private final DeferredAtmosphereCompositeSource atmosphereComposite = new DeferredAtmosphereCompositeSource();
     private final DeferredTemporalHistorySource temporalHistory = new DeferredTemporalHistorySource();
     private final DeferredPatchSurfaceSource patchSurfaces = new DeferredPatchSurfaceSource();
 
@@ -190,6 +195,10 @@ final class DeferredBackendPasses implements AutoCloseable {
         reflectionDenoise.install(passes);
         opaqueComposite.install(passes);
         skyComposite.install(passes);
+        cloudShadows.install(passes);
+        clouds.install(passes);
+        cloudTemporal.install(passes);
+        atmosphereComposite.install(passes);
         temporalHistory.install(passes);
         patchSurfaces.install(passes);
     }
@@ -218,6 +227,11 @@ final class DeferredBackendPasses implements AutoCloseable {
         reflectionDenoise.prepare(rhi);
         opaqueComposite.prepare(rhi);
         skyComposite.prepare(rhi);
+        cloudField.prepare(rhi);
+        clouds.prepare(rhi);
+        cloudTemporal.prepare(rhi);
+        cloudShadows.prepare(rhi);
+        atmosphereComposite.prepare(rhi);
         temporalHistory.prepare(rhi);
         patchSurfaces.prepare(rhi);
     }
@@ -246,6 +260,11 @@ final class DeferredBackendPasses implements AutoCloseable {
         reflectionDenoise.release(releaseOwner);
         opaqueComposite.release(releaseOwner);
         skyComposite.release(releaseOwner);
+        clouds.release(releaseOwner);
+        cloudShadows.release(releaseOwner);
+        cloudField.release(releaseOwner);
+        cloudTemporal.release(releaseOwner);
+        atmosphereComposite.release(releaseOwner);
         temporalHistory.release(releaseOwner);
         patchSurfaces.release(releaseOwner);
         owner = null;
@@ -392,6 +411,12 @@ final class DeferredBackendPasses implements AutoCloseable {
             temporalSignals.release(previous);
             reflectionDenoise.release(previous);
             opaqueComposite.release(previous);
+            skyComposite.release(previous);
+            clouds.release(previous);
+            cloudShadows.release(previous);
+            cloudField.release(previous);
+            cloudTemporal.release(previous);
+            atmosphereComposite.release(previous);
             temporalHistory.release(previous);
             patchSurfaces.release(previous);
         }
@@ -489,6 +514,9 @@ final class DeferredBackendPasses implements AutoCloseable {
         temporalSignals.close();
         reflectionDenoise.close();
         opaqueComposite.close();
+        skyComposite.close();
+        clouds.close();
+        atmosphereComposite.close();
         temporalHistory.close();
         patchSurfaces.close();
         owner = null;

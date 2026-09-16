@@ -23,10 +23,11 @@ public final class DimensionRenderProfileRegistry {
     public static final Identifier OVERWORLD_CELESTIAL = id("overworld_celestial");
     public static final Identifier OVERWORLD_SKY = id("overworld_atmosphere");
     public static final Identifier OVERWORLD_WEATHER = id("overworld_weather");
+    public static final Identifier OVERWORLD_CLOUDS = id("overworld_clouds");
 
     private static final DimensionRenderProfile UNKNOWN = new DimensionRenderProfile(
             WorldRenderState.UNKNOWN_PROFILE, WorldRenderState.NONE, WorldRenderState.NONE,
-            WorldRenderState.NONE, WorldRenderState.NEUTRAL, WorldRenderState.NONE,
+            WorldRenderState.NONE, WorldRenderState.NEUTRAL, WorldRenderState.NONE, WorldRenderState.NONE,
             WorldRenderState.NEUTRAL, WorldRenderState.NEUTRAL, WorldRenderState.NEUTRAL
     );
     private static final Map<Identifier, DimensionRenderProfile> PROFILES = new ConcurrentHashMap<>();
@@ -34,17 +35,17 @@ public final class DimensionRenderProfileRegistry {
     static {
         register(Level.OVERWORLD, new DimensionRenderProfile(
                 OVERWORLD_PROFILE_ID, OVERWORLD_ENVIRONMENT, OVERWORLD_SKY,
-                OVERWORLD_CELESTIAL, WorldRenderState.NEUTRAL, OVERWORLD_WEATHER,
+                OVERWORLD_CELESTIAL, WorldRenderState.NEUTRAL, OVERWORLD_WEATHER, OVERWORLD_CLOUDS,
                 WorldRenderState.NEUTRAL, WorldRenderState.NEUTRAL, WorldRenderState.NEUTRAL
         ));
         register(Level.NETHER, new DimensionRenderProfile(
                 NETHER_PROFILE_ID, id("nether_environment"), WorldRenderState.NONE,
-                WorldRenderState.NONE, id("nether_medium"), WorldRenderState.NONE,
+                WorldRenderState.NONE, id("nether_medium"), WorldRenderState.NONE, WorldRenderState.NONE,
                 WorldRenderState.NEUTRAL, WorldRenderState.NEUTRAL, WorldRenderState.NEUTRAL
         ));
         register(Level.END, new DimensionRenderProfile(
                 END_PROFILE_ID, id("end_environment"), WorldRenderState.NONE,
-                WorldRenderState.NONE, id("end_medium"), WorldRenderState.NONE,
+                WorldRenderState.NONE, id("end_medium"), WorldRenderState.NONE, WorldRenderState.NONE,
                 WorldRenderState.NEUTRAL, WorldRenderState.NEUTRAL, WorldRenderState.NEUTRAL
         ));
     }

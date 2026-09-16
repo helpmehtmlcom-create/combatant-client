@@ -21,6 +21,7 @@ layout(std140) uniform DeferredLighting {
     vec4 u_DirectionalDirection;
     vec4 u_DirectionalRadiance;
     vec4 u_DepthAndFlags;
+    vec4 u_CloudShadowFlags;
 };
 
 float combatant_decode_distance(float encoded) {

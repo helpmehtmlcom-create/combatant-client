@@ -1,0 +1,324 @@
+/*
+ * This file is part of the Combatant Client distribution.
+ * Copyright (c) 2026 pivosos2007.
+ *
+ * Licensed under the GNU General Public License v3.0.
+ */
+package combatant.client.render.engine.deferred;
+
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.textures.FilterMode;
+import com.mojang.blaze3d.textures.GpuSampler;
+import com.mojang.blaze3d.textures.GpuTextureView;
+import combatant.client.render.engine.rhi.CombatantRhi;
+import combatant.client.render.engine.rhi.shader.ComputeDispatchCommand;
+import combatant.client.render.engine.rhi.shader.ComputePipelineDescriptor;
+import combatant.client.render.engine.rhi.shader.RhiComputePipeline;
+import combatant.client.render.engine.rhi.shader.RhiShaderStage;
+import combatant.client.render.engine.rhi.shader.RhiStorageBuffer;
+import combatant.client.render.engine.rhi.shader.RhiStorageImage;
+import combatant.client.render.engine.rhi.shader.SampledTextureBinding;
+import combatant.client.render.engine.rhi.shader.ShaderResourceKind;
+import combatant.client.render.engine.rhi.shader.ShaderResourceLayout;
+import combatant.client.render.engine.rhi.shader.ShaderResourceSlot;
+import combatant.client.render.engine.rhi.shader.Std430StructLayout;
+import combatant.client.render.engine.rhi.shader.Std430Type;
+import combatant.client.render.engine.rhi.shader.Std430Writer;
+import combatant.client.render.engine.rhi.shader.StorageAccess;
+import combatant.client.render.engine.rhi.shader.StorageBinding;
+import combatant.client.render.engine.rhi.shader.StorageBufferDescriptor;
+import combatant.client.render.engine.rhi.shader.StorageImageBinding;
+import combatant.client.render.engine.world.DirectionalLightDescriptor;
+import combatant.client.render.engine.world.environment.CloudProfile;
+import combatant.client.render.engine.world.environment.WeatherFieldState;
+import combatant.client.render.engine.world.environment.WeatherState;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.phys.Vec3;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/** Produces a camera-centered world-space cloud shadow field and resolves it for opaque lighting. */
+final class DeferredCloudShadowSource implements AutoCloseable {
+    private static final int LOCAL_SIZE = 8;
+    private static final Identifier MAP_SHADER = id("deferred/cloud_shadow_map");
+    private static final Identifier RESOLVE_SHADER = id("deferred/cloud_shadow_resolve");
+
+    private static final Std430StructLayout MAP_DATA_LAYOUT = Std430StructLayout.builder()
+            .member("cameraTime", Std430Type.VEC4)
+            .member("grid", Std430Type.VEC4)
+            .member("counts", Std430Type.VEC4)
+            .member("sunDirection", Std430Type.VEC4)
+            .member("noiseDomain", Std430Type.VEC4)
+            .member("mapDomain", Std430Type.VEC4)
+            .build();
+    private static final Std430StructLayout RESOLVE_DATA_LAYOUT = Std430StructLayout.builder()
+            .member("inverseProjection", Std430Type.MAT4)
+            .member("inverseView", Std430Type.MAT4)
+            .member("camera", Std430Type.VEC4)
+            .member("mapDomain", Std430Type.VEC4)
+            .member("sunDirection", Std430Type.VEC4)
+            .member("cloudBounds", Std430Type.VEC4)
+            .build();
+    private static final ShaderResourceLayout MAP_LAYOUT = new ShaderResourceLayout(List.of(
+            new ShaderResourceSlot(0, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
+            new ShaderResourceSlot(1, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(2, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(3, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
+    ));
+    private static final ShaderResourceLayout RESOLVE_LAYOUT = new ShaderResourceLayout(List.of(
+            new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(1, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(2, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
+            new ShaderResourceSlot(3, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
+    ));
+
+    private final DeferredCloudConfig config = DeferredCloudConfig.current();
+    private final DeferredCloudFieldSource fieldSource;
+    private CombatantRhi owner;
+    private RhiComputePipeline mapPipeline;
+    private RhiComputePipeline resolvePipeline;
+    private RhiStorageBuffer mapData;
+    private RhiStorageBuffer resolveData;
+
+    DeferredCloudShadowSource(DeferredCloudFieldSource fieldSource) {
+        if (fieldSource == null) throw new IllegalArgumentException("fieldSource");
+        this.fieldSource = fieldSource;
+    }
+
+    void install(ArrayList<DeferredPassSpec> passes) {
+        passes.add(DeferredPassSpec.builder("world.cloud.shadow-map", DeferredStage.PRE_LIGHTING)
+                .priority(700)
+                .write(DeferredResource.CLOUD_SHADOW_MAP)
+                .requires(RhiShaderStage.COMPUTE)
+                .when(context -> context.primaryView().current() != null)
+                .execute(this::renderShadowMap)
+                .build());
+        passes.add(DeferredPassSpec.builder("world.cloud.shadow-resolve", DeferredStage.PRE_LIGHTING)
+                .priority(710)
+                .read(DeferredResource.CLOUD_SHADOW_MAP, DeferredResource.RESOLVED_DEPTH)
+                .write(DeferredResource.CLOUD_SHADOW_VISIBILITY)
+                .requires(RhiShaderStage.COMPUTE)
+                .when(context -> context.primaryView().current() != null
+                        && context.isValid(DeferredResource.CLOUD_SHADOW_MAP)
+                        && context.isValid(DeferredResource.RESOLVED_DEPTH))
+                .execute(this::resolveVisibility)
+                .build());
+    }
+
+    void prepare(CombatantRhi rhi) {
+        ensureOwner(rhi);
+        mapPipeline();
+        resolvePipeline();
+        mapData();
+        resolveData();
+    }
+
+    void release(CombatantRhi currentOwner) {
+        if (owner != null && currentOwner != null && owner != currentOwner) return;
+        closeOwned();
+        owner = null;
+    }
+
+    private void renderShadowMap(DeferredPassContext context) {
+        ensureOwner(context.rhi());
+        DeferredPrimaryViewSource.FrameView view = context.primaryView().current();
+        if (view == null) return;
+        RhiStorageImage shadowMap = requireImage(context, DeferredResource.CLOUD_SHADOW_MAP);
+        DeferredCloudFieldSource.FrameData cloudField = fieldSource.prepareFrame(context);
+        WeatherFieldState field = cloudField.field();
+        WeatherState weather = cloudField.weather();
+        CloudProfile profile = cloudField.profile();
+        DirectionalLightDescriptor sun = context.worldState().directionalLight();
+        Vec3 camera = view.cameraPosition();
+
+        float spacing = field.valid() ? Math.max(1, field.spacingBlocks()) : 1.0f;
+        int width = field.valid() ? field.gridWidth() : 0;
+        int depth = field.valid() ? field.gridDepth() : 0;
+        float originX = field.valid() ? field.originBlockX() : (float) camera.x;
+        float originZ = field.valid() ? field.originBlockZ() : (float) camera.z;
+        float timeSeconds = weather.valid() ? weather.modelTimeTicks() / 20.0f : 0.0f;
+        float span = config.shadowMapSpanBlocks();
+        float texel = config.shadowTexelBlocks();
+        double snappedWorldX = Math.floor(camera.x / texel) * texel;
+        double snappedWorldZ = Math.floor(camera.z / texel) * texel;
+        float mapOriginRelativeX = (float) (snappedWorldX - camera.x - span * 0.5);
+        float mapOriginRelativeZ = (float) (snappedWorldZ - camera.z - span * 0.5);
+        boolean active = cloudField.active() && sun.valid() && sun.directionY() > 0.02f;
+
+        Std430Writer writer = new Std430Writer(MAP_DATA_LAYOUT, 1)
+                .putVec4(0, "cameraTime", (float) (camera.x - originX), (float) camera.y,
+                        (float) (camera.z - originZ), timeSeconds)
+                .putVec4(0, "grid", spacing, width, depth, cloudField.weatherCount())
+                .putVec4(0, "counts", cloudField.layerCount(), config.shadowSteps(), active ? 1.0f : 0.0f, 0.0f)
+                .putVec4(0, "sunDirection", sun.directionX(), sun.directionY(), sun.directionZ(), sun.valid() ? 1.0f : 0.0f)
+                .putVec4(0, "noiseDomain", wrapOrigin(field.valid() ? field.originBlockX() : 0),
+                        wrapOrigin(field.valid() ? field.originBlockZ() : 0), seedPhase(weather.modelSeed()), 0.0f)
+                .putVec4(0, "mapDomain", mapOriginRelativeX, mapOriginRelativeZ, span, 0.0f);
+        RhiStorageBuffer data = mapData();
+        data.upload(writer.buffer(), 0L);
+
+        context.advancedShaders().dispatch(new ComputeDispatchCommand(
+                "Combatant cloud shadow map", mapPipeline(),
+                groups(shadowMap.descriptor().width()), groups(shadowMap.descriptor().height()), 1,
+                List.of(
+                        new StorageBinding(1, data, 0L, writer.byteSize(), StorageAccess.READ_ONLY),
+                        new StorageBinding(2, fieldSource.weatherData(), 0L,
+                                fieldSource.weatherData().descriptor().byteSize(), StorageAccess.READ_ONLY),
+                        new StorageBinding(3, fieldSource.layerData(), 0L,
+                                fieldSource.layerData().descriptor().byteSize(), StorageAccess.READ_ONLY)
+                ),
+                List.of(),
+                List.of(new StorageImageBinding(0, shadowMap, StorageAccess.WRITE_ONLY))
+        ));
+    }
+
+    private void resolveVisibility(DeferredPassContext context) {
+        ensureOwner(context.rhi());
+        DeferredPrimaryViewSource.FrameView view = context.primaryView().current();
+        if (view == null) return;
+        DeferredCloudFieldSource.FrameData cloudField = fieldSource.prepareFrame(context);
+        CloudProfile profile = cloudField.profile();
+        DirectionalLightDescriptor sun = context.worldState().directionalLight();
+        Vec3 camera = view.cameraPosition();
+        float span = config.shadowMapSpanBlocks();
+        float texel = config.shadowTexelBlocks();
+        double snappedWorldX = Math.floor(camera.x / texel) * texel;
+        double snappedWorldZ = Math.floor(camera.z / texel) * texel;
+        float mapOriginRelativeX = (float) (snappedWorldX - camera.x - span * 0.5);
+        float mapOriginRelativeZ = (float) (snappedWorldZ - camera.z - span * 0.5);
+        float minCloudY = minimumCloudAltitude(profile, cloudField.layerCount());
+        float maxCloudY = maximumCloudAltitude(profile, cloudField.layerCount());
+        boolean active = cloudField.active() && sun.valid() && sun.directionY() > 0.02f;
+
+        Std430Writer writer = new Std430Writer(RESOLVE_DATA_LAYOUT, 1)
+                .putMat4(0, "inverseProjection", view.inverseProjection())
+                .putMat4(0, "inverseView", view.inverseView())
+                .putVec4(0, "camera", (float) camera.x, (float) camera.y, (float) camera.z, 0.0f)
+                .putVec4(0, "mapDomain", mapOriginRelativeX, mapOriginRelativeZ, span, 0.0f)
+                .putVec4(0, "sunDirection", sun.directionX(), sun.directionY(), sun.directionZ(), active ? 1.0f : 0.0f)
+                .putVec4(0, "cloudBounds", minCloudY, maxCloudY, isVulkan(context) ? 1.0f : 0.0f, 0.0f);
+        RhiStorageBuffer data = resolveData();
+        data.upload(writer.buffer(), 0L);
+
+        GpuTextureView resolvedDepth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
+        GpuTextureView shadowMap = requireTexture(context, DeferredResource.CLOUD_SHADOW_MAP);
+        RhiStorageImage visibility = requireImage(context, DeferredResource.CLOUD_SHADOW_VISIBILITY);
+        GpuSampler nearest = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
+        GpuSampler linear = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
+        context.advancedShaders().dispatch(new ComputeDispatchCommand(
+                "Combatant cloud shadow resolve", resolvePipeline(),
+                groups(visibility.descriptor().width()), groups(visibility.descriptor().height()), 1,
+                List.of(new StorageBinding(3, data, 0L, writer.byteSize(), StorageAccess.READ_ONLY)),
+                List.of(
+                        new SampledTextureBinding(0, resolvedDepth, nearest),
+                        new SampledTextureBinding(1, shadowMap, linear)
+                ),
+                List.of(new StorageImageBinding(2, visibility, StorageAccess.WRITE_ONLY))
+        ));
+    }
+
+    private RhiComputePipeline mapPipeline() {
+        if (owner == null) throw new IllegalStateException("Cloud shadow source has no RHI owner");
+        if (mapPipeline == null) mapPipeline = owner.advancedShaders().createComputePipeline(
+                new ComputePipelineDescriptor("combatant-cloud-shadow-map", MAP_SHADER, MAP_LAYOUT)
+        );
+        return mapPipeline;
+    }
+
+    private RhiComputePipeline resolvePipeline() {
+        if (owner == null) throw new IllegalStateException("Cloud shadow source has no RHI owner");
+        if (resolvePipeline == null) resolvePipeline = owner.advancedShaders().createComputePipeline(
+                new ComputePipelineDescriptor("combatant-cloud-shadow-resolve", RESOLVE_SHADER, RESOLVE_LAYOUT)
+        );
+        return resolvePipeline;
+    }
+
+    private RhiStorageBuffer mapData() {
+        if (owner == null) throw new IllegalStateException("Cloud shadow source has no RHI owner");
+        if (mapData == null) mapData = owner.advancedShaders().createStorageBuffer(new StorageBufferDescriptor(
+                "combatant-cloud-shadow-map-data", MAP_DATA_LAYOUT, 1, StorageAccess.READ_ONLY, false
+        ));
+        return mapData;
+    }
+
+    private RhiStorageBuffer resolveData() {
+        if (owner == null) throw new IllegalStateException("Cloud shadow source has no RHI owner");
+        if (resolveData == null) resolveData = owner.advancedShaders().createStorageBuffer(new StorageBufferDescriptor(
+                "combatant-cloud-shadow-resolve-data", RESOLVE_DATA_LAYOUT, 1, StorageAccess.READ_ONLY, false
+        ));
+        return resolveData;
+    }
+
+    private void ensureOwner(CombatantRhi rhi) {
+        if (owner == rhi) return;
+        closeOwned();
+        owner = rhi;
+    }
+
+    private void closeOwned() {
+        close(mapPipeline); mapPipeline = null;
+        close(resolvePipeline); resolvePipeline = null;
+        close(mapData); mapData = null;
+        close(resolveData); resolveData = null;
+    }
+
+    @Override
+    public void close() {
+        closeOwned();
+        owner = null;
+    }
+
+    private static float minimumCloudAltitude(CloudProfile profile, int layerCount) {
+        float result = Float.POSITIVE_INFINITY;
+        int count = Math.min(layerCount, profile.layers().size());
+        for (int i = 0; i < count; i++) result = Math.min(result, profile.layers().get(i).baseAltitudeBlocks());
+        return Float.isFinite(result) ? result : Float.POSITIVE_INFINITY;
+    }
+
+    private static float maximumCloudAltitude(CloudProfile profile, int layerCount) {
+        float result = Float.NEGATIVE_INFINITY;
+        int count = Math.min(layerCount, profile.layers().size());
+        for (int i = 0; i < count; i++) result = Math.max(result, profile.layers().get(i).topAltitudeBlocks());
+        return Float.isFinite(result) ? result : Float.NEGATIVE_INFINITY;
+    }
+
+    private static float seedPhase(long seed) {
+        long mixed = seed ^ (seed >>> 33) ^ (seed << 11);
+        return (float) (mixed & 0x00FF_FFFFL) / 16777216.0f;
+    }
+
+    private static float wrapOrigin(int value) {
+        return Math.floorMod(value, 65536);
+    }
+
+    private static boolean isVulkan(DeferredPassContext context) {
+        String backendName = context.rhi().capabilities().backendName();
+        return backendName != null && backendName.toLowerCase(java.util.Locale.ROOT).contains("vulkan");
+    }
+
+    private static GpuTextureView requireTexture(DeferredPassContext context, DeferredResource resource) {
+        GpuTextureView value = context.resources().texture(resource);
+        if (value == null) throw new IllegalStateException("Deferred texture is not bound: " + resource);
+        return value;
+    }
+
+    private static RhiStorageImage requireImage(DeferredPassContext context, DeferredResource resource) {
+        RhiStorageImage value = context.resources().storageImage(resource);
+        if (value == null) throw new IllegalStateException("Deferred storage image is not bound: " + resource);
+        return value;
+    }
+
+    private static void close(AutoCloseable value) {
+        if (value == null) return;
+        try { value.close(); } catch (Throwable ignored) { }
+    }
+
+    private static int groups(int extent) {
+        return Math.max(1, (Math.max(1, extent) + LOCAL_SIZE - 1) / LOCAL_SIZE);
+    }
+
+    private static Identifier id(String path) {
+        return Identifier.fromNamespaceAndPath("combatant", path);
+    }
+}

@@ -28,6 +28,7 @@ public enum DeferredLightingUniforms {
             .putVec4()
             .putVec4()
             .putVec4()
+            .putVec4()
             .get();
 
     private static final String STREAM = "Combatant - Deferred Lighting UBO";
@@ -38,13 +39,15 @@ public enum DeferredLightingUniforms {
                               DeferredPrimaryViewSource.FrameView view,
                               boolean zeroToOneDepth,
                               boolean shadowValid,
-                              boolean ambientOcclusionValid) {
+                              boolean ambientOcclusionValid,
+                              boolean cloudShadowValid) {
         DATA.state = state;
         DATA.worldState = worldState;
         DATA.view = view;
         DATA.zeroToOneDepth = zeroToOneDepth;
         DATA.shadowValid = shadowValid;
         DATA.ambientOcclusionValid = ambientOcclusionValid;
+        DATA.cloudShadowValid = cloudShadowValid;
         CombatantRenderSystem.uniforms().write(STREAM, SIZE, 1, DATA);
     }
 
@@ -59,6 +62,7 @@ public enum DeferredLightingUniforms {
         private boolean zeroToOneDepth;
         private boolean shadowValid;
         private boolean ambientOcclusionValid;
+        private boolean cloudShadowValid;
 
         @Override
         public void write(java.nio.ByteBuffer buffer) {
@@ -100,7 +104,8 @@ public enum DeferredLightingUniforms {
                             zeroToOneDepth ? 0.0f : -1.0f,
                             shadowValid ? 1.0f : 0.0f,
                             ambientOcclusionValid ? 1.0f : 0.0f
-                    );
+                    )
+                    .putVec4(cloudShadowValid ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
         }
 
         @Override

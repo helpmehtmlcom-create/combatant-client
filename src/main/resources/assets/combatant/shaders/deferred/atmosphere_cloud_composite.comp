@@ -1,0 +1,185 @@
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(binding = 0) uniform sampler2D u_BaseRadiance;
+layout(binding = 1) uniform sampler2D u_Depth;
+layout(binding = 2) uniform sampler2D u_CloudRadiance;
+layout(binding = 3) uniform sampler2D u_CloudDepth;
+layout(binding = 4) uniform sampler2D u_AerialRadiance;
+layout(binding = 5) uniform sampler2D u_AerialTransmittance;
+layout(binding = 6, rgba16f) writeonly uniform image2D u_Output;
+layout(std430, binding = 7) readonly buffer AtmosphereCompositeData {
+    mat4 inverseProjection;
+    mat4 inverseView;
+    vec4 transport;
+    vec4 layout;
+} u_Data;
+
+const float PI = 3.14159265358979323846;
+
+vec3 viewPosition(vec2 uv, float depth) {
+    float ndcZ = u_Data.transport.x > 0.5 ? depth : depth * 2.0 - 1.0;
+    vec4 view = u_Data.inverseProjection * vec4(uv * 2.0 - 1.0, ndcZ, 1.0);
+    return view.xyz / max(abs(view.w), 1e-7) * sign(view.w);
+}
+
+vec3 worldRay(vec2 uv) {
+    float ndcZ = u_Data.transport.x > 0.5 ? 0.5 : 0.0;
+    vec4 view = u_Data.inverseProjection * vec4(uv * 2.0 - 1.0, ndcZ, 1.0);
+    vec3 viewDirection = normalize(view.xyz / max(abs(view.w), 1e-7) * sign(view.w));
+    return normalize(mat3(u_Data.inverseView) * viewDirection);
+}
+
+vec4 aerialTexel(sampler2D source, int azimuthIndex, int zenithIndex, int distanceIndex) {
+    ivec2 size = textureSize(source, 0);
+    int zenithCount = max(1, int(u_Data.layout.x));
+    int azimuthCount = max(1, int(u_Data.layout.y));
+    azimuthIndex = (azimuthIndex % azimuthCount + azimuthCount) % azimuthCount;
+    zenithIndex = clamp(zenithIndex, 0, zenithCount - 1);
+    distanceIndex = clamp(distanceIndex, 0, max(size.y - 1, 0));
+    int x = azimuthIndex * zenithCount + zenithIndex;
+    return texelFetch(source, ivec2(clamp(x, 0, max(size.x - 1, 0)), distanceIndex), 0);
+}
+
+vec4 sampleAerial(sampler2D source, vec3 direction, float distanceKm) {
+    direction = normalize(direction);
+    int zenithCount = max(1, int(u_Data.layout.x));
+    int azimuthCount = max(1, int(u_Data.layout.y));
+    float zenithCoord = clamp(direction.y * 0.5 + 0.5, 0.0, 1.0) * float(zenithCount) - 0.5;
+    float azimuth01 = fract(atan(direction.z, direction.x) / (2.0 * PI) + 1.0);
+    float azimuthCoord = azimuth01 * float(azimuthCount) - 0.5;
+    float distance01 = sqrt(clamp(distanceKm / max(u_Data.transport.z, 1e-4), 0.0, 1.0));
+    ivec2 aerialSize = textureSize(source, 0);
+    float distanceCoord = distance01 * float(aerialSize.y) - 0.5;
+
+    int z0 = int(floor(zenithCoord));
+    int a0 = int(floor(azimuthCoord));
+    int d0 = int(floor(distanceCoord));
+    float zf = fract(zenithCoord);
+    float af = fract(azimuthCoord);
+    float df = fract(distanceCoord);
+
+    vec4 c000 = aerialTexel(source, a0, z0, d0);
+    vec4 c100 = aerialTexel(source, a0 + 1, z0, d0);
+    vec4 c010 = aerialTexel(source, a0, z0 + 1, d0);
+    vec4 c110 = aerialTexel(source, a0 + 1, z0 + 1, d0);
+    vec4 c001 = aerialTexel(source, a0, z0, d0 + 1);
+    vec4 c101 = aerialTexel(source, a0 + 1, z0, d0 + 1);
+    vec4 c011 = aerialTexel(source, a0, z0 + 1, d0 + 1);
+    vec4 c111 = aerialTexel(source, a0 + 1, z0 + 1, d0 + 1);
+
+    vec4 near0 = mix(mix(c000, c100, af), mix(c010, c110, af), zf);
+    vec4 far0 = mix(mix(c001, c101, af), mix(c011, c111, af), zf);
+    return mix(near0, far0, df);
+}
+
+void sampleCloudDepthAware(vec2 uv, float sceneDistance, out vec4 cloud, out float cloudDistance) {
+    ivec2 size = textureSize(u_CloudRadiance, 0);
+    vec2 position = uv * vec2(size) - 0.5;
+    ivec2 base = ivec2(floor(position));
+    vec2 f = fract(position);
+
+    ivec2 coords[4] = ivec2[4](
+        base,
+        base + ivec2(1, 0),
+        base + ivec2(0, 1),
+        base + ivec2(1, 1)
+    );
+    float bilinear[4] = float[4](
+        (1.0 - f.x) * (1.0 - f.y),
+        f.x * (1.0 - f.y),
+        (1.0 - f.x) * f.y,
+        f.x * f.y
+    );
+
+    float referenceDepth = 1e30;
+    bool hasVisible = false;
+    for (int i = 0; i < 4; ++i) {
+        ivec2 sampleCoord = clamp(coords[i], ivec2(0), size - ivec2(1));
+        float d = texelFetch(u_CloudDepth, sampleCoord, 0).r;
+        bool visible = d >= 0.0 && (sceneDistance < 0.0 || d < sceneDistance);
+        if (visible) {
+            hasVisible = true;
+            referenceDepth = min(referenceDepth, d);
+        }
+    }
+    if (!hasVisible) {
+        cloud = vec4(0.0, 0.0, 0.0, 1.0);
+        cloudDistance = -1.0;
+        return;
+    }
+
+    vec4 accumulated = vec4(0.0);
+    float accumulatedDepth = 0.0;
+    float weightSum = 0.0;
+    float depthScale = max(12.0, referenceDepth * 0.06);
+    for (int i = 0; i < 4; ++i) {
+        ivec2 sampleCoord = clamp(coords[i], ivec2(0), size - ivec2(1));
+        float d = texelFetch(u_CloudDepth, sampleCoord, 0).r;
+        bool visible = d >= 0.0 && (sceneDistance < 0.0 || d < sceneDistance);
+        if (!visible) continue;
+        float depthWeight = exp(-abs(d - referenceDepth) / depthScale);
+        float weight = bilinear[i] * depthWeight;
+        accumulated += texelFetch(u_CloudRadiance, sampleCoord, 0) * weight;
+        accumulatedDepth += d * weight;
+        weightSum += weight;
+    }
+
+    if (weightSum <= 1e-6) {
+        ivec2 nearestCoord = clamp(ivec2(round(position)), ivec2(0), size - ivec2(1));
+        cloud = texelFetch(u_CloudRadiance, nearestCoord, 0);
+        cloudDistance = texelFetch(u_CloudDepth, nearestCoord, 0).r;
+        if (cloudDistance < 0.0 || (sceneDistance >= 0.0 && cloudDistance >= sceneDistance)) {
+            cloud = vec4(0.0, 0.0, 0.0, 1.0);
+            cloudDistance = -1.0;
+        }
+        return;
+    }
+
+    cloud = accumulated / weightSum;
+    cloudDistance = accumulatedDepth / weightSum;
+}
+
+void transportAt(vec3 ray, float distanceBlocks, out vec3 radiance, out vec3 transmittance) {
+    if (u_Data.transport.y <= 0.5 || distanceBlocks < 0.0) {
+        radiance = vec3(0.0);
+        transmittance = vec3(1.0);
+        return;
+    }
+    float distanceKm = distanceBlocks * 0.001;
+    radiance = max(sampleAerial(u_AerialRadiance, ray, distanceKm).rgb, vec3(0.0));
+    transmittance = clamp(sampleAerial(u_AerialTransmittance, ray, distanceKm).rgb, vec3(0.0), vec3(1.0));
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(u_Output);
+    if (any(greaterThanEqual(pixel, size))) return;
+
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(size);
+    vec3 base = max(textureLod(u_BaseRadiance, uv, 0.0).rgb, vec3(0.0));
+    float depth = textureLod(u_Depth, uv, 0.0).r;
+    float sceneDistance = depth > 0.0 ? length(viewPosition(uv, depth)) : -1.0;
+    vec3 ray = worldRay(uv);
+
+    vec3 backgroundRadiance;
+    vec3 backgroundT;
+    transportAt(ray, sceneDistance, backgroundRadiance, backgroundT);
+    vec3 result = sceneDistance >= 0.0 ? base * backgroundT + backgroundRadiance : base;
+
+    vec4 cloud;
+    float cloudDistance;
+    sampleCloudDepthAware(uv, sceneDistance, cloud, cloudDistance);
+    bool cloudVisible = cloudDistance >= 0.0;
+    if (cloudVisible) {
+        vec3 cloudAtmosphereRadiance;
+        vec3 cloudAtmosphereT;
+        transportAt(ray, cloudDistance, cloudAtmosphereRadiance, cloudAtmosphereT);
+        float cloudT = clamp(cloud.a, 0.0, 1.0);
+        result = result * cloudT
+                + cloudAtmosphereRadiance * (1.0 - cloudT)
+                + max(cloud.rgb, vec3(0.0)) * cloudAtmosphereT;
+    }
+
+    imageStore(u_Output, pixel, vec4(max(result, vec3(0.0)), 1.0));
+}

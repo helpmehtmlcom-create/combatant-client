@@ -122,6 +122,7 @@ public enum DeferredRuntimeAssets {
                     .withSampler("u_EnvironmentIrradiance")
                     .withSampler("u_ResolvedDepth")
                     .withSampler("u_ShadowVisibility")
+                    .withSampler("u_CloudShadowVisibility")
                     .withSampler("u_AmbientVisibility")
                     .withUniform("DeferredLighting", UniformType.UNIFORM_BUFFER)
                     .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)

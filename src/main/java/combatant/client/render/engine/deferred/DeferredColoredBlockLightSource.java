@@ -51,7 +51,7 @@ import java.util.Locale;
  * Renderer-owned Minecraft block-light propagation.
  *
  * <p>The CPU injects facts it already knows exactly: block emission and block light dampening.
- * Compute performs the spatial propagation in a camera-centered volume. This is deliberately not
+ * Compute performs the spatial propagation in a camera-centered volume. This is not
  * scene-radiance GI and does not infer emitters from rendered color/material pixels.</p>
  */
 final class DeferredColoredBlockLightSource implements AutoCloseable {

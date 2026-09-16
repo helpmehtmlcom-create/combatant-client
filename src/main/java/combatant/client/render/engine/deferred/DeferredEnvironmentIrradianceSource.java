@@ -31,7 +31,7 @@ import java.util.List;
 /**
  * Stable environment-light contract for deferred shading.
  *
- * <p>The current sky fallback deliberately emits zero irradiance instead of reconstructing ambient
+ * <p>The current sky fallback emits zero irradiance instead of reconstructing ambient
  * light from Minecraft's lightmap. A future atmosphere/sky producer can write
  * {@link DeferredResource#SKY_DIFFUSE_IRRADIANCE}; the compose pass remains the stable hand-off to
  * deferred lighting. Renderer-owned sky and colored block-light producers are combined here without

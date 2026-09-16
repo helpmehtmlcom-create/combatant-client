@@ -17,6 +17,7 @@ import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
 import com.mojang.blaze3d.resource.ResourceHandle;
 import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.client.CloudStatus;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
@@ -44,6 +45,9 @@ import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.core.CombatantWorldMatrices;
 import combatant.client.render.engine.depth.PreTranslucentDepth;
 import combatant.client.render.engine.depth.WorldSceneDepth;
+import combatant.client.render.engine.world.environment.CloudProfileRegistry;
+import combatant.client.render.engine.world.environment.DimensionRenderProfile;
+import combatant.client.render.engine.world.environment.DimensionRenderProfileRegistry;
 import combatant.client.render.iris.IrisRuntime;
 import combatant.client.render.sky.CustomSkyboxRenderer;
 
@@ -228,6 +232,27 @@ public abstract class LevelRendererMixin {
             WorldSceneDepth.captureParticles(combatant$getFramebuffer(particles));
             WorldSceneDepth.captureWeather(combatant$getFramebuffer(weather));
         });
+    }
+
+    @Inject(method = "addCloudsPass", at = @At("HEAD"), cancellable = true)
+    private void combatant$deferredOwnsClouds(
+            FrameGraphBuilder frameGraphBuilder,
+            CloudStatus cloudStatus,
+            net.minecraft.world.phys.Vec3 cameraPosition,
+            long ticks,
+            float partialTick,
+            int cloudColor,
+            float cloudHeight,
+            int renderDistance,
+            CallbackInfo ci
+    ) {
+        if (cloudStatus == CloudStatus.OFF || IrisRuntime.isShaderpackRendererActive()) return;
+        if (!CombatantRenderSystem.deferredWorld().enabled()) return;
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null || minecraft.level == null) return;
+        DimensionRenderProfile profile = DimensionRenderProfileRegistry.resolve(minecraft.level.dimension());
+        if (!CloudProfileRegistry.resolve(profile.cloudProfile()).valid()) return;
+        ci.cancel();
     }
 
     @Inject(method = "addSkyPass", at = @At("HEAD"), cancellable = true)

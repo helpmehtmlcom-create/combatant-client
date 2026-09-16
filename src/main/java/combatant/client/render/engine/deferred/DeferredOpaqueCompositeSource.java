@@ -42,8 +42,8 @@ import java.util.Locale;
  * Neutral opaque-light composition after the individual lighting producers have finished.
  *
  * <p>{@link DeferredResource#LIGHTING_COLOR} is the pre-reflection HDR result. The final
- * reflection pass writes {@link DeferredResource#OPAQUE_REFLECTED_RADIANCE}; sky composition then
- * produces {@link DeferredResource#SCENE_RADIANCE}; publishing to the mutable
+ * reflection pass writes {@link DeferredResource#OPAQUE_REFLECTED_RADIANCE}; sky and participating
+ * media composition then produce {@link DeferredResource#SCENE_RADIANCE}; publishing to the mutable
  * Minecraft scene target happens only after that resource is complete.</p>
  */
 final class DeferredOpaqueCompositeSource implements AutoCloseable {

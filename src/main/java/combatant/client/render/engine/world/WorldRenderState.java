@@ -29,6 +29,7 @@ public record WorldRenderState(
         Identifier celestialModel,
         Identifier mediumProfile,
         Identifier weatherProvider,
+        Identifier cloudProfile,
         Identifier ambientPalette,
         Identifier exposureProfile,
         Identifier postProfile,
@@ -53,6 +54,7 @@ public record WorldRenderState(
         celestialModel = Objects.requireNonNullElse(celestialModel, NONE);
         mediumProfile = Objects.requireNonNullElse(mediumProfile, NEUTRAL);
         weatherProvider = Objects.requireNonNullElse(weatherProvider, NONE);
+        cloudProfile = Objects.requireNonNullElse(cloudProfile, NONE);
         ambientPalette = Objects.requireNonNullElse(ambientPalette, NEUTRAL);
         exposureProfile = Objects.requireNonNullElse(exposureProfile, NEUTRAL);
         postProfile = Objects.requireNonNullElse(postProfile, NEUTRAL);
@@ -67,7 +69,7 @@ public record WorldRenderState(
     public static WorldRenderState unknown(long epoch) {
         return new WorldRenderState(
                 UNKNOWN_DIMENSION, UNKNOWN_PROFILE,
-                NONE, NONE, NONE, NEUTRAL, NONE,
+                NONE, NONE, NONE, NEUTRAL, NONE, NONE,
                 NEUTRAL, NEUTRAL, NEUTRAL, NONE,
                 AtmosphereState.NONE, BiomeClimateState.EMPTY, CelestialState.NONE, WeatherState.NONE,
                 DirectionalLightDescriptor.NONE, epoch

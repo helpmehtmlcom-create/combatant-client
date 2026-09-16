@@ -355,7 +355,16 @@ void main() {
     float mouseDistance2 = dot(mouseDelta, mouseDelta);
     float mouseGlint = 1.0 / (1.0 + mouseDistance2 * 5.8);
     mouseGlint *= mouseGlint;
-    material.rgb += hi * mouseGlint * 0.075 * material.a;
+    if (mode >= 1.5 && mode < 2.5) {
+        // Crystal needs a small cursor-coupled optical response. The previous
+        // generic term was multiplied by the already-low material alpha and was
+        // practically invisible, which made the surface feel static/flat.
+        float crystalCursor = mouseGlint * easeOutCubic(reveal);
+        material.rgb += hi * crystalCursor * (0.018 + material.a * 0.11);
+        material.a = saturate(material.a + crystalCursor * 0.012);
+    } else {
+        material.rgb += hi * mouseGlint * 0.075 * material.a;
+    }
 
     // Vertical light bias approximates row-rim lighting without extra SDF evaluations.
     float topLight = 1.0 - uv.y;

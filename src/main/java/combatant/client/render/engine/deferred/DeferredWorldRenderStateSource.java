@@ -85,6 +85,7 @@ final class DeferredWorldRenderStateSource {
                 profile.celestialModel(),
                 profile.mediumProfile(),
                 profile.weatherProvider(),
+                profile.cloudProfile(),
                 profile.ambientPalette(),
                 profile.exposureProfile(),
                 profile.postProfile(),
