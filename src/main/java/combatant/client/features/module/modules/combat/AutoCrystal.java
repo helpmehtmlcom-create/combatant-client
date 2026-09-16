@@ -1061,8 +1061,8 @@ public class AutoCrystal extends Module {
             return;
         }
 
-        if (isPositionBlockedByEntity(pos, false)) {
-            debugLog("place-skip reason=blocked-entity pos=%s", pos);
+        if (isPositionBlockedByEntity(pos, false) || crystalTracker.isAwaitingPosition(pos, confirmTime.get())) {
+            debugLog("place-skip reason=blocked-or-awaiting pos=%s", pos);
             return;
         }
 

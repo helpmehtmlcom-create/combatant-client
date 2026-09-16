@@ -216,8 +216,8 @@ public final class TargetStrafe extends Module {
         }
 
         double angle = Math.atan2(playerPos.z - targetPos.z, playerPos.x - targetPos.x);
-        angle += directionMultiplier * speed.get() / Math.max(playerPos.distanceTo(targetPos), r);
-
+        double dist = Math.max(0.001, Math.max(playerPos.distanceTo(targetPos), r));
+        angle += directionMultiplier * speed.get() / dist;
         double x = targetPos.x + r * Math.cos(angle);
         double z = targetPos.z + r * Math.sin(angle);
         float yaw = (float) Math.toDegrees(Math.atan2(z - playerPos.z, x - playerPos.x)) - 90.0f;

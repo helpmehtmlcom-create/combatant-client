@@ -21,6 +21,7 @@ import combatant.client.util.logging.DebugLog;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -248,7 +249,8 @@ public final class EventBus {
         try {
             MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(method.getDeclaringClass(), MethodHandles.lookup());
             MethodHandle handle = lookup.unreflect(method).bindTo(listener);
-            return handle::invoke;
+            MethodHandle adapted = handle.asType(MethodType.methodType(void.class, Event.class));
+            return adapted::invokeExact;
         } catch (Throwable t) {
             return event -> method.invoke(listener, event);
         }

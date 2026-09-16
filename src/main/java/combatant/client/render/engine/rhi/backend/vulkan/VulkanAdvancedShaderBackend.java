@@ -518,6 +518,7 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
         if (closed) return;
         closed = true;
         compiler.close();
+        descriptorPools.clear();
     }
 
     private void requireOpen() {

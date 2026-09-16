@@ -64,7 +64,7 @@ public final class StashFinder extends Module {
                 int shulkerCount = 0;
                 BlockPos firstPos = null;
 
-                for (BlockEntity be : chunk.getBlockEntities().values()) {
+                for (BlockEntity be : new java.util.ArrayList<>(chunk.getBlockEntities().values())) {
                     if (be instanceof ChestBlockEntity) {
                         chestCount++;
                         if (firstPos == null) firstPos = be.getBlockPos();

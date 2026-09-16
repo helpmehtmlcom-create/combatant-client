@@ -53,12 +53,18 @@ public final class BowBomb extends Module {
                         double z = p.getZ();
 
                         for (int i = 0; i < packets.get(); i++) {
-                            mc.getConnection().send(new ServerboundMovePlayerPacket.Pos(
-                                    x, y - 1e-10, z, true, false
-                            ));
-                            mc.getConnection().send(new ServerboundMovePlayerPacket.Pos(
-                                    x, y + 1e-10, z, false, false
-                            ));
+                            if (bypass.get()) {
+                                mc.getConnection().send(new ServerboundMovePlayerPacket.Pos(
+                                        x, y - 1e-10, z, true, false
+                                ));
+                                mc.getConnection().send(new ServerboundMovePlayerPacket.Pos(
+                                        x, y + 1e-10, z, false, false
+                                ));
+                            } else {
+                                mc.getConnection().send(new ServerboundMovePlayerPacket.Pos(
+                                        x, y - 1e-10, z, true, false
+                                ));
+                            }
                         }
                         shooting = false;
                     }

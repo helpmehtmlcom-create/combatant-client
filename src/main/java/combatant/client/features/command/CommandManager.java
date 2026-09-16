@@ -79,7 +79,13 @@ public enum CommandManager {
         List<String> args = new ArrayList<>();
         args.addAll(Arrays.asList(parts).subList(1, parts.length));
         CommandContext ctx = new CommandContext(Minecraft.getInstance(), raw, name, args);
-        return cmd.execute(ctx);
+        try {
+            return cmd.execute(ctx);
+        } catch (Throwable t) {
+            DebugLog.error("Error executing client command: " + name, t);
+            CommandOutput.error("Command error (" + name + "): " + (t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName()));
+            return true;
+        }
     }
 
     public static List<Suggestion> suggest(String input, int cursor) {
@@ -120,7 +126,11 @@ public enum CommandManager {
             List<String> args = new ArrayList<>();
             args.addAll(Arrays.asList(parts).subList(1, parts.length));
             CommandContext ctx = new CommandContext(Minecraft.getInstance(), input, cmdName, args);
-            suggestions = cmd.suggest(ctx, argIndex, token);
+            try {
+                suggestions = cmd.suggest(ctx, argIndex, token);
+            } catch (Throwable t) {
+                suggestions = List.of();
+            }
         }
 
         if (suggestions == null || suggestions.isEmpty()) return List.of();

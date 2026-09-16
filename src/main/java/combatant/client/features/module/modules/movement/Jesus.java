@@ -61,7 +61,7 @@ public final class Jesus extends Module {
                     if (inFluid) {
                         player.setDeltaMovement(delta.x, 0.11, delta.z);
                     } else if (aboveFluid && delta.y < 0) {
-                        player.setDeltaMovement(delta.x, 0.0, delta.z);
+                        player.setDeltaMovement(delta.x, -dip.get(), delta.z);
                         player.setOnGround(true);
                     }
                 }
@@ -97,6 +97,8 @@ public final class Jesus extends Module {
                     }
                     strafe = 0.0;
                     forward = forward > 0.0 ? 1.0 : -1.0;
+                } else if (strafe != 0.0) {
+                    yaw += (strafe > 0.0 ? -90 : 90);
                 }
 
                 double rad = Math.toRadians(yaw);

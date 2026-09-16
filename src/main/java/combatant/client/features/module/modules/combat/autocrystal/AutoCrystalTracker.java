@@ -78,6 +78,12 @@ public final class AutoCrystalTracker {
         AutoCrystalAttempt attempt = awaitingPositions.get(pos);
         return attempt != null && attempt.canSetBlocked(Math.max(0, NetworkStatsUtil.getPing(mc)));
     }
+    public boolean isAwaitingPosition(BlockPos pos, long maxConfirmTimeMs) {
+        AutoCrystalAttempt attempt = awaitingPositions.get(pos);
+        if (attempt == null) return false;
+        return System.currentTimeMillis() - attempt.time() < Math.max(10L, maxConfirmTimeMs);
+    }
+
 
     public boolean isCrystalBlocked(Minecraft mc, int id) {
         AutoCrystalAttempt attempt = attackedCrystals.get(id);

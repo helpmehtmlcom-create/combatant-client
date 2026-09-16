@@ -67,8 +67,8 @@ public final class RenderResourceManager implements AutoCloseable {
         framebufferPool.releaseFrameTransients();
         msaaFramebufferPool.releaseFrameTransients();
         // Budgeted cleanup: do not turn flipFrame into a blocking resource purge.
-        retirementQueue.drain(16);
-        texturePool.drain(8);
+        retirementQueue.drain(Math.max(16, retirementQueue.backlog() / 4));
+        texturePool.drain(Math.max(8, texturePool.backlog() / 4));
     }
 
     public FramebufferPool framebuffers() {

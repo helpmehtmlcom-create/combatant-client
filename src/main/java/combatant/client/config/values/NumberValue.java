@@ -36,6 +36,12 @@ public class NumberValue<N extends Number> extends ConfigValue<N> {
         if (v < lo) value = castToType(lo);
         else if (v > hi) value = castToType(hi);
     }
+    @Override
+    public void set(N v) {
+        super.set(v);
+        clamp();
+    }
+
 
     @SuppressWarnings("unchecked")
     public N castToType(double v) {

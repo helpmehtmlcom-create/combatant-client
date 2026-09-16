@@ -496,12 +496,12 @@ public abstract class Setting {
     }
 
     public boolean isVisible() {
-        if (ErrorHandler.blocked(this)) return true;
+        if (ErrorHandler.blocked(this)) return false;
         try {
             return visibility.get();
         } catch (RuntimeException e) {
             FailureIsolation.reportSetting(this, "visibility", e);
-            return true;
+            return false;
         }
     }
 

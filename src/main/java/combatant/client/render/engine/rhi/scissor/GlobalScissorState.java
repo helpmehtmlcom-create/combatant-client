@@ -33,26 +33,14 @@ public final class GlobalScissorState {
         if (set) {
             pop();
         }
-        if (width <= 0 || height <= 0) {
-            GlobalScissorState.x = Math.max(0, x);
-            GlobalScissorState.y = Math.max(0, y);
-            GlobalScissorState.width = 0;
-            GlobalScissorState.height = 0;
-            set = true;
-            return;
-        }
-        if (x < 0) {
-            width += x;
-            x = 0;
-        }
-        if (y < 0) {
-            height += y;
-            y = 0;
-        }
-        GlobalScissorState.x = x;
-        GlobalScissorState.y = y;
-        GlobalScissorState.width = Math.max(0, width);
-        GlobalScissorState.height = Math.max(0, height);
+        int x1 = Math.max(0, x);
+        int x2 = Math.max(0, x + Math.max(0, width));
+        int y1 = Math.max(0, y);
+        int y2 = Math.max(0, y + Math.max(0, height));
+        GlobalScissorState.x = x1;
+        GlobalScissorState.y = y1;
+        GlobalScissorState.width = Math.max(0, x2 - x1);
+        GlobalScissorState.height = Math.max(0, y2 - y1);
         set = true;
     }
 
