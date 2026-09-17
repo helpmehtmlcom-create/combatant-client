@@ -17,7 +17,8 @@ import net.minecraft.world.entity.projectile.FireworkRocketEntity;
 import net.minecraft.world.item.Items;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.combat.KillAura;
-
+import combatant.client.util.aiming.RotationManager;
+import combatant.client.util.aiming.data.Rotation;
 /**
  * Shared firework-use path for elytra modules.
  * <p>
@@ -99,10 +100,7 @@ public final class FireworkUseController {
     }
 
     private boolean useWithTemporaryRotation(LocalPlayer player, float yaw, float pitch, InteractionHand hand) {
-        float oldYaw = player.getYRot();
-        float oldPitch = player.getXRot();
-        player.setYRot(yaw);
-        player.setXRot(pitch);
+        RotationManager.INSTANCE.snapServerRotation(new Rotation(yaw, pitch, false), 150, this, 1);
 
         try {
             InteractionResult result = InventorySwap.INSTANCE.useItem(hand);
@@ -112,8 +110,7 @@ public final class FireworkUseController {
             InventorySwap.INSTANCE.swingHand(hand, InventorySwap.INSTANCE.defaultPolicy());
             return true;
         } finally {
-            player.setYRot(oldYaw);
-            player.setXRot(oldPitch);
+            RotationManager.INSTANCE.release(this);
         }
     }
 

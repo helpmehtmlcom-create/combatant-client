@@ -33,6 +33,8 @@ import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.Notifier;
 import combatant.client.mixins.accessors.PlayerInventoryAccessor;
 import combatant.client.mixins.accessors.ServerboundMovePlayerPacketAccessor;
+import combatant.client.util.aiming.RotationManager;
+import combatant.client.util.aiming.data.Rotation;
 import combatant.client.util.player.inventory.InventorySwap;
 import combatant.client.util.screen.ClientScreen;
 
@@ -88,6 +90,8 @@ public final class AntiVoid extends Module {
         chorusSlotRestoration = -1;
         lastNotificationTime = 0L;
         lastPearlThrowTime = 0L;
+        InventorySwap.INSTANCE.releaseHotbar(this);
+        RotationManager.INSTANCE.release(this);
     }
 
     @EventHandler
@@ -264,9 +268,8 @@ public final class AntiVoid extends Module {
         PlayerInventoryAccessor inv = (PlayerInventoryAccessor) player.getInventory();
         int hotbarSlot = findItemInHotbar(player, Items.CHORUS_FRUIT);
         if (hotbarSlot != -1) {
-            chorusSlotRestoration = inv.combatant$getSelectedSlot();
-            inv.combatant$setSelectedSlot(hotbarSlot);
-            mc.gameMode.useItem(player, InteractionHand.MAIN_HAND);
+            chorusSlotRestoration = InventorySwap.INSTANCE.clientSelectedSlot();
+            InventorySwap.INSTANCE.selectHotbar(hotbarSlot);
             mc.options.keyUse.setDown(true);
             eatingChorus = true;
             return true;
@@ -274,13 +277,13 @@ public final class AntiVoid extends Module {
 
         int invSlot = findItemInInventory(player, Items.CHORUS_FRUIT);
         if (invSlot != -1) {
-            int currentSlot = inv.combatant$getSelectedSlot();
+            int currentSlot = InventorySwap.INSTANCE.clientSelectedSlot();
             int emptyHotbar = findFirstEmptyHotbarSlot(player);
             int targetHotbar = emptyHotbar != -1 ? emptyHotbar : currentSlot;
 
             chorusSlotRestoration = currentSlot;
             InventorySwap.INSTANCE.swapInventoryToHotbar(invSlot, targetHotbar);
-            inv.combatant$setSelectedSlot(targetHotbar);
+            InventorySwap.INSTANCE.selectHotbar(targetHotbar);
             mc.gameMode.useItem(player, InteractionHand.MAIN_HAND);
             mc.options.keyUse.setDown(true);
             eatingChorus = true;
@@ -330,37 +333,29 @@ public final class AntiVoid extends Module {
             pitch = -75.0f;
         }
 
-        // Send rotation packet for throwing
-        if (mc.getConnection() != null) {
-            mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
-                    yaw,
-                    pitch,
-                    player.onGround(),
-                    player.horizontalCollision
-            ));
-        }
-
-        PlayerInventoryAccessor inv = (PlayerInventoryAccessor) player.getInventory();
-        int originalSlot = inv.combatant$getSelectedSlot();
+        // Aim silently via RotationManager and sync server rotation
+        RotationManager.INSTANCE.snapServerRotation(new Rotation(yaw, pitch, false), 50, this, 2);
 
         if (offhand) {
             mc.gameMode.useItem(player, InteractionHand.OFF_HAND);
             player.swing(InteractionHand.OFF_HAND);
             lastPearlThrowTime = now;
         } else if (pearlSlot < 9) {
-            inv.combatant$setSelectedSlot(pearlSlot);
+            InventorySwap.INSTANCE.leaseHotbar(this, pearlSlot, 1);
             mc.gameMode.useItem(player, InteractionHand.MAIN_HAND);
             player.swing(InteractionHand.MAIN_HAND);
-            inv.combatant$setSelectedSlot(originalSlot);
+            InventorySwap.INSTANCE.releaseHotbar(this);
             lastPearlThrowTime = now;
         } else {
+            int currentSlot = InventorySwap.INSTANCE.clientSelectedSlot();
             int emptyHotbar = findFirstEmptyHotbarSlot(player);
-            int targetHotbar = emptyHotbar != -1 ? emptyHotbar : originalSlot;
+            int targetHotbar = emptyHotbar != -1 ? emptyHotbar : currentSlot;
             InventorySwap.INSTANCE.swapInventoryToHotbar(pearlSlot, targetHotbar);
-            inv.combatant$setSelectedSlot(targetHotbar);
+            InventorySwap.INSTANCE.leaseHotbar(this, targetHotbar, 1);
             mc.gameMode.useItem(player, InteractionHand.MAIN_HAND);
             player.swing(InteractionHand.MAIN_HAND);
-            inv.combatant$setSelectedSlot(originalSlot);
+            InventorySwap.INSTANCE.releaseHotbar(this);
+            InventorySwap.INSTANCE.swapInventoryToHotbar(targetHotbar, pearlSlot);
             lastPearlThrowTime = now;
         }
     }
@@ -373,7 +368,7 @@ public final class AntiVoid extends Module {
             eatingChorus = false;
         }
         if (chorusSlotRestoration != -1) {
-            ((PlayerInventoryAccessor) player.getInventory()).combatant$setSelectedSlot(chorusSlotRestoration);
+            InventorySwap.INSTANCE.selectHotbar(chorusSlotRestoration);
             chorusSlotRestoration = -1;
         }
     }

@@ -11,6 +11,7 @@ import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.config.values.*;
 import combatant.client.features.module.modules.combat.autocrystal.*;
 import net.minecraft.client.Minecraft;
+import net.minecraft.world.level.Level;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -22,10 +23,31 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.boss.enderdragon.EndCrystal;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.damagesource.CombatRules;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.level.block.EnderChestBlock;
+import net.minecraft.world.level.block.ShulkerBoxBlock;
+import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
+import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.network.protocol.game.ServerboundInteractPacket;
+import net.minecraft.core.Direction;
+import combatant.client.events.impl.AttackEntityEvent;
+import combatant.client.features.relations.CategoryRules;
+import combatant.client.features.relations.CategoryType;
+import combatant.client.features.relations.CategoryService;
+import combatant.client.util.player.PlayerHealthResolver;
+import combatant.client.util.player.ResetAttackCooldown;
+import combatant.client.util.combat.AttackUtil;
+import combatant.client.util.world.ExplosionDamageUtil;
 import combatant.client.config.common.CommonSettingSchemas;
 import combatant.client.config.common.impl.TargetFilters;
 import combatant.client.events.EventHandler;
@@ -66,8 +88,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @ModuleInfo(
         id = "autocrystal",
         displayName = "AutoCrystal",
-        aliases = "CrystalAura",
-        description = "High-performance End Crystal placement, breaking, and positioning system for Crystal PvP.",
+        aliases = {"CrystalAura", "antitotem", "antiweakness", "antiregear", "totempopper", "shulkerbreaker"},
+        description = "High-performance End Crystal placement, breaking, anti-totem, anti-weakness, and anti-regear combat system.",
         category = ModuleCategory.COMBAT
 )
 public class AutoCrystal extends Module {
@@ -323,6 +345,80 @@ public class AutoCrystal extends Module {
     private final BooleanValue baseDisableNoObby =
             bool("autocrystalBaseDisableNoObby", "base_disable_no_obby", false);
 
+    // AntiTotem settings
+    public enum AntiTotemMode {
+        CRYSTAL,
+        SWORD,
+        BOTH
+    }
+
+    private final BooleanValue antiTotem = description(
+            bool("autocrystalAntiTotem", "anti_totem", true),
+            "Prioritizes attacks or crystal detonations to pop enemy totems when target health is below threshold"
+    );
+    private final NumberValue<Float> antiTotemHealthThreshold = visibleWhen(
+            num("autocrystalAntiTotemHealth", "anti_totem_health", 6.0f, 1.0f, 12.0f),
+            antiTotem::get
+    );
+    private final BooleanValue antiTotemPredictDamage = visibleWhen(
+            bool("autocrystalAntiTotemPredictDamage", "anti_totem_predict_damage", true),
+            antiTotem::get
+    );
+    private final EnumValue<AntiTotemMode> antiTotemMode = visibleWhen(
+            enumSetting("autocrystalAntiTotemMode", "anti_totem_mode", AntiTotemMode.BOTH, AntiTotemMode.values()),
+            antiTotem::get
+    );
+    private final BooleanValue antiTotemPacketAttack = visibleWhen(
+            bool("autocrystalAntiTotemPacketAttack", "anti_totem_packet_attack", true),
+            antiTotem::get
+    );
+    private final BooleanValue antiTotemAutoSwitch = visibleWhen(
+            bool("autocrystalAntiTotemAutoSwitch", "anti_totem_auto_switch", true),
+            antiTotem::get
+    );
+
+    // AntiWeakness settings
+    private final BooleanValue antiWeakness = description(
+            bool("autocrystalAntiWeakness", "anti_weakness", true),
+            "Automatically switches to a sword, axe, or pickaxe when attacking or breaking crystals while weakened"
+    );
+    private final BooleanValue antiWeaknessSilent = visibleWhen(
+            bool("autocrystalAntiWeaknessSilent", "anti_weakness_silent", true),
+            antiWeakness::get
+    );
+
+    // AntiRegear settings
+    private final BooleanValue antiRegear = description(
+            bool("autocrystalAntiRegear", "anti_regear", false),
+            "Automatically detects and destroys nearby enemy shulker boxes and ender chests"
+    );
+    private final NumberValue<Double> antiRegearRange = visibleWhen(
+            num("autocrystalAntiRegearRange", "anti_regear_range", 4.5, 1.0, 6.0),
+            antiRegear::get
+    );
+    private final BooleanValue antiRegearShulkers = visibleWhen(
+            bool("autocrystalAntiRegearShulkers", "anti_regear_shulkers", true),
+            antiRegear::get
+    );
+    private final BooleanValue antiRegearEnderChests = visibleWhen(
+            bool("autocrystalAntiRegearEnderChests", "anti_regear_ender_chests", true),
+            antiRegear::get
+    );
+    private final BooleanValue antiRegearAutoTool = visibleWhen(
+            bool("autocrystalAntiRegearAutoTool", "anti_regear_auto_tool", true),
+            antiRegear::get
+    );
+    private final BooleanValue antiRegearRender = visibleWhen(
+            bool("autocrystalAntiRegearRender", "anti_regear_render", true),
+            antiRegear::get
+    );
+
+    // AntiTotem & AntiRegear state
+    private LivingEntity targetedAntiTotemEntity;
+    private final Map<BlockPos, Long> recentEnemyPlacements = new ConcurrentHashMap<>();
+    private final Map<BlockPos, Long> regearBrokenBlocks = new ConcurrentHashMap<>();
+    private final Map<BlockPos, Long> regearRenderBlocks = new ConcurrentHashMap<>();
+
     private final AutoCrystalBasePlanner basePlanner = new AutoCrystalBasePlanner();
     private final AutoCrystalBaseContext baseContext = new AutoCrystalBaseContext();
     private final AutoCrystalPlacementPlanner placementPlanner = new AutoCrystalPlacementPlanner();
@@ -378,6 +474,9 @@ public class AutoCrystal extends Module {
     @Override
     public void onEnable() {
         resetVisualState();
+        recentEnemyPlacements.clear();
+        regearBrokenBlocks.clear();
+        regearRenderBlocks.clear();
     }
 
     @Override
@@ -386,6 +485,13 @@ public class AutoCrystal extends Module {
         RotationManager.INSTANCE.clear(this);
         InventorySwap.INSTANCE.releaseHotbar(this);
         TargetManager.setAutoCrystalTarget(null);
+        if (targetedAntiTotemEntity != null) {
+            TargetManager.setForcedTarget(null);
+            targetedAntiTotemEntity = null;
+        }
+        recentEnemyPlacements.clear();
+        regearBrokenBlocks.clear();
+        regearRenderBlocks.clear();
     }
 
     @Override
@@ -413,6 +519,34 @@ public class AutoCrystal extends Module {
     }
 
     @EventHandler
+    private void onPacketReceive(PacketEvent.Receive event) {
+        if (!isEnabled() || !antiRegear.get() || mc.level == null || mc.player == null) return;
+        if (event.getPacket() instanceof ClientboundBlockUpdatePacket packet) {
+            var state = packet.getBlockState();
+            boolean isShulker = state.getBlock() instanceof ShulkerBoxBlock;
+            boolean isEnderChest = state.getBlock() instanceof EnderChestBlock;
+            if ((isShulker && antiRegearShulkers.get()) || (isEnderChest && antiRegearEnderChests.get())) {
+                BlockPos pos = packet.getPos();
+                Vec3 posVec = Vec3.atCenterOf(pos);
+                for (var other : mc.level.players()) {
+                    if (other == mc.player || !other.isAlive() || other.isSpectator()) continue;
+                    if (CategoryService.isFriend(other)) continue;
+                    if (other.position().distanceToSqr(posVec) <= 36.0) {
+                        recentEnemyPlacements.put(pos.immutable(), System.currentTimeMillis());
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    @EventHandler
+    public void onAttackEntity(AttackEntityEvent event) {
+        if (!isEnabled() || !antiWeakness.get() || mc.player == null) return;
+        handleAntiWeakness(mc.player);
+    }
+
+    @EventHandler
     private void onPacketReceivePost(PacketEvent.ReceivePost event) {
         if (!isEnabled() || mc.level == null) {
             return;
@@ -427,9 +561,11 @@ public class AutoCrystal extends Module {
                 Vec3 spawnPos = new Vec3(spawn.getX(), spawn.getY(), spawn.getZ());
                 double dist = mc.player.getEyePosition().distanceTo(spawnPos);
                 if (dist <= breakRange.get()) {
+                    if (antiWeakness.get()) {
+                        handleAntiWeakness(mc.player);
+                    }
                     mc.getConnection().send(new ServerboundAttackPacket(spawn.getId()));
                     mc.player.swing(InteractionHand.MAIN_HAND);
-                    lastBreakMs = System.currentTimeMillis();
                     crystalTracker.setDeadCrystal(spawn.getId());
                     if (fastPlace.get() && placeEnabled.get() && bestCandidate != null) {
                         tryPlaceCrystal(bestCandidate.pos());
@@ -459,6 +595,12 @@ public class AutoCrystal extends Module {
 
         target = findCombatTarget();
         TargetManager.setAutoCrystalTarget(target);
+        if (targetedAntiTotemEntity != null && (antiTotemMode.get() == AntiTotemMode.SWORD || antiTotemMode.get() == AntiTotemMode.BOTH)) {
+            if (mc.player.distanceTo(targetedAntiTotemEntity) <= 4.0f) {
+                executeAntiTotemMeleeAttack(mc.player, targetedAntiTotemEntity);
+            }
+        }
+        handleAntiRegear(mc.player, mc.level);
         updateBestPosition();
         updateBestCrystal();
         updateBestBasePosition();
@@ -555,6 +697,10 @@ public class AutoCrystal extends Module {
 
         if (interactEnabled.get() && interactVector != null) {
             renderInteractVector(renderer, interactVector, interactColor.getArgb());
+        }
+
+        if (antiRegear.get() && antiRegearRender.get() && !regearRenderBlocks.isEmpty()) {
+            renderRegearBlocks(renderer);
         }
     }
 
@@ -1148,9 +1294,12 @@ public class AutoCrystal extends Module {
             return;
         }
 
+        if (antiWeakness.get()) {
+            handleAntiWeakness(player);
+        }
+
         debugLog("break-attempt id=%d pos=%.2f %.2f %.2f", crystal.getId(), crystal.getX(), crystal.getY(), crystal.getZ());
         mc.gameMode.attack(player, crystal);
-        player.swing(InteractionHand.MAIN_HAND);
         lastBreakMs = System.currentTimeMillis();
         crystalTracker.onCrystalAttack(mc, crystal);
         crystalTracker.markNearbyCrystalsDead(mc.level, crystal);
@@ -1309,6 +1458,13 @@ public class AutoCrystal extends Module {
     private LivingEntity findCombatTarget() {
         if (mc.player == null || mc.level == null) {
             return null;
+        }
+
+        if (antiTotem.get() && mc.level instanceof ClientLevel clientLevel) {
+            LivingEntity antiTotemTarget = findAntiTotemTarget(mc.player, clientLevel);
+            if (antiTotemTarget != null) {
+                return antiTotemTarget;
+            }
         }
 
         TargetingUtil.TargetingSettings settings = new TargetingUtil.TargetingSettings(
@@ -1631,6 +1787,221 @@ public class AutoCrystal extends Module {
         FADE,
         SLIDE,
         DEFAULT
+    }
+
+    // ==========================================
+    //   AntiWeakness, AntiTotem, AntiRegear
+    // ==========================================
+
+    private void handleAntiWeakness(LocalPlayer player) {
+        if (player == null || !player.hasEffect(MobEffects.WEAKNESS)) return;
+        ItemStack held = player.getMainHandItem();
+        if (held.is(ItemTags.SWORDS) || held.is(ItemTags.AXES) || held.is(ItemTags.PICKAXES)) {
+            return;
+        }
+        int weaponSlot = findWeaponSlot(player);
+        int currentSlot = InventorySwap.INSTANCE.clientSelectedSlot();
+        if (weaponSlot != -1 && weaponSlot != currentSlot) {
+            if (antiWeaknessSilent.get()) {
+                InventorySwap.INSTANCE.leaseHotbar(this, weaponSlot, 2);
+            } else {
+                InventorySwap.INSTANCE.selectHotbar(weaponSlot);
+            }
+        }
+    }
+
+    private int findWeaponSlot(LocalPlayer player) {
+        if (player == null) return -1;
+        int current = InventorySwap.INSTANCE.clientSelectedSlot();
+        if (current >= 0 && current < 9) {
+            ItemStack stack = player.getInventory().getItem(current);
+            if (stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES) || stack.is(ItemTags.PICKAXES)) {
+                return current;
+            }
+        }
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = player.getInventory().getItem(i);
+            if (stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES) || stack.is(ItemTags.PICKAXES)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private LivingEntity findAntiTotemTarget(LocalPlayer player, ClientLevel level) {
+        float maxRange = Math.max(placeRange.get(), breakRange.get());
+        AABB searchBox = player.getBoundingBox().inflate(maxRange);
+        List<LivingEntity> entities = level.getEntitiesOfClass(LivingEntity.class, searchBox, e -> isValidAntiTotemTarget(player, e, maxRange));
+
+        LivingEntity best = null;
+        float lowestHealth = Float.MAX_VALUE;
+        double closestDistSq = maxRange * maxRange;
+
+        for (LivingEntity candidate : entities) {
+            PlayerHealthResolver.HealthSnapshot snapshot = PlayerHealthResolver.resolve(candidate);
+            float hp = snapshot.totalHealth();
+            float estimatedHealth = hp;
+            if (antiTotemPredictDamage.get()) {
+                float predicted = calculateAntiTotemPredictedDamage(player, candidate);
+                estimatedHealth = Math.max(0.0f, hp - predicted);
+            }
+            if (estimatedHealth <= antiTotemHealthThreshold.get()) {
+                double distSq = player.distanceToSqr(candidate);
+                if (estimatedHealth < lowestHealth || (Math.abs(estimatedHealth - lowestHealth) < 0.5f && distSq < closestDistSq)) {
+                    best = candidate;
+                    lowestHealth = estimatedHealth;
+                    closestDistSq = distSq;
+                }
+            }
+        }
+
+        if (best != null) {
+            targetedAntiTotemEntity = best;
+            TargetManager.setForcedTarget(best);
+            return best;
+        } else if (targetedAntiTotemEntity != null) {
+            TargetManager.setForcedTarget(null);
+            targetedAntiTotemEntity = null;
+        }
+        return null;
+    }
+
+    private boolean isValidAntiTotemTarget(LocalPlayer player, LivingEntity target, float maxRange) {
+        if (target == null || target == player) return false;
+        if (!target.isAlive() || target.isRemoved()) return false;
+        if (player.distanceTo(target) > maxRange) return false;
+        if (!target.getOffhandItem().is(Items.TOTEM_OF_UNDYING)) return false;
+
+        if (target instanceof net.minecraft.world.entity.player.Player p) {
+            if (p.isCreative() || p.isSpectator()) return false;
+            CategoryType type = CategoryRules.determine(p.getGameProfile().name());
+            if (type == CategoryType.FRIEND || type == CategoryType.BEDWARS_SELF) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private float calculateAntiTotemPredictedDamage(LocalPlayer player, LivingEntity target) {
+        float maxCrystalDmg = 0.0f;
+        AntiTotemMode mode = antiTotemMode.get();
+        if (mode == AntiTotemMode.CRYSTAL || mode == AntiTotemMode.BOTH) {
+            AABB searchBox = target.getBoundingBox().inflate(8.0);
+            List<EndCrystal> crystals = target.level().getEntitiesOfClass(EndCrystal.class, searchBox, Entity::isAlive);
+            for (EndCrystal crystal : crystals) {
+                float dmg = ExplosionDamageUtil.getCrystalDamage(target, crystal.position(), 1, false);
+                if (dmg > maxCrystalDmg) maxCrystalDmg = dmg;
+            }
+        }
+        float meleeDmg = 0.0f;
+        if (mode == AntiTotemMode.SWORD || mode == AntiTotemMode.BOTH) {
+            if (player.distanceTo(target) <= 4.2f) {
+                double baseDamage = player.getAttributeValue(Attributes.ATTACK_DAMAGE);
+                float cooldown = player.getAttackStrengthScale(0.5f);
+                float damage = (float) (baseDamage * (0.2f + cooldown * cooldown * 0.8f));
+                if (player.fallDistance > 0.0f && !player.onGround() && !player.isInWater()) {
+                    damage *= 1.5f;
+                }
+                int armor = target.getArmorValue();
+                meleeDmg = CombatRules.getDamageAfterAbsorb(target, damage, target.damageSources().playerAttack(player), (float) armor, (float) target.getAttributeValue(Attributes.ARMOR_TOUGHNESS));
+            }
+        }
+        return Math.max(maxCrystalDmg, meleeDmg);
+    }
+
+    private void executeAntiTotemMeleeAttack(LocalPlayer player, LivingEntity target) {
+        if (antiTotemAutoSwitch.get()) {
+            int weapon = findWeaponSlot(player);
+            if (weapon != -1 && weapon != InventorySwap.INSTANCE.clientSelectedSlot()) {
+                InventorySwap.INSTANCE.leaseHotbar(this, weapon, 2);
+            }
+        }
+        if (antiTotemPacketAttack.get()) {
+            if (mc.getConnection() != null) {
+                mc.getConnection().send(new ServerboundInteractPacket(
+                        target.getId(),
+                        null,
+                        null,
+                        player.isShiftKeyDown()
+                ));
+            }
+            player.swing(InteractionHand.MAIN_HAND);
+            ResetAttackCooldown.resetAttackCooldown(player);
+        } else {
+            AttackUtil.attack(mc, target);
+        }
+    }
+
+    private void handleAntiRegear(LocalPlayer player, Level level) {
+        if (!antiRegear.get() || player == null || level == null || mc.getConnection() == null) return;
+        long now = System.currentTimeMillis();
+        recentEnemyPlacements.entrySet().removeIf(e -> now - e.getValue() > 8000L);
+        regearBrokenBlocks.entrySet().removeIf(e -> now - e.getValue() > 2000L);
+
+        double maxDistSq = antiRegearRange.get() * antiRegearRange.get();
+        Vec3 eyes = player.getEyePosition();
+
+        BlockPos targetPos = null;
+        double bestDistSq = maxDistSq;
+
+        for (BlockPos pos : recentEnemyPlacements.keySet()) {
+            if (regearBrokenBlocks.containsKey(pos)) continue;
+            var state = level.getBlockState(pos);
+            if (!(state.getBlock() instanceof ShulkerBoxBlock) && !(state.getBlock() instanceof EnderChestBlock)) {
+                recentEnemyPlacements.remove(pos);
+                continue;
+            }
+            double distSq = eyes.distanceToSqr(Vec3.atCenterOf(pos));
+            if (distSq <= bestDistSq) {
+                bestDistSq = distSq;
+                targetPos = pos;
+            }
+        }
+
+        if (targetPos == null) return;
+
+        if (antiRegearAutoTool.get()) {
+            int pickSlot = findBestPickaxeSlot(player);
+            if (pickSlot != -1 && pickSlot != InventorySwap.INSTANCE.clientSelectedSlot()) {
+                InventorySwap.INSTANCE.leaseHotbar(this, pickSlot, 2);
+            }
+        }
+
+        mc.getConnection().send(new ServerboundPlayerActionPacket(
+                ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK,
+                targetPos,
+                Direction.UP
+        ));
+        mc.getConnection().send(new ServerboundPlayerActionPacket(
+                ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK,
+                targetPos,
+                Direction.UP
+        ));
+        player.swing(InteractionHand.MAIN_HAND);
+        regearBrokenBlocks.put(targetPos, now);
+        regearRenderBlocks.put(targetPos, now);
+    }
+
+    private int findBestPickaxeSlot(LocalPlayer player) {
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = player.getInventory().getItem(i);
+            if (stack.is(ItemTags.PICKAXES)) return i;
+        }
+        return -1;
+    }
+
+    private void renderRegearBlocks(Renderer3D renderer) {
+        long now = System.currentTimeMillis();
+        regearRenderBlocks.entrySet().removeIf(entry -> now - entry.getValue() > 1000L);
+        for (Map.Entry<BlockPos, Long> entry : regearRenderBlocks.entrySet()) {
+            float progress = 1.0f - (float) (now - entry.getValue()) / 1000.0f;
+            float alpha = Mth.clamp(progress, 0.0f, 1.0f);
+            AABB box = new AABB(entry.getKey());
+            int fillArgb = ExplosionRenderUtil.applyOpacity(0x40FF3C3C, alpha);
+            int lineArgb = ExplosionRenderUtil.applyOpacity(0xFFFF3C3C, alpha);
+            ExplosionRenderUtil.addFilledBox(renderer, box, fillArgb);
+            ExplosionRenderUtil.addOutlineBox(renderer, box, lineArgb);
+        }
     }
 
 }

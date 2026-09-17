@@ -49,6 +49,7 @@ public class AutoEat extends Module {
 
     @Override
     public void onDisable() {
+        InventorySwap.INSTANCE.releaseHotbar(this);
         if (mc.player != null) {
             stopAutoUse(mc.player);
         }
@@ -244,10 +245,8 @@ public class AutoEat extends Module {
     }
 
     private boolean ensureFoodInMainHand(LocalPlayer player, int bestSlot) {
-        PlayerInventoryAccessor inv = (PlayerInventoryAccessor) player.getInventory();
-
         if (restoreMainPending) {
-            inv.combatant$setSelectedSlot(restoreHotbarSlot);
+            InventorySwap.INSTANCE.selectHotbar(restoreHotbarSlot);
             return true;
         }
 
@@ -255,26 +254,25 @@ public class AutoEat extends Module {
 
         // Slot is already in hotbar (0-8)
         if (bestSlot < 9) {
-            int selected = inv.combatant$getSelectedSlot();
+            int selected = InventorySwap.INSTANCE.clientSelectedSlot();
             if (selected != bestSlot) {
                 prevSelectedSlot = selected;
                 restoreSelected = true;
-                inv.combatant$setSelectedSlot(bestSlot);
+                InventorySwap.INSTANCE.selectHotbar(bestSlot);
             }
             return true;
         }
 
         // Slot is in main inventory (9-35), swap into hotbar
         int targetHotbar = findEmptyHotbarSlot(player);
-        int selected = inv.combatant$getSelectedSlot();
+        int selected = InventorySwap.INSTANCE.clientSelectedSlot();
         if (targetHotbar == -1) targetHotbar = selected;
 
         if (targetHotbar != selected) {
             prevSelectedSlot = selected;
             restoreSelected = true;
         }
-        inv.combatant$setSelectedSlot(targetHotbar);
-
+        InventorySwap.INSTANCE.selectHotbar(targetHotbar);
         if (player.inventoryMenu == null) return false;
 
         restoreInvSlot = bestSlot;
@@ -329,7 +327,7 @@ public class AutoEat extends Module {
         if (restoreSelected) {
             restoreSelected = false;
             if (prevSelectedSlot >= 0 && prevSelectedSlot < 9) {
-                ((PlayerInventoryAccessor) player.getInventory()).combatant$setSelectedSlot(prevSelectedSlot);
+                InventorySwap.INSTANCE.selectHotbar(prevSelectedSlot);
             }
             prevSelectedSlot = -1;
         }

@@ -33,6 +33,8 @@ import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.util.combat.ExplosionRenderUtil;
 import combatant.client.util.player.inventory.InventorySwap;
 import combatant.client.util.block.mining.MiningDamageCalculator;
+import combatant.client.util.aiming.RotationManager;
+import combatant.client.util.aiming.data.Rotation;
 
 @ModuleInfo(
         id = "speedmine",
@@ -57,6 +59,7 @@ public final class SpeedMine extends Module {
     private final BooleanValue instantRebreak = bool("speedmineInstantRebreak", "instant_rebreak", true);
     private final BooleanValue silentSwitch = bool("speedmineSilentSwitch", "silent_switch", true);
     private final BooleanValue autoSwitch = bool("speedmineAutoSwitch", "auto_switch", false);
+    private final BooleanValue silentRotate = bool("speedmineSilentRotate", "silent_rotate", false);
     private final BooleanValue resetDelay = bool("speedmineResetDelay", "reset_delay", true);
     private final NumberValue<Float> range = num("speedmineRange", "range", 5.5f, 2.0f, 7.0f);
     private final BooleanValue swing = bool("speedmineSwing", "swing", true);
@@ -204,6 +207,10 @@ public final class SpeedMine extends Module {
                     } else if (toolSlot >= 0 && autoSwitch.get()) {
                         InventorySwap.INSTANCE.selectHotbar(toolSlot);
                     }
+                    if (silentRotate.get()) {
+                        Rotation rot = Rotation.lookingAt(Vec3.atCenterOf(rebreakPos), player.getEyePosition());
+                        RotationManager.INSTANCE.snapServerRotation(rot, 25, this, 1);
+                    }
                     mc.getConnection().send(new ServerboundPlayerActionPacket(
                             ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK,
                             rebreakPos,
@@ -248,7 +255,10 @@ public final class SpeedMine extends Module {
             } else if (toolSlot >= 0 && autoSwitch.get()) {
                 InventorySwap.INSTANCE.selectHotbar(toolSlot);
             }
-
+            if (silentRotate.get()) {
+                Rotation rot = Rotation.lookingAt(Vec3.atCenterOf(miningPos), player.getEyePosition());
+                RotationManager.INSTANCE.snapServerRotation(rot, 25, this, 1);
+            }
             mc.getConnection().send(new ServerboundPlayerActionPacket(
                     ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK,
                     miningPos,

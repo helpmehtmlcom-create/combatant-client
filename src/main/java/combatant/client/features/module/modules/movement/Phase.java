@@ -75,13 +75,16 @@ public class Phase extends Module {
             visibleWhen(bool("strict", false), () -> mode.get() == Mode.FORCE_MINE);
     public int clipTimer;
     public int afterPearlTime;
+    private final Minecraft mc = Minecraft.getInstance();
+    @Override
+    public void onDisable() {
+        InventorySwap.INSTANCE.releaseHotbar(this);
+    }
 
     @Override
     public void onEnable() {
         afterPearlTime = 0;
         clipTimer = 0;
-
-        Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.player == null || mc.level == null) return;
 
         if (mc.player.onGround() && mode.get() == Mode.CC_CLIP) {
@@ -195,8 +198,11 @@ public class Phase extends Module {
             int bestTool = findBestTool(blockToBreak);
             if (bestTool == -1) return;
 
-            int prevItem = ((PlayerInventoryAccessor) mc.player.getInventory()).combatant$getSelectedSlot();
-            InventorySwap.INSTANCE.selectHotbar(bestTool);
+            if (silent.get()) {
+                InventorySwap.INSTANCE.leaseHotbar(this, bestTool, 2);
+            } else {
+                InventorySwap.INSTANCE.selectHotbar(bestTool);
+            }
             final BlockPos target = blockToBreak;
             final Direction face = mc.player.getDirection();
             InteractionUtil.sendSequencedPacket(id ->
@@ -204,9 +210,7 @@ public class Phase extends Module {
             InteractionUtil.sendSequencedPacket(id ->
                     new ServerboundPlayerActionPacket(ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK, target, face, id));
             mc.player.swing(InteractionHand.MAIN_HAND);
-            if (silent.get()) InventorySwap.INSTANCE.selectHotbar(prevItem);
         }
-
         if (isMode(Mode.FORCE_MINE)
                 && (mc.player.horizontalCollision || playerInsideBlock())
                 && !mc.player.isUnderWater()

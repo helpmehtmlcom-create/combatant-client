@@ -14,6 +14,7 @@ import combatant.client.events.impl.GameTickEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.util.aiming.RotationManager;
 import combatant.client.util.aiming.data.Rotation;
 import combatant.client.util.player.inventory.InventorySwap;
 import net.minecraft.client.Minecraft;
@@ -90,6 +91,7 @@ public final class EChestFarmer extends Module {
         isBreaking = false;
         tickDelayTimer = 0;
         InventorySwap.INSTANCE.releaseHotbar(this);
+        RotationManager.INSTANCE.release(this);
     }
 
     @EventHandler
@@ -456,14 +458,7 @@ public final class EChestFarmer extends Module {
 
     private void rotateTo(LocalPlayer player, Vec3 target) {
         Rotation rot = Rotation.lookingAt(target, player.getEyePosition());
-        if (mc.getConnection() != null) {
-            mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
-                    rot.yaw(),
-                    rot.pitch(),
-                    player.onGround(),
-                    player.horizontalCollision
-            ));
-        }
+        RotationManager.INSTANCE.snapServerRotation(rot, 35, this, 2);
     }
 
     private int countObsidian() {

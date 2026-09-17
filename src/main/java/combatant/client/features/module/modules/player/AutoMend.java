@@ -14,8 +14,12 @@ import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.item.ItemStack;
+import combatant.client.config.values.BooleanValue;
+import combatant.client.config.values.NumberValue;
+import combatant.client.util.aiming.RotationManager;
+import combatant.client.util.aiming.data.Rotation;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
@@ -47,12 +51,15 @@ public final class AutoMend extends Module {
 
     private final NumberValue<Integer> repairThreshold =
             num("repair_threshold", "repair_threshold", 90, 10, 100);
+    private final BooleanValue silentRotation =
+            bool("automendSilentRotation", "silent_rotation", true);
 
     private final Minecraft mc = Minecraft.getInstance();
 
     @Override
     public void onDisable() {
         InventorySwap.INSTANCE.releaseHotbar(this);
+        RotationManager.INSTANCE.release(this);
     }
 
     @EventHandler
@@ -83,6 +90,10 @@ public final class AutoMend extends Module {
             InventorySwap.INSTANCE.releaseHotbar(this);
             return;
         }
+        if (silentRotation.get()) {
+            Rotation rot = new Rotation(player.getYRot(), 90.0f, false);
+            RotationManager.INSTANCE.snapServerRotation(rot, 45, this, 1);
+        }
 
         // Check if offhand already has exp bottles
         if (player.getOffhandItem().is(Items.EXPERIENCE_BOTTLE)) {
@@ -90,7 +101,6 @@ public final class AutoMend extends Module {
             player.swing(InteractionHand.OFF_HAND);
             return;
         }
-
         // Find exp bottle in hotbar or inventory
         SlotResult hotbarExp = InventorySwap.INSTANCE.findHotbar(s -> s.is(Items.EXPERIENCE_BOTTLE));
         if (!hotbarExp.found()) {
@@ -103,7 +113,6 @@ public final class AutoMend extends Module {
         if (leased) {
             mc.gameMode.useItem(player, InteractionHand.MAIN_HAND);
             player.swing(InteractionHand.MAIN_HAND);
-            InventorySwap.INSTANCE.releaseHotbar(this);
         }
     }
 

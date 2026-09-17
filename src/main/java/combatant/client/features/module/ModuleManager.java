@@ -46,6 +46,7 @@ public enum ModuleManager {
 
     private static final List<Module> modules = new ArrayList<>();
     private static final Map<String, Module> byId = new ConcurrentHashMap<>();
+    private static final Map<String, Module> byAlias = new ConcurrentHashMap<>();
     private static final Map<Class<? extends Module>, Module> byType = new ConcurrentHashMap<>();
     private static final EnumMap<HudPhase, List<Module>> HUD_PHASE_MODULES = new EnumMap<>(HudPhase.class);
     private static final AtomicReferenceArray<Module[]> HUD_PHASE_SNAPSHOTS =
@@ -114,6 +115,11 @@ public enum ModuleManager {
         modules.add(module);
         byId.put(normalizedId, module);
         byType.put(type, module);
+        for (String alias : module.getAliases()) {
+            if (alias != null && !alias.isBlank()) {
+                byAlias.putIfAbsent(normalizeName(alias), module);
+            }
+        }
         cacheHudPhase(module);
         cacheWorldPhase(module);
         rebuildSnapshots();
@@ -127,6 +133,11 @@ public enum ModuleManager {
         String id = module.name();
         if (id != null && !id.isBlank()) {
             byId.remove(normalizeName(id));
+        }
+        for (String alias : module.getAliases()) {
+            if (alias != null && !alias.isBlank()) {
+                byAlias.remove(normalizeName(alias), module);
+            }
         }
         byType.remove(module.getClass());
 
@@ -181,7 +192,11 @@ public enum ModuleManager {
     public static Module get(String name) {
         if (runtimeReleased || RuntimeGate.isJarReplacementMode()) return null;
         if (name == null || name.isBlank()) return null;
-        Module module = byId.get(normalizeName(name));
+        String normalized = normalizeName(name);
+        Module module = byId.get(normalized);
+        if (module == null) {
+            module = byAlias.get(normalized);
+        }
         if (module != null && !RuntimeGate.canRunModules() && !(module instanceof RuntimeControlModule)) return null;
         return module;
     }

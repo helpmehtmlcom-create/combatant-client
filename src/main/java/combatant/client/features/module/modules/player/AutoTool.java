@@ -11,6 +11,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
+import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.NumberValue;
 import combatant.client.events.EventHandler;
 import combatant.client.events.impl.GameTickEvent;
@@ -31,9 +32,10 @@ import combatant.client.util.block.mining.MiningDamageCalculator;
 public class AutoTool extends Module {
 
     private static final String SETTING_RESTORE_DELAY = "restore_delay_ms";
+    private final BooleanValue silent =
+            bool("autoToolSilent", "silent", true);
     private final NumberValue<Integer> restoreDelayMs =
-            num("autoToolRestoreDelayMs", SETTING_RESTORE_DELAY, 300, 0, 1000);
-
+            visibleWhen(num("autoToolRestoreDelayMs", SETTING_RESTORE_DELAY, 300, 0, 1000), () -> !silent.get());
     private final Minecraft mc = Minecraft.getInstance();
 
     private int originalSlot = -1;
@@ -41,6 +43,7 @@ public class AutoTool extends Module {
 
     @Override
     public void onDisable() {
+        InventorySwap.INSTANCE.releaseHotbar(this);
         if (mc != null && mc.player != null && originalSlot >= 0) {
             InventorySwap.INSTANCE.selectHotbar(originalSlot);
         }
@@ -60,18 +63,23 @@ public class AutoTool extends Module {
             BlockPos pos = accessor.combatant$getCurrentBreakingPos();
             if (pos != null) {
                 int bestSlot = findBestHotbarTool(pos);
-                int selected = ((PlayerInventoryAccessor) mc.player.getInventory()).combatant$getSelectedSlot();
-                if (bestSlot >= 0 && bestSlot != selected) {
-                    if (originalSlot < 0) {
-                        originalSlot = selected;
+                if (bestSlot >= 0) {
+                    if (silent.get()) {
+                        InventorySwap.INSTANCE.leaseHotbar(this, bestSlot, 2);
+                    } else {
+                        int selected = ((PlayerInventoryAccessor) mc.player.getInventory()).combatant$getSelectedSlot();
+                        if (bestSlot != selected) {
+                            if (originalSlot < 0) {
+                                originalSlot = selected;
+                            }
+                            InventorySwap.INSTANCE.selectHotbar(bestSlot);
+                        }
                     }
-                    InventorySwap.INSTANCE.selectHotbar(bestSlot);
                 }
                 lastBreakMs = System.currentTimeMillis();
                 return;
             }
         }
-
         if (originalSlot >= 0) {
             long now = System.currentTimeMillis();
             if (now - lastBreakMs >= restoreDelayMs.get()) {
@@ -88,6 +96,7 @@ public class AutoTool extends Module {
     }
 
     private void resetState() {
+        InventorySwap.INSTANCE.releaseHotbar(this);
         originalSlot = -1;
         lastBreakMs = 0L;
     }

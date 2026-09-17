@@ -16,6 +16,7 @@ import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.render.engine.renderer.Renderer3D;
+import combatant.client.util.aiming.RotationManager;
 import combatant.client.util.aiming.data.Rotation;
 import combatant.client.util.block.scaffold.ScaffoldBlockItemSelection;
 import combatant.client.mixins.accessors.PlayerInventoryAccessor;
@@ -366,12 +367,7 @@ public class AutoHighway extends Module {
     private void sendRotation(LocalPlayer player, BlockHitResult hitResult) {
         if (mc.getConnection() == null) return;
         Rotation rot = Rotation.lookingAt(hitResult.getLocation(), player.getEyePosition());
-        mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
-                rot.yaw(),
-                rot.pitch(),
-                player.onGround(),
-                player.horizontalCollision
-        ));
+        RotationManager.INSTANCE.snapServerRotation(rot, 40, this, 2);
     }
 
     private int findPavingSlot(LocalPlayer player) {

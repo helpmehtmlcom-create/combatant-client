@@ -364,8 +364,6 @@ public final class AutoCity extends Module {
                 Direction.UP
         ));
         mc.player.swing(InteractionHand.MAIN_HAND);
-
-        InventorySwap.INSTANCE.releaseHotbar(this);
     }
 
     private void abortMining(BlockPos pos) {

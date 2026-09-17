@@ -13,10 +13,10 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import combatant.client.config.values.BooleanValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
-import combatant.client.mixins.accessors.PlayerInventoryAccessor;
 import combatant.client.util.player.ResetAttackCooldown;
 import combatant.client.util.player.inventory.InventorySwap;
 
@@ -30,14 +30,18 @@ public class ClickPearl extends Module {
     private static final String ACTION_CLICKPEARL = "clickpearl";
 
     private final Minecraft client = Minecraft.getInstance();
+    private final BooleanValue silent = bool("clickpearl_silent", "silent", true);
     private ItemStack previousHeld = ItemStack.EMPTY;
-
     public ClickPearl() {
         // Default binds:
         // - Toggle module with LEFT_CTRL+Z
         // - Action key is Z (handled by module's own logic)
         setDefaultBind("LEFT_CTRL+Z");
         action(ACTION_CLICKPEARL, "Z");
+    }
+    @Override
+    public void onDisable() {
+        InventorySwap.INSTANCE.releaseHotbar(this);
     }
 
     @Override
@@ -59,9 +63,7 @@ public class ClickPearl extends Module {
         if (player == null || manager == null) return;
         if (player.getCooldowns().isOnCooldown(new ItemStack(Items.ENDER_PEARL))) return;
 
-        PlayerInventoryAccessor inv = (PlayerInventoryAccessor) player.getInventory();
-        int originalSlot = inv.combatant$getSelectedSlot();
-
+        int originalSlot = InventorySwap.INSTANCE.clientSelectedSlot();
         ItemStack off = player.getOffhandItem();
         if (isPearl(off)) {
             manager.useItem(player, InteractionHand.OFF_HAND);
@@ -71,10 +73,17 @@ public class ClickPearl extends Module {
 
         int hotbarPearl = findPearlInHotbar(player);
         if (hotbarPearl != -1) {
-            inv.combatant$setSelectedSlot(hotbarPearl);
-            manager.useItem(player, InteractionHand.MAIN_HAND);
-            player.swing(InteractionHand.MAIN_HAND);
-            inv.combatant$setSelectedSlot(originalSlot);
+            if (silent.get()) {
+                InventorySwap.INSTANCE.leaseHotbar(this, hotbarPearl, 1);
+                manager.useItem(player, InteractionHand.MAIN_HAND);
+                player.swing(InteractionHand.MAIN_HAND);
+                InventorySwap.INSTANCE.releaseHotbar(this);
+            } else {
+                InventorySwap.INSTANCE.selectHotbar(hotbarPearl);
+                manager.useItem(player, InteractionHand.MAIN_HAND);
+                player.swing(InteractionHand.MAIN_HAND);
+                InventorySwap.INSTANCE.selectHotbar(originalSlot);
+            }
             return;
         }
 
@@ -93,10 +102,17 @@ public class ClickPearl extends Module {
 
                 InventorySwap.INSTANCE.swapScreenSlots(pearlScreen, targetScreen);
 
-                inv.combatant$setSelectedSlot(emptyHotbar);
-                manager.useItem(player, InteractionHand.MAIN_HAND);
-                player.swing(InteractionHand.MAIN_HAND);
-                inv.combatant$setSelectedSlot(originalSlot);
+                if (silent.get()) {
+                    InventorySwap.INSTANCE.leaseHotbar(this, emptyHotbar, 1);
+                    manager.useItem(player, InteractionHand.MAIN_HAND);
+                    player.swing(InteractionHand.MAIN_HAND);
+                    InventorySwap.INSTANCE.releaseHotbar(this);
+                } else {
+                    InventorySwap.INSTANCE.selectHotbar(emptyHotbar);
+                    manager.useItem(player, InteractionHand.MAIN_HAND);
+                    player.swing(InteractionHand.MAIN_HAND);
+                    InventorySwap.INSTANCE.selectHotbar(originalSlot);
+                }
             } else {
                 int targetScreen = InventorySwap.mapHotbarToScreenSlot(originalSlot);
                 int pearlScreen = InventorySwap.mapInventoryToScreenSlot(invPearl);
@@ -118,7 +134,7 @@ public class ClickPearl extends Module {
                     }
                 }
 
-                inv.combatant$setSelectedSlot(originalSlot);
+                InventorySwap.INSTANCE.selectHotbar(originalSlot);
             }
         });
     }

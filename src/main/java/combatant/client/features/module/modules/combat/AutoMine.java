@@ -85,9 +85,8 @@ public final class AutoMine extends Module {
     private final RGBAColorValue secondaryFillColor = color("automineSecondaryFillColor", "#0984E355");
     private final RGBAColorValue secondaryLineColor = color("automineSecondaryLineColor", "#74B9FFFF");
 
-    // Automatic internal defaults
+    private final BooleanValue silentSwitch = bool("automineSilentSwitch", "silent_switch", true);
     private static final float BREAK_THRESHOLD = 1.0f;
-    private static final boolean SILENT_SWITCH = true;
     private static final boolean SWING = true;
     private static final boolean REBREAK = true;
     private static final boolean SELF_CHECK = true;
@@ -210,7 +209,7 @@ public final class AutoMine extends Module {
             MiningTask task = BlockMiningSystem.INSTANCE.getPrimaryTask();
             if (task != null) {
                 task.setSpeedMultiplier(spd);
-                BlockMiningSystem.INSTANCE.tick(player, SILENT_SWITCH, SWING, BREAK_THRESHOLD);
+                BlockMiningSystem.INSTANCE.tick(player, silentSwitch.get(), SWING, BREAK_THRESHOLD);
                 progress = task.getProgress();
             }
         }
@@ -235,7 +234,7 @@ public final class AutoMine extends Module {
             MiningTask task = BlockMiningSystem.INSTANCE.getSecondaryTask();
             if (task != null) {
                 task.setSpeedMultiplier(spd);
-                BlockMiningSystem.INSTANCE.tick(player, SILENT_SWITCH, SWING, BREAK_THRESHOLD);
+                BlockMiningSystem.INSTANCE.tick(player, silentSwitch.get(), SWING, BREAK_THRESHOLD);
                 secondaryProgress = task.getProgress();
             }
         }
@@ -244,14 +243,14 @@ public final class AutoMine extends Module {
     private void handleRebreak(LocalPlayer player) {
         if (rebreakPos != null) {
             if (isRebreakValid(player, rebreakPos)) {
-                BlockMiningSystem.INSTANCE.instantRebreak(rebreakPos, null, SILENT_SWITCH, SWING);
+                BlockMiningSystem.INSTANCE.instantRebreak(rebreakPos, null, silentSwitch.get(), SWING);
             } else {
                 rebreakPos = null;
             }
         }
         if (doubleMine.get() && secondaryRebreakPos != null) {
             if (isRebreakValid(player, secondaryRebreakPos)) {
-                BlockMiningSystem.INSTANCE.instantRebreak(secondaryRebreakPos, null, SILENT_SWITCH, SWING);
+                BlockMiningSystem.INSTANCE.instantRebreak(secondaryRebreakPos, null, silentSwitch.get(), SWING);
             } else {
                 secondaryRebreakPos = null;
             }
@@ -266,7 +265,7 @@ public final class AutoMine extends Module {
     }
 
     private void instantBreak(BlockPos pos) {
-        BlockMiningSystem.INSTANCE.instantRebreak(pos, null, SILENT_SWITCH, SWING);
+        BlockMiningSystem.INSTANCE.instantRebreak(pos, null, silentSwitch.get(), SWING);
     }
 
     private Player findTargetPlayer() {

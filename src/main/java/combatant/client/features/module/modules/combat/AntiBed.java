@@ -39,7 +39,7 @@ public final class AntiBed extends Module {
     private final NumberValue<Double> range = num("range", 5.0, 1.0, 6.0);
     private final BooleanValue placeOnHead = bool("place_on_head", true);
     private final BooleanValue antiAnchor = bool("anti_anchor", true);
-
+    private final Minecraft mc = Minecraft.getInstance();
 
     @Override
     public void onDisable() {

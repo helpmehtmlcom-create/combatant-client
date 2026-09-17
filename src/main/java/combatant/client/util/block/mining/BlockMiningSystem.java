@@ -176,10 +176,6 @@ public final class BlockMiningSystem {
         } else {
             secondaryTask = null;
         }
-
-        if (silentSwitch) {
-            InventorySwap.INSTANCE.releaseHotbar(this);
-        }
     }
 
     /**
@@ -205,10 +201,6 @@ public final class BlockMiningSystem {
 
         if (swing) {
             mc.player.swing(InteractionHand.MAIN_HAND);
-        }
-
-        if (silentSwitch) {
-            InventorySwap.INSTANCE.releaseHotbar(this);
         }
         return true;
     }
