@@ -21,6 +21,7 @@ import combatant.client.features.gui.clickgui.settings.Setting;
 import combatant.client.features.gui.clickgui.settings.SettingErrorView;
 import combatant.client.runtime.error.ErrorHandler;
 import combatant.client.features.module.Module;
+import combatant.client.features.module.ModuleSubCategory;
 import combatant.client.features.gui.clickgui.settings.SettingRenderContext;
 import combatant.client.features.gui.clickgui.settings.SettingRenderSurface;
 import combatant.client.features.gui.clickgui.util.ClickGuiHintOverlay;
@@ -44,6 +45,7 @@ public final class ModulesMenuScreen {
     private static final float PANEL_GAP = 14.0f;
     private static final float HEADER_H = 24.0f;
     private static final float SEPARATOR_H = 4.0f;
+    private static final float TAB_BAR_H = 17.0f;
     private static final float MODULE_ROW_H = 20.0f;
     private static final float PANEL_RADIUS = 10.0f;
     private static final float TEXT_LEFT_PADDING = 10.0f;
@@ -450,9 +452,9 @@ public final class ModulesMenuScreen {
         drawCategoryIcon(panel, muted);
 
         if (panel.swap < 0.999f) {
+            renderPanelTabs(panel, mouseX, mouseY, alpha * (1.0f - panel.swap));
             renderModulePage(panel, mouseX, mouseY, alpha * (1.0f - panel.swap));
         }
-
         if (panel.swap > 0.001f) {
             renderSettingsPage(panel, mouseX, mouseY, alpha * panel.swap);
         }
@@ -466,13 +468,62 @@ public final class ModulesMenuScreen {
         );
     }
 
+    private void renderPanelTabs(ModulesMenuPanel panel, float mouseX, float mouseY, float alpha) {
+        panel.tabHits.clear();
+        List<ModuleSubCategory> tabs = panel.getAvailableSubCategories();
+        if (tabs == null || tabs.isEmpty()) return;
+
+        float tabsY = panel.y + (HEADER_H + 2.0f) * scale;
+        float tabsH = (TAB_BAR_H - 3.0f) * scale;
+        float innerX = panel.x + 6.0f * scale;
+        float innerW = panel.w - 12.0f * scale;
+        int count = tabs.size();
+        float gap = 2.5f * scale;
+        float tabW = (innerW - (count - 1) * gap) / count;
+
+        int containerBg = withAlpha(ModulesMenuStyle.panelBgGlassDark(), alpha * 0.45f);
+        int containerStroke = withAlpha(ModulesMenuStyle.split(), alpha * 0.60f);
+        LayoutRender2D.roundedQuad(innerX - 1.0f * scale, tabsY - 1.0f * scale, innerW + 2.0f * scale, tabsH + 2.0f * scale, 4.0f * scale, containerBg, containerBg, containerBg, containerBg);
+        LayoutRender2D.roundedStroke(innerX - 1.0f * scale, tabsY - 1.0f * scale, innerW + 2.0f * scale, tabsH + 2.0f * scale, 4.0f * scale, 0.5f * scale, containerStroke);
+
+        for (int i = 0; i < count; i++) {
+            ModuleSubCategory sub = tabs.get(i);
+            float tx = innerX + i * (tabW + gap);
+            panel.addTabHit(sub, tx, tabsY, tabW, tabsH);
+
+            boolean active = panel.getCurrentSubCategory() == sub;
+            boolean hovered = inside(mouseX, mouseY, tx, tabsY, tabW, tabsH);
+
+            if (active) {
+                int activeBg = withAlpha(ModulesMenuStyle.accent(), alpha * 0.40f);
+                int activeStroke = withAlpha(ModulesMenuStyle.accent(), alpha * 0.90f);
+                LayoutRender2D.roundedQuad(tx, tabsY, tabW, tabsH, 3.0f * scale, activeBg, activeBg, activeBg, activeBg);
+                LayoutRender2D.roundedStroke(tx, tabsY, tabW, tabsH, 3.0f * scale, 0.5f * scale, activeStroke);
+            } else if (hovered) {
+                int hoverBg = withAlpha(ModulesMenuStyle.panelHover(), alpha * 0.35f);
+                LayoutRender2D.roundedQuad(tx, tabsY, tabW, tabsH, 3.0f * scale, hoverBg, hoverBg, hoverBg, hoverBg);
+            }
+
+            int textColor = active ? withAlpha(0xFFFFFFFF, alpha) : (hovered ? withAlpha(ModulesMenuStyle.text(), alpha) : withAlpha(ModulesMenuStyle.textMuted(), alpha));
+            float fontSize = count >= 3 ? 6.5f * scale : 7.0f * scale;
+            float fontY = tabsY + middle(textHeight(semibold, fontSize), tabsH) + 0.5f * scale;
+            float tw = ClickGuiRenderer.textWidth(semibold, sub.title(), fontSize);
+            ClickGuiRenderer.drawText(semibold, sub.title(), tx + (tabW - tw) * 0.5f, fontY, fontSize, textColor);
+        }
+
+        float sepY = tabsY + tabsH + 2.5f * scale;
+        int split = withAlpha(ModulesMenuStyle.split(), alpha);
+        LayoutRender2D.rect(panel.x + 8.0f * scale, sepY, panel.w - 16.0f * scale, 0.5f * scale, split);
+    }
+
     private void renderModulePage(ModulesMenuPanel panel, float mouseX, float mouseY, float alpha) {
         if (alpha <= 0.001f) return;
 
+        float tabsOffset = (HEADER_H + TAB_BAR_H + 3.0f) * scale;
         float pageX = panel.x - panel.w * panel.swap;
-        float listY = panel.y + (HEADER_H + SEPARATOR_H - 1.0f) * scale;
-        float clipY = panel.y + (HEADER_H + SEPARATOR_H) * scale;
-        float clipH = panel.h - (HEADER_H + SEPARATOR_H) * scale - 0.5f * scale;
+        float listY = panel.y + tabsOffset;
+        float clipY = panel.y + tabsOffset;
+        float clipH = panel.h - tabsOffset - 1.0f * scale;
 
         boolean clipped = ScissorFunction.pushRaw(panel.x, clipY, panel.w, clipH);
         ClickGuiRenderer.flushRenderer();
@@ -481,7 +532,7 @@ public final class ModulesMenuScreen {
         float y = listY - panel.modulesSmoothScroll;
         float total = 0.0f;
 
-        List<ModuleComponent.CardEntry> entries = ModulesMenuResolver.buildCards(panel.category);
+        List<ModuleComponent.CardEntry> entries = ModulesMenuResolver.buildCards(panel.category, panel.getCurrentSubCategory());
         boolean panelShapeClip = false;
         if (ClipFunction.usesMsaaStencilByDefault()) {
             // The selected fallback owns the complete panel subtree, including procedural hovers.

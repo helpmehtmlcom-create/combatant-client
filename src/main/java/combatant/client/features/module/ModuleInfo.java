@@ -26,6 +26,8 @@ public @interface ModuleInfo {
 
     ModuleCategory category();
 
+    ModuleSubCategory subCategory() default ModuleSubCategory.ALL;
+
     /**
      * Plain description or i18n key. Optional, but carried by Module metadata when present.
      */

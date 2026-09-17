@@ -125,18 +125,38 @@ public class KillAura extends Module {
             CombatRotationModeUtil.MODE_ROTATIONS,
             CombatRotationModeUtil.MODE_NO_ROTATIONS
     );
-    public enum SwitchMode {
-        SILENT,
-        CLIENT,
-        NONE
+    public enum SwitchMode implements EnumValue.IdProvider, EnumValue.AliasProvider {
+        SILENT("silent", List.of("packet")),
+        NORMAL("normal", List.of("client", "legit")),
+        OFF("off", List.of("none", "false"));
+
+        private final String id;
+        private final List<String> aliases;
+
+        SwitchMode(String id, List<String> aliases) {
+            this.id = id;
+            this.aliases = aliases;
+        }
+
+        @Override
+        public String id() {
+            return id;
+        }
+
+        @Override
+        public String getId() {
+            return id;
+        }
+
+        @Override
+        public List<String> aliases() {
+            return aliases;
+        }
     }
 
-    private final EnumValue<SwitchMode> swordSwitchMode =
-            description(enumSetting("killauraSwordSwitchMode", "sword_switch_mode", SwitchMode.SILENT, SwitchMode.values()),
-                    "Weapon switch behavior: SILENT (packet only), CLIENT (hotbar change), or NONE");
-    private final BooleanValue silentSwordSwitch =
-            description(bool("killauraSilentSwordSwitch", "silent_sword_switch", true),
-                    "Performs weapon swap via server packets while keeping your client hotbar selection");
+    private final EnumValue<SwitchMode> switchMode =
+            description(enumSetting("killauraSwitchMode", "switch_mode", SwitchMode.SILENT, SwitchMode.values()),
+                    "Weapon switch behavior: Silent (packet swap), Normal (client hotbar change), or Off");
     private final BooleanValue swordOnly =
             description(bool("killauraSwordOnly", "sword_only", true),
                     "Only attack when holding a sword, axe, or mace");
@@ -551,6 +571,14 @@ public class KillAura extends Module {
     private boolean usesRotationSettings() {
         return CombatRotationModeUtil.usesRotations(attackMode);
     }
+    @Override
+    public List<String> getLegacyValueNames(String currentValueName) {
+        if ("switchMode".equals(currentValueName) || "switch_mode".equals(currentValueName) || "killauraSwitchMode".equals(currentValueName)) {
+            return List.of("sword_switch_mode", "swordSwitchMode", "killauraSwordSwitchMode");
+        }
+        return super.getLegacyValueNames(currentValueName);
+    }
+
 
     @Override
     public void onEnable() {
@@ -681,17 +709,23 @@ public class KillAura extends Module {
         if (clickCount <= 0) return;
 
         CombatStrikeController.SprintResetMode resetMode = resolveStrikeResetMode();
-
-        SwitchMode switchMode = swordSwitchMode.get();
-        boolean shouldSwitch = switchMode != SwitchMode.NONE && (switchMode != SwitchMode.SILENT || silentSwordSwitch.get());
+        SwitchMode mode = switchMode.get();
+        boolean shouldSwitch = mode != SwitchMode.OFF;
         int targetSlot = shouldSwitch ? findBestWeaponSlot(swordOnly.get()) : -1;
         int originalSlot = InventorySwap.INSTANCE.clientSelectedSlot();
         boolean needSwitch = shouldSwitch && targetSlot >= 0 && targetSlot != originalSlot;
 
+        if (!shouldSwitch && swordOnly.get()) {
+            ItemStack held = mc.player.getMainHandItem();
+            if (getWeaponTier(held, true) < 0) {
+                return;
+            }
+        }
+
         if (needSwitch) {
-            if (switchMode == SwitchMode.SILENT) {
+            if (mode == SwitchMode.SILENT) {
                 InventorySwap.INSTANCE.leaseHotbar(this, targetSlot, 1);
-            } else if (switchMode == SwitchMode.CLIENT) {
+            } else if (mode == SwitchMode.NORMAL) {
                 InventorySwap.INSTANCE.selectHotbar(targetSlot);
             }
         }
@@ -707,11 +741,11 @@ public class KillAura extends Module {
         );
 
         if (needSwitch) {
-            if (switchMode == SwitchMode.SILENT) {
+            if (mode == SwitchMode.SILENT) {
                 if (switchBack.get()) {
                     InventorySwap.INSTANCE.releaseHotbar(this);
                 }
-            } else if (switchMode == SwitchMode.CLIENT && switchBack.get() && originalSlot >= 0 && originalSlot < 9) {
+            } else if (mode == SwitchMode.NORMAL && switchBack.get() && originalSlot >= 0 && originalSlot < 9) {
                 InventorySwap.INSTANCE.selectHotbar(originalSlot);
             }
         }

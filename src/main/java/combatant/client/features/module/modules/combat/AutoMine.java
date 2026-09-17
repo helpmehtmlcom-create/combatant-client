@@ -130,6 +130,46 @@ public final class AutoMine extends Module {
             () -> render.get() && doubleMine.get()
     );
 
+    // CevBreaker offensive settings
+    private final BooleanValue cevBreaker = tooltip(
+            bool("automineCevBreaker", "cev_breaker", false),
+            "Executes CevBreaker attacks on enemies in holes or safe positions by placing obsidian and crystals above their heads, then mining via SpeedMine."
+    );
+
+    private final NumberValue<Double> cevRange = visibleWhen(
+            num("automineCevRange", "cev_range", 4.5, 2.0, 6.0),
+            () -> cevBreaker.get() || mode.get() == Mode.CEV_BREAKER
+    );
+
+    private final NumberValue<Integer> cevBreakDelay = visibleWhen(
+            num("automineCevBreakDelay", "cev_break_delay", 0, 0, 5),
+            () -> cevBreaker.get() || mode.get() == Mode.CEV_BREAKER
+    );
+
+    private final BooleanValue cevAntiSuicide = visibleWhen(
+            bool("automineCevAntiSuicide", "cev_anti_suicide", true),
+            () -> cevBreaker.get() || mode.get() == Mode.CEV_BREAKER
+    );
+
+    public enum CevStage {
+        PLACE_OBSIDIAN,
+        PLACE_CRYSTAL,
+        MINE_OBSIDIAN,
+        DETONATE
+    }
+
+    private static final Direction[] HORIZONTALS = {
+            Direction.NORTH,
+            Direction.EAST,
+            Direction.SOUTH,
+            Direction.WEST
+    };
+
+    private CevStage cevStage = CevStage.PLACE_OBSIDIAN;
+    private Player cevTarget = null;
+    private BlockPos cevTargetCeiling = null;
+    private int cevBreakDelayTimer = 0;
+
     private BlockPos targetBlock = null;
     private float progress = 0.0f;
     private BlockPos secondaryTargetBlock = null;
@@ -162,6 +202,16 @@ public final class AutoMine extends Module {
         progress = 0.0f;
         secondaryProgress = 0.0f;
         currentTarget = null;
+        resetCevState();
+    }
+
+    private void resetCevState() {
+        RotationManager.INSTANCE.clear(this);
+        InventorySwap.INSTANCE.releaseHotbar(this);
+        cevStage = CevStage.PLACE_OBSIDIAN;
+        cevTarget = null;
+        cevTargetCeiling = null;
+        cevBreakDelayTimer = 0;
     }
 
     @EventHandler
@@ -189,10 +239,23 @@ public final class AutoMine extends Module {
 
         LocalPlayer player = mc.player;
 
+        if (cevBreakDelayTimer > 0) {
+            cevBreakDelayTimer--;
+        }
+
         // 1. Select target player
         currentTarget = findTargetPlayer(player);
 
-        // 2. Select candidate target blocks
+        // 2. Check and execute CevBreaker offensive pipeline if enabled or in CEV_BREAKER mode
+        if (mode.get() == Mode.CEV_BREAKER || (cevBreaker.get() && currentTarget != null && isTargetInHoleOrSafe(mc.level, currentTarget))) {
+            if (updateCevBreaker(player, mc.level, speedMine)) {
+                progress = speedMine.getMiningProgress();
+                secondaryProgress = speedMine.getSecondaryMiningProgress();
+                return;
+            }
+        }
+
+        // 3. Select candidate target blocks
         List<BlockPos> bestBlocks = (currentTarget != null) ? findBestBlocks(currentTarget, speedMine.getRange()) : List.of();
 
         // 3. Process primary target via SpeedMine
@@ -342,6 +405,15 @@ public final class AutoMine extends Module {
             }
         }
 
+        // 6. CevBreaker Mode Blocks (target ceiling)
+        if (currentMode == Mode.CEV_BREAKER) {
+            BlockPos headPos = targetFeet.above(2);
+            if (!candidates.contains(headPos)) {
+                candidates.add(headPos);
+            }
+            return filterByMiningRange(candidates, maxMiningRange);
+        }
+
         return filterByMiningRange(candidates, maxMiningRange);
     }
 
@@ -468,6 +540,248 @@ public final class AutoMine extends Module {
         if (doubleMine.get() && secondaryTargetBlock != null) {
             renderBlock(renderer, secondaryTargetBlock, secondaryProgress, secondaryFillColor.getArgb(), secondaryLineColor.getArgb());
         }
+
+        // Render CevBreaker ceiling target
+        if ((cevBreaker.get() || mode.get() == Mode.CEV_BREAKER) && cevTargetCeiling != null && !cevTargetCeiling.equals(targetBlock)) {
+            BlockState ceilingState = mc.level.getBlockState(cevTargetCeiling);
+            if (!ceilingState.isAir()) {
+                renderBlock(renderer, cevTargetCeiling, progress, 0x60FF5500, 0xFFFF5500);
+            }
+        }
+    }
+
+    // ==========================================
+    //   CevBreaker Offensive Execution Pipeline
+    // ==========================================
+
+    private boolean updateCevBreaker(LocalPlayer player, Level level, SpeedMine speedMine) {
+        if (cevTarget == null || !isValidCevTarget(player, cevTarget, cevRange.get()) || !isTargetInHoleOrSafe(level, cevTarget)) {
+            cevTarget = findCevTarget(player, level, cevRange.get());
+            if (cevTarget == null) {
+                resetCevState();
+                return false;
+            }
+            cevStage = CevStage.PLACE_OBSIDIAN;
+            cevTargetCeiling = cevTarget.blockPosition().above(2);
+        } else {
+            cevTargetCeiling = cevTarget.blockPosition().above(2);
+        }
+
+        if (cevTargetCeiling == null) return false;
+
+        if (player.getEyePosition().distanceTo(Vec3.atCenterOf(cevTargetCeiling)) > cevRange.get() + 1.5) {
+            resetCevState();
+            return false;
+        }
+
+        switch (cevStage) {
+            case PLACE_OBSIDIAN -> handleCevPlaceObsidian(player, level, speedMine);
+            case PLACE_CRYSTAL -> handleCevPlaceCrystal(player, level, speedMine);
+            case MINE_OBSIDIAN -> handleCevMineObsidian(player, level, speedMine);
+            case DETONATE -> handleCevDetonate(player, level);
+        }
+        return true;
+    }
+
+    private void handleCevPlaceObsidian(LocalPlayer player, Level level, SpeedMine speedMine) {
+        BlockState ceilingState = level.getBlockState(cevTargetCeiling);
+        if (isObsidian(ceilingState)) {
+            cevStage = CevStage.PLACE_CRYSTAL;
+            handleCevPlaceCrystal(player, level, speedMine);
+            return;
+        }
+
+        if (ceilingState.is(Blocks.BEDROCK)) {
+            cevTarget = null;
+            return;
+        }
+
+        if (isReplaceable(level, cevTargetCeiling)) {
+            BlockHitResult hit = BlockPlacer.findOptimalPlacementHit(level, player, cevTargetCeiling, cevRange.get().floatValue() + 1.5f);
+            if (hit != null) {
+                int obbySlot = findObsidianSlot(player);
+                if (obbySlot != -1) {
+                    if (BlockPlacer.placeBlock(this, hit, InteractionHand.MAIN_HAND, obbySlot, true, BlockPlacer.SwingMode.SERVER)) {
+                        cevStage = CevStage.PLACE_CRYSTAL;
+                    }
+                }
+            }
+        }
+    }
+
+    private void handleCevPlaceCrystal(LocalPlayer player, Level level, SpeedMine speedMine) {
+        BlockState ceilingState = level.getBlockState(cevTargetCeiling);
+        if (!isObsidian(ceilingState) && !ceilingState.is(Blocks.BEDROCK)) {
+            cevStage = CevStage.PLACE_OBSIDIAN;
+            return;
+        }
+
+        BlockPos crystalAir = cevTargetCeiling.above();
+        EndCrystal existingCrystal = findExistingCrystal(level, crystalAir);
+        if (existingCrystal != null) {
+            cevStage = CevStage.MINE_OBSIDIAN;
+            handleCevMineObsidian(player, level, speedMine);
+            return;
+        }
+
+        if (!level.isInWorldBounds(crystalAir)) return;
+
+        Vec3 clickVec = new Vec3(cevTargetCeiling.getX() + 0.5, cevTargetCeiling.getY() + 1.0, cevTargetCeiling.getZ() + 0.5);
+        BlockHitResult hit = new BlockHitResult(clickVec, Direction.UP, cevTargetCeiling, false);
+
+        int crystalSlot = findCrystalSlot(player);
+        if (crystalSlot != -1) {
+            InteractionHand hand = player.getOffhandItem().is(Items.END_CRYSTAL) ? InteractionHand.OFF_HAND : InteractionHand.MAIN_HAND;
+            if (hand == InteractionHand.OFF_HAND || InventorySwap.INSTANCE.leaseHotbar(this, crystalSlot, 2)) {
+                mc.gameMode.useItemOn(player, hand, hit);
+                player.swing(hand);
+                cevStage = CevStage.MINE_OBSIDIAN;
+            }
+        }
+    }
+
+    private void handleCevMineObsidian(LocalPlayer player, Level level, SpeedMine speedMine) {
+        BlockState ceilingState = level.getBlockState(cevTargetCeiling);
+        if (ceilingState.isAir() || !isObsidian(ceilingState)) {
+            cevStage = CevStage.DETONATE;
+            handleCevDetonate(player, level);
+            return;
+        }
+
+        BlockPos crystalAir = cevTargetCeiling.above();
+        EndCrystal crystal = findExistingCrystal(level, crystalAir);
+        if (crystal == null) {
+            cevStage = CevStage.PLACE_CRYSTAL;
+            return;
+        }
+
+        processPrimary(cevTargetCeiling, speedMine);
+        targetBlock = cevTargetCeiling;
+        progress = speedMine.getMiningProgress();
+
+        if (progress >= 1.0f || ceilingState.isAir()) {
+            cevStage = CevStage.DETONATE;
+            handleCevDetonate(player, level);
+        }
+    }
+
+    private void handleCevDetonate(LocalPlayer player, Level level) {
+        BlockPos crystalAir = cevTargetCeiling.above();
+        EndCrystal crystal = findExistingCrystal(level, crystalAir);
+
+        if (crystal == null || !crystal.isAlive() || crystal.isRemoved()) {
+            cevStage = CevStage.PLACE_OBSIDIAN;
+            cevBreakDelayTimer = 0;
+            return;
+        }
+
+        if (cevBreakDelayTimer > 0) return;
+
+        if (cevAntiSuicide.get()) {
+            Vec3 explosionPos = crystal.position();
+            float selfDamage = ExplosionDamageUtil.getCrystalDamage(player, explosionPos, 0, false);
+            if (!ExplosionDamageRules.isSafe(player, selfDamage, false)) {
+                return;
+            }
+        }
+
+        Rotation rot = Rotation.lookingAt(crystal.getBoundingBox().getCenter(), player.getEyePosition()).normalize();
+        RotationManager.INSTANCE.snapServerRotation(rot, 32, this, 2);
+
+        if (mc.getConnection() != null) {
+            mc.getConnection().send(new ServerboundInteractPacket(
+                    crystal.getId(),
+                    null,
+                    null,
+                    player.isShiftKeyDown()
+            ));
+        } else if (mc.gameMode != null) {
+            mc.gameMode.attack(player, crystal);
+        }
+        player.swing(InteractionHand.MAIN_HAND);
+        cevBreakDelayTimer = cevBreakDelay.get();
+        cevStage = CevStage.PLACE_OBSIDIAN;
+    }
+
+    private EndCrystal findExistingCrystal(Level level, BlockPos pos) {
+        AABB box = new AABB(pos).inflate(0.5);
+        List<EndCrystal> crystals = level.getEntitiesOfClass(EndCrystal.class, box, Entity::isAlive);
+        return crystals.isEmpty() ? null : crystals.get(0);
+    }
+
+    private Player findCevTarget(LocalPlayer player, Level level, double maxRange) {
+        double maxDistSq = maxRange * maxRange;
+        Player best = null;
+        double bestDistSq = maxDistSq;
+
+        for (Player other : level.players()) {
+            if (other == player || !other.isAlive() || other.isSpectator()) continue;
+            if (CategoryRules.determine(other.getGameProfile().name()) == CategoryType.FRIEND) continue;
+
+            double distSq = player.distanceToSqr(other);
+            if (distSq <= bestDistSq && isTargetInHoleOrSafe(level, other)) {
+                bestDistSq = distSq;
+                best = other;
+            }
+        }
+        return best;
+    }
+
+    private boolean isValidCevTarget(LocalPlayer player, Player target, double maxRange) {
+        if (target == null || target == player || !target.isAlive() || target.isRemoved()) return false;
+        if (player.distanceTo(target) > maxRange) return false;
+        return CategoryRules.determine(target.getGameProfile().name()) != CategoryType.FRIEND;
+    }
+
+    private boolean isTargetInHoleOrSafe(Level level, Player target) {
+        BlockPos pos = target.blockPosition();
+        int safeSides = 0;
+        for (Direction dir : HORIZONTALS) {
+            BlockPos side = pos.relative(dir);
+            BlockState sideState = level.getBlockState(side);
+            if (sideState.is(Blocks.BEDROCK) || sideState.is(Blocks.OBSIDIAN) || sideState.is(Blocks.CRYING_OBSIDIAN)) {
+                safeSides++;
+            }
+        }
+        return safeSides >= 3;
+    }
+
+    private boolean isObsidian(BlockState state) {
+        return state != null && (state.is(Blocks.OBSIDIAN) || state.is(Blocks.CRYING_OBSIDIAN));
+    }
+
+    private boolean isReplaceable(Level level, BlockPos pos) {
+        return level.getBlockState(pos).canBeReplaced();
+    }
+
+    private int findObsidianSlot(LocalPlayer player) {
+        if (player.getOffhandItem().is(Items.OBSIDIAN)) return 40;
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = player.getInventory().getItem(i);
+            if (stack.is(Items.OBSIDIAN)) return i;
+        }
+        return -1;
+    }
+
+    private int findCrystalSlot(LocalPlayer player) {
+        if (player.getOffhandItem().is(Items.END_CRYSTAL)) return 40;
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = player.getInventory().getItem(i);
+            if (stack.is(Items.END_CRYSTAL)) return i;
+        }
+        return -1;
+    }
+
+    public CevStage getCevStage() {
+        return cevStage;
+    }
+
+    public Player getCevTarget() {
+        return cevTarget;
+    }
+
+    public BlockPos getCevTargetCeiling() {
+        return cevTargetCeiling;
     }
 
     private void renderBlock(Renderer3D renderer, BlockPos pos, float currentProgress, int fill, int line) {

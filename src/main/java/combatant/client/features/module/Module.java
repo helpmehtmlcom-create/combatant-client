@@ -45,6 +45,7 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
     private final List<String> aliases;
     private final String description;
     private final ModuleCategory category;
+    private final ModuleSubCategory declaredSubCategory;
     private final BooleanValue enabledValue;
     private final EnumValue<ModuleActivationSource> activationSourceValue =
             new EnumValue<>("activation_source", ModuleActivationSource.NONE, ModuleActivationSource.class);
@@ -70,6 +71,7 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
         this.description = info.description();
         this.category = info.category();
         this.enabledValue = new BooleanValue("enabled", info.enabledByDefault());
+        this.declaredSubCategory = info.subCategory();
         this.keyBindSetting = createKeyBindSetting();
 
         settings.add(keyBindSetting);
@@ -88,6 +90,7 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
         this.description = description == null ? "" : description;
         this.category = category;
         this.enabledValue = new BooleanValue("enabled", false);
+        this.declaredSubCategory = ModuleSubCategory.ALL;
         this.keyBindSetting = createKeyBindSetting();
 
         settings.add(keyBindSetting);
@@ -937,6 +940,14 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
     public ModuleCategory getCategory() {
         return category;
     }
+    public ModuleSubCategory getDeclaredSubCategory() {
+        return declaredSubCategory;
+    }
+
+    public ModuleSubCategory getSubCategory() {
+        return ModuleSubCategory.resolve(this);
+    }
+
 
     private static String translateFirst(String fallback, String key1, String key2) {
         if (key1 != null && !key1.isBlank()) {

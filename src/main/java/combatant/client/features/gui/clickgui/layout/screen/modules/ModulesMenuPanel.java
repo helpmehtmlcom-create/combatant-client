@@ -16,6 +16,7 @@ import combatant.client.features.gui.clickgui.settings.SettingRenderContext;
 import combatant.client.features.gui.clickgui.settings.SettingRenderSurface;
 import combatant.client.render.engine.animation.AnimationUtility;
 
+import combatant.client.features.module.ModuleSubCategory;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -28,6 +29,10 @@ final class ModulesMenuPanel {
     final List<SettingHit> settingHits = new ArrayList<>();
     final List<ModuleHit> hitPool = new ArrayList<>();
     final List<SettingHit> settingHitPool = new ArrayList<>();
+    final List<TabHit> tabHits = new ArrayList<>();
+    final List<TabHit> tabHitPool = new ArrayList<>();
+    int tabHitCount;
+    ModuleSubCategory currentSubCategory;
     int hitCount;
     int settingHitCount;
     final Map<String, Float> enabledAnim = new HashMap<>();
@@ -66,6 +71,8 @@ final class ModulesMenuPanel {
     ModulesMenuPanel(ModulesMenuCategory category, int index) {
         this.category = category;
         this.index = index;
+        List<ModuleSubCategory> available = getAvailableSubCategories();
+        this.currentSubCategory = available.isEmpty() ? ModuleSubCategory.ALL : available.get(0);
     }
 
     void reset() {
@@ -85,8 +92,43 @@ final class ModulesMenuPanel {
     void beginLayout() {
         hits.clear();
         settingHits.clear();
+        tabHits.clear();
         hitCount = 0;
         settingHitCount = 0;
+        tabHitCount = 0;
+    }
+
+    List<ModuleSubCategory> getAvailableSubCategories() {
+        return ModuleSubCategory.getSubCategoriesFor(category.toModuleCategory());
+    }
+
+    ModuleSubCategory getCurrentSubCategory() {
+        if (currentSubCategory == null) {
+            List<ModuleSubCategory> available = getAvailableSubCategories();
+            currentSubCategory = available.isEmpty() ? ModuleSubCategory.ALL : available.get(0);
+        }
+        return currentSubCategory;
+    }
+
+    void setSubCategory(ModuleSubCategory subCategory) {
+        if (this.currentSubCategory != subCategory) {
+            this.currentSubCategory = subCategory;
+            this.modulesScroll = 0.0f;
+            this.modulesSmoothScroll = 0.0f;
+        }
+    }
+
+    void addTabHit(ModuleSubCategory sub, float x, float y, float w, float h) {
+        TabHit hit;
+        if (tabHitCount < tabHitPool.size()) {
+            hit = tabHitPool.get(tabHitCount);
+            hit.set(sub, x, y, w, h);
+        } else {
+            hit = new TabHit(sub, x, y, w, h);
+            tabHitPool.add(hit);
+        }
+        tabHits.add(hit);
+        tabHitCount++;
     }
 
     void addHit(String id, float x, float y, float w, float h, boolean hasSettings, boolean toggleable) {
@@ -199,6 +241,15 @@ final class ModulesMenuPanel {
             updateModulesScrollbarDrag(my);
             return true;
         }
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            for (TabHit tab : tabHits) {
+                if (ModulesMenuScreen.inside(mx, my, tab.x, tab.y, tab.w, tab.h)) {
+                    setSubCategory(tab.sub);
+                    return true;
+                }
+            }
+        }
+
 
         for (ModuleHit hit : hits) {
             if (!ModulesMenuScreen.inside(mx, my, hit.x, hit.y, hit.w, hit.h)) continue;
@@ -422,5 +473,25 @@ final class ModulesMenuPanel {
         float y() { return y; }
         float w() { return w; }
         float h() { return h; }
+    }
+
+    static final class TabHit {
+        ModuleSubCategory sub;
+        float x;
+        float y;
+        float w;
+        float h;
+
+        TabHit(ModuleSubCategory sub, float x, float y, float w, float h) {
+            set(sub, x, y, w, h);
+        }
+
+        void set(ModuleSubCategory sub, float x, float y, float w, float h) {
+            this.sub = sub;
+            this.x = x;
+            this.y = y;
+            this.w = w;
+            this.h = h;
+        }
     }
 }

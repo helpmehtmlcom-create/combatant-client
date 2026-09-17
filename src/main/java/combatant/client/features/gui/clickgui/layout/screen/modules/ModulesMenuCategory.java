@@ -37,6 +37,16 @@ public enum ModulesMenuCategory {
     public String icon() {
         return icon;
     }
+    public ModuleCategory toModuleCategory() {
+        return switch (this) {
+            case COMBAT -> ModuleCategory.COMBAT;
+            case MOVEMENT -> ModuleCategory.MOVEMENT;
+            case PLAYER -> ModuleCategory.PLAYER;
+            case VISUALS -> ModuleCategory.VISUALS;
+            case OTHER -> ModuleCategory.MISC;
+        };
+    }
+
 
     boolean matches(ModuleCategory category) {
         if (category == null) return this == OTHER;

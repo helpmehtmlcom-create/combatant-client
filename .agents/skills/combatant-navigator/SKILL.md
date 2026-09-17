@@ -89,7 +89,7 @@ Modules are segregated into 5 primary functional categories:
 ### C. Player (`features/module/modules/player/`)
 - **Automation:** `AutoEat.java`, `AutoTool.java`, `AutoArmor.java`, `AutoMend.java`, `AutoReplenish.java`, `AutoKit.java`, `InventorySorter.java`, `ChestStealer.java`, `EChestFarmer.java`
 - **World Interaction:** `Scaffold.java`, `AirPlace.java`, `FastPlace.java`, `SpeedMine.java`, `ClickPearl.java`, `Offhand.java`, `MultiTask.java`, `LiquidInteract.java`, `NoDelay.java`, `NoInteract.java`
-- **Network & Exploits:** `Blink.java`, `FakeLag.java`, `PacketExp.java`, `PortalChat.java`, `PortalGodMode.java`, `AntiHunger.java`, `ChorusExploit.java`, `XCarry.java`, `ShitDropper.java`
+- **Network & Exploits:** `Blink.java`, `FakeLag.java`, `PortalChat.java`, `PortalGodMode.java`, `AntiHunger.java`, `ChorusExploit.java`, `XCarry.java`, `ShitDropper.java`
 
 ### D. Visuals (`features/module/modules/visuals/`)
 - **ESP & Overlays:** `ESP.java`, `BlockESP.java`, `DropESP.java`, `PortalESP.java`, `SoundESP.java`, `TargetESP.java`, `HoleESP.java`, `StorageESP.java`, `BedwarsESP.java`, `Tracers.java`, `NameTags.java`, `Chams.java`
