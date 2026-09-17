@@ -45,7 +45,7 @@ import java.util.List;
 @ModuleInfo(
         id = "autotunnel",
         displayName = "AutoTunnel",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MISC,
         description = "Automates digging 1x2 or 2x3 tunnels through Netherrack on anarchy servers."
 )
 public final class AutoTunnel extends Module {

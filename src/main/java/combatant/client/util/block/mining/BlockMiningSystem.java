@@ -12,12 +12,13 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
-import net.minecraft.network.protocol.game.ServerboundSwingPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
+import combatant.client.util.aiming.RotationManager;
+import combatant.client.util.aiming.data.Rotation;
 import combatant.client.util.player.inventory.InventorySwap;
 
 import java.util.LinkedHashMap;
@@ -31,6 +32,9 @@ public final class BlockMiningSystem {
 
     private MiningTask primaryTask = null;
     private MiningTask secondaryTask = null;
+
+    private BlockPos rebreakPos = null;
+    private Direction rebreakSide = Direction.UP;
 
     // Fast-access rebreak cache: tracks recently broken blocks for instant rebreak (CivBreak)
     private final Map<BlockPos, Long> rebreakCache = new LinkedHashMap<>() {
@@ -51,6 +55,24 @@ public final class BlockMiningSystem {
         return secondaryTask;
     }
 
+    public BlockPos getRebreakPos() {
+        return rebreakPos;
+    }
+
+    public Direction getRebreakSide() {
+        return rebreakSide;
+    }
+
+    public void setRebreakPos(BlockPos pos, Direction side) {
+        this.rebreakPos = pos != null ? pos.immutable() : null;
+        this.rebreakSide = side != null ? side : Direction.UP;
+    }
+
+    public void clearRebreakPos() {
+        this.rebreakPos = null;
+        this.rebreakSide = Direction.UP;
+    }
+
     public boolean isMining() {
         return (primaryTask != null && !primaryTask.isCompleted())
                 || (secondaryTask != null && !secondaryTask.isCompleted());
@@ -63,9 +85,16 @@ public final class BlockMiningSystem {
     }
 
     /**
-     * Starts or updates mining on a block. If the task is already running on the same position, it continues.
+     * Starts or updates mining on a block.
      */
     public MiningTask startMining(BlockPos pos, Direction side, boolean isPrimary, float speedMultiplier) {
+        return startMining(pos, side, isPrimary, speedMultiplier, 0.0f);
+    }
+
+    /**
+     * Starts or updates mining on a block with initial progress.
+     */
+    public MiningTask startMining(BlockPos pos, Direction side, boolean isPrimary, float speedMultiplier, float startProgress) {
         if (pos == null || mc.level == null || mc.player == null) return null;
 
         MiningTask current = isPrimary ? primaryTask : secondaryTask;
@@ -81,11 +110,19 @@ public final class BlockMiningSystem {
         Direction effectiveSide = side != null ? side : findBestFace(mc.player, pos);
         MiningTask task = new MiningTask(pos, effectiveSide);
         task.setSpeedMultiplier(speedMultiplier);
+        if (startProgress > 0.0f) {
+            task.setProgress(startProgress);
+        }
 
-        // Send START_DESTROY_BLOCK packet
+        // Send START_DESTROY_BLOCK and STOP_DESTROY_BLOCK for packet-based breaking
         if (mc.getConnection() != null) {
             mc.getConnection().send(new ServerboundPlayerActionPacket(
                     ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK,
+                    pos,
+                    effectiveSide
+            ));
+            mc.getConnection().send(new ServerboundPlayerActionPacket(
+                    ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK,
                     pos,
                     effectiveSide
             ));
@@ -104,58 +141,81 @@ public final class BlockMiningSystem {
     /**
      * Ticks the mining tasks: updates progress using the best available tool, and checks for completion.
      */
-    public void tick(LocalPlayer player, boolean silentSwitch, boolean swing, float breakThreshold) {
+    public void tick(LocalPlayer player, boolean silentSwitch, boolean autoSwitch, boolean silentRotate,
+                     boolean swing, float breakThreshold, float maxRange, Object owner) {
         if (player == null || mc.level == null) return;
 
         if (primaryTask != null) {
-            tickTask(player, primaryTask, true, silentSwitch, swing, breakThreshold);
+            tickTask(player, primaryTask, true, silentSwitch, autoSwitch, silentRotate, swing, breakThreshold, maxRange, owner);
         }
         if (secondaryTask != null) {
-            tickTask(player, secondaryTask, false, silentSwitch, swing, breakThreshold);
+            tickTask(player, secondaryTask, false, silentSwitch, autoSwitch, silentRotate, swing, breakThreshold, maxRange, owner);
         }
     }
 
     private void tickTask(LocalPlayer player, MiningTask task, boolean isPrimary,
-                          boolean silentSwitch, boolean swing, float breakThreshold) {
+                          boolean silentSwitch, boolean autoSwitch, boolean silentRotate,
+                          boolean swing, float breakThreshold, float maxRange, Object owner) {
         BlockPos pos = task.getPos();
+
+        // Distance check
+        if (player.getEyePosition().distanceTo(Vec3.atCenterOf(pos)) > maxRange) {
+            abortMining(isPrimary);
+            return;
+        }
+
         BlockState state = mc.level.getBlockState(pos);
 
         // If block became air, it has been broken
         if (state.isAir()) {
             rebreakCache.put(pos, System.currentTimeMillis());
+            rebreakPos = pos;
+            rebreakSide = task.getSide();
             task.setCompleted(true);
             if (isPrimary) {
                 primaryTask = null;
             } else {
                 secondaryTask = null;
             }
-            InventorySwap.INSTANCE.releaseHotbar(this);
+            InventorySwap.INSTANCE.releaseHotbar(owner);
             return;
         }
 
-        // Find the best tool to use for progress calculation
+        // Find best tool for destruction progress
         int bestSlot = MiningDamageCalculator.findBestHotbarTool(player, state, pos);
         task.setBestToolSlot(bestSlot);
-        ItemStack tool = (bestSlot >= 0 && bestSlot < 9) ? player.getInventory().getItem(bestSlot) : ItemStack.EMPTY;
+        ItemStack tool = (bestSlot >= 0 && bestSlot < 9) ? player.getInventory().getItem(bestSlot) : player.getMainHandItem();
+
+        if (autoSwitch && !silentSwitch && bestSlot >= 0 && bestSlot < 9 && InventorySwap.INSTANCE.clientSelectedSlot() != bestSlot) {
+            InventorySwap.INSTANCE.selectHotbar(bestSlot);
+        }
 
         task.tickProgress(player, tool, state);
 
         // Check if ready to break
         if (task.getProgress() >= breakThreshold) {
-            finishMining(task, isPrimary, silentSwitch, swing);
+            finishMining(task, isPrimary, silentSwitch, autoSwitch, silentRotate, swing, owner);
         }
     }
 
     /**
      * Finishes breaking the block by silently leasing the best tool and sending STOP_DESTROY_BLOCK.
      */
-    public void finishMining(MiningTask task, boolean isPrimary, boolean silentSwitch, boolean swing) {
+    public void finishMining(MiningTask task, boolean isPrimary, boolean silentSwitch, boolean autoSwitch,
+                             boolean silentRotate, boolean swing, Object owner) {
         if (task == null || mc.getConnection() == null || mc.player == null) return;
         BlockPos pos = task.getPos();
 
         int toolSlot = task.getBestToolSlot();
         if (toolSlot >= 0 && toolSlot < 9 && silentSwitch) {
-            InventorySwap.INSTANCE.leaseHotbar(this, toolSlot, 2);
+            InventorySwap.INSTANCE.leaseHotbar(owner, toolSlot, 2);
+        } else if (toolSlot >= 0 && toolSlot < 9 && autoSwitch) {
+            InventorySwap.INSTANCE.selectHotbar(toolSlot);
+        }
+
+        if (silentRotate) {
+            Rotation rot = Rotation.lookingAt(Vec3.atCenterOf(pos), mc.player.getEyePosition());
+            RotationManager.INSTANCE.snapServerRotation(rot, 25, owner, 1);
         }
 
         mc.getConnection().send(new ServerboundPlayerActionPacket(
@@ -169,6 +229,8 @@ public final class BlockMiningSystem {
         }
 
         rebreakCache.put(pos, System.currentTimeMillis());
+        rebreakPos = pos;
+        rebreakSide = task.getSide();
         task.setCompleted(true);
 
         if (isPrimary) {
@@ -176,23 +238,83 @@ public final class BlockMiningSystem {
         } else {
             secondaryTask = null;
         }
+
+        InventorySwap.INSTANCE.releaseHotbar(owner);
     }
 
     /**
-     * Instant rebreak (CivBreak): sends STOP_DESTROY_BLOCK on an already-broken or cached position
-     * when a new block is placed there.
+     * Handles instant rebreak (CivBreak) on a previously broken block if a new block is placed there.
      */
-    public boolean instantRebreak(BlockPos pos, Direction side, boolean silentSwitch, boolean swing) {
-        if (pos == null || mc.getConnection() == null || mc.player == null || mc.level == null) return false;
+    public boolean handleInstantRebreak(LocalPlayer player, float maxRange, boolean silentSwitch,
+                                         boolean autoSwitch, boolean silentRotate, boolean swing, Object owner) {
+        if (rebreakPos == null || player == null || mc.level == null || mc.getConnection() == null) {
+            return false;
+        }
+
+        if (player.getEyePosition().distanceTo(Vec3.atCenterOf(rebreakPos)) > maxRange) {
+            rebreakPos = null;
+            return false;
+        }
+
+        BlockState state = mc.level.getBlockState(rebreakPos);
+        if (state.isAir() || state.getBlock() == Blocks.BEDROCK || state.getDestroySpeed(mc.level, rebreakPos) < 0) {
+            return false;
+        }
+
+        int toolSlot = MiningDamageCalculator.findBestHotbarTool(player, state, rebreakPos);
+        if (toolSlot >= 0 && toolSlot < 9 && silentSwitch) {
+            InventorySwap.INSTANCE.leaseHotbar(owner, toolSlot, 2);
+        } else if (toolSlot >= 0 && toolSlot < 9 && autoSwitch) {
+            InventorySwap.INSTANCE.selectHotbar(toolSlot);
+        }
+
+        if (silentRotate) {
+            Rotation rot = Rotation.lookingAt(Vec3.atCenterOf(rebreakPos), player.getEyePosition());
+            RotationManager.INSTANCE.snapServerRotation(rot, 25, owner, 1);
+        }
+
+        mc.getConnection().send(new ServerboundPlayerActionPacket(
+                ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK,
+                rebreakPos,
+                rebreakSide
+        ));
+
+        if (swing) {
+            player.swing(InteractionHand.MAIN_HAND);
+        }
+
+        InventorySwap.INSTANCE.releaseHotbar(owner);
+        return true;
+    }
+
+    /**
+     * Sends immediate break packets for instant mode.
+     */
+    public void instantBreak(BlockPos pos, Direction side, boolean silentSwitch, boolean autoSwitch,
+                             boolean silentRotate, boolean swing, Object owner) {
+        if (pos == null || mc.getConnection() == null || mc.player == null || mc.level == null) return;
         BlockState state = mc.level.getBlockState(pos);
-        if (state.isAir() || state.getBlock() == Blocks.BEDROCK) return false;
+        if (state.isAir() || state.getBlock() == Blocks.BEDROCK) return;
 
         Direction effectiveSide = side != null ? side : findBestFace(mc.player, pos);
         int toolSlot = MiningDamageCalculator.findBestHotbarTool(mc.player, state, pos);
+
         if (toolSlot >= 0 && toolSlot < 9 && silentSwitch) {
-            InventorySwap.INSTANCE.leaseHotbar(this, toolSlot, 2);
+            InventorySwap.INSTANCE.leaseHotbar(owner, toolSlot, 2);
+        } else if (toolSlot >= 0 && toolSlot < 9 && autoSwitch) {
+            InventorySwap.INSTANCE.selectHotbar(toolSlot);
         }
 
+        if (silentRotate) {
+            Rotation rot = Rotation.lookingAt(Vec3.atCenterOf(pos), mc.player.getEyePosition());
+            RotationManager.INSTANCE.snapServerRotation(rot, 25, owner, 1);
+        }
+
+        mc.getConnection().send(new ServerboundPlayerActionPacket(
+                ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK,
+                pos,
+                effectiveSide
+        ));
         mc.getConnection().send(new ServerboundPlayerActionPacket(
                 ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK,
                 pos,
@@ -202,7 +324,8 @@ public final class BlockMiningSystem {
         if (swing) {
             mc.player.swing(InteractionHand.MAIN_HAND);
         }
-        return true;
+
+        InventorySwap.INSTANCE.releaseHotbar(owner);
     }
 
     public void abortMining(boolean isPrimary) {
@@ -219,16 +342,20 @@ public final class BlockMiningSystem {
         } else {
             secondaryTask = null;
         }
-        InventorySwap.INSTANCE.releaseHotbar(this);
+    }
+
+    public void abortAllMining() {
+        abortMining(true);
+        abortMining(false);
     }
 
     public void reset() {
-        abortMining(true);
-        abortMining(false);
+        abortAllMining();
         primaryTask = null;
         secondaryTask = null;
+        rebreakPos = null;
+        rebreakSide = Direction.UP;
         rebreakCache.clear();
-        InventorySwap.INSTANCE.releaseHotbar(this);
     }
 
     public boolean isRebreakCached(BlockPos pos, long maxAgeMs) {

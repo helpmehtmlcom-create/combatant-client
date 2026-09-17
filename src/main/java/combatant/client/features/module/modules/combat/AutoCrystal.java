@@ -357,7 +357,7 @@ public class AutoCrystal extends Module {
             "Prioritizes attacks or crystal detonations to pop enemy totems when target health is below threshold"
     );
     private final NumberValue<Float> antiTotemHealthThreshold = visibleWhen(
-            num("autocrystalAntiTotemHealth", "anti_totem_health", 6.0f, 1.0f, 12.0f),
+            numCommon("autocrystalAntiTotemHealth", "anti_totem_health", CommonSettingSchemas.PLAYER_HEALTH_THRESHOLD, 6.0f, 1.0f, 12.0f),
             antiTotem::get
     );
     private final BooleanValue antiTotemPredictDamage = visibleWhen(

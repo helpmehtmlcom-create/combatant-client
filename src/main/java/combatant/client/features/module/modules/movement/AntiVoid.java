@@ -41,7 +41,7 @@ import combatant.client.util.screen.ClientScreen;
 @ModuleInfo(
         id = "antivoid",
         displayName = "AntiVoid",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.PLAYER,
         description = "Prevents falling into the void across dimensions with recovery modes and safe rescue."
 )
 public final class AntiVoid extends Module {

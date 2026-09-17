@@ -19,6 +19,10 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.MoverType;
+import combatant.client.config.values.NumberValue;
+import combatant.client.events.impl.PlayerMoveEvent;
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.EnumValue;
 import combatant.client.events.EventHandler;
@@ -64,6 +68,9 @@ public final class Sprint extends Module {
             bool("omni_directional", false);
     private final BooleanValue strafe =
             bool("strafe", false);
+    private final NumberValue<Float> groundSpeed =
+            description(visibleWhen(num("ground_speed", 0.2873f, 0.1f, 1.0f), strafe::get),
+                    "Movement speed on ground when strafing");
     private final EnumValue<StrafeMode> strafeMode =
             visibleWhen(enumMode("strafe_mode", StrafeMode.NCP, StrafeMode.values()), strafe::get);
     private final BooleanValue vulcanBypass =
@@ -171,16 +178,7 @@ public final class Sprint extends Module {
         }
 
         LocalPlayer player = mc.player;
-        if (!canOperate(player) || !isServerOrLocalSprinting(player) || !hasMovementInput(player)) {
-            return;
-        }
-
-        if (shouldHardSuppressSprint() || shouldSuppressExternalVulcanSprint(player)) {
-            return;
-        }
-
-        RotationTarget active = RotationManager.INSTANCE.getActiveRotationTarget();
-        if (active != null && active.movementCorrection != MovementCorrection.OFF) {
+        if (!canStrafe(player)) {
             return;
         }
 
@@ -210,6 +208,73 @@ public final class Sprint extends Module {
             );
             event.setVelocity(velocity);
         }
+    }
+
+    @EventHandler(priority = 50)
+    private void onMove(PlayerMoveEvent event) {
+        if (event == null || event.getMovement() == null) return;
+        if (event.getType() != MoverType.SELF) return;
+        LocalPlayer player = mc.player;
+        if (!canStrafe(player)) return;
+
+        double speedLevel = getSpeedAmplifier(player);
+        if (player.onGround()) {
+            double groundSpd = MovementUtil.applySpeedPotionEffects(player, (double) groundSpeed.get());
+            Vec3 strafed = withStrafe(event.getMovement(), player, groundSpd, 1.0);
+            event.setMovement(strafed);
+            player.setDeltaMovement(strafed.x, player.getDeltaMovement().y, strafed.z);
+        } else {
+            // Full air strafe like Speed module
+            double airMin = 0.2 + 0.199999999 * speedLevel;
+            double currentSpeed = Math.max(horizontalSpeed(player.getDeltaMovement()), horizontalSpeed(event.getMovement()));
+            double useSpeed = Math.max(currentSpeed, airMin);
+            if (Double.isFinite(useSpeed) && useSpeed > 0.0) {
+                Vec3 strafed = withStrafe(event.getMovement(), player, useSpeed, 1.0);
+                event.setMovement(strafed);
+                player.setDeltaMovement(strafed.x, player.getDeltaMovement().y, strafed.z);
+            }
+        }
+    }
+
+    private boolean canStrafe(LocalPlayer player) {
+        if (!isEnabled() || !strafe.get() || player == null || mc.level == null) {
+            return false;
+        }
+        if (!canOperate(player) || !hasMovementInput(player)) {
+            return false;
+        }
+        if (shouldHardSuppressSprint() || shouldSuppressExternalVulcanSprint(player)) {
+            return false;
+        }
+        RotationTarget active = RotationManager.INSTANCE.getActiveRotationTarget();
+        if (active != null && active.movementCorrection != MovementCorrection.OFF) {
+            return false;
+        }
+        if (player.isShiftKeyDown() || player.isInWater() || player.isInLava() || player.onClimbable() || player.isPassenger() || player.isFallFlying()) {
+            return false;
+        }
+        if (Modules.get(Speed.class) != null && Modules.get(Speed.class).isEnabled()) {
+            return false;
+        }
+        return true;
+    }
+
+    private Vec3 withStrafe(Vec3 currentVelocity, LocalPlayer player, double speed, double strength) {
+        if (player == null || player.input == null) return currentVelocity;
+
+        Vec2 input = player.input.getMoveVector();
+        Vec3 movementInput = new Vec3(input.x, 0.0, input.y);
+        return MovementUtil.withStrafe(currentVelocity, movementInput, player.getYRot(), speed, strength);
+    }
+
+    private double getSpeedAmplifier(LocalPlayer player) {
+        if (player == null) return 0.0;
+        var effect = player.getEffect(MobEffects.SPEED);
+        return effect == null ? 0.0 : effect.getAmplifier();
+    }
+
+    private double horizontalSpeed(Vec3 velocity) {
+        return velocity == null ? 0.0 : Math.hypot(velocity.x, velocity.z);
     }
 
     @EventHandler(priority = -50)

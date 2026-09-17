@@ -54,7 +54,7 @@ import java.util.function.Predicate;
 @ModuleInfo(
         id = "autohighway",
         displayName = "AutoHighway",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MISC,
         aliases = {"HighwayBuilder", "Highway"},
         description = "Automates highway pavement construction on 2b2t and anarchy servers."
 )
