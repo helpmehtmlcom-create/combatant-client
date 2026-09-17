@@ -109,6 +109,7 @@ final class DeferredTemporalSignalSource implements AutoCloseable {
                                DeferredResource historyColor, DeferredResource historyConfidence,
                                DeferredTemporalHistoryId historyId, boolean indirect) {
         passes.add(DeferredPassSpec.builder(name, stage)
+                .feature(indirect ? DeferredFeature.INDIRECT_LIGHT : DeferredFeature.REFLECTIONS)
                 .read(currentColor, currentConfidence, DeferredResource.HISTORY_DEPTH,
                         historyColor, historyConfidence)
                 .optionalRead(DeferredResource.VELOCITY, DeferredResource.RESOLVED_DEPTH,
@@ -126,11 +127,12 @@ final class DeferredTemporalSignalSource implements AutoCloseable {
                                      DeferredResource historyColor, DeferredResource historyConfidence,
                                      DeferredTemporalHistoryId historyId, boolean indirect) {
         passes.add(DeferredPassSpec.builder(name, stage)
+                .feature(indirect ? DeferredFeature.INDIRECT_LIGHT : DeferredFeature.REFLECTIONS)
                 .read(color, confidence)
                 .write(historyColor, historyConfidence)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.isValid(color) && context.isValid(confidence)
-                        && (indirect ? context.settings().indirectLightEnabled() : context.settings().reflectionsEnabled()))
+                        && context.featureEnabled(indirect ? DeferredFeature.INDIRECT_LIGHT : DeferredFeature.REFLECTIONS))
                 .execute(context -> store(context, color, confidence, historyColor, historyConfidence, historyId))
                 .build());
     }

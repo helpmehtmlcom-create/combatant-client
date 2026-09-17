@@ -11,6 +11,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
 import com.mojang.blaze3d.PrimitiveTopology;
+import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.pipeline.ColorTargetState;
 import com.mojang.blaze3d.pipeline.DepthStencilState;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
@@ -32,6 +33,7 @@ import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Sodium 0.9.1 terrain pipeline integration.
@@ -132,7 +134,9 @@ public abstract class SodiumShaderChunkRendererMixin {
                 .withDepthStencilState(DepthStencilState.DEFAULT)
                 .withPrimitiveTopology(PrimitiveTopology.QUADS)
                 .withVertexBinding(0, vertexFormat)
-                .withColorTargetState(ColorTargetState.DEFAULT)
+                .withColorTargetState(shadowDepth
+                        ? ColorTargetState.DEFAULT
+                        : new ColorTargetState(Optional.empty(), GpuFormat.RGBA16_FLOAT, ColorTargetState.WRITE_ALL))
                 .withShaderDefine("USE_VERTEX_COMPRESSION")
                 .withShaderDefine("USE_FOG");
         if (shadowDepth) {

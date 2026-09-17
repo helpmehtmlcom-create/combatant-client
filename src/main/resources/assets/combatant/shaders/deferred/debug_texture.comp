@@ -1,0 +1,41 @@
+#version 430 core
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(binding = 0) uniform sampler2D u_Source;
+layout(rgba16f, binding = 1) writeonly uniform image2D u_Output;
+layout(std430, binding = 2) readonly buffer DebugParams { vec4 decode; vec4 aux; } u_Params;
+
+float component(vec4 value, int channel) {
+    if (channel == 1) return value.y;
+    if (channel == 2) return value.z;
+    if (channel == 3) return value.w;
+    return value.x;
+}
+vec3 decodeOct(vec2 encoded) {
+    vec2 f = encoded * 2.0 - 1.0;
+    vec3 n = vec3(f, 1.0 - abs(f.x) - abs(f.y));
+    if (n.z < 0.0) n.xy = (1.0 - abs(n.yx)) * sign(n.xy);
+    return normalize(n);
+}
+void main() {
+    ivec2 outSize = imageSize(u_Output);
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pixel, outSize))) return;
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(outSize);
+    vec4 value = texture(u_Source, uv);
+    int mode = int(u_Params.decode.x + 0.5);
+    int channel = int(u_Params.decode.y + 0.5);
+    vec3 rgb;
+    if (mode == 1 || mode == 5) {
+        float v = component(value, channel);
+        rgb = vec3(clamp(v, 0.0, 1.0));
+    } else if (mode == 2) {
+        rgb = vec3(clamp(vec2(0.5) + value.xy * 16.0, 0.0, 1.0), 0.5);
+    } else if (mode == 3) {
+        rgb = vec3(clamp(value.x, 0.0, 1.0));
+    } else if (mode == 6) {
+        rgb = decodeOct(value.xy) * 0.5 + 0.5;
+    } else {
+        rgb = clamp(value.rgb, 0.0, 1.0);
+    }
+    imageStore(u_Output, pixel, vec4(rgb, 1.0));
+}

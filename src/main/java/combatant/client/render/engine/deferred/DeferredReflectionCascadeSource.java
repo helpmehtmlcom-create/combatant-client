@@ -57,6 +57,9 @@ final class DeferredReflectionCascadeSource implements AutoCloseable {
     private TextureTarget atlas;
     private int atlasWidth;
     private int atlasHeight;
+    private TextureTarget captureScratch;
+    private int captureScratchWidth;
+    private int captureScratchHeight;
     private CombatantRhi bufferOwner;
     private RhiStorageBuffer faceData;
     private List<DeferredSecondaryView> capturedViews = List.of();
@@ -68,10 +71,12 @@ final class DeferredReflectionCascadeSource implements AutoCloseable {
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.reflection.cascade.prepare", DeferredStage.REFLECTION_CAPTURE_PREPARE)
+                .feature(DeferredFeature.REFLECTIONS)
                 .when(context -> context.primaryView().current() != null)
                 .execute(this::prepareViews)
                 .build());
         passes.add(DeferredPassSpec.builder("world.reflection.cascade.capture", DeferredStage.REFLECTION_CAPTURE)
+                .feature(DeferredFeature.REFLECTIONS)
                 .write(DeferredResource.REFLECTION_CASCADE_COLOR,
                         DeferredResource.REFLECTION_CASCADE_DEPTH,
                         DeferredResource.REFLECTION_CASCADE_DATA)
@@ -121,7 +126,8 @@ final class DeferredReflectionCascadeSource implements AutoCloseable {
                 context.secondaryViews().register(buildFace(
                         primary.cameraPosition(), cascade, face, index,
                         cascadeFar, resolution,
-                        tileX * resolution, tileY * resolution
+                        tileX * resolution, tileY * resolution,
+                        context.rhi().capabilities().zeroToOneDepth()
                 ));
             }
         }
@@ -146,7 +152,8 @@ final class DeferredReflectionCascadeSource implements AutoCloseable {
                                                     float farPlane,
                                                     int resolution,
                                                     int viewportX,
-                                                    int viewportY) {
+                                                    int viewportY,
+                                                    boolean zeroToOneDepth) {
         Vector3f direction = direction(face);
         Vector3f up = up(face);
         Matrix4f view = new Matrix4f().lookAt(
@@ -157,7 +164,7 @@ final class DeferredReflectionCascadeSource implements AutoCloseable {
         // Minecraft's world path uses reversed-Z. Swapping the geometric near/far arguments keeps
         // secondary depth in the same GREATER/GEQUAL convention as the primary scene.
         Matrix4f projection = new Matrix4f().setPerspective(
-                (float) (Math.PI * 0.5), 1.0f, farPlane, CAPTURE_NEAR
+                (float) (Math.PI * 0.5), 1.0f, farPlane, CAPTURE_NEAR, zeroToOneDepth
         );
         return new DeferredSecondaryView(
                 DeferredViewFamily.REFLECTION_CASCADE,
@@ -177,7 +184,7 @@ final class DeferredReflectionCascadeSource implements AutoCloseable {
     }
 
     private boolean canPublish(DeferredPassContext context) {
-        if (context == null || !context.settings().reflectionsEnabled()
+        if (context == null || !context.featureEnabled(DeferredFeature.REFLECTIONS)
                 || context.settings().reflectionCascadeCount() <= 0) return false;
         if (atlas != null && faceData != null && !capturedViews.isEmpty()) return true;
         if (!context.secondaryViews().has(DeferredViewFamily.REFLECTION_CASCADE)) return false;
@@ -228,25 +235,45 @@ final class DeferredReflectionCascadeSource implements AutoCloseable {
         );
 
         for (DeferredSecondaryView view : views) {
-            ChunkRenderMatrices matrices = new ChunkRenderMatrices(view.projection(), view.view());
+            int width = Math.max(1, view.viewportWidth());
+            int height = Math.max(1, view.viewportHeight());
+            TextureTarget scratch = ensureCaptureScratch(width, height);
+            CommandEncoder scratchEncoder = RenderSystem.getDevice().createCommandEncoder();
+            scratchEncoder.clearColorAndDepthTextures(
+                    scratch.getColorTexture(), CLEAR_COLOR,
+                    scratch.getDepthTexture(), 0.0
+            );
+
+            DeferredSecondaryView localView = view.withViewport(0, 0, width, height);
+            ChunkRenderMatrices matrices = new ChunkRenderMatrices(localView.projection(), localView.view());
             SodiumSecondaryTerrainContext.run(
                     SodiumSecondaryTerrainContext.Purpose.REFLECTION_CAPTURE,
-                    view,
-                    target,
+                    localView,
+                    scratch,
                     () -> {
                         renderer.renderLayer(
                                 matrices,
                                 DefaultTerrainRenderPasses.SOLID,
-                                view.origin().x, view.origin().y, view.origin().z,
+                                localView.origin().x, localView.origin().y, localView.origin().z,
                                 primarySubmission.fog(), primarySubmission.sampler()
                         );
                         renderer.renderLayer(
                                 matrices,
                                 DefaultTerrainRenderPasses.CUTOUT,
-                                view.origin().x, view.origin().y, view.origin().z,
+                                localView.origin().x, localView.origin().y, localView.origin().z,
                                 primarySubmission.fog(), primarySubmission.sampler()
                         );
                     }
+            );
+
+            CommandEncoder copyEncoder = RenderSystem.getDevice().createCommandEncoder();
+            copyEncoder.copyTextureToTexture(
+                    scratch.getColorTexture(), target.getColorTexture(),
+                    0, view.viewportX(), view.viewportY(), 0, 0, width, height
+            );
+            copyEncoder.copyTextureToTexture(
+                    scratch.getDepthTexture(), target.getDepthTexture(),
+                    0, view.viewportX(), view.viewportY(), 0, 0, width, height
             );
         }
 
@@ -269,6 +296,23 @@ final class DeferredReflectionCascadeSource implements AutoCloseable {
         atlasWidth = Math.max(1, width);
         atlasHeight = Math.max(1, height);
         return atlas;
+    }
+
+    private TextureTarget ensureCaptureScratch(int width, int height) {
+        width = Math.max(1, width);
+        height = Math.max(1, height);
+        if (captureScratch != null && captureScratchWidth == width && captureScratchHeight == height) {
+            return captureScratch;
+        }
+        releaseCaptureScratch();
+        captureScratch = new TextureTarget(
+                "combatant-deferred-reflection-cascade-scratch",
+                width, height, true,
+                GpuFormat.RGBA16_FLOAT
+        );
+        captureScratchWidth = width;
+        captureScratchHeight = height;
+        return captureScratch;
     }
 
     private RhiStorageBuffer uploadMetadata(CombatantRhi rhi,
@@ -390,6 +434,7 @@ final class DeferredReflectionCascadeSource implements AutoCloseable {
         if (owner != null && bufferOwner != null && owner != bufferOwner) return;
         releaseBuffer();
         releaseAtlas();
+        releaseCaptureScratch();
         capturedViews = List.of();
         lastCaptureFrame = Long.MIN_VALUE;
         capturedCascadeCount = 0;
@@ -401,6 +446,7 @@ final class DeferredReflectionCascadeSource implements AutoCloseable {
     private void releaseCaptureOnly() {
         releaseBuffer();
         releaseAtlas();
+        releaseCaptureScratch();
         capturedViews = List.of();
         lastCaptureFrame = Long.MIN_VALUE;
         capturedCascadeCount = 0;
@@ -427,6 +473,15 @@ final class DeferredReflectionCascadeSource implements AutoCloseable {
         }
         atlasWidth = 0;
         atlasHeight = 0;
+    }
+
+    private void releaseCaptureScratch() {
+        if (captureScratch != null) {
+            captureScratch.destroyBuffers();
+            captureScratch = null;
+        }
+        captureScratchWidth = 0;
+        captureScratchHeight = 0;
     }
 
     @Override

@@ -53,6 +53,7 @@ final class DeferredHdrPostSource implements AutoCloseable {
     private static final Identifier BLOOM_COPY = id("deferred/bloom_copy");
     private static final Identifier BLOOM_UPSAMPLE = id("deferred/bloom_upsample");
     private static final Identifier BLOOM_FINALIZE = id("deferred/bloom_finalize");
+    private static final Identifier NEUTRAL_COLOR = id("deferred/environment_zero_irradiance");
 
     private static final Std430StructLayout HISTOGRAM_ELEMENT = Std430StructLayout.builder()
             .member("count", Std430Type.UINT)
@@ -82,6 +83,9 @@ final class DeferredHdrPostSource implements AutoCloseable {
             .member("params", Std430Type.VEC4)
             .build();
 
+    private static final ShaderResourceLayout NEUTRAL_COLOR_LAYOUT = new ShaderResourceLayout(List.of(
+            new ShaderResourceSlot(0, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY)
+    ));
     private static final ShaderResourceLayout HISTOGRAM_LAYOUT = new ShaderResourceLayout(List.of(
             new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(1, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
@@ -123,6 +127,7 @@ final class DeferredHdrPostSource implements AutoCloseable {
     private RhiComputePipeline bloomCopyPipeline;
     private RhiComputePipeline bloomUpsamplePipeline;
     private RhiComputePipeline bloomFinalizePipeline;
+    private RhiComputePipeline neutralColorPipeline;
 
     private RhiStorageBuffer histogramBuffer;
     private RhiStorageBuffer exposureBuffer;
@@ -133,9 +138,28 @@ final class DeferredHdrPostSource implements AutoCloseable {
     private ExposureProfile lastExposureProfile;
     private long histogramProducedFrame = Long.MIN_VALUE;
     private long exposureProducedFrame = Long.MIN_VALUE;
+    private Boolean lastExposureEnabled;
 
     void install(ArrayList<DeferredPassSpec> passes) {
+        // Exposure smoke override uses an explicit neutral state rather than making downstream
+        // bloom/post infer "missing exposure". Multiplier=1, EV=0 and lifecycle=valid.
+        passes.add(DeferredPassSpec.builder("world.post.exposure.neutral", DeferredStage.PRE_POST_PROCESS)
+                .priority(-500)
+                .write(DeferredResource.EXPOSURE)
+                .when(context -> !context.featureEnabled(DeferredFeature.EXPOSURE)
+                        && context.isValid(DeferredPostHdrContract.HDR_INPUT))
+                .execute(this::publishNeutralExposure)
+                .build());
+        passes.add(DeferredPassSpec.builder("world.post.bloom.neutral", DeferredStage.PRE_POST_PROCESS)
+                .priority(-450)
+                .write(DeferredResource.BLOOM_COLOR)
+                .requires(RhiShaderStage.COMPUTE)
+                .when(context -> !context.featureEnabled(DeferredFeature.BLOOM)
+                        && context.isValid(DeferredPostHdrContract.HDR_INPUT))
+                .execute(this::publishNeutralBloom)
+                .build());
         passes.add(DeferredPassSpec.builder("world.post.exposure.histogram", DeferredStage.PRE_POST_PROCESS)
+                .feature(DeferredFeature.EXPOSURE)
                 .priority(-400)
                 .read(DeferredPostHdrContract.HDR_INPUT, DeferredResource.FINAL_RESOLVED_DEPTH)
                 .write(DeferredResource.EXPOSURE_HISTOGRAM)
@@ -147,6 +171,7 @@ final class DeferredHdrPostSource implements AutoCloseable {
                 .build());
 
         passes.add(DeferredPassSpec.builder("world.post.exposure.reduce", DeferredStage.PRE_POST_PROCESS)
+                .feature(DeferredFeature.EXPOSURE)
                 .priority(-300)
                 .read(DeferredResource.EXPOSURE_HISTOGRAM)
                 .readWrite(DeferredResource.EXPOSURE)
@@ -156,17 +181,19 @@ final class DeferredHdrPostSource implements AutoCloseable {
                 .build());
 
         passes.add(DeferredPassSpec.builder("world.post.bloom.extract", DeferredStage.PRE_POST_PROCESS)
+                .feature(DeferredFeature.BLOOM)
                 .priority(-200)
                 .read(DeferredPostHdrContract.HDR_INPUT, DeferredResource.EXPOSURE)
                 .write(DeferredResource.BLOOM_PYRAMID)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.isValid(DeferredPostHdrContract.HDR_INPUT)
-                        && exposureProducedFrame == context.frame().frameId()
-                        && context.resources().buffer(DeferredResource.EXPOSURE) != null)
+                        && (!context.featureEnabled(DeferredFeature.EXPOSURE)
+                            || exposureProducedFrame == context.frame().frameId()))
                 .execute(this::extractBloom)
                 .build());
 
         passes.add(DeferredPassSpec.builder("world.post.bloom.downsample", DeferredStage.PRE_POST_PROCESS)
+                .feature(DeferredFeature.BLOOM)
                 .priority(-150)
                 .readWrite(DeferredResource.BLOOM_PYRAMID)
                 .requires(RhiShaderStage.COMPUTE)
@@ -175,6 +202,7 @@ final class DeferredHdrPostSource implements AutoCloseable {
                 .build());
 
         passes.add(DeferredPassSpec.builder("world.post.bloom.upsample", DeferredStage.PRE_POST_PROCESS)
+                .feature(DeferredFeature.BLOOM)
                 .priority(-100)
                 .read(DeferredResource.BLOOM_PYRAMID)
                 .write(DeferredResource.BLOOM_UPSAMPLE, DeferredResource.BLOOM_COLOR)
@@ -193,6 +221,7 @@ final class DeferredHdrPostSource implements AutoCloseable {
         bloomCopyPipeline();
         bloomUpsamplePipeline();
         bloomFinalizePipeline();
+        neutralColorPipeline();
         histogramBuffer();
         exposureBuffer();
         histogramParams();
@@ -206,8 +235,42 @@ final class DeferredHdrPostSource implements AutoCloseable {
         owner = null;
     }
 
+    private void publishNeutralBloom(DeferredPassContext context) {
+        ensureOwner(context.rhi());
+        RhiStorageImage output = requireImage(context, DeferredResource.BLOOM_COLOR);
+        context.advancedShaders().dispatch(new ComputeDispatchCommand(
+                "Combatant neutral bloom fallback", neutralColorPipeline(),
+                groups(output.descriptor().width()), groups(output.descriptor().height()), 1,
+                List.of(), List.of(),
+                List.of(new StorageImageBinding(0, output, StorageAccess.WRITE_ONLY))
+        ));
+    }
+
+    private void publishNeutralExposure(DeferredPassContext context) {
+        ensureOwner(context.rhi());
+        RhiStorageBuffer exposure = exposureBuffer();
+        ByteBuffer neutral = ByteBuffer.allocateDirect(EXPOSURE_STATE.arrayStride()).order(ByteOrder.nativeOrder());
+        int exposureOffset = EXPOSURE_STATE.member("exposure").offset();
+        neutral.putFloat(exposureOffset, 1.0f);
+        neutral.putFloat(exposureOffset + 4, 0.0f);
+        neutral.putFloat(exposureOffset + 8, 0.0f);
+        neutral.putFloat(exposureOffset + 12, 1.0f);
+        int adaptationOffset = EXPOSURE_STATE.member("adaptation").offset();
+        neutral.putFloat(adaptationOffset, 0.0f);
+        neutral.putFloat(adaptationOffset + 4, 1.0f);
+        int lifecycleOffset = EXPOSURE_STATE.member("lifecycle").offset();
+        neutral.putInt(lifecycleOffset, 1);
+        neutral.putInt(lifecycleOffset + 4, 0);
+        neutral.putInt(lifecycleOffset + 8, DeferredHistoryResetReason.SUBSYSTEM_REENABLED.ordinal());
+        neutral.putInt(lifecycleOffset + 12, 1);
+        exposure.upload(neutral, 0L);
+        context.resources().bindBuffer(DeferredResource.EXPOSURE, exposure);
+        exposureProducedFrame = context.frame().frameId();
+    }
+
     private void buildHistogram(DeferredPassContext context) {
         ensureOwner(context.rhi());
+        syncExposurePolicy(context);
         RhiStorageBuffer histogram = histogramBuffer();
         exposureBuffer(); // Ensure the persistent state exists before lifecycle invalidation checks.
         context.resources().bindBuffer(DeferredResource.EXPOSURE_HISTOGRAM, histogram);
@@ -266,6 +329,15 @@ final class DeferredHdrPostSource implements AutoCloseable {
         histogramProducedFrame = context.frame().frameId();
     }
 
+    private void syncExposurePolicy(DeferredPassContext context) {
+        boolean enabled = DeferredPostConfig.current().exposureEnabled();
+        if (lastExposureEnabled != null && lastExposureEnabled != enabled) {
+            context.temporalHistory().invalidate(DeferredTemporalHistoryId.EXPOSURE,
+                    DeferredHistoryResetReason.POLICY_CHANGE);
+        }
+        lastExposureEnabled = enabled;
+    }
+
     private void reduceExposure(DeferredPassContext context) {
         ensureOwner(context.rhi());
         RhiStorageBuffer histogram = requireBuffer(context, DeferredResource.EXPOSURE_HISTOGRAM);
@@ -313,14 +385,21 @@ final class DeferredHdrPostSource implements AutoCloseable {
 
     private void extractBloom(DeferredPassContext context) {
         ensureOwner(context.rhi());
+        syncExposurePolicy(context);
         GpuTextureView hdr = requireTexture(context, DeferredPostHdrContract.HDR_INPUT);
-        RhiStorageBuffer exposure = requireBuffer(context, DeferredResource.EXPOSURE);
+        RhiStorageBuffer exposure;
+        if (context.featureEnabled(DeferredFeature.EXPOSURE)) {
+            exposure = requireBuffer(context, DeferredResource.EXPOSURE);
+        } else {
+            exposure = exposureBuffer();
+            context.resources().bindBuffer(DeferredResource.EXPOSURE, exposure);
+        }
         RhiStorageImage pyramid = requireImage(context, DeferredResource.BLOOM_PYRAMID);
         DeferredPostConfig.Snapshot config = DeferredPostConfig.current();
 
         Std430Writer writer = new Std430Writer(BLOOM_PARAMS, 1)
                 .putVec4(0, "params", config.bloomThreshold(), config.bloomSoftKnee(),
-                        config.bloomIntensity(), 0.0f);
+                        config.bloomIntensity(), context.featureEnabled(DeferredFeature.EXPOSURE) ? 1.0f : 0.0f);
         RhiStorageBuffer params = bloomParams();
         params.upload(writer.buffer(), 0L);
 
@@ -514,6 +593,11 @@ final class DeferredHdrPostSource implements AutoCloseable {
         return bloomParams;
     }
 
+    private RhiComputePipeline neutralColorPipeline() {
+        return pipeline("combatant-post-neutral-color", NEUTRAL_COLOR, NEUTRAL_COLOR_LAYOUT, neutralColorPipeline,
+                value -> neutralColorPipeline = value);
+    }
+
     private RhiComputePipeline histogramPipeline() {
         return pipeline("combatant-exposure-histogram", HISTOGRAM, HISTOGRAM_LAYOUT, histogramPipeline,
                 value -> histogramPipeline = value);
@@ -602,6 +686,7 @@ final class DeferredHdrPostSource implements AutoCloseable {
         bloomCopyPipeline = close(bloomCopyPipeline);
         bloomUpsamplePipeline = close(bloomUpsamplePipeline);
         bloomFinalizePipeline = close(bloomFinalizePipeline);
+        neutralColorPipeline = close(neutralColorPipeline);
         histogramBuffer = close(histogramBuffer);
         exposureBuffer = close(exposureBuffer);
         histogramParams = close(histogramParams);
@@ -609,6 +694,7 @@ final class DeferredHdrPostSource implements AutoCloseable {
         bloomParams = close(bloomParams);
         exposureBufferRecreated = false;
         lastExposureProfile = null;
+        lastExposureEnabled = null;
         histogramProducedFrame = Long.MIN_VALUE;
         exposureProducedFrame = Long.MIN_VALUE;
     }

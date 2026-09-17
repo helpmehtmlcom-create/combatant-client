@@ -600,11 +600,11 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
                         + "binding=" + binding.binding()
                         + " sampler=" + className(binding.sampler()));
             }
-            GlStateManager._activeTexture(GlConst.GL_TEXTURE0 + binding.binding());
+            GL13C.glActiveTexture(GL13C.GL_TEXTURE0 + binding.binding());
             if (isMultisampled(binding)) {
                 GL32C.glBindTexture(GL32C.GL_TEXTURE_2D_MULTISAMPLE, texture.glId());
             } else {
-                GlStateManager._bindTexture(texture.glId());
+                GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture.glId());
             }
             GL33C.glBindSampler(binding.binding(), sampler.getId());
         }
@@ -620,7 +620,7 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
                 throw new RhiResourceOwnershipException("Sampler does not belong to the active OpenGL backend: binding="
                         + binding.binding() + " sampler=" + className(binding.sampler()));
             }
-            GlStateManager._activeTexture(GlConst.GL_TEXTURE0 + binding.binding());
+            GL13C.glActiveTexture(GL13C.GL_TEXTURE0 + binding.binding());
             GL11C.glBindTexture(GL12C.GL_TEXTURE_3D, volume.sampledTextureId(binding.view()));
             GL33C.glBindSampler(binding.binding(), sampler.getId());
         }
@@ -631,13 +631,13 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
         List<SampledVolumeUnitState> units = new ArrayList<>(bindings.size());
         try {
             for (SampledVolumeBinding binding : bindings) {
-                GlStateManager._activeTexture(GlConst.GL_TEXTURE0 + binding.binding());
+                GL13C.glActiveTexture(GL13C.GL_TEXTURE0 + binding.binding());
                 int texture = GL11C.glGetInteger(GL12C.GL_TEXTURE_BINDING_3D);
                 int sampler = GL30C.glGetIntegeri(GL33C.GL_SAMPLER_BINDING, binding.binding());
                 units.add(new SampledVolumeUnitState(binding.binding(), texture, sampler));
             }
         } finally {
-            GlStateManager._activeTexture(previousActiveTexture);
+            GL13C.glActiveTexture(previousActiveTexture);
         }
         return new SampledVolumeState(previousActiveTexture, units);
     }
@@ -645,12 +645,12 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
     private static void restoreSampledVolumeState(SampledVolumeState state) {
         try {
             for (SampledVolumeUnitState unit : state.units) {
-                GlStateManager._activeTexture(GlConst.GL_TEXTURE0 + unit.unit);
+                GL13C.glActiveTexture(GL13C.GL_TEXTURE0 + unit.unit);
                 GL11C.glBindTexture(GL12C.GL_TEXTURE_3D, unit.texture);
                 GL33C.glBindSampler(unit.unit, unit.sampler);
             }
         } finally {
-            GlStateManager._activeTexture(state.activeTexture);
+            GL13C.glActiveTexture(state.activeTexture);
         }
     }
 
@@ -703,7 +703,7 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
         List<SampledTextureUnitState> units = new ArrayList<>(bindings.size());
         try {
             for (SampledTextureBinding binding : bindings) {
-                GlStateManager._activeTexture(GlConst.GL_TEXTURE0 + binding.binding());
+                GL13C.glActiveTexture(GL13C.GL_TEXTURE0 + binding.binding());
                 boolean multisampled = isMultisampled(binding);
                 int texture = GL11C.glGetInteger(multisampled
                         ? GL32C.GL_TEXTURE_BINDING_2D_MULTISAMPLE
@@ -712,7 +712,7 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
                 units.add(new SampledTextureUnitState(binding.binding(), multisampled, texture, sampler));
             }
         } finally {
-            GlStateManager._activeTexture(previousActiveTexture);
+            GL13C.glActiveTexture(previousActiveTexture);
         }
         return new SampledTextureState(previousActiveTexture, units);
     }
@@ -720,16 +720,16 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
     private static void restoreSampledTextureState(SampledTextureState state) {
         try {
             for (SampledTextureUnitState unit : state.units) {
-                GlStateManager._activeTexture(GlConst.GL_TEXTURE0 + unit.unit);
+                GL13C.glActiveTexture(GL13C.GL_TEXTURE0 + unit.unit);
                 if (unit.multisampled) {
                     GL32C.glBindTexture(GL32C.GL_TEXTURE_2D_MULTISAMPLE, unit.texture);
                 } else {
-                    GlStateManager._bindTexture(unit.texture);
+                    GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, unit.texture);
                 }
                 GL33C.glBindSampler(unit.unit, unit.sampler);
             }
         } finally {
-            GlStateManager._activeTexture(state.activeTexture);
+            GL13C.glActiveTexture(state.activeTexture);
         }
     }
 

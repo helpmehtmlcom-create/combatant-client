@@ -115,7 +115,8 @@ final class DeferredCloudShadowSource implements AutoCloseable {
                 .read(DeferredResource.CLOUD_OCCUPANCY)
                 .write(DeferredResource.CLOUD_SHADOW_MAP)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.primaryView().current() != null
+                .when(context -> DeferredSmokeTestState.global().cloudWorkEnabledForFrame()
+                        && context.primaryView().current() != null
                         && context.isValid(DeferredResource.CLOUD_OCCUPANCY))
                 .execute(this::renderShadowMap)
                 .build());
@@ -124,7 +125,8 @@ final class DeferredCloudShadowSource implements AutoCloseable {
                 .read(DeferredResource.CLOUD_SHADOW_MAP, DeferredResource.RESOLVED_DEPTH)
                 .write(DeferredResource.CLOUD_SHADOW_VISIBILITY)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.primaryView().current() != null
+                .when(context -> DeferredSmokeTestState.global().cloudWorkEnabledForFrame()
+                        && context.primaryView().current() != null
                         && context.isValid(DeferredResource.CLOUD_SHADOW_MAP)
                         && context.isValid(DeferredResource.RESOLVED_DEPTH))
                 .execute(this::resolveVisibility)
@@ -227,7 +229,7 @@ final class DeferredCloudShadowSource implements AutoCloseable {
                 .putVec4(0, "mapDomain", shadow.mapOriginRelativeX(), shadow.mapOriginRelativeZ(),
                         shadow.spanBlocks(), shadow.referenceY())
                 .putVec4(0, "sunDirection", shadow.sunX(), shadow.sunY(), shadow.sunZ(), shadow.active() ? 1.0f : 0.0f)
-                .putVec4(0, "cloudBounds", shadow.minCloudY(), shadow.maxCloudY(), isVulkan(context) ? 1.0f : 0.0f,
+                .putVec4(0, "cloudBounds", shadow.minCloudY(), shadow.maxCloudY(), zeroToOneDepth(context) ? 1.0f : 0.0f,
                         shadow.altitudeSlices());
         RhiStorageBuffer data = resolveData();
         data.upload(writer.buffer(), 0L);
@@ -349,9 +351,8 @@ final class DeferredCloudShadowSource implements AutoCloseable {
         return Math.floorMod(value, 65536);
     }
 
-    private static boolean isVulkan(DeferredPassContext context) {
-        String backendName = context.rhi().capabilities().backendName();
-        return backendName != null && backendName.toLowerCase(java.util.Locale.ROOT).contains("vulkan");
+    private static boolean zeroToOneDepth(DeferredPassContext context) {
+        return context.rhi().capabilities().zeroToOneDepth();
     }
 
     private static GpuTextureView requireTexture(DeferredPassContext context, DeferredResource resource) {

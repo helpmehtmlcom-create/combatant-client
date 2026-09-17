@@ -40,6 +40,7 @@ import java.util.List;
 final class DeferredAtmosphereCompositeSource implements AutoCloseable {
     private static final int LOCAL_SIZE = 8;
     private static final Identifier SHADER = id("deferred/atmosphere_cloud_composite");
+    private static final Identifier BYPASS_SHADER = id("deferred/bloom_copy");
 
     private static final Std430StructLayout DATA_LAYOUT = Std430StructLayout.builder()
             .member("inverseProjection", Std430Type.MAT4)
@@ -66,9 +67,15 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
             new ShaderResourceSlot(13, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY)
     ));
 
+    private static final ShaderResourceLayout BYPASS_LAYOUT = new ShaderResourceLayout(List.of(
+            new ShaderResourceSlot(0, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(1, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY)
+    ));
+
     private final DeferredFroxelMediaSource froxelMedia;
     private CombatantRhi owner;
     private RhiComputePipeline pipeline;
+    private RhiComputePipeline bypassPipeline;
     private RhiStorageBuffer data;
 
     DeferredAtmosphereCompositeSource(DeferredFroxelMediaSource froxelMedia) {
@@ -77,29 +84,30 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
     }
 
     void install(ArrayList<DeferredPassSpec> passes) {
+        passes.add(DeferredPassSpec.builder("world.environment.media.bypass", DeferredStage.VOLUMETRIC_MEDIA_COMPOSITE)
+                .priority(-100)
+                .read(DeferredResource.SKY_COMPOSITED_RADIANCE)
+                .write(DeferredResource.SCENE_RADIANCE)
+                .requires(RhiShaderStage.COMPUTE)
+                .when(context -> context.isValid(DeferredResource.SKY_COMPOSITED_RADIANCE)
+                        && (!context.featureEnabled(DeferredFeature.PARTICIPATING_MEDIA)
+                        || !mediaInputsValid(context)))
+                .execute(this::bypass)
+                .build());
         passes.add(DeferredPassSpec.builder("world.environment.media.composite", DeferredStage.VOLUMETRIC_MEDIA_COMPOSITE)
+                .feature(DeferredFeature.PARTICIPATING_MEDIA)
                 .read(DeferredResource.SKY_COMPOSITED_RADIANCE, DeferredResource.RESOLVED_DEPTH,
-                        DeferredResource.CLOUD_TEMPORAL_RADIANCE, DeferredResource.CLOUD_TEMPORAL_DEPTH,
-                        DeferredResource.CLOUD_HIGH_TEMPORAL_RADIANCE, DeferredResource.CLOUD_HIGH_TEMPORAL_DEPTH,
-                        DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_RADIANCE, DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_DEPTH,
                         DeferredResource.AERIAL_PERSPECTIVE, DeferredResource.AERIAL_TRANSMITTANCE,
                         DeferredResource.FROXEL_MEDIA_INTEGRATED_RADIANCE,
                         DeferredResource.FROXEL_MEDIA_INTEGRATED_TRANSMITTANCE)
+                .optionalRead(DeferredResource.CLOUD_TEMPORAL_RADIANCE, DeferredResource.CLOUD_TEMPORAL_DEPTH,
+                        DeferredResource.CLOUD_HIGH_TEMPORAL_RADIANCE, DeferredResource.CLOUD_HIGH_TEMPORAL_DEPTH,
+                        DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_RADIANCE, DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_DEPTH)
                 .write(DeferredResource.SCENE_RADIANCE)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.primaryView().current() != null
                         && context.isValid(DeferredResource.SKY_COMPOSITED_RADIANCE)
-                        && context.isValid(DeferredResource.RESOLVED_DEPTH)
-                        && context.isValid(DeferredResource.CLOUD_TEMPORAL_RADIANCE)
-                        && context.isValid(DeferredResource.CLOUD_TEMPORAL_DEPTH)
-                        && context.isValid(DeferredResource.CLOUD_HIGH_TEMPORAL_RADIANCE)
-                        && context.isValid(DeferredResource.CLOUD_HIGH_TEMPORAL_DEPTH)
-                        && context.isValid(DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_RADIANCE)
-                        && context.isValid(DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_DEPTH)
-                        && context.isValid(DeferredResource.AERIAL_PERSPECTIVE)
-                        && context.isValid(DeferredResource.AERIAL_TRANSMITTANCE)
-                        && context.isValid(DeferredResource.FROXEL_MEDIA_INTEGRATED_RADIANCE)
-                        && context.isValid(DeferredResource.FROXEL_MEDIA_INTEGRATED_TRANSMITTANCE))
+                        && mediaInputsValid(context))
                 .execute(this::composite)
                 .build());
     }
@@ -107,6 +115,7 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
     void prepare(CombatantRhi rhi) {
         ensureOwner(rhi);
         pipeline();
+        bypassPipeline();
         data();
     }
 
@@ -116,6 +125,21 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
         owner = null;
     }
 
+    private void bypass(DeferredPassContext context) {
+        ensureOwner(context.rhi());
+        RhiStorageImage source = requireImage(context, DeferredResource.SKY_COMPOSITED_RADIANCE);
+        RhiStorageImage output = requireImage(context, DeferredResource.SCENE_RADIANCE);
+        context.advancedShaders().dispatch(new ComputeDispatchCommand(
+                "Combatant participating-media neutral bypass", bypassPipeline(),
+                groups(output.descriptor().width()), groups(output.descriptor().height()), 1,
+                List.of(), List.of(),
+                List.of(
+                        new StorageImageBinding(0, source, StorageAccess.READ_ONLY),
+                        new StorageImageBinding(1, output, StorageAccess.WRITE_ONLY)
+                )
+        ));
+    }
+
     private void composite(DeferredPassContext context) {
         ensureOwner(context.rhi());
         DeferredPrimaryViewSource.FrameView view = context.primaryView().current();
@@ -123,12 +147,21 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
 
         GpuTextureView base = requireTexture(context, DeferredResource.SKY_COMPOSITED_RADIANCE);
         GpuTextureView depth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
-        GpuTextureView cloudRadiance = requireTexture(context, DeferredResource.CLOUD_TEMPORAL_RADIANCE);
-        GpuTextureView cloudDepth = requireTexture(context, DeferredResource.CLOUD_TEMPORAL_DEPTH);
-        GpuTextureView highCloudRadiance = requireTexture(context, DeferredResource.CLOUD_HIGH_TEMPORAL_RADIANCE);
-        GpuTextureView highCloudDepth = requireTexture(context, DeferredResource.CLOUD_HIGH_TEMPORAL_DEPTH);
-        GpuTextureView convectiveCloudRadiance = requireTexture(context, DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_RADIANCE);
-        GpuTextureView convectiveCloudDepth = requireTexture(context, DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_DEPTH);
+        int cloudMask = cloudLayerMask(context);
+        // Cloud layers are independent optional producers. Keep descriptor slots populated for the
+        // canonical shader layout, while policy.z tells the shader exactly which typed pairs exist.
+        GpuTextureView cloudRadiance = (cloudMask & 1) != 0
+                ? requireTexture(context, DeferredResource.CLOUD_TEMPORAL_RADIANCE) : base;
+        GpuTextureView cloudDepth = (cloudMask & 1) != 0
+                ? requireTexture(context, DeferredResource.CLOUD_TEMPORAL_DEPTH) : depth;
+        GpuTextureView highCloudRadiance = (cloudMask & 2) != 0
+                ? requireTexture(context, DeferredResource.CLOUD_HIGH_TEMPORAL_RADIANCE) : base;
+        GpuTextureView highCloudDepth = (cloudMask & 2) != 0
+                ? requireTexture(context, DeferredResource.CLOUD_HIGH_TEMPORAL_DEPTH) : depth;
+        GpuTextureView convectiveCloudRadiance = (cloudMask & 4) != 0
+                ? requireTexture(context, DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_RADIANCE) : base;
+        GpuTextureView convectiveCloudDepth = (cloudMask & 4) != 0
+                ? requireTexture(context, DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_DEPTH) : depth;
         GpuTextureView aerialRadiance = requireTexture(context, DeferredResource.AERIAL_PERSPECTIVE);
         GpuTextureView aerialTransmittance = requireTexture(context, DeferredResource.AERIAL_TRANSMITTANCE);
         RhiStorageVolume integratedRadiance = requireVolume(context, DeferredResource.FROXEL_MEDIA_INTEGRATED_RADIANCE);
@@ -140,7 +173,8 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
                 .putMat4(0, "inverseProjection", view.inverseProjection())
                 .putMat4(0, "inverseView", view.inverseView())
                 .putVec4(0, "froxel", grid.width(), grid.height(), grid.depth(), grid.maxDistanceBlocks())
-                .putVec4(0, "policy", grid.depthExponent(), isVulkan(context) ? 1.0f : 0.0f, 0.0f, 0.0f)
+                .putVec4(0, "policy", grid.depthExponent(), zeroToOneDepth(context) ? 1.0f : 0.0f,
+                        cloudMask, 0.0f)
                 .putVec4(0, "aerialLayout", AerialPerspectiveLayout.ZENITH_SLICES,
                         AerialPerspectiveLayout.AZIMUTH_SLICES,
                         Math.max(0.064f, grid.maxDistanceBlocks() * 0.001f), 0.0f);
@@ -179,6 +213,13 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
         owner = rhi;
     }
 
+    private RhiComputePipeline bypassPipeline() {
+        if (owner == null) throw new IllegalStateException("Atmosphere composite source has no RHI owner");
+        if (bypassPipeline == null) bypassPipeline = owner.advancedShaders().createComputePipeline(
+                new ComputePipelineDescriptor("combatant-participating-media-bypass", BYPASS_SHADER, BYPASS_LAYOUT));
+        return bypassPipeline;
+    }
+
     private RhiComputePipeline pipeline() {
         if (pipeline == null) pipeline = owner.advancedShaders().createComputePipeline(
                 new ComputePipelineDescriptor("combatant-atmosphere-cloud-composite", SHADER, LAYOUT)
@@ -195,6 +236,7 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
 
     private void closeOwned() {
         close(pipeline); pipeline = null;
+        close(bypassPipeline); bypassPipeline = null;
         close(data); data = null;
     }
 
@@ -202,6 +244,38 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
     public void close() {
         closeOwned();
         owner = null;
+    }
+
+    private static boolean mediaInputsValid(DeferredPassContext context) {
+        return context.isValid(DeferredResource.RESOLVED_DEPTH)
+                && context.isValid(DeferredResource.AERIAL_PERSPECTIVE)
+                && context.isValid(DeferredResource.AERIAL_TRANSMITTANCE)
+                && context.isValid(DeferredResource.FROXEL_MEDIA_INTEGRATED_RADIANCE)
+                && context.isValid(DeferredResource.FROXEL_MEDIA_INTEGRATED_TRANSMITTANCE)
+                && context.resources().texture(DeferredResource.RESOLVED_DEPTH) != null
+                && context.resources().texture(DeferredResource.AERIAL_PERSPECTIVE) != null
+                && context.resources().texture(DeferredResource.AERIAL_TRANSMITTANCE) != null
+                && context.resources().storageVolume(DeferredResource.FROXEL_MEDIA_INTEGRATED_RADIANCE) != null
+                && context.resources().storageVolume(DeferredResource.FROXEL_MEDIA_INTEGRATED_TRANSMITTANCE) != null;
+    }
+
+    private static int cloudLayerMask(DeferredPassContext context) {
+        int mask = 0;
+        if (cloudLayerValid(context, DeferredResource.CLOUD_TEMPORAL_RADIANCE,
+                DeferredResource.CLOUD_TEMPORAL_DEPTH)) mask |= 1;
+        if (cloudLayerValid(context, DeferredResource.CLOUD_HIGH_TEMPORAL_RADIANCE,
+                DeferredResource.CLOUD_HIGH_TEMPORAL_DEPTH)) mask |= 2;
+        if (cloudLayerValid(context, DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_RADIANCE,
+                DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_DEPTH)) mask |= 4;
+        return mask;
+    }
+
+    private static boolean cloudLayerValid(DeferredPassContext context,
+                                           DeferredResource radiance,
+                                           DeferredResource depth) {
+        return context.isValid(radiance) && context.isValid(depth)
+                && context.resources().texture(radiance) != null
+                && context.resources().texture(depth) != null;
     }
 
     private static GpuTextureView requireTexture(DeferredPassContext context, DeferredResource resource) {
@@ -222,9 +296,8 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
         return value;
     }
 
-    private static boolean isVulkan(DeferredPassContext context) {
-        String backendName = context.rhi().capabilities().backendName();
-        return backendName != null && backendName.toLowerCase(java.util.Locale.ROOT).contains("vulkan");
+    private static boolean zeroToOneDepth(DeferredPassContext context) {
+        return context.rhi().capabilities().zeroToOneDepth();
     }
 
     private static void close(AutoCloseable value) {

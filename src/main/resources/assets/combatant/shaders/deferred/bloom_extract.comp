@@ -51,7 +51,8 @@ void main() {
     vec2 sourceTexel = 1.0 / vec2(max(textureSize(u_HdrPostInput, 0), ivec2(1)));
     vec3 hdr = sampleHdr(uv, sourceTexel);
 
-    float exposure = u_Exposure.lifecycle.x != 0u ? max(u_Exposure.exposure.x, 0.0) : 1.0;
+    float exposure = (u_Bloom.params.w > 0.5 && u_Exposure.lifecycle.x != 0u)
+        ? max(u_Exposure.exposure.x, 0.0) : 1.0;
     float brightness = max(max(hdr.r, hdr.g), hdr.b) * exposure;
     float threshold = max(0.0, u_Bloom.params.x);
     float knee = max(1e-5, threshold * clamp(u_Bloom.params.y, 0.0, 1.0));

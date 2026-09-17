@@ -116,20 +116,24 @@ final class DeferredBackendPasses implements AutoCloseable {
     private final DeferredTemporalHistorySource temporalHistory = new DeferredTemporalHistorySource();
     private final DeferredTemporalResolveSource temporalResolve = new DeferredTemporalResolveSource();
     private final DeferredHdrPostSource hdrPost = new DeferredHdrPostSource();
+    private final DeferredCameraPostSource cameraPost = new DeferredCameraPostSource();
     private final DeferredPatchSurfaceSource patchSurfaces = new DeferredPatchSurfaceSource(reflectionCascades);
     private final DeferredWaterReflectionTemporalSource waterReflectionTemporal = new DeferredWaterReflectionTemporalSource();
+    private final DeferredDebugCompositorSource debugCompositor = new DeferredDebugCompositorSource();
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.shadow.cascades", DeferredStage.SHADOW_PREPARE)
-                .when(context -> context.settings().shadowsEnabled()
+                .feature(DeferredFeature.SHADOWS)
+                .when(context -> context.featureEnabled(DeferredFeature.SHADOWS)
                         && context.primaryView().current() != null
                         && context.worldState().directionalLight().shadowValid())
                 .execute(shadowCascades::prepare)
                 .build());
         passes.add(DeferredPassSpec.builder("world.shadow.map", DeferredStage.SHADOW_MAP)
+                .feature(DeferredFeature.SHADOWS)
                 .write(DeferredResource.SHADOW_DEPTH)
                 .write(DeferredResource.SHADOW_CASCADE_DATA)
-                .when(context -> context.settings().shadowsEnabled() && shadowMaps.available(context))
+                .when(context -> context.featureEnabled(DeferredFeature.SHADOWS) && shadowMaps.available(context))
                 .execute(shadowMaps::render)
                 .build());
         passes.add(DeferredPassSpec.builder("world.depth.resolve", DeferredStage.DEPTH_RESOLVE)
@@ -226,8 +230,10 @@ final class DeferredBackendPasses implements AutoCloseable {
         temporalHistory.install(passes);
         temporalResolve.install(passes);
         hdrPost.install(passes);
+        cameraPost.install(passes);
         patchSurfaces.install(passes);
         waterReflectionTemporal.install(passes);
+        debugCompositor.install(passes);
     }
 
     void prepare(CombatantRhi rhi) {
@@ -266,8 +272,10 @@ final class DeferredBackendPasses implements AutoCloseable {
         temporalHistory.prepare(rhi);
         temporalResolve.prepare(rhi);
         hdrPost.prepare(rhi);
+        cameraPost.prepare(rhi);
         patchSurfaces.prepare(rhi);
         waterReflectionTemporal.prepare(rhi);
+        debugCompositor.prepare(rhi);
     }
 
     void release(CombatantRhi currentOwner) {
@@ -306,8 +314,10 @@ final class DeferredBackendPasses implements AutoCloseable {
         temporalHistory.release(releaseOwner);
         temporalResolve.release(releaseOwner);
         hdrPost.release(releaseOwner);
+        cameraPost.release(releaseOwner);
         patchSurfaces.release(releaseOwner);
         waterReflectionTemporal.release(releaseOwner);
+        debugCompositor.release(releaseOwner);
         owner = null;
     }
 
@@ -367,7 +377,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         Vec3 delta = historyValid
                 ? current.cameraPosition().subtract(reprojectionPrevious.cameraPosition())
                 : Vec3.ZERO;
-        boolean zeroToOneNdc = isVulkan(context);
+        boolean zeroToOneNdc = zeroToOneDepth(context);
         Std430Writer writer = new Std430Writer(TEMPORAL_CAMERA_LAYOUT, 1)
                 .putMat4(0, "currentInverseProjection", current.inverseProjection())
                 .putMat4(0, "currentInverseView", current.inverseView())
@@ -482,6 +492,7 @@ final class DeferredBackendPasses implements AutoCloseable {
             temporalHistory.release(previous);
             temporalResolve.release(previous);
             hdrPost.release(previous);
+            cameraPost.release(previous);
             patchSurfaces.release(previous);
             waterReflectionTemporal.release(previous);
         }
@@ -542,9 +553,8 @@ final class DeferredBackendPasses implements AutoCloseable {
         return image;
     }
 
-    private static boolean isVulkan(DeferredPassContext context) {
-        String backendName = context.rhi().capabilities().backendName();
-        return backendName != null && backendName.toLowerCase(java.util.Locale.ROOT).contains("vulkan");
+    private static boolean zeroToOneDepth(DeferredPassContext context) {
+        return context.rhi().capabilities().zeroToOneDepth();
     }
 
     private static int groups(int extent) {
@@ -594,6 +604,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         temporalHistory.close();
         temporalResolve.close();
         hdrPost.close();
+        cameraPost.close();
         patchSurfaces.close();
         waterReflectionTemporal.close();
         owner = null;

@@ -1,4 +1,5 @@
 #version 430 core
+#extension GL_ARB_shader_texture_image_samples : require
 
 /*
  * This file is part of the Combatant Client distribution.

@@ -75,12 +75,13 @@ final class DeferredShadowResolveSource implements AutoCloseable {
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.shadow.cascade.resolve", DeferredStage.SHADOW_CASCADE_RESOLVE)
+                .feature(DeferredFeature.SHADOWS)
                 .read(DeferredResource.RESOLVED_DEPTH, DeferredResource.GBUFFER_DEPTH,
                         DeferredResource.GBUFFER_GEOMETRY, DeferredResource.SHADOW_DEPTH,
                         DeferredResource.SHADOW_CASCADE_DATA)
                 .write(DeferredResource.SHADOW_CASCADE_VISIBILITY)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.settings().shadowsEnabled()
+                .when(context -> context.featureEnabled(DeferredFeature.SHADOWS)
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
                         && context.isValid(DeferredResource.GBUFFER_DEPTH)
                         && context.resources().texture(DeferredResource.GBUFFER_GEOMETRY) != null
@@ -93,8 +94,7 @@ final class DeferredShadowResolveSource implements AutoCloseable {
                 .optionalRead(DeferredResource.SHADOW_CASCADE_VISIBILITY, DeferredResource.CONTACT_SHADOW)
                 .write(DeferredResource.SHADOW_COLOR)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.settings().shadowsEnabled()
-                        && (context.isValid(DeferredResource.SHADOW_CASCADE_VISIBILITY)
+                .when(context -> (context.isValid(DeferredResource.SHADOW_CASCADE_VISIBILITY)
                         || context.isValid(DeferredResource.CONTACT_SHADOW)))
                 .execute(this::combine)
                 .build());
@@ -127,7 +127,7 @@ final class DeferredShadowResolveSource implements AutoCloseable {
         if (cascades == null) throw new IllegalStateException("Shadow cascade metadata is not bound");
 
         DeferredRuntimeConfig.Snapshot settings = context.settings();
-        boolean zeroToOne = isVulkan(context);
+        boolean zeroToOne = zeroToOneDepth(context);
         Std430Writer camera = new Std430Writer(CAMERA_LAYOUT, 1)
                 .putMat4(0, "inverseProjection", current.inverseProjection())
                 .putMat4(0, "inverseView", current.inverseView())
@@ -264,9 +264,8 @@ final class DeferredShadowResolveSource implements AutoCloseable {
         return value;
     }
 
-    private static boolean isVulkan(DeferredPassContext context) {
-        String backendName = context.rhi().capabilities().backendName();
-        return backendName != null && backendName.toLowerCase(Locale.ROOT).contains("vulkan");
+    private static boolean zeroToOneDepth(DeferredPassContext context) {
+        return context.rhi().capabilities().zeroToOneDepth();
     }
 
     private static int groups(int extent) {

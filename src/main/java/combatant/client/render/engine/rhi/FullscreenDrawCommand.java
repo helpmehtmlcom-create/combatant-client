@@ -20,6 +20,12 @@ import java.util.List;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
 
+/**
+ * Clip-space fullscreen draw. The persistent quad vertices already cover NDC [-1,+1], so backend
+ * implementations must never inherit the active world projection/model-view for this command.
+ * Pipelines may still declare the legacy MeshData block; in that case the backend binds identity
+ * transforms and only the viewport payload is meaningful.
+ */
 public final class FullscreenDrawCommand {
     public final String label;
     public final RenderPipeline pipeline;

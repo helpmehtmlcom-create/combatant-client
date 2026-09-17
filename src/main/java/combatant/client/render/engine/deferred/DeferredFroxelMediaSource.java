@@ -194,6 +194,7 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.media.froxel.inject", DeferredStage.VOLUMETRIC_MEDIA_INJECT)
+                .feature(DeferredFeature.PARTICIPATING_MEDIA)
                 .priority(0)
                 .read(DeferredResource.RESOLVED_DEPTH,
                         DeferredResource.AERIAL_PERSPECTIVE,
@@ -205,7 +206,7 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
                         DeferredResource.FROXEL_MEDIA_SEGMENT_TRANSMITTANCE,
                         DeferredResource.FROXEL_MEDIA_PROPERTIES)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> config.enabled()
+                .when(context -> context.featureEnabled(DeferredFeature.PARTICIPATING_MEDIA)
                         && context.primaryView().current() != null
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
                         && context.isValid(DeferredResource.AERIAL_PERSPECTIVE)
@@ -216,6 +217,7 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
                 .execute(this::inject)
                 .build());
         passes.add(DeferredPassSpec.builder("world.media.froxel.light", DeferredStage.VOLUMETRIC_MEDIA_INJECT)
+                .feature(DeferredFeature.PARTICIPATING_MEDIA)
                 .priority(10)
                 .read(DeferredResource.FROXEL_MEDIA_PROPERTIES,
                         DeferredResource.FROXEL_MEDIA_SEGMENT_TRANSMITTANCE,
@@ -229,6 +231,7 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
                 .execute(context -> injectLighting(context, directionalShadowAvailable(context)))
                 .build());
         passes.add(DeferredPassSpec.builder("world.media.froxel.local-light", DeferredStage.VOLUMETRIC_MEDIA_INJECT)
+                .feature(DeferredFeature.PARTICIPATING_MEDIA)
                 .priority(20)
                 .read(DeferredResource.FROXEL_MEDIA_PROPERTIES,
                         DeferredResource.FROXEL_MEDIA_SEGMENT_TRANSMITTANCE,
@@ -245,12 +248,13 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
                 .execute(this::injectLocalLighting)
                 .build());
         passes.add(DeferredPassSpec.builder("world.media.froxel.integrate", DeferredStage.VOLUMETRIC_MEDIA_INTEGRATE)
+                .feature(DeferredFeature.PARTICIPATING_MEDIA)
                 .read(DeferredResource.FROXEL_MEDIA_SEGMENT_RADIANCE,
                         DeferredResource.FROXEL_MEDIA_SEGMENT_TRANSMITTANCE)
                 .write(DeferredResource.FROXEL_MEDIA_INTEGRATED_RADIANCE,
                         DeferredResource.FROXEL_MEDIA_INTEGRATED_TRANSMITTANCE)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> config.enabled()
+                .when(context -> context.featureEnabled(DeferredFeature.PARTICIPATING_MEDIA)
                         && context.primaryView().current() != null
                         && context.isValid(DeferredResource.FROXEL_MEDIA_SEGMENT_RADIANCE)
                         && context.isValid(DeferredResource.FROXEL_MEDIA_SEGMENT_TRANSMITTANCE))
@@ -517,7 +521,7 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
                         seedPhase(weather.modelSeed()), 0.0f)
                 .putVec4(0, "froxel", froxelGrid.width(), froxelGrid.height(), froxelGrid.depth(),
                         froxelGrid.maxDistanceBlocks())
-                .putVec4(0, "policy", froxelGrid.depthExponent(), isVulkan(context) ? 1.0f : 0.0f,
+                .putVec4(0, "policy", froxelGrid.depthExponent(), zeroToOneDepth(context) ? 1.0f : 0.0f,
                         context.worldState().atmosphereState().valid() ? 1.0f : 0.0f,
                         context.settings().shadowCascadeBlendFraction())
                 .putVec4(0, "shadowMapDomain", shadow.mapOriginRelativeX(), shadow.mapOriginRelativeZ(),
@@ -559,7 +563,7 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
     }
 
     private boolean mediumVolumeAvailable(DeferredPassContext context) {
-        if (!config.enabled() || context.primaryView().current() == null) return false;
+        if (!context.featureEnabled(DeferredFeature.PARTICIPATING_MEDIA) || context.primaryView().current() == null) return false;
         if (!context.isValid(DeferredResource.FROXEL_MEDIA_SEGMENT_RADIANCE)
                 || !context.isValid(DeferredResource.FROXEL_MEDIA_SEGMENT_TRANSMITTANCE)
                 || !context.isValid(DeferredResource.FROXEL_MEDIA_PROPERTIES)) {
@@ -827,9 +831,8 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
         return Math.floorMod(value, 65536);
     }
 
-    private static boolean isVulkan(DeferredPassContext context) {
-        String backendName = context.rhi().capabilities().backendName();
-        return backendName != null && backendName.toLowerCase(java.util.Locale.ROOT).contains("vulkan");
+    private static boolean zeroToOneDepth(DeferredPassContext context) {
+        return context.rhi().capabilities().zeroToOneDepth();
     }
 
     private static int groups(int extent, int localSize) {

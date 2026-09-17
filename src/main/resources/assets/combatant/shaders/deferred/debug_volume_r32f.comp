@@ -1,0 +1,28 @@
+#version 430 core
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(r32f, binding = 0) readonly uniform image3D u_Source;
+layout(rgba16f, binding = 1) writeonly uniform image2D u_Output;
+layout(std430, binding = 2) readonly buffer DebugParams { vec4 decode; vec4 aux; } u_Params;
+
+ivec3 sourceCoordinate(vec2 uv, ivec3 size, int axis, float slice) {
+    ivec3 maxCoord = max(size - 1, ivec3(0));
+    int sx = int(round(clamp(slice, 0.0, 1.0) * float(maxCoord.x)));
+    int sy = int(round(clamp(slice, 0.0, 1.0) * float(maxCoord.y)));
+    int sz = int(round(clamp(slice, 0.0, 1.0) * float(maxCoord.z)));
+    int ux = int(clamp(uv.x, 0.0, 0.999999) * float(size.x));
+    int uy = int(clamp(1.0 - uv.y, 0.0, 0.999999) * float(size.y));
+    int uz = int(clamp(uv.x, 0.0, 0.999999) * float(size.z));
+    int vz = int(clamp(1.0 - uv.y, 0.0, 0.999999) * float(size.z));
+    if (axis == 0) return clamp(ivec3(sx, uy, uz), ivec3(0), maxCoord);
+    if (axis == 1) return clamp(ivec3(ux, sy, vz), ivec3(0), maxCoord);
+    return clamp(ivec3(ux, uy, sz), ivec3(0), maxCoord);
+}
+void main() {
+    ivec2 outSize = imageSize(u_Output);
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pixel, outSize))) return;
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(outSize);
+    int axis = clamp(int(u_Params.decode.z + 0.5), 0, 2);
+    float value = imageLoad(u_Source, sourceCoordinate(uv, imageSize(u_Source), axis, u_Params.decode.w)).r;
+    imageStore(u_Output, pixel, vec4(vec3(clamp(value, 0.0, 1.0)), 1.0));
+}

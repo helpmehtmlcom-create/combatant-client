@@ -112,7 +112,8 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
                         group.historyRadiance(), group.historyDepth(), group.historyConfidence())
                 .write(group.temporalRadiance(), group.temporalDepth(), group.temporalConfidence())
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.isValid(group.rawRadiance())
+                .when(context -> DeferredSmokeTestState.global().cloudWorkEnabledForFrame()
+                        && context.isValid(group.rawRadiance())
                         && context.isValid(group.rawDepth())
                         && context.isValid(group.reprojection())
                         && context.primaryView().current() != null)
@@ -123,7 +124,8 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
                 .read(group.temporalRadiance(), group.temporalDepth(), group.temporalConfidence(), group.reprojection())
                 .write(group.historyRadiance(), group.historyDepth(), group.historyConfidence())
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.isValid(group.temporalRadiance())
+                .when(context -> DeferredSmokeTestState.global().cloudWorkEnabledForFrame()
+                        && context.isValid(group.temporalRadiance())
                         && context.isValid(group.temporalDepth())
                         && context.isValid(group.temporalConfidence())
                         && context.isValid(group.reprojection()))
@@ -182,7 +184,7 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
                 .putMat4(0, "previousProjection", previous == null ? current.projection() : previous.projection())
                 .putVec4(0, "cameraDelta", (float) cameraDelta.x, (float) cameraDelta.y, (float) cameraDelta.z, 0.0f)
                 .putVec4(0, "timing", deltaSeconds, 0.0f, 0.0f, 0.0f)
-                .putVec4(0, "policy", isVulkan(context) ? 1.0f : 0.0f, historyValid ? 1.0f : 0.0f,
+                .putVec4(0, "policy", zeroToOneDepth(context) ? 1.0f : 0.0f, historyValid ? 1.0f : 0.0f,
                         config.temporalHistoryWeight(), config.temporalDepthThresholdFraction())
                 .putVec4(0, "thresholds", config.temporalMinDepthThresholdBlocks(), 0.20f, 0.10f, 0.04f);
         RhiStorageBuffer buffer = data();
@@ -291,9 +293,8 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
         return value;
     }
 
-    private static boolean isVulkan(DeferredPassContext context) {
-        String backendName = context.rhi().capabilities().backendName();
-        return backendName != null && backendName.toLowerCase(java.util.Locale.ROOT).contains("vulkan");
+    private static boolean zeroToOneDepth(DeferredPassContext context) {
+        return context.rhi().capabilities().zeroToOneDepth();
     }
 
     private static void close(AutoCloseable value) {

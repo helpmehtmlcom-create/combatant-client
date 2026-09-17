@@ -124,7 +124,8 @@ final class DeferredCloudSource implements AutoCloseable {
                 .read(DeferredResource.RESOLVED_DEPTH, DeferredResource.SKY_DIFFUSE_SH, DeferredResource.CLOUD_OCCUPANCY)
                 .write(group.radiance(), group.depth(), group.reprojection())
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.primaryView().current() != null
+                .when(context -> DeferredSmokeTestState.global().cloudWorkEnabledForFrame()
+                        && context.primaryView().current() != null
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
                         && context.isValid(DeferredResource.SKY_DIFFUSE_SH)
                         && context.isValid(DeferredResource.CLOUD_OCCUPANCY))
@@ -220,7 +221,7 @@ final class DeferredCloudSource implements AutoCloseable {
                 .putVec4(0, "macroOrigin", macroOriginX, macroOriginZ, 0.0f, 0.0f)
                 .putVec4(0, "counts", cloudField.domainCount(),
                         cloudField.active() ? profile.maxRayDistanceBlocks() : 0.0f,
-                        isVulkan(context) ? 1.0f : 0.0f,
+                        zeroToOneDepth(context) ? 1.0f : 0.0f,
                         cloudField.active() ? 1.0f : 0.0f)
                 .putVec4(0, "quality", config.primarySteps(), config.lightSteps(),
                         config.maxPrimaryStepBlocks(), framePhase(context.frame().frameId()))
@@ -283,9 +284,8 @@ final class DeferredCloudSource implements AutoCloseable {
         return Math.floorMod(value, 65536);
     }
 
-    private static boolean isVulkan(DeferredPassContext context) {
-        String backendName = context.rhi().capabilities().backendName();
-        return backendName != null && backendName.toLowerCase(java.util.Locale.ROOT).contains("vulkan");
+    private static boolean zeroToOneDepth(DeferredPassContext context) {
+        return context.rhi().capabilities().zeroToOneDepth();
     }
 
     private static RhiStorageVolume requireVolume(DeferredPassContext context, DeferredResource resource) {

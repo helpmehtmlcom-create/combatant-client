@@ -43,7 +43,6 @@ import java.util.Map;
 import static org.lwjgl.util.shaderc.Shaderc.*;
 import static org.lwjgl.vulkan.KHRDynamicRendering.vkCmdBeginRenderingKHR;
 import static org.lwjgl.vulkan.KHRDynamicRendering.vkCmdEndRenderingKHR;
-import static org.lwjgl.vulkan.KHRSynchronization2.*;
 import static org.lwjgl.vulkan.VK12.*;
 
 /**
@@ -435,34 +434,35 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
         requireOpen();
         if (barrier == null) throw new IllegalArgumentException("barrier");
         VkCommandBuffer commandBuffer = commandBuffer(currentEncoder());
+        int srcStage = stageMask(barrier.sourceStage());
+        int dstStage = stageMask(barrier.destinationStage());
+        int srcAccess = accessMask(barrier.sourceStage(), barrier.sourceAccess());
+        int dstAccess = accessMask(barrier.destinationStage(), barrier.destinationAccess());
 
         try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkDependencyInfo dependency = VkDependencyInfo.calloc(stack).sType$Default();
-
+            VkBufferMemoryBarrier.Buffer buffers = null;
             if (!barrier.buffers().isEmpty()) {
-                VkBufferMemoryBarrier2.Buffer buffers = VkBufferMemoryBarrier2.calloc(barrier.buffers().size(), stack);
+                buffers = VkBufferMemoryBarrier.calloc(barrier.buffers().size(), stack);
                 for (int i = 0; i < barrier.buffers().size(); i++) {
                     RhiStorageBuffer rhiBuffer = barrier.buffers().get(i);
                     if (!(rhiBuffer instanceof VulkanStorageBuffer buffer)) {
                         throw new IllegalArgumentException("Barrier buffer does not belong to the active Vulkan backend");
                     }
                     buffers.get(i).sType$Default()
-                            .srcStageMask(stageMask(barrier.sourceStage()))
-                            .srcAccessMask(accessMask(barrier.sourceStage(), barrier.sourceAccess()))
-                            .dstStageMask(stageMask(barrier.destinationStage()))
-                            .dstAccessMask(accessMask(barrier.destinationStage(), barrier.destinationAccess()))
+                            .srcAccessMask(srcAccess)
+                            .dstAccessMask(dstAccess)
                             .srcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
                             .dstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
                             .buffer(buffer.vkBuffer())
                             .offset(0L)
                             .size(VK_WHOLE_SIZE);
                 }
-                dependency.pBufferMemoryBarriers(buffers);
             }
 
+            VkImageMemoryBarrier.Buffer images = null;
             int imageBarrierCount = barrier.images().size() + barrier.volumes().size();
             if (imageBarrierCount > 0) {
-                VkImageMemoryBarrier2.Buffer images = VkImageMemoryBarrier2.calloc(imageBarrierCount, stack);
+                images = VkImageMemoryBarrier.calloc(imageBarrierCount, stack);
                 int imageIndex = 0;
                 for (RhiStorageImage rhiImage : barrier.images()) {
                     if (!(rhiImage.view() instanceof VulkanGpuTextureView view) || view.isClosed()) {
@@ -472,61 +472,56 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
                     if (texture == null || texture.isClosed()) {
                         throw new IllegalArgumentException("Barrier image texture is closed");
                     }
-                    VkImageMemoryBarrier2 imageBarrier = images.get(imageIndex++);
+                    VkImageMemoryBarrier imageBarrier = images.get(imageIndex++);
+                    imageBarrier.sType$Default()
+                            .srcAccessMask(srcAccess)
+                            .dstAccessMask(dstAccess)
+                            .oldLayout(VK_IMAGE_LAYOUT_GENERAL)
+                            .newLayout(VK_IMAGE_LAYOUT_GENERAL)
+                            .srcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                            .dstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                            .image(texture.vkImage());
                     imageBarrier.subresourceRange()
                             .aspectMask(VK_IMAGE_ASPECT_COLOR_BIT)
                             .baseMipLevel(0)
                             .levelCount(rhiImage.descriptor().mipLevels())
                             .baseArrayLayer(0)
                             .layerCount(1);
-                    imageBarrier.sType$Default()
-                            .srcStageMask(stageMask(barrier.sourceStage()))
-                            .srcAccessMask(accessMask(barrier.sourceStage(), barrier.sourceAccess()))
-                            .dstStageMask(stageMask(barrier.destinationStage()))
-                            .dstAccessMask(accessMask(barrier.destinationStage(), barrier.destinationAccess()))
-                            .oldLayout(VK_IMAGE_LAYOUT_GENERAL)
-                            .newLayout(VK_IMAGE_LAYOUT_GENERAL)
-                            .srcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                            .dstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                            .image(texture.vkImage());
                 }
                 for (RhiStorageVolume rhiVolume : barrier.volumes()) {
                     if (!(rhiVolume instanceof VulkanStorageVolume volume)) {
                         throw new IllegalArgumentException("Barrier volume does not belong to the active Vulkan backend");
                     }
                     volume.ensureGeneralLayout(commandBuffer);
-                    VkImageMemoryBarrier2 imageBarrier = images.get(imageIndex++);
+                    VkImageMemoryBarrier imageBarrier = images.get(imageIndex++);
+                    imageBarrier.sType$Default()
+                            .srcAccessMask(srcAccess)
+                            .dstAccessMask(dstAccess)
+                            .oldLayout(VK_IMAGE_LAYOUT_GENERAL)
+                            .newLayout(VK_IMAGE_LAYOUT_GENERAL)
+                            .srcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                            .dstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                            .image(volume.image());
                     imageBarrier.subresourceRange()
                             .aspectMask(VK_IMAGE_ASPECT_COLOR_BIT)
                             .baseMipLevel(0)
                             .levelCount(volume.descriptor().mipLevels())
                             .baseArrayLayer(0)
                             .layerCount(1);
-                    imageBarrier.sType$Default()
-                            .srcStageMask(stageMask(barrier.sourceStage()))
-                            .srcAccessMask(accessMask(barrier.sourceStage(), barrier.sourceAccess()))
-                            .dstStageMask(stageMask(barrier.destinationStage()))
-                            .dstAccessMask(accessMask(barrier.destinationStage(), barrier.destinationAccess()))
-                            .oldLayout(VK_IMAGE_LAYOUT_GENERAL)
-                            .newLayout(VK_IMAGE_LAYOUT_GENERAL)
-                            .srcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                            .dstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                            .image(volume.image());
                 }
-                dependency.pImageMemoryBarriers(images);
             }
 
+            VkMemoryBarrier.Buffer memory = null;
             if (barrier.buffers().isEmpty() && barrier.images().isEmpty() && barrier.volumes().isEmpty()) {
-                VkMemoryBarrier2.Buffer memory = VkMemoryBarrier2.calloc(1, stack);
+                memory = VkMemoryBarrier.calloc(1, stack);
                 memory.get(0).sType$Default()
-                        .srcStageMask(stageMask(barrier.sourceStage()))
-                        .srcAccessMask(accessMask(barrier.sourceStage(), barrier.sourceAccess()))
-                        .dstStageMask(stageMask(barrier.destinationStage()))
-                        .dstAccessMask(accessMask(barrier.destinationStage(), barrier.destinationAccess()));
-                dependency.pMemoryBarriers(memory);
+                        .srcAccessMask(srcAccess)
+                        .dstAccessMask(dstAccess);
             }
 
-            vkCmdPipelineBarrier2KHR(commandBuffer, dependency);
+            // Core Vulkan 1.0 barrier lowering is sufficient for Combatant's current dependency model
+            // and avoids making VK_KHR_synchronization2 an undeclared device requirement.
+            vkCmdPipelineBarrier(commandBuffer, srcStage, dstStage, 0, memory, buffers, images);
             stats.advancedShaderBarrier();
         }
     }
@@ -1166,37 +1161,36 @@ final class VulkanAdvancedShaderBackend implements AdvancedShaderBackend {
         }
     }
 
-    private static long stageMask(RhiResourceBarrier.Stage stage) {
+    private static int stageMask(RhiResourceBarrier.Stage stage) {
         return switch (stage) {
-            case COMPUTE -> VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR;
-            case GRAPHICS -> VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT_KHR;
-            case INDIRECT -> VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT_KHR;
-            case TRANSFER -> VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
-            case ALL -> VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR;
+            case COMPUTE -> VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            case GRAPHICS -> VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;
+            case INDIRECT -> VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
+            case TRANSFER -> VK_PIPELINE_STAGE_TRANSFER_BIT;
+            case ALL -> VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
         };
     }
 
-    private static long accessMask(RhiResourceBarrier.Stage stage, RhiResourceBarrier.Access access) {
-        if (stage == RhiResourceBarrier.Stage.INDIRECT) return VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT_KHR;
+    private static int accessMask(RhiResourceBarrier.Stage stage, RhiResourceBarrier.Access access) {
+        if (stage == RhiResourceBarrier.Stage.INDIRECT) return VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
         if (stage == RhiResourceBarrier.Stage.ALL) {
             return switch (access) {
-                case READ -> VK_ACCESS_2_MEMORY_READ_BIT_KHR;
-                case WRITE -> VK_ACCESS_2_MEMORY_WRITE_BIT_KHR;
-                case READ_WRITE -> VK_ACCESS_2_MEMORY_READ_BIT_KHR | VK_ACCESS_2_MEMORY_WRITE_BIT_KHR;
+                case READ -> VK_ACCESS_MEMORY_READ_BIT;
+                case WRITE -> VK_ACCESS_MEMORY_WRITE_BIT;
+                case READ_WRITE -> VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
             };
         }
         if (stage == RhiResourceBarrier.Stage.TRANSFER) {
             return switch (access) {
-                case READ -> VK_ACCESS_2_TRANSFER_READ_BIT_KHR;
-                case WRITE -> VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR;
-                case READ_WRITE -> VK_ACCESS_2_TRANSFER_READ_BIT_KHR | VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR;
+                case READ -> VK_ACCESS_TRANSFER_READ_BIT;
+                case WRITE -> VK_ACCESS_TRANSFER_WRITE_BIT;
+                case READ_WRITE -> VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
             };
         }
         return switch (access) {
-            case READ -> VK_ACCESS_2_SHADER_STORAGE_READ_BIT_KHR | VK_ACCESS_2_SHADER_SAMPLED_READ_BIT_KHR;
-            case WRITE -> VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT_KHR;
-            case READ_WRITE -> VK_ACCESS_2_SHADER_STORAGE_READ_BIT_KHR | VK_ACCESS_2_SHADER_SAMPLED_READ_BIT_KHR
-                    | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT_KHR;
+            case READ -> VK_ACCESS_SHADER_READ_BIT;
+            case WRITE -> VK_ACCESS_SHADER_WRITE_BIT;
+            case READ_WRITE -> VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
         };
     }
 

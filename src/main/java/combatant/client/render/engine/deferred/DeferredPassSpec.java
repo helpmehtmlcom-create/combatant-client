@@ -28,6 +28,7 @@ public record DeferredPassSpec(
         FrameGraphExecutionDomain executionDomain,
         Set<RhiShaderStage> requiredShaderStages,
         Set<DeferredResource> optionalReads,
+        DeferredFeature feature,
         boolean externallyDriven,
         DeferredPassCondition condition,
         DeferredPassExecutor executor
@@ -71,6 +72,7 @@ public record DeferredPassSpec(
         private final EnumSet<DeferredResource> requiredReads = EnumSet.noneOf(DeferredResource.class);
         private FrameGraphExecutionDomain executionDomain;
         private int priority;
+        private DeferredFeature feature;
         private boolean externallyDriven;
         private DeferredPassCondition condition = DeferredPassCondition.ALWAYS;
         private DeferredPassExecutor executor;
@@ -118,6 +120,11 @@ public record DeferredPassSpec(
             return this;
         }
 
+        public Builder feature(DeferredFeature feature) {
+            this.feature = feature;
+            return this;
+        }
+
         public Builder external() {
             externallyDriven = true;
             executor = null;
@@ -147,7 +154,7 @@ public record DeferredPassSpec(
                     : (requiredStages.contains(RhiShaderStage.COMPUTE)
                     ? FrameGraphExecutionDomain.COMPUTE : FrameGraphExecutionDomain.GRAPHICS);
             return new DeferredPassSpec(
-                    id, stage, priority, uses, domain, requiredStages, optionalReads, externallyDriven, condition, executor
+                    id, stage, priority, uses, domain, requiredStages, optionalReads, feature, externallyDriven, condition, executor
             );
         }
 

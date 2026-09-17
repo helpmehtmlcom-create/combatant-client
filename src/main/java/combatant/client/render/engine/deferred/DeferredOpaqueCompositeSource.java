@@ -118,9 +118,9 @@ final class DeferredOpaqueCompositeSource implements AutoCloseable {
         passes.add(DeferredPassSpec.builder("world.reflection.composite", DeferredStage.REFLECTION_COMPOSITE)
                 .read(DeferredResource.LIGHTING_COLOR, DeferredResource.GBUFFER_SURFACE,
                         DeferredResource.GBUFFER_GEOMETRY, DeferredResource.GBUFFER_MATERIAL,
-                        DeferredResource.RESOLVED_DEPTH, DeferredResource.GBUFFER_DEPTH,
+                        DeferredResource.RESOLVED_DEPTH, DeferredResource.GBUFFER_DEPTH)
+                .optionalRead(DeferredResource.REFLECTION_COLOR, DeferredResource.REFLECTION_CONFIDENCE,
                         DeferredResource.SKY_SPECULAR_RADIANCE, DeferredResource.SKY_ENVIRONMENT_STATE)
-                .optionalRead(DeferredResource.REFLECTION_COLOR, DeferredResource.REFLECTION_CONFIDENCE)
                 .write(DeferredResource.OPAQUE_REFLECTED_RADIANCE)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.isValid(DeferredResource.LIGHTING_COLOR))
@@ -162,7 +162,7 @@ final class DeferredOpaqueCompositeSource implements AutoCloseable {
         GpuTextureView base = requireTexture(context, DeferredResource.OPAQUE_BASE_RADIANCE);
         GpuTextureView surface = requireTexture(context, DeferredResource.GBUFFER_SURFACE);
         GpuTextureView material = requireTexture(context, DeferredResource.GBUFFER_MATERIAL);
-        boolean hasIndirect = context.settings().indirectLightEnabled()
+        boolean hasIndirect = context.featureEnabled(DeferredFeature.INDIRECT_LIGHT)
                 && context.isValid(DeferredResource.INDIRECT_LIGHT)
                 && context.isValid(DeferredResource.INDIRECT_CONFIDENCE);
         boolean hasAo = context.isValid(DeferredResource.AMBIENT_OCCLUSION);
@@ -213,7 +213,7 @@ final class DeferredOpaqueCompositeSource implements AutoCloseable {
         GpuTextureView material = requireTexture(context, DeferredResource.GBUFFER_MATERIAL);
         GpuTextureView depth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
         GpuTextureView gbufferDepth = requireTexture(context, DeferredResource.GBUFFER_DEPTH);
-        boolean hasReflection = context.settings().reflectionsEnabled()
+        boolean hasReflection = context.featureEnabled(DeferredFeature.REFLECTIONS)
                 && context.isValid(DeferredResource.REFLECTION_COLOR)
                 && context.isValid(DeferredResource.REFLECTION_CONFIDENCE);
         GpuTextureView reflection = hasReflection
@@ -229,7 +229,7 @@ final class DeferredOpaqueCompositeSource implements AutoCloseable {
         RhiStorageBuffer skyState = hasSkyResources
                 ? requireBuffer(context, DeferredResource.SKY_ENVIRONMENT_STATE) : fallbackSkyState();
         RhiStorageImage output = requireImage(context, DeferredResource.OPAQUE_REFLECTED_RADIANCE);
-        boolean zeroToOne = isVulkan(context);
+        boolean zeroToOne = zeroToOneDepth(context);
 
         Std430Writer writer = new Std430Writer(REFLECTION_DATA_LAYOUT, 1)
                 .putMat4(0, "inverseProjection", current.inverseProjection())
@@ -402,9 +402,8 @@ final class DeferredOpaqueCompositeSource implements AutoCloseable {
         return value;
     }
 
-    private static boolean isVulkan(DeferredPassContext context) {
-        String backendName = context.rhi().capabilities().backendName();
-        return backendName != null && backendName.toLowerCase(Locale.ROOT).contains("vulkan");
+    private static boolean zeroToOneDepth(DeferredPassContext context) {
+        return context.rhi().capabilities().zeroToOneDepth();
     }
 
     private static int groups(int extent) {

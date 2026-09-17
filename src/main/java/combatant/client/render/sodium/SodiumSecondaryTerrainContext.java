@@ -35,6 +35,13 @@ public final class SodiumSecondaryTerrainContext {
     }
 
     private static final ThreadLocal<State> CURRENT = new ThreadLocal<>();
+    /**
+     * Sodium owns one terrain-uniform transaction for the whole Minecraft frame. Any Combatant
+     * secondary draw temporarily replaces that logical owner, so the next primary draw must
+     * explicitly re-arm UniformBufferManager before its normal update() call.
+     */
+    private static final ThreadLocal<Boolean> PRIMARY_UNIFORMS_DIRTY =
+            ThreadLocal.withInitial(() -> Boolean.FALSE);
 
     private SodiumSecondaryTerrainContext() {
     }
@@ -52,11 +59,8 @@ public final class SodiumSecondaryTerrainContext {
         if (view == null) throw new IllegalArgumentException("view");
         if (target == null) throw new IllegalArgumentException("target");
         if (action == null) throw new IllegalArgumentException("action");
-        if (CURRENT.get() != null) {
-            throw new IllegalStateException("Nested Sodium secondary terrain render is not supported");
-        }
-
-        State state = new State(purpose, view, target);
+        State parent = CURRENT.get();
+        State state = new State(purpose, view, target, parent);
         CURRENT.set(state);
         try {
             action.run();
@@ -64,7 +68,11 @@ public final class SodiumSecondaryTerrainContext {
             try {
                 state.releaseCachedBatches();
             } finally {
-                CURRENT.remove();
+                if (parent != null) {
+                    CURRENT.set(parent);
+                } else {
+                    CURRENT.remove();
+                }
             }
         }
     }
@@ -74,16 +82,35 @@ public final class SodiumSecondaryTerrainContext {
         run(Purpose.SHADOW_DEPTH, view, target, action);
     }
 
+    /** True when a secondary terrain draw has invalidated Sodium's currently uploaded primary matrices. */
+    public static boolean primaryUniformsDirty() {
+        return PRIMARY_UNIFORMS_DIRTY.get();
+    }
+
+    /**
+     * Completes a primary UniformBufferManager.update() transaction.
+     *
+     * <p>The dirty bit is cleared only after a re-armed update returned normally. If the update
+     * throws, the next primary draw retries the restoration instead of assuming ownership was
+     * restored.</p>
+     */
+    public static void finishPrimaryUniformUpdate(boolean reloaded, boolean success) {
+        if (reloaded && success) PRIMARY_UNIFORMS_DIRTY.set(Boolean.FALSE);
+    }
+
     public static final class State {
         private final Purpose purpose;
         private final DeferredSecondaryView view;
         private final TextureTarget target;
+        private final State parent;
         private SortedRenderLists renderLists;
+        private boolean uniformsCurrent;
 
-        private State(Purpose purpose, DeferredSecondaryView view, TextureTarget target) {
+        private State(Purpose purpose, DeferredSecondaryView view, TextureTarget target, State parent) {
             this.purpose = purpose;
             this.view = view;
             this.target = target;
+            this.parent = parent;
         }
 
         public Purpose purpose() {
@@ -92,6 +119,30 @@ public final class SodiumSecondaryTerrainContext {
 
         public DeferredSecondaryView view() {
             return view;
+        }
+
+        /**
+         * Begins ownership of Sodium's global terrain-uniform slice for this secondary view.
+         *
+         * <p>Only the first draw after entering/re-entering this view needs prepareFrame(); later
+         * layers of the same view (for example CUTOUT after SOLID) reuse the same immutable slice.
+         * A nested secondary view invalidates its parent, and every actual secondary acquisition
+         * invalidates primary ownership.</p>
+         */
+        public boolean beginTerrainUniformUpdate() {
+            if (uniformsCurrent) return false;
+            if (parent != null) parent.uniformsCurrent = false;
+            PRIMARY_UNIFORMS_DIRTY.set(Boolean.TRUE);
+            return true;
+        }
+
+        /** Marks this view current only after UniformBufferManager.update() completed normally. */
+        public void finishTerrainUniformUpdate(boolean reloaded, boolean success) {
+            if (reloaded) {
+                uniformsCurrent = success;
+            } else if (!success) {
+                uniformsCurrent = false;
+            }
         }
 
         public SortedRenderLists renderLists(RenderSectionManager manager) {

@@ -64,11 +64,12 @@ final class DeferredAmbientOcclusionSource implements AutoCloseable {
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.ambient-occlusion", DeferredStage.AMBIENT_OCCLUSION)
+                .feature(DeferredFeature.GTAO)
                 .read(DeferredResource.RESOLVED_DEPTH, DeferredResource.DEPTH_PYRAMID,
                         DeferredResource.GBUFFER_GEOMETRY, DeferredResource.GBUFFER_DEPTH)
                 .write(DeferredResource.AMBIENT_OCCLUSION, DeferredResource.AMBIENT_BENT_NORMAL)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.settings().ambientOcclusionEnabled()
+                .when(context -> context.featureEnabled(DeferredFeature.GTAO)
                         && context.primaryView().current() != null
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
                         && context.isValid(DeferredResource.DEPTH_PYRAMID)
@@ -102,7 +103,7 @@ final class DeferredAmbientOcclusionSource implements AutoCloseable {
         RhiStorageImage visibility = requireImage(context, DeferredResource.AMBIENT_OCCLUSION);
         RhiStorageImage bentNormal = requireImage(context, DeferredResource.AMBIENT_BENT_NORMAL);
         DeferredRuntimeConfig.Snapshot settings = context.settings();
-        boolean zeroToOne = isVulkan(context);
+        boolean zeroToOne = zeroToOneDepth(context);
 
         Std430Writer writer = new Std430Writer(DATA_LAYOUT, 1)
                 .putMat4(0, "inverseProjection", current.inverseProjection())
@@ -196,9 +197,8 @@ final class DeferredAmbientOcclusionSource implements AutoCloseable {
         return value;
     }
 
-    private static boolean isVulkan(DeferredPassContext context) {
-        String backendName = context.rhi().capabilities().backendName();
-        return backendName != null && backendName.toLowerCase(Locale.ROOT).contains("vulkan");
+    private static boolean zeroToOneDepth(DeferredPassContext context) {
+        return context.rhi().capabilities().zeroToOneDepth();
     }
 
     private static int groups(int extent) {

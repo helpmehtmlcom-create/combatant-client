@@ -1,0 +1,24 @@
+#version 430 core
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(binding = 0) uniform usampler2D u_Source;
+layout(rgba16f, binding = 1) writeonly uniform image2D u_Output;
+layout(std430, binding = 2) readonly buffer DebugParams { vec4 decode; vec4 aux; } u_Params;
+
+vec3 idColor(uint id) {
+    if (id == 0u) return vec3(0.0);
+    uint x = id * 1664525u + 1013904223u;
+    x ^= x >> 16u;
+    uint y = x * 2246822519u + 3266489917u;
+    uint z = y * 668265263u + 374761393u;
+    return vec3(float(x & 255u), float(y & 255u), float(z & 255u)) / 255.0;
+}
+void main() {
+    ivec2 outSize = imageSize(u_Output);
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pixel, outSize))) return;
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(outSize);
+    ivec2 sourceSize = textureSize(u_Source, 0);
+    ivec2 sourcePixel = clamp(ivec2(uv * vec2(sourceSize)), ivec2(0), sourceSize - 1);
+    uint id = texelFetch(u_Source, sourcePixel, 0).r;
+    imageStore(u_Output, pixel, vec4(idColor(id), 1.0));
+}

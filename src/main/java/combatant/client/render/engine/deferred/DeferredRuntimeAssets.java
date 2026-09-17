@@ -7,6 +7,7 @@
 
 package combatant.client.render.engine.deferred;
 
+import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.shaders.UniformType;
 import com.mojang.blaze3d.systems.GpuDevice;
@@ -140,6 +141,9 @@ public enum DeferredRuntimeAssets {
                     .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
                     .withDepthWrite(false)
                     .withoutBlend()
+                    // DIRECT_LIGHTING_COLOR is an HDR graph-owned target; the graphics pipeline
+                    // must declare the same attachment format instead of inheriting RGBA8_UNORM.
+                    .withColorTarget(0, GpuFormat.RGBA16_FLOAT)
                     .withCull(false)
                     .build();
             RenderPipelineRegistry.global().registerNative(terrainLighting);

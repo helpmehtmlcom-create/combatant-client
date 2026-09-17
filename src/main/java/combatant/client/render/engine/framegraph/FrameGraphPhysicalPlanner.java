@@ -19,6 +19,16 @@ public final class FrameGraphPhysicalPlanner {
 
     public static FrameGraphPhysicalPlan plan(List<FrameGraphPassContract> passes,
                                               Map<FrameGraphResourceKey, FrameGraphResourceDeclaration> declarations) {
+        return plan(passes, declarations, true);
+    }
+
+    /**
+     * Builds a physical allocation plan. Callers may disable transient aliasing while bringing up
+     * a renderer integration; logical lifetime/validity semantics remain unchanged.
+     */
+    public static FrameGraphPhysicalPlan plan(List<FrameGraphPassContract> passes,
+                                              Map<FrameGraphResourceKey, FrameGraphResourceDeclaration> declarations,
+                                              boolean allowTransientAliasing) {
         if (passes == null || passes.isEmpty()) return FrameGraphPhysicalPlan.EMPTY;
         Map<FrameGraphResourceKey, FrameGraphResourceDeclaration> declared = declarations == null ? Map.of() : declarations;
         LinkedHashMap<FrameGraphResourceKey, MutableLogical> logical = new LinkedHashMap<>();
@@ -63,12 +73,14 @@ public final class FrameGraphPhysicalPlanner {
         int nextAliasGroup = 0;
         for (MutableLogical state : transientResources) {
             MutablePhysical chosen = null;
-            for (MutablePhysical candidate : physical) {
-                if (candidate.lifetime != FrameGraphResourceLifetime.TRANSIENT) continue;
-                if (candidate.lastUse >= state.firstUse) continue;
-                if (!candidate.descriptor.aliasCompatible(state.descriptor)) continue;
-                chosen = candidate;
-                break;
+            if (allowTransientAliasing) {
+                for (MutablePhysical candidate : physical) {
+                    if (candidate.lifetime != FrameGraphResourceLifetime.TRANSIENT) continue;
+                    if (candidate.lastUse >= state.firstUse) continue;
+                    if (!candidate.descriptor.aliasCompatible(state.descriptor)) continue;
+                    chosen = candidate;
+                    break;
+                }
             }
             if (chosen == null) {
                 chosen = new MutablePhysical(nextId++, nextAliasGroup++, FrameGraphResourceLifetime.TRANSIENT,

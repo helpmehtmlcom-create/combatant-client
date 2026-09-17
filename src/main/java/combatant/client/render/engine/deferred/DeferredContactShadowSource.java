@@ -66,12 +66,12 @@ final class DeferredContactShadowSource implements AutoCloseable {
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.shadow.contact", DeferredStage.CONTACT_SHADOW)
+                .feature(DeferredFeature.CONTACT_SHADOWS)
                 .read(DeferredResource.RESOLVED_DEPTH, DeferredResource.DEPTH_PYRAMID,
                         DeferredResource.GBUFFER_GEOMETRY)
                 .write(DeferredResource.CONTACT_SHADOW)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.settings().shadowsEnabled()
-                        && context.settings().contactShadowsEnabled()
+                .when(context -> context.featureEnabled(DeferredFeature.CONTACT_SHADOWS)
                         && context.primaryView().current() != null
                         && context.worldState().directionalLight().shadowValid()
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
@@ -107,7 +107,7 @@ final class DeferredContactShadowSource implements AutoCloseable {
         Vector3f worldLight = directional.direction(new Vector3f());
         Vector3f viewLight = transformDirection(current.view(), worldLight, new Vector3f()).normalize();
         DeferredRuntimeConfig.Snapshot settings = context.settings();
-        boolean zeroToOne = isVulkan(context);
+        boolean zeroToOne = zeroToOneDepth(context);
         Std430Writer writer = new Std430Writer(DATA_LAYOUT, 1)
                 .putMat4(0, "inverseProjection", current.inverseProjection())
                 .putMat4(0, "projection", current.projection())
@@ -212,9 +212,8 @@ final class DeferredContactShadowSource implements AutoCloseable {
         return value;
     }
 
-    private static boolean isVulkan(DeferredPassContext context) {
-        String backendName = context.rhi().capabilities().backendName();
-        return backendName != null && backendName.toLowerCase(Locale.ROOT).contains("vulkan");
+    private static boolean zeroToOneDepth(DeferredPassContext context) {
+        return context.rhi().capabilities().zeroToOneDepth();
     }
 
     private static int groups(int extent) {

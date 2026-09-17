@@ -90,11 +90,6 @@ public final class CombatantVulkanBackend implements CombatantRhi {
         return modelViewScratch.identity();
     }
 
-    private Matrix4f fullscreenModelView() {
-        return RenderState.rendering3D
-                ? modelViewScratch.set(RenderSystem.getModelViewStack())
-                : modelViewScratch.identity();
-    }
 
     private static void applyCameraPosY(Matrix4fStack stack) {
         Minecraft mc = Minecraft.getInstance();
@@ -333,9 +328,14 @@ public final class CombatantVulkanBackend implements CombatantRhi {
     public void drawFullscreen(FullscreenDrawCommand command) {
         try (RenderCostProfiler.Scope ignoredCost = RenderCostProfiler.rhiDraw(command.label)) {
             fullscreen.ensureInitialized();
+            // FullscreenDrawCommand is clip-space by contract. The persistent quad already spans
+            // [-1,+1] in XY, so inheriting the active world projection/model-view transforms the
+            // blit as if it were world geometry (shrinking/offsetting lighting, post and debug
+            // presentation). MeshData remains bound for legacy fullscreen vertex shaders, but its
+            // transforms must be identity; only the viewport payload is meaningful here.
             MeshUniforms.update(
-                    MeshRenderer.copyProjection(projectionScratch),
-                    fullscreenModelView(),
+                    projectionScratch.identity(),
+                    modelViewScratch.identity(),
                     command.colorAttachment != null ? command.colorAttachment.getWidth(0) : 1.0f,
                     command.colorAttachment != null ? command.colorAttachment.getHeight(0) : 1.0f
             );

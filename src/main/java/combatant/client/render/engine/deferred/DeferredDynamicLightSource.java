@@ -145,11 +145,13 @@ final class DeferredDynamicLightSource implements AutoCloseable {
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.local-light.collect", DeferredStage.SHADOW_PREPARE)
+                .feature(DeferredFeature.DYNAMIC_LIGHTS)
                 .priority(100)
                 .when(context -> context.primaryView().current() != null)
                 .execute(this::collectFrame)
                 .build());
         passes.add(DeferredPassSpec.builder("world.local-light.shadow-map", DeferredStage.SHADOW_MAP)
+                .feature(DeferredFeature.DYNAMIC_LIGHTS)
                 .priority(100)
                 .write(DeferredResource.LOCAL_LIGHT_SHADOW_DEPTH, DeferredResource.LOCAL_LIGHT_SHADOW_DATA)
                 .when(context -> context.primaryView().current() != null
@@ -158,6 +160,7 @@ final class DeferredDynamicLightSource implements AutoCloseable {
                 .execute(this::renderShadowAtlas)
                 .build());
         passes.add(DeferredPassSpec.builder("world.local-light.prepare", DeferredStage.POST_LIGHTING)
+                .feature(DeferredFeature.DYNAMIC_LIGHTS)
                 .priority(0)
                 .read(DeferredResource.LOCAL_LIGHT_SHADOW_DEPTH, DeferredResource.LOCAL_LIGHT_SHADOW_DATA)
                 .write(DeferredResource.LOCAL_LIGHT_DATA, DeferredResource.LOCAL_LIGHT_CULL_DATA)
@@ -166,6 +169,7 @@ final class DeferredDynamicLightSource implements AutoCloseable {
                 .execute(this::prepareFrame)
                 .build());
         passes.add(DeferredPassSpec.builder("world.local-light.cull", DeferredStage.POST_LIGHTING)
+                .feature(DeferredFeature.DYNAMIC_LIGHTS)
                 .priority(10)
                 .read(DeferredResource.LOCAL_LIGHT_DATA, DeferredResource.LOCAL_LIGHT_CULL_DATA)
                 .write(DeferredResource.LOCAL_LIGHT_TILE_COUNTS, DeferredResource.LOCAL_LIGHT_TILE_INDICES)
@@ -175,6 +179,7 @@ final class DeferredDynamicLightSource implements AutoCloseable {
                 .execute(this::cull)
                 .build());
         passes.add(DeferredPassSpec.builder("world.local-light.shade", DeferredStage.POST_LIGHTING)
+                .feature(DeferredFeature.DYNAMIC_LIGHTS)
                 .priority(20)
                 .read(DeferredResource.GBUFFER_SURFACE, DeferredResource.GBUFFER_GEOMETRY,
                         DeferredResource.GBUFFER_MATERIAL, DeferredResource.RESOLVED_DEPTH,
@@ -236,7 +241,7 @@ final class DeferredDynamicLightSource implements AutoCloseable {
 
     private void selectLocalShadowViews(DeferredPassContext context, Vec3 camera) {
         DeferredLocalShadowConfig config = DeferredLocalShadowConfig.current();
-        if (!config.enabled() || !context.settings().shadowsEnabled() || frameLights.isEmpty()) {
+        if (!config.enabled() || !context.featureEnabled(DeferredFeature.SHADOWS) || frameLights.isEmpty()) {
             shadowAllocations = Map.of();
             return;
         }
@@ -307,7 +312,8 @@ final class DeferredDynamicLightSource implements AutoCloseable {
             int viewportX = (slot % config.atlasColumns()) * config.faceResolution();
             int viewportY = (slot / config.atlasColumns()) * config.faceResolution();
             context.secondaryViews().register(buildShadowView(
-                    light, face, slot, config.faceResolution(), viewportX, viewportY, config.nearPlane()
+                    light, face, slot, config.faceResolution(), viewportX, viewportY, config.nearPlane(),
+                    context.rhi().capabilities().zeroToOneDepth()
             ));
         }
     }
@@ -318,7 +324,8 @@ final class DeferredDynamicLightSource implements AutoCloseable {
                                                           int resolution,
                                                           int viewportX,
                                                           int viewportY,
-                                                          float configuredNearPlane) {
+                                                          float configuredNearPlane,
+                                                          boolean zeroToOneDepth) {
         Vector3f direction;
         Vector3f up;
         float fov;
@@ -342,7 +349,9 @@ final class DeferredDynamicLightSource implements AutoCloseable {
         Matrix4f view = new Matrix4f().lookAt(new Vector3f(), new Vector3f(direction), up);
         // World rendering is reversed-Z; swapping geometric near/far keeps the shadow target in the
         // same GREATER/GEQUAL convention as the primary/deferred depth resources.
-        Matrix4f projection = new Matrix4f().setPerspective(fov, 1.0f, farPlane, nearPlane);
+        Matrix4f projection = new Matrix4f().setPerspective(
+                fov, 1.0f, farPlane, nearPlane, zeroToOneDepth
+        );
         Vec3 origin = new Vec3(light.x(), light.y(), light.z());
         return new DeferredSecondaryView(
                 DeferredViewFamily.LOCAL_LIGHT_SHADOW,
@@ -371,7 +380,7 @@ final class DeferredDynamicLightSource implements AutoCloseable {
         List<DeferredSecondaryView> views = context.secondaryViews().views(DeferredViewFamily.LOCAL_LIGHT_SHADOW);
         SodiumTerrainSubmission primarySubmission = CombatantRenderSystem.sodium().terrainInterop().currentSubmission();
         SodiumWorldRenderer renderer = SodiumWorldRenderer.instanceNullable();
-        boolean canRender = config.enabled() && context.settings().shadowsEnabled()
+        boolean canRender = config.enabled() && context.featureEnabled(DeferredFeature.SHADOWS)
                 && !views.isEmpty() && primarySubmission != null && renderer != null;
 
         int targetWidth = canRender ? config.atlasWidth() : (shadowAtlas != null ? shadowAtlasWidth : 1);
@@ -482,7 +491,7 @@ final class DeferredDynamicLightSource implements AutoCloseable {
         lightData.upload(lightWriter.buffer(), 0L);
 
         DeferredLocalShadowConfig shadowConfig = DeferredLocalShadowConfig.current();
-        boolean zeroToOne = isVulkan(context);
+        boolean zeroToOne = zeroToOneDepth(context);
         Std430Writer cullWriter = new Std430Writer(CULL_DATA_LAYOUT, 1)
                 .putMat4(0, "projection", view.projection())
                 .putMat4(0, "inverseProjection", view.inverseProjection())
@@ -729,9 +738,8 @@ final class DeferredDynamicLightSource implements AutoCloseable {
         return m00 > 1.0e-6f ? 1.0f / m00 : 1.0f;
     }
 
-    private static boolean isVulkan(DeferredPassContext context) {
-        String name = context.rhi().capabilities().backendName();
-        return name != null && name.toLowerCase(java.util.Locale.ROOT).contains("vulkan");
+    private static boolean zeroToOneDepth(DeferredPassContext context) {
+        return context.rhi().capabilities().zeroToOneDepth();
     }
 
     private static void close(AutoCloseable value) {

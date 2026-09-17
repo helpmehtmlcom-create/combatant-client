@@ -98,7 +98,8 @@ final class DeferredCloudOccupancySource implements AutoCloseable {
                 .priority(650)
                 .write(DeferredResource.CLOUD_OCCUPANCY)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.primaryView().current() != null)
+                .when(context -> DeferredSmokeTestState.global().cloudWorkEnabledForFrame()
+                        && context.primaryView().current() != null)
                 .execute(this::build)
                 .build());
     }

@@ -1,0 +1,17 @@
+#version 430 core
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(std430, binding = 0) readonly buffer ExposureHistogram { uint bins[]; } u_Histogram;
+layout(rgba16f, binding = 1) writeonly uniform image2D u_Output;
+layout(std430, binding = 2) readonly buffer DebugParams { vec4 decode; vec4 aux; } u_Params;
+void main() {
+    ivec2 outSize = imageSize(u_Output);
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pixel, outSize))) return;
+    int binCount = clamp(int(u_Params.aux.x + 0.5), 1, 256);
+    int index = clamp(int((float(pixel.x) + 0.5) / float(outSize.x) * float(binCount)), 0, binCount - 1);
+    float count = float(u_Histogram.bins[index]);
+    float height = clamp(log2(1.0 + count) / 16.0, 0.0, 1.0);
+    float y = 1.0 - (float(pixel.y) + 0.5) / float(outSize.y);
+    float bar = y <= height ? 1.0 : 0.035;
+    imageStore(u_Output, pixel, vec4(vec3(bar), 1.0));
+}

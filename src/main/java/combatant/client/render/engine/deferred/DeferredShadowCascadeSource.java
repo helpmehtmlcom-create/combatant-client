@@ -54,7 +54,10 @@ final class DeferredShadowCascadeSource {
         splits[cascadeCount] = farDistance;
 
         Matrix4f inverseView = primary.inverseView();
-        Matrix4f projection = primary.projection();
+        // CSM geometry must be invariant under TAA sample jitter. The primary scene may render
+        // with the jittered projection, but cascade splits/frustum corners are a stable world-space
+        // contract and therefore derive from the authoritative unjittered camera projection.
+        Matrix4f projection = primary.unjitteredProjection();
         Vector3f lightDirection = directional.direction(new Vector3f());
 
         int resolution = context.settings().shadowResolution();
@@ -81,7 +84,8 @@ final class DeferredShadowCascadeSource {
                     context.settings().shadowCasterDistance(),
                     resolution,
                     (cascade % columns) * resolution,
-                    (cascade / columns) * resolution
+                    (cascade / columns) * resolution,
+                    context.rhi().capabilities().zeroToOneDepth()
             );
             context.secondaryViews().register(view);
         }
@@ -99,7 +103,8 @@ final class DeferredShadowCascadeSource {
                                                        float casterDistance,
                                                        int resolution,
                                                        int viewportX,
-                                                       int viewportY) {
+                                                       int viewportY,
+                                                       boolean zeroToOneDepth) {
         Vector3f[] corners = frustumCorners(coverageNearDistance, coverageFarDistance, cameraProjection, inverseCameraView);
         Vector3f center = new Vector3f();
         for (Vector3f corner : corners) center.add(corner);
@@ -163,7 +168,7 @@ final class DeferredShadowCascadeSource {
         // ordinary ortho maps the geometric near plane to the low depth end, so swap the z planes
         // to keep shadow depth in the same convention as MAIN_DEPTH/Hi-Z on both backends.
         Matrix4f lightProjection = new Matrix4f().setOrtho(
-                minX, maxX, minY, maxY, lightFar, lightNear
+                minX, maxX, minY, maxY, lightFar, lightNear, zeroToOneDepth
         );
 
         return new DeferredSecondaryView(

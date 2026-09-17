@@ -9,17 +9,21 @@ package combatant.client.render.engine.deferred;
 
 import combatant.client.render.engine.world.DirectionalLightDescriptor;
 import combatant.client.render.engine.world.WorldRenderState;
+import combatant.client.render.engine.world.environment.AtmosphereModel;
+import combatant.client.render.engine.world.environment.AtmosphereModelRegistry;
 import combatant.client.render.engine.world.environment.AtmosphereState;
 import combatant.client.render.engine.world.environment.BiomeClimateSampler;
 import combatant.client.render.engine.world.environment.BiomeClimateState;
+import combatant.client.render.engine.world.environment.CelestialModel;
+import combatant.client.render.engine.world.environment.CelestialModelRegistry;
 import combatant.client.render.engine.world.environment.CelestialState;
 import combatant.client.render.engine.world.environment.DimensionRenderProfile;
 import combatant.client.render.engine.world.environment.DimensionRenderProfileRegistry;
-import combatant.client.render.engine.world.environment.OverworldAtmosphereModel;
-import combatant.client.render.engine.world.environment.OverworldCelestialModel;
+import combatant.client.render.engine.world.environment.EnvironmentCaptureContext;
 import combatant.client.render.engine.world.environment.WeatherProvider;
 import combatant.client.render.engine.world.environment.WeatherProviderRegistry;
 import combatant.client.render.engine.world.environment.WeatherState;
+import net.minecraft.client.Camera;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -40,6 +44,8 @@ final class DeferredWorldRenderStateSource {
             epoch++;
             biomeClimate.reset();
             WeatherProviderRegistry.resetAll();
+            AtmosphereModelRegistry.resetAll();
+            CelestialModelRegistry.resetAll();
         }
         if (level == null) {
             current = WorldRenderState.unknown(epoch);
@@ -53,12 +59,6 @@ final class DeferredWorldRenderStateSource {
         long frameId = view != null ? view.frameId() : Long.MIN_VALUE;
 
         BiomeClimateState climate = biomeClimate.capture(level, camera);
-        AtmosphereState atmosphere = DimensionRenderProfileRegistry.OVERWORLD_ENVIRONMENT.equals(profile.environmentModel())
-                ? OverworldAtmosphereModel.capture()
-                : AtmosphereState.NONE;
-        CelestialState celestial = DimensionRenderProfileRegistry.OVERWORLD_CELESTIAL.equals(profile.celestialModel())
-                ? OverworldCelestialModel.capture(level, partialTick)
-                : CelestialState.NONE;
 
         WeatherState weather = WeatherState.NONE;
         WeatherProvider weatherProvider = WeatherProviderRegistry.resolve(profile.weatherProvider());
@@ -70,11 +70,36 @@ final class DeferredWorldRenderStateSource {
             }
         }
 
+        Camera minecraftCamera = mainCamera(level);
+        EnvironmentCaptureContext environmentContext = new EnvironmentCaptureContext(
+                level, minecraftCamera, camera, partialTick, climate, weather, frameId
+        );
+
+        CelestialState celestial = CelestialState.NONE;
+        CelestialModel celestialModel = CelestialModelRegistry.resolve(profile.celestialModel());
+        if (celestialModel != null) {
+            try {
+                celestial = celestialModel.capture(environmentContext);
+            } catch (Throwable ignored) {
+                celestial = CelestialState.NONE;
+            }
+        }
+
+        AtmosphereState atmosphere = AtmosphereState.NONE;
+        AtmosphereModel atmosphereModel = AtmosphereModelRegistry.resolve(profile.environmentModel());
+        if (atmosphereModel != null) {
+            try {
+                atmosphere = atmosphereModel.capture(environmentContext);
+            } catch (Throwable ignored) {
+                atmosphere = AtmosphereState.NONE;
+            }
+        }
+
         DirectionalLightDescriptor directional = celestial.valid()
                 ? celestial.primaryDirectionalLight()
                 : DirectionalLightDescriptor.NONE;
-        if (directional.valid() && atmosphere.valid()) {
-            directional = OverworldAtmosphereModel.attenuateDirectional(atmosphere, directional, camera.y);
+        if (directional.valid() && atmosphere.valid() && atmosphereModel != null) {
+            directional = atmosphereModel.attenuateDirectLight(atmosphere, directional, camera.y);
         }
 
         current = new WorldRenderState(
@@ -109,7 +134,18 @@ final class DeferredWorldRenderStateSource {
         epoch++;
         biomeClimate.reset();
         WeatherProviderRegistry.resetAll();
+        AtmosphereModelRegistry.resetAll();
+        CelestialModelRegistry.resetAll();
         current = WorldRenderState.unknown(epoch);
+    }
+
+    private static Camera mainCamera(ClientLevel expectedLevel) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null || minecraft.gameRenderer == null) return null;
+        Camera camera = minecraft.gameRenderer.mainCamera();
+        if (camera == null || !camera.isInitialized()) return null;
+        if (camera.entity() != null && camera.entity().level() != expectedLevel) return null;
+        return camera;
     }
 
     private static float partialTick() {

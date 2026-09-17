@@ -300,7 +300,7 @@ final class DeferredSurfaceWeatherSource implements AutoCloseable {
         if (currentLoad == null) return;
 
         Vec3 camera = view.cameraPosition();
-        boolean zeroToOne = isVulkan(context);
+        boolean zeroToOne = zeroToOneDepth(context);
         Std430Writer writer = new Std430Writer(RESOLVE_DATA_LAYOUT, 1)
                 .putMat4(0, "inverseProjection", view.inverseProjection())
                 .putMat4(0, "inverseView", view.inverseView())
@@ -517,9 +517,8 @@ final class DeferredSurfaceWeatherSource implements AutoCloseable {
         return (Math.max(1, extent) + localSize - 1) / localSize;
     }
 
-    private static boolean isVulkan(DeferredPassContext context) {
-        String backendName = context.rhi().capabilities().backendName();
-        return backendName != null && backendName.toLowerCase(java.util.Locale.ROOT).contains("vulkan");
+    private static boolean zeroToOneDepth(DeferredPassContext context) {
+        return context.rhi().capabilities().zeroToOneDepth();
     }
 
     private static GpuTextureView requireTexture(DeferredPassContext context, DeferredResource resource) {
