@@ -683,16 +683,13 @@ public class KillAura extends Module {
         CombatStrikeController.SprintResetMode resetMode = resolveStrikeResetMode();
 
         SwitchMode switchMode = swordSwitchMode.get();
-        boolean shouldSwitch = silentSwordSwitch.get() && switchMode != SwitchMode.NONE;
+        boolean shouldSwitch = switchMode != SwitchMode.NONE && (switchMode != SwitchMode.SILENT || silentSwordSwitch.get());
         int targetSlot = shouldSwitch ? findBestWeaponSlot(swordOnly.get()) : -1;
         int originalSlot = InventorySwap.INSTANCE.clientSelectedSlot();
         boolean needSwitch = shouldSwitch && targetSlot >= 0 && targetSlot != originalSlot;
 
         if (needSwitch) {
             if (switchMode == SwitchMode.SILENT) {
-                if (mc.getConnection() != null) {
-                    mc.getConnection().send(new ServerboundSetCarriedItemPacket(targetSlot));
-                }
                 InventorySwap.INSTANCE.leaseHotbar(this, targetSlot, 1);
             } else if (switchMode == SwitchMode.CLIENT) {
                 InventorySwap.INSTANCE.selectHotbar(targetSlot);
@@ -711,10 +708,9 @@ public class KillAura extends Module {
 
         if (needSwitch) {
             if (switchMode == SwitchMode.SILENT) {
-                if (switchBack.get() && mc.getConnection() != null && originalSlot >= 0 && originalSlot < 9) {
-                    mc.getConnection().send(new ServerboundSetCarriedItemPacket(originalSlot));
+                if (switchBack.get()) {
+                    InventorySwap.INSTANCE.releaseHotbar(this);
                 }
-                InventorySwap.INSTANCE.releaseHotbar(this);
             } else if (switchMode == SwitchMode.CLIENT && switchBack.get() && originalSlot >= 0 && originalSlot < 9) {
                 InventorySwap.INSTANCE.selectHotbar(originalSlot);
             }

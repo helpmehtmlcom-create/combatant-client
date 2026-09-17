@@ -242,7 +242,8 @@ public class AutoCrystal extends Module {
                     "autocrystalAttackMode",
                     "attack_mode",
                     CommonSettingSchemas.COMBAT_ATTACK_MODE,
-                    CombatRotationModeUtil.MODE_ROTATIONS,
+                    CombatRotationModeUtil.MODE_SILENT,
+                    CombatRotationModeUtil.MODE_SILENT,
                     CombatRotationModeUtil.MODE_ROTATIONS,
                     CombatRotationModeUtil.MODE_NO_ROTATIONS
             );
@@ -534,6 +535,10 @@ public class AutoCrystal extends Module {
                 new RestrictedSingleUseAction(() -> tryPlaceCrystal(candidate.pos()))
         );
         RotationManager.INSTANCE.setRotationTarget(rotationTarget, ROTATION_PRIORITY, this);
+        if (CombatRotationModeUtil.isVisualRotations(attackMode) && mc.player != null) {
+            mc.player.setYRot(rotationTarget.rotation.yaw());
+            mc.player.setXRot(rotationTarget.rotation.pitch());
+        }
     }
 
     @Override
@@ -1001,6 +1006,10 @@ public class AutoCrystal extends Module {
                 new RestrictedSingleUseAction(() -> attackCrystal(crystal, attackRotation))
         );
         RotationManager.INSTANCE.setRotationTarget(rotationTarget, ROTATION_PRIORITY, this);
+        if (CombatRotationModeUtil.isVisualRotations(attackMode) && mc.player != null) {
+            mc.player.setYRot(rotationTarget.rotation.yaw());
+            mc.player.setXRot(rotationTarget.rotation.pitch());
+        }
         return true;
     }
 
@@ -1041,6 +1050,10 @@ public class AutoCrystal extends Module {
                 new RestrictedSingleUseAction(() -> placeBase(refreshed))
         );
         RotationManager.INSTANCE.setRotationTarget(rotationTarget, ROTATION_PRIORITY, this);
+        if (CombatRotationModeUtil.isVisualRotations(attackMode) && mc.player != null) {
+            mc.player.setYRot(rotationTarget.rotation.yaw());
+            mc.player.setXRot(rotationTarget.rotation.pitch());
+        }
         return true;
     }
 

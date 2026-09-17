@@ -25,6 +25,8 @@ import combatant.client.events.impl.GameTickEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.util.block.placer.BlockPlacer;
+import combatant.client.util.player.inventory.InventorySwap;
 
 @ModuleInfo(
         id = "autoanvil",
@@ -38,6 +40,11 @@ public final class AutoAnvil extends Module {
     private final BooleanValue rotate = bool("rotate", true);
 
     private final Minecraft mc = Minecraft.getInstance();
+
+    @Override
+    public void onDisable() {
+        InventorySwap.INSTANCE.releaseHotbar(this);
+    }
 
     @EventHandler
     public void onTick(GameTickEvent event) {
@@ -54,16 +61,17 @@ public final class AutoAnvil extends Module {
         BlockPos placePos = targetPos.above(dropHeight.get());
 
         if (mc.level.getBlockState(placePos).isAir()) {
-            int prev = ((PlayerInventoryAccessor) player.getInventory()).combatant$getSelectedSlot();
-            ((PlayerInventoryAccessor) player.getInventory()).combatant$setSelectedSlot(anvilSlot);
-
             BlockHitResult hit = new BlockHitResult(
                     Vec3.atCenterOf(placePos), Direction.UP, placePos.below(), false
             );
-            mc.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hit);
-            player.swing(InteractionHand.MAIN_HAND);
-
-            ((PlayerInventoryAccessor) player.getInventory()).combatant$setSelectedSlot(prev);
+            BlockPlacer.placeBlock(
+                    this,
+                    hit,
+                    InteractionHand.MAIN_HAND,
+                    anvilSlot,
+                    rotate.get(),
+                    BlockPlacer.SwingMode.CLIENT_AND_SERVER
+            );
         }
     }
 

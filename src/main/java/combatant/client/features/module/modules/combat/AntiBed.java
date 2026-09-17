@@ -26,7 +26,7 @@ import combatant.client.events.impl.GameTickEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
-import combatant.client.mixins.accessors.PlayerInventoryAccessor;
+import combatant.client.util.block.placer.BlockPlacer;
 import combatant.client.util.player.inventory.InventorySwap;
 
 @ModuleInfo(
@@ -40,7 +40,11 @@ public final class AntiBed extends Module {
     private final BooleanValue placeOnHead = bool("place_on_head", true);
     private final BooleanValue antiAnchor = bool("anti_anchor", true);
 
-    private final Minecraft mc = Minecraft.getInstance();
+
+    @Override
+    public void onDisable() {
+        InventorySwap.INSTANCE.releaseHotbar(this);
+    }
 
     @EventHandler
     public void onTick(GameTickEvent event) {
@@ -99,15 +103,16 @@ public final class AntiBed extends Module {
 
     private void placeBlock(BlockPos pos, int hotbarSlot) {
         if (mc.player == null || mc.gameMode == null) return;
-        int prev = ((PlayerInventoryAccessor) mc.player.getInventory()).combatant$getSelectedSlot();
-        ((PlayerInventoryAccessor) mc.player.getInventory()).combatant$setSelectedSlot(hotbarSlot);
-
         BlockHitResult hit = new BlockHitResult(
                 Vec3.atCenterOf(pos), Direction.UP, pos.below(), false
         );
-        mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
-        mc.player.swing(InteractionHand.MAIN_HAND);
-
-        ((PlayerInventoryAccessor) mc.player.getInventory()).combatant$setSelectedSlot(prev);
+        BlockPlacer.placeBlock(
+                this,
+                hit,
+                InteractionHand.MAIN_HAND,
+                hotbarSlot,
+                true,
+                BlockPlacer.SwingMode.CLIENT_AND_SERVER
+        );
     }
 }

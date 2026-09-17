@@ -363,6 +363,11 @@ public final class InventorySwap {
         HotbarLease active = activeLease();
         if (active != null) {
             clientSlot = active.clientSlot;
+            if (active.owner == owner && active.enforcedSlot == slot) {
+                int resetAfterAge = player.tickCount + Math.max(0, ticksUntilReset) + 1;
+                hotbarLease = new HotbarLease(player.getUUID(), owner, slot, clientSlot, resetAfterAge);
+                return true;
+            }
         }
 
         int resetAfterAge = player.tickCount + Math.max(0, ticksUntilReset) + 1;
@@ -793,19 +798,14 @@ public final class InventorySwap {
 
     private boolean runSilent(int slot, Runnable action) {
         if (!isHotbarSlot(slot)) return false;
-        int previous = clientSelectedSlot();
-
-        if (lastServerSelectedSlot != slot) {
-            if (!selectHotbar(slot)) return false;
-        }
+        boolean leased = leaseHotbar(this, slot, 1);
+        if (!leased) return false;
 
         try {
             action.run();
             return true;
         } finally {
-            if (lastServerSelectedSlot != previous) {
-                selectHotbar(previous);
-            }
+            releaseHotbar(this);
         }
     }
 

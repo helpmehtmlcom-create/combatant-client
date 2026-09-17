@@ -193,7 +193,8 @@ public class AutoAnchor extends Module {
             "autoanchorAttackMode",
             "attack_mode",
             CommonSettingSchemas.COMBAT_ATTACK_MODE,
-            CombatRotationModeUtil.MODE_ROTATIONS,
+            CombatRotationModeUtil.MODE_SILENT,
+            CombatRotationModeUtil.MODE_SILENT,
             CombatRotationModeUtil.MODE_ROTATIONS,
             CombatRotationModeUtil.MODE_NO_ROTATIONS
     );
@@ -442,6 +443,10 @@ public class AutoAnchor extends Module {
                 new RestrictedSingleUseAction(action)
         );
         RotationManager.INSTANCE.setRotationTarget(rotationTarget, ROTATION_PRIORITY, this);
+        if (CombatRotationModeUtil.isVisualRotations(attackMode) && mc.player != null) {
+            mc.player.setYRot(rotationTarget.rotation.yaw());
+            mc.player.setXRot(rotationTarget.rotation.pitch());
+        }
     }
 
     private void placeReservedAnchor(AutoAnchorData data) {

@@ -17,7 +17,7 @@ import combatant.client.features.module.Module;
 
 import java.util.Comparator;
 import java.util.concurrent.PriorityBlockingQueue;
-
+import java.util.function.Predicate;
 /**
  * Provider-aware request handler.
  * <p>
@@ -26,10 +26,40 @@ import java.util.concurrent.PriorityBlockingQueue;
  */
 public final class RequestHandler<T> {
 
+    @SuppressWarnings("rawtypes")
+    private static final Comparator<Request> PRIORITY_COMPARATOR =
+            (req1, req2) -> Integer.compare(req2.priority, req1.priority);
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
     private final PriorityBlockingQueue<Request<T>> activeRequests =
-            new PriorityBlockingQueue<>(11, Comparator.comparingInt((Request<T> req) -> req.priority).reversed());
+            new PriorityBlockingQueue<>(11, (Comparator) PRIORITY_COMPARATOR);
     private int currentTick = 0;
 
+    private static final class ProviderPredicate<T> implements Predicate<Request<T>> {
+        private Object targetProvider;
+
+        void setTarget(Object provider) {
+            this.targetProvider = provider;
+        }
+
+        @Override
+        public boolean test(Request<T> request) {
+            return request != null && request.provider == targetProvider;
+        }
+    }
+
+    private final ThreadLocal<ProviderPredicate<T>> providerPredicate =
+            ThreadLocal.withInitial(ProviderPredicate::new);
+
+    private boolean removeByProvider(Object provider) {
+        ProviderPredicate<T> predicate = providerPredicate.get();
+        predicate.setTarget(provider);
+        try {
+            return activeRequests.removeIf(predicate);
+        } finally {
+            predicate.setTarget(null);
+        }
+    }
     private static boolean isProviderRunning(Object provider) {
         return !(provider instanceof Module module) || module.isEnabled();
     }
@@ -41,17 +71,26 @@ public final class RequestHandler<T> {
     public void request(Request<T> request) {
         if (request == null) return;
 
-        activeRequests.removeIf(existing -> existing.provider == request.provider);
+        if (!activeRequests.isEmpty()) {
+            removeByProvider(request.provider);
+        }
         request.expiresIn += currentTick;
         activeRequests.add(request);
     }
 
+    public void request(int expiresIn, int priority, Object provider, T value) {
+        request(new Request<>(expiresIn, priority, provider, value));
+    }
+
     public Request<T> getActiveRequest() {
         Request<T> top = activeRequests.peek();
-        while (top != null && (top.expiresIn <= currentTick || !isProviderRunning(top.provider))) {
+        if (top == null || (top.expiresIn > currentTick && isProviderRunning(top.provider))) {
+            return top;
+        }
+        do {
             activeRequests.poll();
             top = activeRequests.peek();
-        }
+        } while (top != null && (top.expiresIn <= currentTick || !isProviderRunning(top.provider)));
         return top;
     }
 
@@ -71,10 +110,10 @@ public final class RequestHandler<T> {
     }
 
     public boolean clear(Object provider) {
-        if (provider == null) {
+        if (provider == null || activeRequests.isEmpty()) {
             return false;
         }
-        return activeRequests.removeIf(existing -> existing.provider == provider);
+        return removeByProvider(provider);
     }
 
     public static final class Request<T> {

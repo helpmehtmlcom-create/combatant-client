@@ -18,7 +18,7 @@ import combatant.client.events.impl.AttackEntityEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
-import combatant.client.mixins.accessors.PlayerInventoryAccessor;
+import combatant.client.util.player.inventory.InventorySwap;
 
 @ModuleInfo(
         id = "antiweakness",
@@ -31,6 +31,11 @@ public final class AntiWeakness extends Module {
 
     private final Minecraft mc = Minecraft.getInstance();
 
+    @Override
+    public void onDisable() {
+        InventorySwap.INSTANCE.releaseHotbar(this);
+    }
+
     @EventHandler
     public void onAttack(AttackEntityEvent event) {
         if (!isEnabled() || mc.player == null) return;
@@ -38,13 +43,16 @@ public final class AntiWeakness extends Module {
 
         if (player.hasEffect(MobEffects.WEAKNESS)) {
             int weaponSlot = findWeaponSlot();
-            int currentSlot = ((PlayerInventoryAccessor) player.getInventory()).combatant$getSelectedSlot();
+            int currentSlot = InventorySwap.INSTANCE.clientSelectedSlot();
             if (weaponSlot != -1 && weaponSlot != currentSlot) {
-                ((PlayerInventoryAccessor) player.getInventory()).combatant$setSelectedSlot(weaponSlot);
+                if (silent.get()) {
+                    InventorySwap.INSTANCE.leaseHotbar(this, weaponSlot, 2);
+                } else {
+                    InventorySwap.INSTANCE.selectHotbar(weaponSlot);
+                }
             }
         }
     }
-
     private int findWeaponSlot() {
         if (mc.player == null) return -1;
         for (int i = 0; i < 9; i++) {

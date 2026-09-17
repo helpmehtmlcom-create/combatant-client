@@ -272,25 +272,8 @@ public class AntiTotem extends Module {
 
         if (rotate.get()) {
             float[] rotations = RotationUtil.getRotationsToEntity(player, crystal);
-            RotationTarget rotTarget = new RotationTarget(
-                    new Rotation(rotations[0], rotations[1], false),
-                    crystal,
-                    List.of(),
-                    1,
-                    4.0f,
-                    true,
-                    MovementCorrection.SILENT,
-                    null
-            );
-            RotationManager.INSTANCE.setRotationTarget(rotTarget, 32, this);
-            if (mc.getConnection() != null) {
-                mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
-                        rotations[0],
-                        rotations[1],
-                        player.onGround(),
-                        player.horizontalCollision
-                ));
-            }
+            Rotation rot = new Rotation(rotations[0], rotations[1], false);
+            RotationManager.INSTANCE.snapServerRotation(rot, 32, this, 2);
         }
 
         if (packetAttack.get() && mc.getConnection() != null) {
@@ -318,25 +301,8 @@ public class AntiTotem extends Module {
 
         if (rotate.get()) {
             float[] rotations = RotationUtil.getRotationsToEntity(player, target);
-            RotationTarget rotTarget = new RotationTarget(
-                    new Rotation(rotations[0], rotations[1], false),
-                    target,
-                    List.of(),
-                    1,
-                    4.0f,
-                    true,
-                    MovementCorrection.SILENT,
-                    null
-            );
-            RotationManager.INSTANCE.setRotationTarget(rotTarget, 32, this);
-            if (mc.getConnection() != null) {
-                mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
-                        rotations[0],
-                        rotations[1],
-                        player.onGround(),
-                        player.horizontalCollision
-                ));
-            }
+            Rotation rot = new Rotation(rotations[0], rotations[1], false);
+            RotationManager.INSTANCE.snapServerRotation(rot, 32, this, 2);
         }
 
         if (packetAttack.get()) {

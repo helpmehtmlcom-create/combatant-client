@@ -53,6 +53,8 @@ public final class RotationManager {
     private Rotation actualServerRotation = Rotation.ZERO;
     private Rotation theoreticalServerRotation = Rotation.ZERO;
     private int lastLifecycleAge = Integer.MIN_VALUE;
+    private final RotationUpdateEvent preRotationEvent = new RotationUpdateEvent(RotationUpdateEvent.Type.PRE);
+    private final RotationUpdateEvent postRotationEvent = new RotationUpdateEvent(RotationUpdateEvent.Type.POST);
 
     private RotationManager() {
     }
@@ -61,8 +63,15 @@ public final class RotationManager {
         if (a == null || b == null) {
             return Float.MAX_VALUE;
         }
-        float yawDiff = Math.abs(RotationUtil.angleDifference(a.yaw(), b.yaw()));
-        float pitchDiff = Math.abs(a.pitch() - b.pitch());
+        return computeRotationDifference(a, b.yaw(), b.pitch());
+    }
+
+    private static float computeRotationDifference(Rotation a, float targetYaw, float targetPitch) {
+        if (a == null) {
+            return Float.MAX_VALUE;
+        }
+        float yawDiff = Math.abs(RotationUtil.angleDifference(a.yaw(), targetYaw));
+        float pitchDiff = Math.abs(a.pitch() - targetPitch);
         return (float) Math.hypot(yawDiff, pitchDiff);
     }
 
@@ -81,21 +90,27 @@ public final class RotationManager {
         return Rotation.ZERO;
     }
 
-    public static double boxedDistanceToPlayer(Entity entity) {
+    public static double boxedDistanceSqToPlayer(Entity entity) {
         LocalPlayer player = player();
         if (player == null || entity == null) return 0.0;
-        Vec3 eyes = player.getEyePosition();
+        double eyeX = player.getX();
+        double eyeY = player.getEyeY();
+        double eyeZ = player.getZ();
         var box = entity.getBoundingBox();
         double dx = 0.0;
-        if (eyes.x < box.minX) dx = box.minX - eyes.x;
-        else if (eyes.x > box.maxX) dx = eyes.x - box.maxX;
+        if (eyeX < box.minX) dx = box.minX - eyeX;
+        else if (eyeX > box.maxX) dx = eyeX - box.maxX;
         double dy = 0.0;
-        if (eyes.y < box.minY) dy = box.minY - eyes.y;
-        else if (eyes.y > box.maxY) dy = eyes.y - box.maxY;
+        if (eyeY < box.minY) dy = box.minY - eyeY;
+        else if (eyeY > box.maxY) dy = eyeY - box.maxY;
         double dz = 0.0;
-        if (eyes.z < box.minZ) dz = box.minZ - eyes.z;
-        else if (eyes.z > box.maxZ) dz = eyes.z - box.maxZ;
-        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (eyeZ < box.minZ) dz = box.minZ - eyeZ;
+        else if (eyeZ > box.maxZ) dz = eyeZ - box.maxZ;
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    public static double boxedDistanceToPlayer(Entity entity) {
+        return Math.sqrt(boxedDistanceSqToPlayer(entity));
     }
 
     public RotationTarget getActiveRotationTarget() {
@@ -139,29 +154,67 @@ public final class RotationManager {
     }
 
     public Rotation getMovementRotation() {
-        LocalPlayer player = player();
-        Rotation fallback = player != null
-                ? new Rotation(player.getYRot(), player.getXRot(), true)
-                : (currentRotation != null ? currentRotation : Rotation.ZERO);
-
         RotationTarget active = getActiveRotationTarget();
-        if (currentRotation == null || active == null || active.movementCorrection == MovementCorrection.OFF) {
-            return fallback;
+        if (currentRotation != null && active != null && active.movementCorrection != MovementCorrection.OFF) {
+            return currentRotation;
         }
 
-        return currentRotation;
+        LocalPlayer player = player();
+        if (player != null) {
+            return new Rotation(player.getYRot(), player.getXRot(), true);
+        }
+        return currentRotation != null ? currentRotation : Rotation.ZERO;
     }
 
     public void setRotationTarget(RotationTarget plan, int priority, Object provider) {
         if (plan == null) return;
 
-        rotationTargetHandler.request(new RequestHandler.Request<>(plan.ticksUntilReset, priority, provider, plan));
+        rotationTargetHandler.request(plan.ticksUntilReset, priority, provider, plan);
         smoothReturnActive = false;
         smoothReturnTicks = 0;
     }
 
     public void setRotationTarget(RotationTarget plan, int priority) {
         setRotationTarget(plan, priority, null);
+    }
+
+    /**
+     * Immediately applies a silent rotation to the server packet stream and keeps
+     * RotationManager tracked with MovementCorrection.SILENT. When resetTicks expire,
+     * RotationManager smoothly restores orientation towards camera without jarring snaps.
+     */
+    public void snapServerRotation(Rotation rot, int priority, Object provider, int resetTicks) {
+        if (rot == null) return;
+        LocalPlayer player = player();
+        if (player == null) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.getConnection() == null) return;
+
+        Rotation normalized = rot.normalize();
+        RotationTarget target = new RotationTarget(
+                normalized,
+                player,
+                java.util.List.of(),
+                Math.max(1, resetTicks),
+                2.0f,
+                true,
+                MovementCorrection.SILENT,
+                null
+        );
+
+        setRotationTarget(target, priority, provider);
+        setCurrentRotation(normalized, provider);
+
+        if (actualServerRotation == null || computeRotationDifference(actualServerRotation, normalized) > 0.05f) {
+            mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
+                    normalized.yaw(),
+                    normalized.pitch(),
+                    player.onGround(),
+                    player.horizontalCollision
+            ));
+            actualServerRotation = normalized;
+            theoreticalServerRotation = normalized;
+        }
     }
 
     private boolean isRotatingAllowed(RotationTarget target) {
@@ -181,7 +234,6 @@ public final class RotationManager {
             return;
         }
 
-        Rotation playerRotation = new Rotation(player.getYRot(), player.getXRot(), true);
         RequestHandler.Request<RotationTarget> activeRequest = rotationTargetHandler.getActiveRequest();
         RotationTarget activeRotationTarget = activeRequest != null ? activeRequest.value() : previousRotationTarget;
         Object activeProvider = activeRequest != null ? activeRequest.provider() : previousRotationProvider;
@@ -191,22 +243,24 @@ public final class RotationManager {
                 return;
             }
 
-            float diffToPlayer = computeRotationDifference(currentRotation, playerRotation);
+            float playerYaw = player.getYRot();
+            float playerPitch = player.getXRot();
+            float diffToPlayer = computeRotationDifference(currentRotation, playerYaw, playerPitch);
             if (diffToPlayer <= 0.5f) {
                 finishSmoothReturn();
                 return;
             }
 
             float speed = 0.25f + 0.4f * Math.min(1.0f, diffToPlayer / 30.0f);
-            float yawDiff = RotationUtil.angleDifference(playerRotation.yaw(), currentRotation.yaw());
+            float yawDiff = RotationUtil.angleDifference(playerYaw, currentRotation.yaw());
             float newYaw = currentRotation.yaw() + yawDiff * speed;
-            float newPitch = Mth.lerp(speed, currentRotation.pitch(), playerRotation.pitch());
+            float newPitch = Mth.lerp(speed, currentRotation.pitch(), playerPitch);
             setCurrentRotation(new Rotation(newYaw, newPitch, false).normalize(), currentRotationProvider);
             return;
         }
 
         if (isRotatingAllowed(activeRotationTarget)) {
-            Rotation fromRotation = resolveBaseRotation(playerRotation);
+            Rotation fromRotation = resolveBaseRotation(player);
             if (activeRequest == null) {
                 if (currentRotation == null) {
                     finishSmoothReturn();
@@ -223,7 +277,7 @@ public final class RotationManager {
                 previousRotationProvider = activeProvider;
 
                 smoothReturnTicks++;
-                float diffToPlayer = computeRotationDifference(resetRotation, playerRotation);
+                float diffToPlayer = computeRotationDifference(resetRotation, player.getYRot(), player.getXRot());
                 int maxTicks = Math.max(1, activeRotationTarget.ticksUntilReset);
                 float threshold = Math.max(0.05f, activeRotationTarget.resetThreshold);
                 if (diffToPlayer <= threshold || smoothReturnTicks >= maxTicks) {
@@ -257,14 +311,14 @@ public final class RotationManager {
         smoothReturnTicks = 0;
     }
 
-    private Rotation resolveBaseRotation(Rotation playerRotation) {
+    private Rotation resolveBaseRotation(LocalPlayer player) {
         if (currentRotation != null) {
             return currentRotation;
         }
         if (actualServerRotation != null && actualServerRotation != Rotation.ZERO) {
             return actualServerRotation;
         }
-        return playerRotation;
+        return new Rotation(player.getYRot(), player.getXRot(), true);
     }
 
     public void clear() {
@@ -342,13 +396,19 @@ public final class RotationManager {
     @EventHandler(priority = 100)
     public void onVelocityStrafe(PlayerVelocityStrafe event) {
         RotationTarget active = getActiveRotationTarget();
-        if (active == null) return;
-        if (active.movementCorrection == MovementCorrection.OFF) {
+        if (active == null || active.movementCorrection == MovementCorrection.OFF) {
             return;
         }
 
-        Rotation rotation = getMovementRotation();
-        if (rotation == null) return;
+        Rotation rotation = currentRotation;
+        if (rotation == null) {
+            LocalPlayer player = player();
+            if (player != null) {
+                rotation = new Rotation(player.getYRot(), player.getXRot(), true);
+            } else {
+                rotation = Rotation.ZERO;
+            }
+        }
 
         Vec3 velocity = EntityInvoker.combatant$movementInputToVelocity(
                 event.getMovementInput(),
@@ -366,9 +426,19 @@ public final class RotationManager {
         Rotation rot = null;
         if (packet instanceof ServerboundMovePlayerPacket move) {
             if (!move.hasRotation()) return;
-            rot = new Rotation(move.getYRot(0.0f), move.getXRot(0.0f), true);
+            float yaw = move.getYRot(0.0f);
+            float pitch = move.getXRot(0.0f);
+            if (actualServerRotation != null && actualServerRotation.yaw() == yaw && actualServerRotation.pitch() == pitch) {
+                return;
+            }
+            rot = new Rotation(yaw, pitch, true);
         } else if (packet instanceof ServerboundUseItemPacket use) {
-            rot = new Rotation(use.getYRot(), use.getXRot(), true);
+            float yaw = use.getYRot();
+            float pitch = use.getXRot();
+            if (actualServerRotation != null && actualServerRotation.yaw() == yaw && actualServerRotation.pitch() == pitch) {
+                return;
+            }
+            rot = new Rotation(yaw, pitch, true);
         }
 
         if (rot != null) {
@@ -381,7 +451,12 @@ public final class RotationManager {
     public void onPacketReceive(PacketEvent.Receive e) {
         if (!(e.getPacket() instanceof net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket packet))
             return;
-        Rotation rot = new Rotation(packet.change().yRot(), packet.change().xRot(), true);
+        float yaw = packet.change().yRot();
+        float pitch = packet.change().xRot();
+        if (actualServerRotation != null && actualServerRotation.yaw() == yaw && actualServerRotation.pitch() == pitch) {
+            return;
+        }
+        Rotation rot = new Rotation(yaw, pitch, true);
         theoreticalServerRotation = rot;
         actualServerRotation = rot;
     }
@@ -398,8 +473,10 @@ public final class RotationManager {
         }
         lastLifecycleAge = player.tickCount;
 
-        Events.BUS.post(new RotationUpdateEvent(RotationUpdateEvent.Type.PRE));
+        preRotationEvent.setCancelled(false);
+        Events.BUS.post(preRotationEvent);
         update();
-        Events.BUS.post(new RotationUpdateEvent(RotationUpdateEvent.Type.POST));
+        postRotationEvent.setCancelled(false);
+        Events.BUS.post(postRotationEvent);
     }
 }

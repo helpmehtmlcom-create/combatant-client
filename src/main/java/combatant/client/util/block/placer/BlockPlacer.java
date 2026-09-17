@@ -272,9 +272,7 @@ public final class BlockPlacer {
 
         if (rotate) {
             Rotation rot = Rotation.lookingAt(hitResult.getLocation(), player.getEyePosition()).normalize();
-            client.getConnection().send(new ServerboundMovePlayerPacket.Rot(
-                    rot.yaw(), rot.pitch(), player.onGround(), player.horizontalCollision
-            ));
+            RotationManager.INSTANCE.snapServerRotation(rot, 50, owner, 2);
         }
 
         boolean leased = false;
@@ -287,10 +285,11 @@ public final class BlockPlacer {
             InteractionResult result = client.gameMode.useItemOn(player, hand, hitResult);
             boolean success = result != null && result.consumesAction();
 
-            // Sequence-predicted placement packet reinforcement
-            InteractionUtil.sendSequencedPacket(sequence ->
-                    new ServerboundUseItemOnPacket(hand, hitResult, sequence)
-            );
+            if (result == null) {
+                InteractionUtil.sendSequencedPacket(sequence ->
+                        new ServerboundUseItemOnPacket(hand, hitResult, sequence)
+                );
+            }
 
             performSwing(player, hand, swingMode != null ? swingMode : SwingMode.CLIENT_AND_SERVER);
             return success || result != InteractionResult.FAIL;
@@ -586,10 +585,11 @@ public final class BlockPlacer {
 
             InteractionResult result = mc.gameMode.useItemOn(player, slot.hand(), hitResult);
 
-            // Predict interaction packet sequence
-            InteractionUtil.sendSequencedPacket(sequence ->
-                    new ServerboundUseItemOnPacket(slot.hand(), hitResult, sequence)
-            );
+            if (result == null) {
+                InteractionUtil.sendSequencedPacket(sequence ->
+                        new ServerboundUseItemOnPacket(slot.hand(), hitResult, sequence)
+                );
+            }
 
             performSwing(player, slot.hand(), swingModeSupplier.get());
             if (result != null && result.consumesAction()) {

@@ -23,15 +23,74 @@ import combatant.client.util.logging.DebugLog;
 import combatant.client.util.network.BlinkManager;
 import combatant.client.util.proxy.ProxyNettyInstaller;
 
-import java.util.Collections;
-import java.util.IdentityHashMap;
-import java.util.Set;
+import java.util.Arrays;
+import java.util.List;
+import java.util.RandomAccess;
 @Mixin(Connection.class)
 public class ConnectionMixin {
 
     @Unique
     private static final int MAX_BUNDLE_DEPTH = 5;
 
+    @Unique
+    private static final class IdentityPacketList {
+        private final boolean isPooled;
+        private Packet<?>[] elements = new Packet<?>[32];
+        private int size = 0;
+        private boolean inUse = false;
+
+        IdentityPacketList(boolean isPooled) {
+            this.isPooled = isPooled;
+        }
+
+        public boolean add(Packet<?> packet) {
+            final Packet<?>[] array = this.elements;
+            final int count = this.size;
+            for (int i = 0; i < count; i++) {
+                if (array[i] == packet) {
+                    return false;
+                }
+            }
+            if (count == array.length) {
+                this.elements = Arrays.copyOf(array, array.length << 1);
+            }
+            this.elements[count] = packet;
+            this.size = count + 1;
+            return true;
+        }
+
+        public void clear() {
+            if (this.elements.length > 256) {
+                this.elements = new Packet<?>[32];
+                this.size = 0;
+            } else if (this.size != 0) {
+                Arrays.fill(this.elements, 0, this.size, null);
+                this.size = 0;
+            }
+        }
+    }
+
+    @Unique
+    private static final ThreadLocal<IdentityPacketList> COMBATANT$SEEN_PACKETS =
+            ThreadLocal.withInitial(() -> new IdentityPacketList(true));
+
+    @Unique
+    private static IdentityPacketList combatant$acquireSeenList() {
+        IdentityPacketList seen = COMBATANT$SEEN_PACKETS.get();
+        if (seen.inUse) {
+            return new IdentityPacketList(false);
+        }
+        seen.inUse = true;
+        return seen;
+    }
+
+    @Unique
+    private static void combatant$releaseSeenList(IdentityPacketList seen) {
+        seen.clear();
+        if (seen.isPooled) {
+            seen.inUse = false;
+        }
+    }
     @Inject(method = "genericsFtw", at = @At("HEAD"), cancellable = true)
     private static <T extends PacketListener> void combatant$onHandlePacket(Packet<T> packet, PacketListener listener, CallbackInfo ci) {
         if (packet == null) {
@@ -51,9 +110,13 @@ public class ConnectionMixin {
             }
 
             if (packet instanceof ClientboundBundlePacket packs) {
-                Set<Packet<?>> seen = Collections.newSetFromMap(new IdentityHashMap<>());
-                seen.add(packs);
-                combatant$unpackBundle(packs, seen, 0);
+                IdentityPacketList seen = combatant$acquireSeenList();
+                try {
+                    seen.add(packs);
+                    combatant$unpackBundle(packs, seen, 0);
+                } finally {
+                    combatant$releaseSeenList(seen);
+                }
             }
         } catch (Throwable t) {
             DebugLog.error("Error intercepting incoming packet: %s", t, packet.getClass().getSimpleName());
@@ -61,7 +124,7 @@ public class ConnectionMixin {
     }
 
     @Unique
-    private static void combatant$unpackBundle(ClientboundBundlePacket bundle, Set<Packet<?>> seen, int depth) {
+    private static void combatant$unpackBundle(ClientboundBundlePacket bundle, IdentityPacketList seen, int depth) {
         if (depth > MAX_BUNDLE_DEPTH) {
             DebugLog.warn("Exceeded max bundle packet nesting depth (%d)", depth);
             return;
@@ -75,21 +138,36 @@ public class ConnectionMixin {
         }
         if (subPackets == null) return;
 
-        for (Packet<?> sub : subPackets) {
-            if (sub == null) continue;
-            if (!seen.add(sub)) {
-                DebugLog.warn("Duplicate/circular packet detected in bundle: %s", sub.getClass().getSimpleName());
-                continue;
-            }
-            try {
-                PacketEvent.Receive subEvent = new PacketEvent.Receive(sub, false);
-                Events.BUS.post(subEvent);
-                if (sub instanceof ClientboundBundlePacket nestedBundle) {
-                    combatant$unpackBundle(nestedBundle, seen, depth + 1);
+        if (subPackets instanceof List<?> list && subPackets instanceof RandomAccess) {
+            int size = list.size();
+            for (int i = 0; i < size; i++) {
+                Object item = list.get(i);
+                if (item instanceof Packet<?> sub) {
+                    combatant$processSubPacket(sub, seen, depth);
                 }
-            } catch (Throwable t) {
-                DebugLog.error("Error processing unpacked packet: %s", t, sub.getClass().getSimpleName());
             }
+        } else {
+            for (Packet<?> sub : subPackets) {
+                if (sub == null) continue;
+                combatant$processSubPacket(sub, seen, depth);
+            }
+        }
+    }
+
+    @Unique
+    private static void combatant$processSubPacket(Packet<?> sub, IdentityPacketList seen, int depth) {
+        if (!seen.add(sub)) {
+            DebugLog.warn("Duplicate/circular packet detected in bundle: %s", sub.getClass().getSimpleName());
+            return;
+        }
+        try {
+            PacketEvent.Receive subEvent = new PacketEvent.Receive(sub, false);
+            Events.BUS.post(subEvent);
+            if (sub instanceof ClientboundBundlePacket nestedBundle) {
+                combatant$unpackBundle(nestedBundle, seen, depth + 1);
+            }
+        } catch (Throwable t) {
+            DebugLog.error("Error processing unpacked packet: %s", t, sub.getClass().getSimpleName());
         }
     }
 
@@ -103,9 +181,13 @@ public class ConnectionMixin {
             PacketEvent.ReceivePost event = new PacketEvent.ReceivePost(packet);
             Events.BUS.post(event);
             if (packet instanceof ClientboundBundlePacket packs) {
-                Set<Packet<?>> seen = Collections.newSetFromMap(new IdentityHashMap<>());
-                seen.add(packs);
-                combatant$unpackBundlePost(packs, seen, 0);
+                IdentityPacketList seen = combatant$acquireSeenList();
+                try {
+                    seen.add(packs);
+                    combatant$unpackBundlePost(packs, seen, 0);
+                } finally {
+                    combatant$releaseSeenList(seen);
+                }
             }
         } catch (Throwable t) {
             DebugLog.error("Error intercepting incoming packet post: %s", t, packet.getClass().getSimpleName());
@@ -113,7 +195,7 @@ public class ConnectionMixin {
     }
 
     @Unique
-    private static void combatant$unpackBundlePost(ClientboundBundlePacket bundle, Set<Packet<?>> seen, int depth) {
+    private static void combatant$unpackBundlePost(ClientboundBundlePacket bundle, IdentityPacketList seen, int depth) {
         if (depth > MAX_BUNDLE_DEPTH) {
             DebugLog.warn("Exceeded max bundle packet nesting depth in ReceivePost (%d)", depth);
             return;
@@ -127,20 +209,35 @@ public class ConnectionMixin {
         }
         if (subPackets == null) return;
 
-        for (Packet<?> sub : subPackets) {
-            if (sub == null) continue;
-            if (!seen.add(sub)) {
-                continue;
-            }
-            try {
-                PacketEvent.ReceivePost subEvent = new PacketEvent.ReceivePost(sub, false);
-                Events.BUS.post(subEvent);
-                if (sub instanceof ClientboundBundlePacket nestedBundle) {
-                    combatant$unpackBundlePost(nestedBundle, seen, depth + 1);
+        if (subPackets instanceof List<?> list && subPackets instanceof RandomAccess) {
+            int size = list.size();
+            for (int i = 0; i < size; i++) {
+                Object item = list.get(i);
+                if (item instanceof Packet<?> sub) {
+                    combatant$processSubPacketPost(sub, seen, depth);
                 }
-            } catch (Throwable t) {
-                DebugLog.error("Error processing unpacked packet in ReceivePost: %s", t, sub.getClass().getSimpleName());
             }
+        } else {
+            for (Packet<?> sub : subPackets) {
+                if (sub == null) continue;
+                combatant$processSubPacketPost(sub, seen, depth);
+            }
+        }
+    }
+
+    @Unique
+    private static void combatant$processSubPacketPost(Packet<?> sub, IdentityPacketList seen, int depth) {
+        if (!seen.add(sub)) {
+            return;
+        }
+        try {
+            PacketEvent.ReceivePost subEvent = new PacketEvent.ReceivePost(sub, false);
+            Events.BUS.post(subEvent);
+            if (sub instanceof ClientboundBundlePacket nestedBundle) {
+                combatant$unpackBundlePost(nestedBundle, seen, depth + 1);
+            }
+        } catch (Throwable t) {
+            DebugLog.error("Error processing unpacked packet in ReceivePost: %s", t, sub.getClass().getSimpleName());
         }
     }
 
