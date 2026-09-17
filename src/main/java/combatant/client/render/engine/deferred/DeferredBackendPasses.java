@@ -100,19 +100,24 @@ final class DeferredBackendPasses implements AutoCloseable {
     private final DeferredReflectionCascadeSource reflectionCascades = new DeferredReflectionCascadeSource();
     private final DeferredReflectionSource reflections = new DeferredReflectionSource();
     private final DeferredReactiveMaskSource reactiveMask = new DeferredReactiveMaskSource();
+    private final DeferredFinalTemporalCoverageSource finalTemporalCoverage = new DeferredFinalTemporalCoverageSource();
     private final DeferredDisocclusionSource disocclusion = new DeferredDisocclusionSource();
     private final DeferredTemporalSignalSource temporalSignals = new DeferredTemporalSignalSource();
     private final DeferredReflectionDenoiseSource reflectionDenoise = new DeferredReflectionDenoiseSource();
     private final DeferredOpaqueCompositeSource opaqueComposite = new DeferredOpaqueCompositeSource();
     private final DeferredSkyCompositeSource skyComposite = new DeferredSkyCompositeSource();
     private final DeferredCloudFieldSource cloudField = new DeferredCloudFieldSource();
-    private final DeferredCloudSource clouds = new DeferredCloudSource(cloudField);
+    private final DeferredCloudOccupancySource cloudOccupancy = new DeferredCloudOccupancySource(cloudField);
+    private final DeferredCloudSource clouds = new DeferredCloudSource(cloudField, cloudOccupancy);
     private final DeferredCloudTemporalSource cloudTemporal = new DeferredCloudTemporalSource();
-    private final DeferredCloudShadowSource cloudShadows = new DeferredCloudShadowSource(cloudField);
-    private final DeferredFroxelMediaSource froxelMedia = new DeferredFroxelMediaSource(cloudField, cloudShadows);
+    private final DeferredCloudShadowSource cloudShadows = new DeferredCloudShadowSource(cloudField, cloudOccupancy);
+    private final DeferredFroxelMediaSource froxelMedia = new DeferredFroxelMediaSource(cloudField, cloudShadows, cloudOccupancy);
     private final DeferredAtmosphereCompositeSource atmosphereComposite = new DeferredAtmosphereCompositeSource(froxelMedia);
     private final DeferredTemporalHistorySource temporalHistory = new DeferredTemporalHistorySource();
-    private final DeferredPatchSurfaceSource patchSurfaces = new DeferredPatchSurfaceSource();
+    private final DeferredTemporalResolveSource temporalResolve = new DeferredTemporalResolveSource();
+    private final DeferredHdrPostSource hdrPost = new DeferredHdrPostSource();
+    private final DeferredPatchSurfaceSource patchSurfaces = new DeferredPatchSurfaceSource(reflectionCascades);
+    private final DeferredWaterReflectionTemporalSource waterReflectionTemporal = new DeferredWaterReflectionTemporalSource();
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.shadow.cascades", DeferredStage.SHADOW_PREPARE)
@@ -133,6 +138,15 @@ final class DeferredBackendPasses implements AutoCloseable {
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.resources().texture(DeferredResource.MAIN_DEPTH) != null)
                 .execute(this::resolveDepth)
+                .build());
+        passes.add(DeferredPassSpec.builder("world.post_translucency.depth.resolve", DeferredStage.POST_TRANSLUCENCY)
+                .priority(-200)
+                .read(DeferredResource.MAIN_DEPTH)
+                .write(DeferredResource.FINAL_RESOLVED_DEPTH)
+                .requires(RhiShaderStage.COMPUTE)
+                .when(context -> context.resources().texture(DeferredResource.MAIN_DEPTH) != null)
+                .execute(context -> resolveDepth(context, DeferredResource.FINAL_RESOLVED_DEPTH,
+                        "Combatant final depth resolve"))
                 .build());
         passes.add(DeferredPassSpec.builder("world.gbuffer.depth.capture", DeferredStage.DEPTH_RESOLVE)
                 .priority(100)
@@ -197,18 +211,23 @@ final class DeferredBackendPasses implements AutoCloseable {
         reflectionCascades.install(passes);
         reflections.install(passes);
         reactiveMask.install(passes);
+        finalTemporalCoverage.install(passes);
         disocclusion.install(passes);
         temporalSignals.install(passes);
         reflectionDenoise.install(passes);
         opaqueComposite.install(passes);
         skyComposite.install(passes);
+        cloudOccupancy.install(passes);
         cloudShadows.install(passes);
         clouds.install(passes);
         cloudTemporal.install(passes);
         froxelMedia.install(passes);
         atmosphereComposite.install(passes);
         temporalHistory.install(passes);
+        temporalResolve.install(passes);
+        hdrPost.install(passes);
         patchSurfaces.install(passes);
+        waterReflectionTemporal.install(passes);
     }
 
     void prepare(CombatantRhi rhi) {
@@ -231,19 +250,24 @@ final class DeferredBackendPasses implements AutoCloseable {
         indirectLight.prepare(rhi);
         reflections.prepare(rhi);
         reactiveMask.prepare(rhi);
+        finalTemporalCoverage.prepare(rhi);
         disocclusion.prepare(rhi);
         temporalSignals.prepare(rhi);
         reflectionDenoise.prepare(rhi);
         opaqueComposite.prepare(rhi);
         skyComposite.prepare(rhi);
         cloudField.prepare(rhi);
+        cloudOccupancy.prepare(rhi);
         clouds.prepare(rhi);
         cloudTemporal.prepare(rhi);
         cloudShadows.prepare(rhi);
         froxelMedia.prepare(rhi);
         atmosphereComposite.prepare(rhi);
         temporalHistory.prepare(rhi);
+        temporalResolve.prepare(rhi);
+        hdrPost.prepare(rhi);
         patchSurfaces.prepare(rhi);
+        waterReflectionTemporal.prepare(rhi);
     }
 
     void release(CombatantRhi currentOwner) {
@@ -266,6 +290,7 @@ final class DeferredBackendPasses implements AutoCloseable {
         reflectionCascades.release(releaseOwner);
         reflections.release(releaseOwner);
         reactiveMask.release(releaseOwner);
+        finalTemporalCoverage.release(releaseOwner);
         disocclusion.release(releaseOwner);
         temporalSignals.release(releaseOwner);
         reflectionDenoise.release(releaseOwner);
@@ -273,25 +298,33 @@ final class DeferredBackendPasses implements AutoCloseable {
         skyComposite.release(releaseOwner);
         clouds.release(releaseOwner);
         cloudShadows.release(releaseOwner);
+        cloudOccupancy.release(releaseOwner);
         cloudField.release(releaseOwner);
         cloudTemporal.release(releaseOwner);
         froxelMedia.release(releaseOwner);
         atmosphereComposite.release(releaseOwner);
         temporalHistory.release(releaseOwner);
+        temporalResolve.release(releaseOwner);
+        hdrPost.release(releaseOwner);
         patchSurfaces.release(releaseOwner);
+        waterReflectionTemporal.release(releaseOwner);
         owner = null;
     }
 
     private void resolveDepth(DeferredPassContext context) {
+        resolveDepth(context, DeferredResource.RESOLVED_DEPTH, "Combatant depth resolve");
+    }
+
+    private void resolveDepth(DeferredPassContext context, DeferredResource outputResource, String label) {
         ensureOwner(context.rhi());
         GpuTextureView source = requireTexture(context, DeferredResource.MAIN_DEPTH);
-        RhiStorageImage output = requireImage(context, DeferredResource.RESOLVED_DEPTH);
+        RhiStorageImage output = requireImage(context, outputResource);
         int samples = samples(source);
         RhiComputePipeline pipeline = samples > 1 ? depthMsaa() : depthSingle();
         GpuSampler sampler = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
 
         context.advancedShaders().dispatch(new ComputeDispatchCommand(
-                "Combatant depth resolve",
+                label,
                 pipeline,
                 groups(output.descriptor().width()),
                 groups(output.descriptor().height()),
@@ -433,6 +466,7 @@ final class DeferredBackendPasses implements AutoCloseable {
             reflectionCascades.release(previous);
             reflections.release(previous);
             reactiveMask.release(previous);
+            finalTemporalCoverage.release(previous);
             disocclusion.release(previous);
             temporalSignals.release(previous);
             reflectionDenoise.release(previous);
@@ -440,11 +474,16 @@ final class DeferredBackendPasses implements AutoCloseable {
             skyComposite.release(previous);
             clouds.release(previous);
             cloudShadows.release(previous);
+            cloudOccupancy.release(previous);
             cloudField.release(previous);
             cloudTemporal.release(previous);
+            froxelMedia.release(previous);
             atmosphereComposite.release(previous);
             temporalHistory.release(previous);
+            temporalResolve.release(previous);
+            hdrPost.release(previous);
             patchSurfaces.release(previous);
+            waterReflectionTemporal.release(previous);
         }
         owner = rhi;
     }
@@ -525,9 +564,11 @@ final class DeferredBackendPasses implements AutoCloseable {
     public void close() {
         closePipelines();
         shadowMaps.close();
+        secondaryShadowCasters.close();
         shadowResolve.close();
         contactShadows.close();
         ambientOcclusion.close();
+        surfaceWeather.close();
         coloredBlockLight.close();
         skyEnvironment.close();
         environmentIrradiance.close();
@@ -537,15 +578,24 @@ final class DeferredBackendPasses implements AutoCloseable {
         reflectionCascades.close();
         reflections.close();
         reactiveMask.close();
+        finalTemporalCoverage.close();
         disocclusion.close();
         temporalSignals.close();
         reflectionDenoise.close();
         opaqueComposite.close();
         skyComposite.close();
         clouds.close();
+        cloudShadows.close();
+        cloudOccupancy.close();
+        cloudField.close();
+        cloudTemporal.close();
+        froxelMedia.close();
         atmosphereComposite.close();
         temporalHistory.close();
+        temporalResolve.close();
+        hdrPost.close();
         patchSurfaces.close();
+        waterReflectionTemporal.close();
         owner = null;
     }
 

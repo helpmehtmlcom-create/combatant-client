@@ -8,8 +8,13 @@
 package combatant.client.render.engine.deferred;
 
 import com.mojang.blaze3d.GpuFormat;
+import com.mojang.blaze3d.textures.GpuTexture;
+import combatant.client.render.engine.framegraph.FrameGraphPhysicalResourceDescriptor;
+import combatant.client.render.engine.framegraph.FrameGraphTextureDescriptor;
+import combatant.client.render.engine.rhi.shader.RhiTextureUsage;
+import combatant.client.render.engine.rhi.shader.StorageAccess;
 
-/** Default physical requirements for a lazily allocated world-graph texture. */
+/** Deferred logical texture requirements lowered into a FrameGraphTextureDescriptor before planning. */
 public record DeferredTextureSpec(
         GpuFormat format,
         ResolutionClass resolution,
@@ -19,13 +24,17 @@ public record DeferredTextureSpec(
         boolean mipChain,
         boolean storageImage,
         boolean renderAttachment
-) {
+) implements DeferredPhysicalResourceSpec {
     /**
      * Semantic resolution classes. The class is stable graph ABI; the actual scale is runtime
      * policy and can change without replacing resource keys or pass contracts.
      */
     public enum ResolutionClass {
         FULL,
+        /** Final presentation/output resolution; may differ from the world render resolution. */
+        OUTPUT,
+        /** HDR bloom working resolution, scaled from final output rather than render resolution. */
+        BLOOM,
         SHADOW_OUTPUT,
         CONTACT_SHADOW_TRACE,
         AMBIENT_OCCLUSION,
@@ -38,7 +47,8 @@ public record DeferredTextureSpec(
         public float scale(DeferredRuntimeConfig.Snapshot settings) {
             if (settings == null) settings = DeferredRuntimeConfig.current();
             return switch (this) {
-                case FULL -> 1.0f;
+                case FULL, OUTPUT -> 1.0f;
+                case BLOOM -> DeferredPostConfig.current().bloomInitialScale();
                 case SHADOW_OUTPUT -> settings.shadowOutputScale();
                 case CONTACT_SHADOW_TRACE -> settings.contactShadowScale();
                 case AMBIENT_OCCLUSION -> settings.ambientOcclusionScale();
@@ -50,16 +60,34 @@ public record DeferredTextureSpec(
             };
         }
 
+        public int width(int renderWidth, int outputWidth, DeferredRuntimeConfig.Snapshot settings) {
+            if (this == OUTPUT) return Math.max(1, outputWidth > 0 ? outputWidth : renderWidth);
+            if (this == BLOOM) {
+                int base = outputWidth > 0 ? outputWidth : renderWidth;
+                return scaledExtent(base, scale(settings));
+            }
+            return scaledExtent(renderWidth, scale(settings));
+        }
+
         public int width(int fullWidth, DeferredRuntimeConfig.Snapshot settings) {
-            return scaledExtent(fullWidth, scale(settings));
+            return width(fullWidth, fullWidth, settings);
         }
 
         public int width(int fullWidth) {
             return width(fullWidth, DeferredRuntimeConfig.current());
         }
 
+        public int height(int renderHeight, int outputHeight, DeferredRuntimeConfig.Snapshot settings) {
+            if (this == OUTPUT) return Math.max(1, outputHeight > 0 ? outputHeight : renderHeight);
+            if (this == BLOOM) {
+                int base = outputHeight > 0 ? outputHeight : renderHeight;
+                return scaledExtent(base, scale(settings));
+            }
+            return scaledExtent(renderHeight, scale(settings));
+        }
+
         public int height(int fullHeight, DeferredRuntimeConfig.Snapshot settings) {
-            return scaledExtent(fullHeight, scale(settings));
+            return height(fullHeight, fullHeight, settings);
         }
 
         public int height(int fullHeight) {
@@ -95,12 +123,48 @@ public record DeferredTextureSpec(
         }
     }
 
+    @Override
+    public FrameGraphPhysicalResourceDescriptor descriptor(DeferredResource resource,
+                                                           int renderWidth,
+                                                           int renderHeight,
+                                                           int outputWidth,
+                                                           int outputHeight,
+                                                           int sceneSamples,
+                                                           DeferredRuntimeConfig.Snapshot settings) {
+        int width = width(renderWidth, outputWidth, settings);
+        int height = height(renderHeight, outputHeight, settings);
+        int samples = this.samples == SamplePolicy.MATCH_SCENE ? Math.max(1, sceneSamples) : 1;
+        int mipLevels = mipChain
+                ? 32 - Integer.numberOfLeadingZeros(Math.max(width, height)) : 1;
+        if (resource == DeferredResource.DEPTH_PYRAMID && settings != null
+                && settings.depthPyramidMaxMipLevels() > 0) {
+            mipLevels = Math.min(mipLevels, settings.depthPyramidMaxMipLevels());
+        }
+        if (samples > 1 && mipLevels > 1) {
+            throw new IllegalStateException("Multisampled deferred resources cannot have mip chains: " + resource);
+        }
+
+        int usage = GpuTexture.USAGE_TEXTURE_BINDING | GpuTexture.USAGE_COPY_SRC | GpuTexture.USAGE_COPY_DST;
+        if (storageImage) usage |= RhiTextureUsage.STORAGE_IMAGE;
+        if (renderAttachment) usage |= GpuTexture.USAGE_RENDER_ATTACHMENT;
+        return new FrameGraphTextureDescriptor(
+                width, height, samples, mipLevels, format, usage, StorageAccess.READ_WRITE);
+    }
+
+    public int width(int renderWidth, int outputWidth, DeferredRuntimeConfig.Snapshot settings) {
+        return fixedWidth > 0 ? fixedWidth : resolution.width(renderWidth, outputWidth, settings);
+    }
+
     public int width(int fullWidth, DeferredRuntimeConfig.Snapshot settings) {
-        return fixedWidth > 0 ? fixedWidth : resolution.width(fullWidth, settings);
+        return width(fullWidth, fullWidth, settings);
+    }
+
+    public int height(int renderHeight, int outputHeight, DeferredRuntimeConfig.Snapshot settings) {
+        return fixedHeight > 0 ? fixedHeight : resolution.height(renderHeight, outputHeight, settings);
     }
 
     public int height(int fullHeight, DeferredRuntimeConfig.Snapshot settings) {
-        return fixedHeight > 0 ? fixedHeight : resolution.height(fullHeight, settings);
+        return height(fullHeight, fullHeight, settings);
     }
 
     public boolean fixedExtent() {

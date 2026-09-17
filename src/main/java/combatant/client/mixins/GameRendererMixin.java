@@ -63,6 +63,8 @@ import combatant.client.render.engine.core.CombatantWorldMatrices;
 import combatant.client.render.engine.core.RenderPhase;
 import combatant.client.render.engine.core.RenderPhaseScope;
 import combatant.client.render.engine.depth.WorldSceneDepth;
+import combatant.client.render.engine.deferred.DeferredJitterSequence;
+import combatant.client.render.engine.rhi.shader.RhiShaderStage;
 import combatant.client.render.engine.debug.UiClipDebugScene;
 import combatant.client.render.engine.msaa.MsaaWorldTarget;
 import combatant.client.config.MainConfig;
@@ -492,17 +494,10 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
                 && gameRenderState.levelRenderState.cameraRenderState.projectionMatrix != null) {
             CameraRenderState cameraRenderState = gameRenderState.levelRenderState.cameraRenderState;
             Vec3 cameraPosition = cameraRenderState.pos != null ? cameraRenderState.pos : mainCamera.position();
-            CombatantWorldMatrices.capture(
-                    cameraRenderState.viewRotationMatrix,
-                    renderProjectionMatrix,
-                    cameraRenderState.projectionMatrix,
-                    cameraPosition
-            );
 
-            // This is the first stable point where Minecraft has committed the actual world
-            // projection and camera render state, but terrain submission has not started yet.
-            // Open the Combatant frame here so deferred producers can never bootstrap from the
-            // identity fallback used by non-world UI paths.
+            // Open/refresh the Combatant frame first so the jitter sample is keyed to the canonical
+            // frame id. The second beginFrame call below only refreshes CameraContext; it never
+            // advances frameId while the frame is already open.
             DeltaTracker tickCounter = minecraft.getDeltaTracker();
             float tickProgress = tickCounter != null
                     ? tickCounter.getGameTimeDeltaPartialTick(true) : RenderState.tickProgress;
@@ -517,13 +512,46 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
                     renderProjectionMatrix,
                     new Matrix4f(cameraRenderState.viewRotationMatrix)
             );
+
+            Matrix4f unjitteredProjection = new Matrix4f(renderProjectionMatrix);
+            Matrix4f jitteredProjection = unjitteredProjection;
+            org.joml.Vector2f jitterPixels = new org.joml.Vector2f();
+            if (CombatantRenderSystem.deferredWorld().enabled()
+                    && CombatantRenderSystem.rhi().advancedShaders().supports(RhiShaderStage.COMPUTE)) {
+                var mainTarget = minecraft.gameRenderer.mainRenderTarget();
+                var colorView = mainTarget != null ? mainTarget.getColorTextureView() : null;
+                int renderWidth = colorView != null ? Math.max(1, colorView.getWidth(0))
+                        : Math.max(1, minecraft.getWindow().getWidth());
+                int renderHeight = colorView != null ? Math.max(1, colorView.getHeight(0))
+                        : Math.max(1, minecraft.getWindow().getHeight());
+                jitterPixels = DeferredJitterSequence.sample(frame.frameId());
+                jitteredProjection = DeferredJitterSequence.apply(
+                        unjitteredProjection, jitterPixels, renderWidth, renderHeight
+                );
+                frame = CombatantRenderSystem.beginFrame(
+                        tickProgress, frameDeltaTicks, fixedDeltaTicks, jitteredProjection,
+                        new Matrix4f(cameraRenderState.viewRotationMatrix)
+                );
+            }
+
+            CombatantWorldMatrices.capture(
+                    cameraRenderState.viewRotationMatrix,
+                    jitteredProjection,
+                    unjitteredProjection,
+                    cameraRenderState.projectionMatrix,
+                    jitterPixels,
+                    cameraPosition
+            );
             CombatantRenderSystem.deferredWorld().capturePrimaryView(
                     frame.frameId(),
                     cameraRenderState.viewRotationMatrix,
-                    renderProjectionMatrix,
+                    jitteredProjection,
+                    unjitteredProjection,
+                    jitterPixels,
                     cameraPosition,
                     cameraRenderState.depthFar
             );
+            return original.call(instance, jitteredProjection);
         }
         return original.call(instance, renderProjectionMatrix);
     }

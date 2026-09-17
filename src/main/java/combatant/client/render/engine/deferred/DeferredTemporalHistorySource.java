@@ -44,11 +44,12 @@ final class DeferredTemporalHistorySource implements AutoCloseable {
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.history.capture", DeferredStage.TEMPORAL_RESOLVE)
-                .read(DeferredResource.SCENE_COLOR, DeferredResource.MAIN_DEPTH)
+                .read(DeferredResource.SCENE_COLOR, DeferredResource.FINAL_RESOLVED_DEPTH)
                 .write(DeferredResource.HISTORY_COLOR, DeferredResource.HISTORY_DEPTH)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.resources().texture(DeferredResource.SCENE_COLOR) != null
-                        && context.resources().texture(DeferredResource.MAIN_DEPTH) != null)
+                        && context.isValid(DeferredResource.FINAL_RESOLVED_DEPTH)
+                        && context.resources().texture(DeferredResource.FINAL_RESOLVED_DEPTH) != null)
                 .execute(this::capture)
                 .build());
     }
@@ -67,7 +68,7 @@ final class DeferredTemporalHistorySource implements AutoCloseable {
     private void capture(DeferredPassContext context) {
         ensureOwner(context.rhi());
         GpuTextureView scene = requireTexture(context, DeferredResource.SCENE_COLOR);
-        GpuTextureView depth = requireTexture(context, DeferredResource.MAIN_DEPTH);
+        GpuTextureView depth = requireTexture(context, DeferredResource.FINAL_RESOLVED_DEPTH);
         RhiStorageImage historyColor = requireImage(context, DeferredResource.HISTORY_COLOR);
         RhiStorageImage historyDepth = requireImage(context, DeferredResource.HISTORY_DEPTH);
         GpuSampler nearest = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);

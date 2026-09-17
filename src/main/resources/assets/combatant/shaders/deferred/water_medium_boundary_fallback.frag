@@ -12,6 +12,7 @@ void main() {
     ivec2 extent = textureSize(u_OpaqueDepth, 0);
     if (any(lessThan(pixel, ivec2(0))) || any(greaterThanEqual(pixel, extent))) discard;
 
+    // Primary world depth is reversed-Z. Reject water hidden behind opaque geometry.
     float opaqueDepth = texelFetch(u_OpaqueDepth, pixel, 0).r;
     if (gl_FragCoord.z + 1.0e-6 < opaqueDepth) discard;
 

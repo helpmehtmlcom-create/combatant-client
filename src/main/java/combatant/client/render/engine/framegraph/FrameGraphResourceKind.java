@@ -9,6 +9,7 @@ package combatant.client.render.engine.framegraph;
 
 public enum FrameGraphResourceKind {
     TEXTURE,
+    VOLUME,
     BUFFER,
     EXTERNAL
 }

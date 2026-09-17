@@ -109,10 +109,10 @@ final class DeferredTemporalSignalSource implements AutoCloseable {
                                DeferredResource historyColor, DeferredResource historyConfidence,
                                DeferredTemporalHistoryId historyId, boolean indirect) {
         passes.add(DeferredPassSpec.builder(name, stage)
-                .read(currentColor, currentConfidence, DeferredResource.VELOCITY,
-                        DeferredResource.RESOLVED_DEPTH, DeferredResource.HISTORY_DEPTH,
-                        DeferredResource.DISOCCLUSION_MASK, DeferredResource.REACTIVE_MASK,
+                .read(currentColor, currentConfidence, DeferredResource.HISTORY_DEPTH,
                         historyColor, historyConfidence)
+                .optionalRead(DeferredResource.VELOCITY, DeferredResource.RESOLVED_DEPTH,
+                        DeferredResource.DISOCCLUSION_MASK, DeferredResource.REACTIVE_MASK)
                 .write(outputColor, outputConfidence)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.isValid(currentColor) && context.isValid(currentConfidence))

@@ -30,12 +30,20 @@ public record FrameGraphResourceKey(String name,
         return new FrameGraphResourceKey(name, FrameGraphResourceKind.TEXTURE, FrameGraphResourceLifetime.TRANSIENT);
     }
 
+    public static FrameGraphResourceKey transientVolume(String name) {
+        return new FrameGraphResourceKey(name, FrameGraphResourceKind.VOLUME, FrameGraphResourceLifetime.TRANSIENT);
+    }
+
     public static FrameGraphResourceKey transientBuffer(String name) {
         return new FrameGraphResourceKey(name, FrameGraphResourceKind.BUFFER, FrameGraphResourceLifetime.TRANSIENT);
     }
 
     public static FrameGraphResourceKey persistentTexture(String name) {
         return new FrameGraphResourceKey(name, FrameGraphResourceKind.TEXTURE, FrameGraphResourceLifetime.PERSISTENT);
+    }
+
+    public static FrameGraphResourceKey persistentVolume(String name) {
+        return new FrameGraphResourceKey(name, FrameGraphResourceKind.VOLUME, FrameGraphResourceLifetime.PERSISTENT);
     }
 
     public static FrameGraphResourceKey persistentBuffer(String name) {

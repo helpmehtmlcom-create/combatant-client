@@ -59,7 +59,11 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
             new ShaderResourceSlot(6, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
             new ShaderResourceSlot(7, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(8, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
-            new ShaderResourceSlot(9, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY)
+            new ShaderResourceSlot(9, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(10, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(11, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(12, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(13, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY)
     ));
 
     private final DeferredFroxelMediaSource froxelMedia;
@@ -76,6 +80,8 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
         passes.add(DeferredPassSpec.builder("world.environment.media.composite", DeferredStage.VOLUMETRIC_MEDIA_COMPOSITE)
                 .read(DeferredResource.SKY_COMPOSITED_RADIANCE, DeferredResource.RESOLVED_DEPTH,
                         DeferredResource.CLOUD_TEMPORAL_RADIANCE, DeferredResource.CLOUD_TEMPORAL_DEPTH,
+                        DeferredResource.CLOUD_HIGH_TEMPORAL_RADIANCE, DeferredResource.CLOUD_HIGH_TEMPORAL_DEPTH,
+                        DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_RADIANCE, DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_DEPTH,
                         DeferredResource.AERIAL_PERSPECTIVE, DeferredResource.AERIAL_TRANSMITTANCE,
                         DeferredResource.FROXEL_MEDIA_INTEGRATED_RADIANCE,
                         DeferredResource.FROXEL_MEDIA_INTEGRATED_TRANSMITTANCE)
@@ -86,6 +92,10 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
                         && context.isValid(DeferredResource.CLOUD_TEMPORAL_RADIANCE)
                         && context.isValid(DeferredResource.CLOUD_TEMPORAL_DEPTH)
+                        && context.isValid(DeferredResource.CLOUD_HIGH_TEMPORAL_RADIANCE)
+                        && context.isValid(DeferredResource.CLOUD_HIGH_TEMPORAL_DEPTH)
+                        && context.isValid(DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_RADIANCE)
+                        && context.isValid(DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_DEPTH)
                         && context.isValid(DeferredResource.AERIAL_PERSPECTIVE)
                         && context.isValid(DeferredResource.AERIAL_TRANSMITTANCE)
                         && context.isValid(DeferredResource.FROXEL_MEDIA_INTEGRATED_RADIANCE)
@@ -115,6 +125,10 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
         GpuTextureView depth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
         GpuTextureView cloudRadiance = requireTexture(context, DeferredResource.CLOUD_TEMPORAL_RADIANCE);
         GpuTextureView cloudDepth = requireTexture(context, DeferredResource.CLOUD_TEMPORAL_DEPTH);
+        GpuTextureView highCloudRadiance = requireTexture(context, DeferredResource.CLOUD_HIGH_TEMPORAL_RADIANCE);
+        GpuTextureView highCloudDepth = requireTexture(context, DeferredResource.CLOUD_HIGH_TEMPORAL_DEPTH);
+        GpuTextureView convectiveCloudRadiance = requireTexture(context, DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_RADIANCE);
+        GpuTextureView convectiveCloudDepth = requireTexture(context, DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_DEPTH);
         GpuTextureView aerialRadiance = requireTexture(context, DeferredResource.AERIAL_PERSPECTIVE);
         GpuTextureView aerialTransmittance = requireTexture(context, DeferredResource.AERIAL_TRANSMITTANCE);
         RhiStorageVolume integratedRadiance = requireVolume(context, DeferredResource.FROXEL_MEDIA_INTEGRATED_RADIANCE);
@@ -145,7 +159,11 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
                         new SampledTextureBinding(2, cloudRadiance, linear),
                         new SampledTextureBinding(3, cloudDepth, nearest),
                         new SampledTextureBinding(8, aerialRadiance, nearest),
-                        new SampledTextureBinding(9, aerialTransmittance, nearest)
+                        new SampledTextureBinding(9, aerialTransmittance, nearest),
+                        new SampledTextureBinding(10, highCloudRadiance, linear),
+                        new SampledTextureBinding(11, highCloudDepth, nearest),
+                        new SampledTextureBinding(12, convectiveCloudRadiance, linear),
+                        new SampledTextureBinding(13, convectiveCloudDepth, nearest)
                 ),
                 List.of(new StorageImageBinding(6, output, StorageAccess.WRITE_ONLY)),
                 List.of(

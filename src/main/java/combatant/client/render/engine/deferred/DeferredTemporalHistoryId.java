@@ -13,9 +13,12 @@ public enum DeferredTemporalHistoryId {
     INDIRECT_LIGHT,
     REFLECTIONS,
     CLOUDS,
+    CLOUDS_HIGH,
+    CLOUDS_CONVECTIVE,
     AMBIENT_OCCLUSION,
     FROXEL_MEDIA,
     EXPOSURE,
     WATER,
+    WATER_REFLECTIONS,
     TAA
 }

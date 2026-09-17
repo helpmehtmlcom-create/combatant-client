@@ -149,10 +149,14 @@ public abstract class LevelRendererMixin {
         var frame = CombatantRenderSystem.currentContext();
         if (frame != null && cameraRenderState != null && cameraRenderState.pos != null) {
             org.joml.Matrix4f projection = CombatantWorldMatrices.renderProjectionMatrix();
+            org.joml.Matrix4f unjitteredProjection = CombatantWorldMatrices.unjitteredRenderProjectionMatrix();
+            org.joml.Vector2f jitter = CombatantWorldMatrices.jitterPixels();
             if (projection == null) projection = cameraRenderState.projectionMatrix;
-            if (projection != null) {
+            if (unjitteredProjection == null) unjitteredProjection = projection;
+            if (projection != null && unjitteredProjection != null) {
                 CombatantRenderSystem.deferredWorld().capturePrimaryView(
-                        frame.frameId(), positionMatrix, projection, cameraRenderState.pos, cameraRenderState.depthFar
+                        frame.frameId(), positionMatrix, projection, unjitteredProjection, jitter,
+                        cameraRenderState.pos, cameraRenderState.depthFar
                 );
             }
 

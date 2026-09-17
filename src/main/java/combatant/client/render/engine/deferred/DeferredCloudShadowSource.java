@@ -17,7 +17,9 @@ import combatant.client.render.engine.rhi.shader.RhiComputePipeline;
 import combatant.client.render.engine.rhi.shader.RhiShaderStage;
 import combatant.client.render.engine.rhi.shader.RhiStorageBuffer;
 import combatant.client.render.engine.rhi.shader.RhiStorageImage;
+import combatant.client.render.engine.rhi.shader.RhiStorageVolume;
 import combatant.client.render.engine.rhi.shader.SampledTextureBinding;
+import combatant.client.render.engine.rhi.shader.SampledVolumeBinding;
 import combatant.client.render.engine.rhi.shader.ShaderResourceKind;
 import combatant.client.render.engine.rhi.shader.ShaderResourceLayout;
 import combatant.client.render.engine.rhi.shader.ShaderResourceSlot;
@@ -47,10 +49,14 @@ final class DeferredCloudShadowSource implements AutoCloseable {
     private static final Std430StructLayout MAP_DATA_LAYOUT = Std430StructLayout.builder()
             .member("cameraTime", Std430Type.VEC4)
             .member("grid", Std430Type.VEC4)
+            .member("macroGrid", Std430Type.VEC4)
+            .member("macroOrigin", Std430Type.VEC4)
             .member("counts", Std430Type.VEC4)
             .member("sunDirection", Std430Type.VEC4)
             .member("noiseDomain", Std430Type.VEC4)
             .member("mapDomain", Std430Type.VEC4)
+            .member("occupancyDomain", Std430Type.VEC4)
+            .member("occupancyPolicy", Std430Type.VEC4)
             .build();
     private static final Std430StructLayout RESOLVE_DATA_LAYOUT = Std430StructLayout.builder()
             .member("inverseProjection", Std430Type.MAT4)
@@ -64,7 +70,9 @@ final class DeferredCloudShadowSource implements AutoCloseable {
             new ShaderResourceSlot(0, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
             new ShaderResourceSlot(1, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(2, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
-            new ShaderResourceSlot(3, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
+            new ShaderResourceSlot(3, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(4, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(5, ShaderResourceKind.SAMPLED_VOLUME, StorageAccess.READ_ONLY)
     ));
     private static final ShaderResourceLayout RESOLVE_LAYOUT = new ShaderResourceLayout(List.of(
             new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
@@ -75,6 +83,7 @@ final class DeferredCloudShadowSource implements AutoCloseable {
 
     private final DeferredCloudConfig config = DeferredCloudConfig.current();
     private final DeferredCloudFieldSource fieldSource;
+    private final DeferredCloudOccupancySource occupancySource;
     private CombatantRhi owner;
     private RhiComputePipeline mapPipeline;
     private RhiComputePipeline resolvePipeline;
@@ -93,17 +102,21 @@ final class DeferredCloudShadowSource implements AutoCloseable {
                       float maxCloudY,
                       int altitudeSlices) { }
 
-    DeferredCloudShadowSource(DeferredCloudFieldSource fieldSource) {
+    DeferredCloudShadowSource(DeferredCloudFieldSource fieldSource, DeferredCloudOccupancySource occupancySource) {
         if (fieldSource == null) throw new IllegalArgumentException("fieldSource");
+        if (occupancySource == null) throw new IllegalArgumentException("occupancySource");
         this.fieldSource = fieldSource;
+        this.occupancySource = occupancySource;
     }
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.cloud.shadow-map", DeferredStage.PRE_LIGHTING)
                 .priority(700)
+                .read(DeferredResource.CLOUD_OCCUPANCY)
                 .write(DeferredResource.CLOUD_SHADOW_MAP)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.primaryView().current() != null)
+                .when(context -> context.primaryView().current() != null
+                        && context.isValid(DeferredResource.CLOUD_OCCUPANCY))
                 .execute(this::renderShadowMap)
                 .build());
         passes.add(DeferredPassSpec.builder("world.cloud.shadow-resolve", DeferredStage.PRE_LIGHTING)
@@ -139,6 +152,7 @@ final class DeferredCloudShadowSource implements AutoCloseable {
         RhiStorageImage shadowMap = requireImage(context, DeferredResource.CLOUD_SHADOW_MAP);
         DeferredCloudFieldSource.FrameData cloudField = fieldSource.prepareFrame(context);
         WeatherFieldState field = cloudField.field();
+        WeatherFieldState macro = cloudField.macroField();
         WeatherState weather = cloudField.weather();
         Vec3 camera = view.cameraPosition();
 
@@ -147,20 +161,33 @@ final class DeferredCloudShadowSource implements AutoCloseable {
         int depth = field.valid() ? field.gridDepth() : 0;
         float originX = field.valid() ? field.originBlockX() : (float) camera.x;
         float originZ = field.valid() ? field.originBlockZ() : (float) camera.z;
-        float timeSeconds = weather.valid() ? weather.modelTimeTicks() / 20.0f : 0.0f;
+        float timeSeconds = weather.valid() ? (float) weather.renderAdvectionSeconds() : 0.0f;
+        float macroSpacing = macro.valid() ? Math.max(1, macro.spacingBlocks()) : 1.0f;
+        int macroWidth = macro.valid() ? macro.gridWidth() : 0;
+        int macroDepth = macro.valid() ? macro.gridDepth() : 0;
+        float macroOriginX = macro.valid() ? macro.originBlockX() - originX : 0.0f;
+        float macroOriginZ = macro.valid() ? macro.originBlockZ() - originZ : 0.0f;
         FrameState shadow = frameState(context, view, cloudField);
+        DeferredCloudOccupancySource.FrameState occupancyState = occupancySource.current();
+        RhiStorageVolume occupancyVolume = requireVolume(context, DeferredResource.CLOUD_OCCUPANCY);
 
         Std430Writer writer = new Std430Writer(MAP_DATA_LAYOUT, 1)
                 .putVec4(0, "cameraTime", (float) (camera.x - originX), (float) camera.y,
                         (float) (camera.z - originZ), timeSeconds)
                 .putVec4(0, "grid", spacing, width, depth, cloudField.weatherCount())
-                .putVec4(0, "counts", cloudField.layerCount(), config.shadowSteps(), shadow.active() ? 1.0f : 0.0f,
+                .putVec4(0, "macroGrid", macroSpacing, macroWidth, macroDepth, cloudField.macroWeatherCount())
+                .putVec4(0, "macroOrigin", macroOriginX, macroOriginZ, 0.0f, 0.0f)
+                .putVec4(0, "counts", cloudField.domainCount(), config.shadowSteps(), shadow.active() ? 1.0f : 0.0f,
                         shadow.altitudeSlices())
                 .putVec4(0, "sunDirection", shadow.sunX(), shadow.sunY(), shadow.sunZ(), shadow.active() ? 1.0f : 0.0f)
                 .putVec4(0, "noiseDomain", wrapOrigin(field.valid() ? field.originBlockX() : 0),
                         wrapOrigin(field.valid() ? field.originBlockZ() : 0), seedPhase(weather.modelSeed()), 0.0f)
                 .putVec4(0, "mapDomain", shadow.mapOriginRelativeX(), shadow.mapOriginRelativeZ(),
-                        shadow.spanBlocks(), shadow.referenceY());
+                        shadow.spanBlocks(), shadow.referenceY())
+                .putVec4(0, "occupancyDomain", occupancyState.originLocalX(), occupancyState.originLocalZ(),
+                        occupancyState.minimumY(), occupancyState.maximumY())
+                .putVec4(0, "occupancyPolicy", occupancyState.spanXZ(), occupancyState.active() ? 1.0f : 0.0f,
+                        0.0f, 0.0f);
         RhiStorageBuffer data = mapData();
         data.upload(writer.buffer(), 0L);
 
@@ -172,11 +199,16 @@ final class DeferredCloudShadowSource implements AutoCloseable {
                         new StorageBinding(1, data, 0L, writer.byteSize(), StorageAccess.READ_ONLY),
                         new StorageBinding(2, fieldSource.weatherData(), 0L,
                                 fieldSource.weatherData().descriptor().byteSize(), StorageAccess.READ_ONLY),
-                        new StorageBinding(3, fieldSource.layerData(), 0L,
-                                fieldSource.layerData().descriptor().byteSize(), StorageAccess.READ_ONLY)
+                        new StorageBinding(3, fieldSource.domainData(), 0L,
+                                fieldSource.domainData().descriptor().byteSize(), StorageAccess.READ_ONLY),
+                        new StorageBinding(4, fieldSource.macroWeatherData(), 0L,
+                                fieldSource.macroWeatherData().descriptor().byteSize(), StorageAccess.READ_ONLY)
                 ),
                 List.of(),
-                List.of(new StorageImageBinding(0, shadowMap, StorageAccess.WRITE_ONLY))
+                List.of(new StorageImageBinding(0, shadowMap, StorageAccess.WRITE_ONLY)),
+                List.of(),
+                List.of(new SampledVolumeBinding(5, occupancyVolume,
+                        RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST)))
         ));
     }
 
@@ -229,8 +261,12 @@ final class DeferredCloudShadowSource implements AutoCloseable {
         float mapOriginRelativeX = (float) (snappedWorldX - camera.x - span * 0.5);
         float mapOriginRelativeZ = (float) (snappedWorldZ - camera.z - span * 0.5);
         CloudProfile profile = cloudField.profile();
-        float minCloudY = minimumCloudAltitude(profile, cloudField.layerCount());
-        float maxCloudY = maximumCloudAltitude(profile, cloudField.layerCount());
+        float minCloudY = minimumCloudAltitude(profile, cloudField.domainCount());
+        float maxCloudY = maximumCloudAltitude(profile, cloudField.domainCount());
+        if (!Float.isFinite(minCloudY) || !Float.isFinite(maxCloudY) || maxCloudY <= minCloudY) {
+            minCloudY = 0.0f;
+            maxCloudY = 1.0f;
+        }
         boolean active = cloudField.active() && sun.valid() && sun.directionY() > 0.02f;
         return new FrameState(
                 mapOriginRelativeX, mapOriginRelativeZ, span, 0.0f,
@@ -290,17 +326,17 @@ final class DeferredCloudShadowSource implements AutoCloseable {
         owner = null;
     }
 
-    private static float minimumCloudAltitude(CloudProfile profile, int layerCount) {
+    private static float minimumCloudAltitude(CloudProfile profile, int domainCount) {
         float result = Float.POSITIVE_INFINITY;
-        int count = Math.min(layerCount, profile.layers().size());
-        for (int i = 0; i < count; i++) result = Math.min(result, profile.layers().get(i).baseAltitudeBlocks());
+        int count = Math.min(domainCount, profile.domains().size());
+        for (int i = 0; i < count; i++) result = Math.min(result, profile.domains().get(i).minimumAltitudeBlocks());
         return Float.isFinite(result) ? result : Float.POSITIVE_INFINITY;
     }
 
-    private static float maximumCloudAltitude(CloudProfile profile, int layerCount) {
+    private static float maximumCloudAltitude(CloudProfile profile, int domainCount) {
         float result = Float.NEGATIVE_INFINITY;
-        int count = Math.min(layerCount, profile.layers().size());
-        for (int i = 0; i < count; i++) result = Math.max(result, profile.layers().get(i).topAltitudeBlocks());
+        int count = Math.min(domainCount, profile.domains().size());
+        for (int i = 0; i < count; i++) result = Math.max(result, profile.domains().get(i).maximumAltitudeBlocks());
         return Float.isFinite(result) ? result : Float.NEGATIVE_INFINITY;
     }
 
@@ -322,6 +358,12 @@ final class DeferredCloudShadowSource implements AutoCloseable {
         GpuTextureView value = context.resources().texture(resource);
         if (value == null) throw new IllegalStateException("Deferred texture is not bound: " + resource);
         return value;
+    }
+
+    private static RhiStorageVolume requireVolume(DeferredPassContext context, DeferredResource resource) {
+        RhiStorageVolume volume = context.resources().storageVolume(resource);
+        if (volume == null) throw new IllegalStateException("Missing storage volume for " + resource);
+        return volume;
     }
 
     private static RhiStorageImage requireImage(DeferredPassContext context, DeferredResource resource) {

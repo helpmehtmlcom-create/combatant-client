@@ -90,7 +90,7 @@ final class DeferredShadowResolveSource implements AutoCloseable {
                 .execute(this::resolveCascade)
                 .build());
         passes.add(DeferredPassSpec.builder("world.shadow.resolve", DeferredStage.SHADOW_RESOLVE)
-                .read(DeferredResource.SHADOW_CASCADE_VISIBILITY, DeferredResource.CONTACT_SHADOW)
+                .optionalRead(DeferredResource.SHADOW_CASCADE_VISIBILITY, DeferredResource.CONTACT_SHADOW)
                 .write(DeferredResource.SHADOW_COLOR)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.settings().shadowsEnabled()

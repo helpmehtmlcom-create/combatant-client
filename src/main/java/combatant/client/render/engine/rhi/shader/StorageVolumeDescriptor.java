@@ -19,6 +19,7 @@ public record StorageVolumeDescriptor(String label,
                                       int usage,
                                       int mipLevels) {
     private static final int ALLOWED_USAGE = RhiTextureUsage.STORAGE_IMAGE
+            | GpuTexture.USAGE_TEXTURE_BINDING
             | GpuTexture.USAGE_COPY_SRC
             | GpuTexture.USAGE_COPY_DST;
 
@@ -28,12 +29,15 @@ public record StorageVolumeDescriptor(String label,
             throw new IllegalArgumentException("Storage volume dimensions must be positive: "
                     + width + "x" + height + "x" + depth);
         }
-        if (format == null || !format.hasColorAspect() || format.componentCount() == 3) {
-            throw new IllegalArgumentException("Storage volume requires an image-load/store-compatible color format: " + format);
+        if (format == null || !format.hasColorAspect()) {
+            throw new IllegalArgumentException("3D volume requires a color format: " + format);
         }
         access = access == null ? StorageAccess.READ_WRITE : access;
-        if ((usage & RhiTextureUsage.STORAGE_IMAGE) == 0) {
-            throw new IllegalArgumentException("Storage volume usage must include RhiTextureUsage.STORAGE_IMAGE");
+        if (usage == 0) {
+            throw new IllegalArgumentException("3D volume usage must declare at least one usage bit");
+        }
+        if ((usage & RhiTextureUsage.STORAGE_IMAGE) != 0 && format.componentCount() == 3) {
+            throw new IllegalArgumentException("3D storage-image usage requires an image-load/store-compatible format: " + format);
         }
         int unsupportedUsage = usage & ~ALLOWED_USAGE;
         if (unsupportedUsage != 0) {
@@ -54,6 +58,14 @@ public record StorageVolumeDescriptor(String label,
                                    GpuFormat format,
                                    StorageAccess access) {
         this(label, width, height, depth, format, access, RhiTextureUsage.STORAGE_IMAGE, 1);
+    }
+
+    public boolean storage() {
+        return (usage & RhiTextureUsage.STORAGE_IMAGE) != 0;
+    }
+
+    public boolean sampled() {
+        return (usage & GpuTexture.USAGE_TEXTURE_BINDING) != 0;
     }
 
     public boolean copySource() {

@@ -14,7 +14,10 @@ import combatant.client.render.engine.framegraph.CompiledFrameGraph;
 import combatant.client.render.engine.framegraph.FrameGraphContractCompiler;
 import combatant.client.render.engine.framegraph.FrameGraphAccess;
 import combatant.client.render.engine.framegraph.FrameGraphPassContract;
+import combatant.client.render.engine.framegraph.FrameGraphPhysicalPlan;
 import combatant.client.render.engine.framegraph.FrameGraphResourceKey;
+import combatant.client.render.engine.profiler.TracyGpuProfiler;
+import combatant.client.render.engine.profiler.TracyProfiler;
 import combatant.client.render.engine.rhi.CombatantRhi;
 import combatant.client.render.engine.rhi.shader.RhiResourceBarrier;
 import combatant.client.render.engine.rhi.shader.RhiStorageBuffer;
@@ -29,6 +32,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -47,6 +51,12 @@ public final class DeferredPassGraph {
     private final DeferredBackendPasses backendPasses = new DeferredBackendPasses();
     private List<DeferredPassSpec> ordered = List.of();
     private CompiledFrameGraph compiled = new CompiledFrameGraph(List.of(), List.of());
+    private FrameGraphPhysicalPlan physicalPlan = FrameGraphPhysicalPlan.EMPTY;
+    private DeferredFrameGraphResourcePlanner.Layout physicalLayout;
+    private CombatantRhi physicalOwner;
+    private long physicalFrameId = Long.MIN_VALUE;
+    private long compileGeneration;
+    private long physicalCompileGeneration = Long.MIN_VALUE;
     private boolean dirty = true;
 
     public DeferredPassGraph() {
@@ -66,8 +76,9 @@ public final class DeferredPassGraph {
                 .read(DeferredResource.GBUFFER_SURFACE, DeferredResource.GBUFFER_GEOMETRY,
                         DeferredResource.GBUFFER_AUXILIARY, DeferredResource.GBUFFER_MATERIAL,
                         DeferredResource.GBUFFER_DEPTH, DeferredResource.RESOLVED_DEPTH,
-                        DeferredResource.SHADOW_COLOR, DeferredResource.CLOUD_SHADOW_VISIBILITY,
-                        DeferredResource.AMBIENT_OCCLUSION, DeferredResource.ENVIRONMENT_IRRADIANCE)
+                        DeferredResource.ENVIRONMENT_IRRADIANCE)
+                .optionalRead(DeferredResource.SHADOW_COLOR, DeferredResource.CLOUD_SHADOW_VISIBILITY,
+                        DeferredResource.AMBIENT_OCCLUSION)
                 .write(DeferredResource.DIRECT_LIGHTING_COLOR, DeferredResource.SCENE_COLOR)
                 .external().build());
         corePasses.add(DeferredPassSpec.builder("world.forward.opaque", DeferredStage.FORWARD_OPAQUE)
@@ -85,7 +96,24 @@ public final class DeferredPassGraph {
 
     /** Releases native compute pipelines before the active RHI/device is destroyed or switched. */
     public synchronized void releaseBackendResources(CombatantRhi owner) {
+        releasePhysicalResources(owner);
         backendPasses.release(owner);
+    }
+
+    /** Releases only the deferred graph scope; ownership/destruction stays inside Combatant RHI. */
+    public synchronized void releasePhysicalResources(CombatantRhi owner) {
+        CombatantRhi resolved = physicalOwner != null ? physicalOwner : owner;
+        physicalOwner = null;
+        physicalPlan = FrameGraphPhysicalPlan.EMPTY;
+        physicalLayout = null;
+        physicalFrameId = Long.MIN_VALUE;
+        physicalCompileGeneration = Long.MIN_VALUE;
+        if (resolved == null) return;
+        try {
+            resolved.resources().frameGraphResources().releaseScope(this);
+        } catch (RuntimeException ignored) {
+            // Backend teardown may already have retired this scope.
+        }
     }
 
     /** Compiles native deferred backend programs only after the deferred runtime asset scope activates. */
@@ -144,7 +172,9 @@ public final class DeferredPassGraph {
         DeferredPassContext context = new DeferredPassContext(
                 stage, frame, rhi, resources, secondaryViews, primaryView, temporalHistory, worldState, settings
         );
-        try (RenderPhaseScope ignored = CombatantRenderSystem.phase(stage.renderPhase(), "deferred:" + stage.name().toLowerCase())) {
+        ensurePhysicalPlan(snapshot, context);
+        try (TracyProfiler.Scope ignoredCpu = TracyProfiler.beginZone("deferred/stage/" + stage.name().toLowerCase(Locale.ROOT));
+             RenderPhaseScope ignored = CombatantRenderSystem.phase(stage.renderPhase(), "deferred:" + stage.name().toLowerCase(Locale.ROOT))) {
             for (int passIndex = 0; passIndex < snapshot.size(); passIndex++) {
                 DeferredPassSpec pass = snapshot.get(passIndex);
                 if (pass.stage() != stage || pass.externallyDriven()) continue;
@@ -160,8 +190,12 @@ public final class DeferredPassGraph {
                 try {
                     if (!pass.condition().test(context)) continue;
                     prepareResources(pass, context);
+                    validateGraphReads(pass, context.resources());
+                    prepareGraphAccesses(pass, context);
                     lowerAdvancedBarriers(passIndex, snapshot, compiledSnapshot, context);
-                    pass.executor().execute(context);
+                    try (TracyGpuProfiler.Scope ignoredGpu = TracyGpuProfiler.beginZone(gpuZoneName(pass))) {
+                        pass.executor().execute(context);
+                    }
                     markWrites(pass, context.resources());
                 } catch (Throwable t) {
                     DebugLog.warnOnChange(
@@ -173,6 +207,60 @@ public final class DeferredPassGraph {
                 }
             }
         }
+    }
+
+    /**
+     * Applies the same physical-resource activation, validity checks and barriers to a pass whose
+     * draw submission is still driven by the Minecraft/Sodium integration layer.
+     */
+    public boolean prepareExternalPass(String passId, DeferredPassContext context) {
+        if (passId == null || passId.isBlank() || context == null) return false;
+        List<DeferredPassSpec> snapshot;
+        CompiledFrameGraph compiledSnapshot;
+        int passIndex = -1;
+        synchronized (this) {
+            ensureCompiled();
+            snapshot = ordered;
+            compiledSnapshot = compiled;
+            for (int index = 0; index < snapshot.size(); index++) {
+                if (snapshot.get(index).id().equals(passId)) {
+                    passIndex = index;
+                    break;
+                }
+            }
+        }
+        if (passIndex < 0) throw new IllegalArgumentException("Unknown deferred external pass: " + passId);
+        DeferredPassSpec pass = snapshot.get(passIndex);
+        if (!pass.externallyDriven()) throw new IllegalArgumentException("Deferred pass is not externally driven: " + passId);
+        if (pass.stage() != context.stage()) {
+            throw new IllegalArgumentException("External pass stage mismatch for " + passId + ": "
+                    + pass.stage() + " vs " + context.stage());
+        }
+        if (!supports(pass, context.rhi()) || !pass.condition().test(context)) return false;
+        ensurePhysicalPlan(snapshot, context);
+        prepareResources(pass, context);
+        validateGraphReads(pass, context.resources());
+        prepareGraphAccesses(pass, context);
+        lowerAdvancedBarriers(passIndex, snapshot, compiledSnapshot, context);
+        return true;
+    }
+
+    /** Publishes graph-owned outputs only after the externally-driven GPU submission succeeded. */
+    public void completeExternalPass(String passId, DeferredResourceBindings resources) {
+        if (passId == null || passId.isBlank() || resources == null) return;
+        DeferredPassSpec pass = null;
+        synchronized (this) {
+            ensureCompiled();
+            for (DeferredPassSpec candidate : ordered) {
+                if (candidate.id().equals(passId)) {
+                    pass = candidate;
+                    break;
+                }
+            }
+        }
+        if (pass == null) throw new IllegalArgumentException("Unknown deferred external pass: " + passId);
+        if (!pass.externallyDriven()) throw new IllegalArgumentException("Deferred pass is not externally driven: " + passId);
+        markWrites(pass, resources);
     }
 
     public synchronized List<DeferredPassSpec> passes() {
@@ -203,9 +291,64 @@ public final class DeferredPassGraph {
             if (!ids.add(pass.id())) throw new IllegalStateException("Duplicate deferred pass id: " + pass.id());
             contracts.add(pass.contract());
         }
-        compiled = FrameGraphContractCompiler.compile(contracts);
+        try (TracyProfiler.Scope ignored = TracyProfiler.beginZone("deferred/framegraph/compile")) {
+            compiled = FrameGraphContractCompiler.compile(contracts);
+        }
         ordered = List.copyOf(next);
+        compileGeneration++;
         dirty = false;
+    }
+
+    private synchronized void ensurePhysicalPlan(List<DeferredPassSpec> passes, DeferredPassContext context) {
+        DeferredFrameGraphResourcePlanner.Layout layout = DeferredFrameGraphResourcePlanner.layout(context);
+        CombatantRhi rhi = context.rhi();
+        long frameId = context.frame().frameId();
+
+        if (physicalOwner != null && physicalOwner != rhi) {
+            releasePhysicalResources(physicalOwner);
+        }
+        boolean rebuild = physicalOwner != rhi
+                || physicalFrameId != frameId
+                || physicalCompileGeneration != compileGeneration
+                || !layout.equals(physicalLayout);
+        if (rebuild) {
+            if (physicalFrameId == frameId && physicalLayout != null && !physicalLayout.equals(layout)
+                    && context.resources().hasGraphAccessThisFrame()) {
+                throw new IllegalStateException("Deferred frame-graph physical extent changed after GPU access began: "
+                        + physicalLayout + " -> " + layout);
+            }
+            physicalPlan = DeferredFrameGraphResourcePlanner.plan(passes, context, layout);
+            physicalOwner = rhi;
+            physicalFrameId = frameId;
+            physicalCompileGeneration = compileGeneration;
+            physicalLayout = layout;
+        }
+        boolean scopeMissing = !rhi.resources().frameGraphResources().hasScope(this);
+        if (rebuild || scopeMissing) {
+            if (scopeMissing && !rebuild) context.resources().detachFrameGraph();
+            try (TracyProfiler.Scope ignored = TracyProfiler.beginZone("deferred/framegraph/materialize")) {
+                rhi.resources().frameGraphResources().materialize(this, physicalPlan, rhi);
+            }
+        }
+        context.resources().attachFrameGraph(this, rhi, physicalPlan);
+    }
+
+    public synchronized FrameGraphPhysicalPlan physicalPlan() {
+        return physicalPlan;
+    }
+
+    public synchronized String physicalDebugDump(DeferredResourceBindings bindings) {
+        StringBuilder out = new StringBuilder(physicalPlan.debugDump());
+        out.append("Deferred produced state:\n");
+        for (FrameGraphPhysicalPlan.LogicalResourcePlan logical : physicalPlan.logicalResources()) {
+            DeferredResource resource = resource(logical.resource());
+            out.append("  ").append(logical.resource().name())
+                    .append(" physical=").append(logical.physicalAllocationId() < 0 ? "external" : logical.physicalAllocationId())
+                    .append(" aliasGroup=").append(logical.aliasGroup() < 0 ? "-" : logical.aliasGroup())
+                    .append(" produced=").append(resource != null && bindings != null && bindings.isValid(resource))
+                    .append('\n');
+        }
+        return out.toString();
     }
 
     private static boolean supports(DeferredPassSpec pass, CombatantRhi rhi) {
@@ -215,23 +358,47 @@ public final class DeferredPassGraph {
         return true;
     }
 
+    private static String gpuZoneName(DeferredPassSpec pass) {
+        return "deferred/" + pass.stage().name().toLowerCase(Locale.ROOT) + "/" + pass.id();
+    }
+
     private static void prepareResources(DeferredPassSpec pass, DeferredPassContext context) {
         for (var use : pass.resources()) {
             DeferredResource resource = resource(use.resource());
             if (resource == null) continue;
 
-            // Persistent history survives physically across frames while logical bindings are
-            // frame-local. Rebind an existing allocation for reads, but never allocate a missing
-            // optional input just because a consumer declared it.
-            if (use.access().reads() && !context.resources().isBound(resource)) {
+            if (use.access().reads() && resource.key().lifetime() == combatant.client.render.engine.framegraph.FrameGraphResourceLifetime.PERSISTENT) {
                 context.resources().bindExisting(resource, context.settings());
             }
+            if (use.access().writes() && context.resources().isGraphManaged(resource)) {
+                context.resources().ensurePhysicalResource(resource);
+            }
+        }
+    }
 
-            if (!use.access().writes() || resource.textureSpec() == null
-                    || context.resources().isBound(resource)) {
+    private static void prepareGraphAccesses(DeferredPassSpec pass, DeferredPassContext context) {
+        RhiResourceBarrier.Stage stage = barrierStage(pass);
+        for (var use : pass.resources()) {
+            DeferredResource resource = resource(use.resource());
+            if (resource == null || !context.resources().isGraphManaged(resource)) continue;
+            if (use.access() == FrameGraphAccess.READ && !context.resources().isValid(resource)) continue;
+            context.resources().prepareGraphAccess(resource, use.access(), stage, context.rhi());
+        }
+    }
+
+    private static void validateGraphReads(DeferredPassSpec pass, DeferredResourceBindings resources) {
+        for (var use : pass.resources()) {
+            if (!use.access().reads()) continue;
+            DeferredResource resource = resource(use.resource());
+            if (resource == null || !resources.isGraphManaged(resource)) continue;
+            if (resource.key().lifetime() == combatant.client.render.engine.framegraph.FrameGraphResourceLifetime.PERSISTENT) {
                 continue;
             }
-            context.resources().ensureTexture(resource, context.rhi(), context.settings());
+            if (pass.optionalReads().contains(resource)) continue;
+            if (!resources.isValid(resource)) {
+                throw new IllegalStateException("Deferred pass '" + pass.id() + "' would read graph resource '"
+                        + resource.key().name() + "' before its producer completed");
+            }
         }
     }
 
@@ -262,8 +429,14 @@ public final class DeferredPassGraph {
 
             DeferredPassSpec producer = passes.get(dependency.producerIndex());
             DeferredPassSpec consumer = passes.get(dependency.consumerIndex());
+            FrameGraphAccess consumerAccess = access(consumer, dependency.resource());
+            if (context.resources().isGraphManaged(resource)
+                    && consumerAccess == FrameGraphAccess.READ
+                    && !context.resources().isValid(resource)) {
+                continue;
+            }
             RhiResourceBarrier.Access sourceAccess = barrierAccess(access(producer, dependency.resource()));
-            RhiResourceBarrier.Access destinationAccess = barrierAccess(access(consumer, dependency.resource()));
+            RhiResourceBarrier.Access destinationAccess = barrierAccess(consumerAccess);
             if (genericTexture) {
                 // Mojang-owned render targets/atlas views do not expose a Combatant RhiStorageImage.
                 // Use a conservative global memory dependency so framebuffer writes are visible to
@@ -316,10 +489,11 @@ public final class DeferredPassGraph {
     }
 
     private static RhiResourceBarrier.Stage barrierStage(DeferredPassSpec pass) {
-        if (pass.requiredShaderStages().contains(RhiShaderStage.COMPUTE)) {
-            return RhiResourceBarrier.Stage.COMPUTE;
-        }
-        return RhiResourceBarrier.Stage.GRAPHICS;
+        return switch (pass.executionDomain()) {
+            case GRAPHICS -> RhiResourceBarrier.Stage.GRAPHICS;
+            case COMPUTE -> RhiResourceBarrier.Stage.COMPUTE;
+            case TRANSFER -> RhiResourceBarrier.Stage.TRANSFER;
+        };
     }
 
     private static RhiResourceBarrier.Access barrierAccess(FrameGraphAccess access) {

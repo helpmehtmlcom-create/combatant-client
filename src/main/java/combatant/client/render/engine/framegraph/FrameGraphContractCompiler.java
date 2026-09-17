@@ -13,19 +13,28 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Map;
 
 /**
  * Compiles ordered pass contracts into explicit resource hazards.
  *
- * <p>This first graph slice preserves producer order. It makes resource hazards and
- * lifetime declarations explicit now, while later graph lowering can insert barriers, alias
- * transient allocations and cull passes without changing producer contracts.</p>
+ * <p>The compiler preserves producer order, validates hazards, and when physical declarations
+ * are supplied computes exact logical lifetimes plus an alias-safe physical allocation plan.</p>
  */
 public final class FrameGraphContractCompiler {
     private FrameGraphContractCompiler() {
     }
 
     public static CompiledFrameGraph compile(List<FrameGraphPassContract> passes) {
+        return compile(passes, null);
+    }
+
+    /**
+     * Strict physical-planning compile. A non-null declaration map requires every owned logical
+     * resource referenced by an enabled pass to provide an explicit physical descriptor.
+     */
+    public static CompiledFrameGraph compile(List<FrameGraphPassContract> passes,
+                                             Map<FrameGraphResourceKey, FrameGraphResourceDeclaration> declarations) {
         List<FrameGraphPassContract> ordered = passes == null ? List.of() : List.copyOf(passes);
         ArrayList<CompiledFrameGraph.Dependency> dependencies = new ArrayList<>();
         HashMap<FrameGraphResourceKey, Integer> lastWriter = new HashMap<>();
@@ -73,6 +82,9 @@ public final class FrameGraphContractCompiler {
             }
         }
 
-        return new CompiledFrameGraph(ordered, dependencies);
+        FrameGraphPhysicalPlan physicalPlan = declarations == null
+                ? FrameGraphPhysicalPlan.EMPTY
+                : FrameGraphPhysicalPlanner.plan(ordered, declarations);
+        return new CompiledFrameGraph(ordered, dependencies, physicalPlan);
     }
 }

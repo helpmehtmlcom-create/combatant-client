@@ -52,6 +52,7 @@ layout(location = 12) flat out uint te_MapMask;
 layout(location = 13) flat out uint te_FeatureMask;
 layout(location = 14) flat out uint te_SurfaceFlags;
 layout(location = 15) flat out uint te_Surface;
+layout(location = 16) out vec3 te_PreviousViewPosition;
 
 vec3 bilerp3(vec3 a, vec3 b, vec3 c, vec3 d, vec2 uv) {
     return mix(mix(a, b, uv.x), mix(d, c, uv.x), uv.y);
@@ -162,4 +163,5 @@ void main() {
     te_FeatureMask = tc_FeatureMask[0];
     te_SurfaceFlags = tc_SurfaceFlags[0];
     te_Surface = tc_Surface[0];
+    te_PreviousViewPosition = previousView.xyz;
 }

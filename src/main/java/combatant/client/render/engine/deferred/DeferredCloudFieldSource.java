@@ -13,7 +13,7 @@ import combatant.client.render.engine.rhi.shader.Std430Type;
 import combatant.client.render.engine.rhi.shader.Std430Writer;
 import combatant.client.render.engine.rhi.shader.StorageAccess;
 import combatant.client.render.engine.rhi.shader.StorageBufferDescriptor;
-import combatant.client.render.engine.world.environment.CloudLayerProfile;
+import combatant.client.render.engine.world.environment.CloudDomainProfile;
 import combatant.client.render.engine.world.environment.CloudProfile;
 import combatant.client.render.engine.world.environment.CloudProfileRegistry;
 import combatant.client.render.engine.world.environment.WeatherFieldState;
@@ -22,24 +22,30 @@ import combatant.client.render.engine.world.environment.WeatherState;
 import net.minecraft.client.CloudStatus;
 import net.minecraft.client.Minecraft;
 
-/** Shared GPU-side cloud field contract consumed by cloud radiance and cloud-shadow producers. */
+/** Shared GPU-side cloud/weather contract consumed by radiance, shadows and media. */
 final class DeferredCloudFieldSource implements AutoCloseable {
     static final Std430StructLayout WEATHER_LAYOUT = Std430StructLayout.builder()
             .member("climate", Std430Type.VEC4)
             .member("windFront", Std430Type.VEC4)
             .build();
-    static final Std430StructLayout LAYER_LAYOUT = Std430StructLayout.builder()
-            .member("altitudeDensity", Std430Type.VEC4)
+    static final Std430StructLayout DOMAIN_LAYOUT = Std430StructLayout.builder()
+            .member("envelope", Std430Type.VEC4)
+            .member("development", Std430Type.VEC4)
             .member("scaleShape", Std430Type.VEC4)
             .member("weatherOptics", Std430Type.VEC4)
             .member("coverageShape", Std430Type.VEC4)
             .member("scatteringPolicy", Std430Type.VEC4)
+            .member("windPolicy", Std430Type.VEC4)
+            .member("familyShape", Std430Type.VEC4)
+            .member("domainPolicy", Std430Type.VEC4)
+            .member("densityPolicy", Std430Type.VEC4)
             .build();
 
     private final DeferredCloudConfig config = DeferredCloudConfig.current();
     private CombatantRhi owner;
     private RhiStorageBuffer weatherData;
-    private RhiStorageBuffer layerData;
+    private RhiStorageBuffer macroWeatherData;
+    private RhiStorageBuffer domainData;
     private long uploadedFrameId = Long.MIN_VALUE;
     private FrameData uploadedFrame = FrameData.EMPTY;
 
@@ -52,22 +58,26 @@ final class DeferredCloudFieldSource implements AutoCloseable {
         CloudProfile profile = CloudProfileRegistry.resolve(context.worldState().cloudProfile());
         WeatherState weather = context.worldState().weatherState();
         if (weather == null) weather = WeatherState.NONE;
-        WeatherFieldState field = weather.field();
-        if (field == null) field = WeatherFieldState.EMPTY;
-        long requiredWeatherSamples = (long) field.gridWidth() * (long) field.gridDepth();
-        boolean weatherFitsCapacity = requiredWeatherSamples > 0L
-                && requiredWeatherSamples <= config.maxWeatherSamples();
-        boolean weatherAvailable = weather.valid() && field.valid() && weatherFitsCapacity;
+        WeatherFieldState field = weather.field() == null ? WeatherFieldState.EMPTY : weather.field();
+        WeatherFieldState macroField = weather.macroField() == null ? WeatherFieldState.EMPTY : weather.macroField();
+
+        int weatherCount = validCount(field, config.maxWeatherSamples());
+        int macroWeatherCount = validCount(macroField, config.maxMacroWeatherSamples());
+        boolean weatherAvailable = weather.valid() && weatherCount > 0 && macroWeatherCount > 0;
         boolean active = config.enabled()
                 && profile.valid()
                 && weatherAvailable
                 && cloudsEnabledByGame();
-        int weatherCount = weatherAvailable ? (int) requiredWeatherSamples : 0;
-        int layerCount = active ? Math.min(profile.layers().size(), config.maxLayers()) : 0;
-        uploadWeather(field, weatherCount);
-        uploadLayers(profile, layerCount);
+        int domainCount = active ? Math.min(profile.domains().size(), config.maxDomains()) : 0;
 
-        uploadedFrame = new FrameData(profile, weather, field, weatherCount, layerCount, active);
+        uploadWeather(weatherData, field, weatherCount);
+        uploadWeather(macroWeatherData, macroField, macroWeatherCount);
+        uploadDomains(profile, domainCount);
+
+        uploadedFrame = new FrameData(
+                profile, weather, field, macroField,
+                weatherCount, macroWeatherCount, domainCount, active
+        );
         uploadedFrameId = frameId;
         return uploadedFrame;
     }
@@ -77,9 +87,14 @@ final class DeferredCloudFieldSource implements AutoCloseable {
         return weatherData;
     }
 
-    RhiStorageBuffer layerData() {
+    RhiStorageBuffer macroWeatherData() {
         ensureBuffers();
-        return layerData;
+        return macroWeatherData;
+    }
+
+    RhiStorageBuffer domainData() {
+        ensureBuffers();
+        return domainData;
     }
 
     void prepare(CombatantRhi rhi) {
@@ -93,7 +108,14 @@ final class DeferredCloudFieldSource implements AutoCloseable {
         owner = null;
     }
 
-    private void uploadWeather(WeatherFieldState field, int count) {
+    private static int validCount(WeatherFieldState field, int capacity) {
+        if (field == null || !field.valid()) return 0;
+        long required = (long) field.gridWidth() * (long) field.gridDepth();
+        if (required <= 0L || required > capacity || required > Integer.MAX_VALUE) return 0;
+        return (int) required;
+    }
+
+    private void uploadWeather(RhiStorageBuffer target, WeatherFieldState field, int count) {
         if (count <= 0) return;
         Std430Writer writer = new Std430Writer(WEATHER_LAYOUT, count);
         for (int i = 0; i < count; i++) {
@@ -103,26 +125,47 @@ final class DeferredCloudFieldSource implements AutoCloseable {
                     .putVec4(i, "windFront", sample.windXBlocksPerSecond(), sample.windZBlocksPerSecond(),
                             sample.frontStrength(), sample.valid() ? 1.0f : 0.0f);
         }
-        weatherData.upload(writer.buffer(), 0L);
+        target.upload(writer.buffer(), 0L);
     }
 
-    private void uploadLayers(CloudProfile profile, int count) {
+    private void uploadDomains(CloudProfile profile, int count) {
         if (count <= 0) return;
-        Std430Writer writer = new Std430Writer(LAYER_LAYOUT, count);
+        Std430Writer writer = new Std430Writer(DOMAIN_LAYOUT, count);
         for (int i = 0; i < count; i++) {
-            CloudLayerProfile layer = profile.layers().get(i);
-            writer.putVec4(i, "altitudeDensity", layer.baseAltitudeBlocks(), layer.topAltitudeBlocks(),
-                            layer.densityScale(), layer.coverageBias())
-                    .putVec4(i, "scaleShape", layer.macroScaleBlocks(), layer.detailScaleBlocks(),
-                            layer.erosion(), layer.anisotropy())
-                    .putVec4(i, "weatherOptics", layer.humidityResponse(), layer.stormResponse(),
-                            layer.frontResponse(), layer.extinctionPerBlock())
-                    .putVec4(i, "coverageShape", layer.bottomFadeFraction(), layer.topFadeStartFraction(),
-                            layer.clearCoverageThreshold(), layer.overcastCoverageThreshold())
-                    .putVec4(i, "scatteringPolicy", layer.singleScatteringAlbedo(), layer.multiScatteringEnergy(),
-                            layer.multiScatteringExtinctionFactor(), layer.multiScatteringAnisotropyFactor());
+            CloudDomainProfile domain = profile.domains().get(i);
+            var family = domain.family();
+            writer.putVec4(i, "envelope",
+                            domain.minimumAltitudeBlocks(), domain.maximumAltitudeBlocks(),
+                            domain.meanBaseAltitudeBlocks(), domain.baseVariationBlocks())
+                    .putVec4(i, "development",
+                            domain.meanThicknessBlocks(), domain.thicknessVariationBlocks(),
+                            domain.convectiveThicknessBoostBlocks(), domain.densityScale())
+                    .putVec4(i, "scaleShape",
+                            domain.macroScaleBlocks(), domain.detailScaleBlocks(),
+                            family.erosionStrength(), domain.anisotropy())
+                    .putVec4(i, "weatherOptics",
+                            domain.humidityResponse(), domain.stormResponse(),
+                            domain.frontResponse(), domain.extinctionPerBlock())
+                    .putVec4(i, "coverageShape",
+                            domain.coverageBias(), domain.clearCoverageThreshold(),
+                            domain.overcastCoverageThreshold(), 0.0f)
+                    .putVec4(i, "scatteringPolicy",
+                            domain.singleScatteringAlbedo(), domain.multiScatteringEnergy(),
+                            domain.multiScatteringExtinctionFactor(), domain.multiScatteringAnisotropyFactor())
+                    .putVec4(i, "windPolicy",
+                            domain.baseWindMultiplier(), domain.topWindMultiplier(),
+                            domain.windShear(), domain.detailAdvectionMultiplier())
+                    .putVec4(i, "familyShape",
+                            family.bottomProfileExponent(), family.topProfileExponent(),
+                            family.verticalDevelopment(), family.anvilTendency())
+                    .putVec4(i, "domainPolicy",
+                            domain.group().gpuCode(), family.horizontalScaleMultiplier(),
+                            family.verticalScaleMultiplier(), 0.0f)
+                    .putVec4(i, "densityPolicy",
+                            domain.coarseDensityThreshold(), domain.lightingDetailFraction(),
+                            family.detailStrength(), 0.0f);
         }
-        layerData.upload(writer.buffer(), 0L);
+        domainData.upload(writer.buffer(), 0L);
     }
 
     private void ensureOwner(CombatantRhi rhi) {
@@ -138,14 +181,18 @@ final class DeferredCloudFieldSource implements AutoCloseable {
         if (weatherData == null) weatherData = owner.advancedShaders().createStorageBuffer(new StorageBufferDescriptor(
                 "combatant-cloud-weather-data", WEATHER_LAYOUT, config.maxWeatherSamples(), StorageAccess.READ_ONLY, false
         ));
-        if (layerData == null) layerData = owner.advancedShaders().createStorageBuffer(new StorageBufferDescriptor(
-                "combatant-cloud-layer-data", LAYER_LAYOUT, config.maxLayers(), StorageAccess.READ_ONLY, false
+        if (macroWeatherData == null) macroWeatherData = owner.advancedShaders().createStorageBuffer(new StorageBufferDescriptor(
+                "combatant-cloud-macro-weather-data", WEATHER_LAYOUT, config.maxMacroWeatherSamples(), StorageAccess.READ_ONLY, false
+        ));
+        if (domainData == null) domainData = owner.advancedShaders().createStorageBuffer(new StorageBufferDescriptor(
+                "combatant-cloud-domain-data", DOMAIN_LAYOUT, config.maxDomains(), StorageAccess.READ_ONLY, false
         ));
     }
 
     private void closeOwned() {
         close(weatherData); weatherData = null;
-        close(layerData); layerData = null;
+        close(macroWeatherData); macroWeatherData = null;
+        close(domainData); domainData = null;
         uploadedFrameId = Long.MIN_VALUE;
         uploadedFrame = FrameData.EMPTY;
     }
@@ -170,12 +217,15 @@ final class DeferredCloudFieldSource implements AutoCloseable {
             CloudProfile profile,
             WeatherState weather,
             WeatherFieldState field,
+            WeatherFieldState macroField,
             int weatherCount,
-            int layerCount,
+            int macroWeatherCount,
+            int domainCount,
             boolean active
     ) {
         static final FrameData EMPTY = new FrameData(
-                CloudProfile.NONE, WeatherState.NONE, WeatherFieldState.EMPTY, 0, 0, false
+                CloudProfile.NONE, WeatherState.NONE, WeatherFieldState.EMPTY, WeatherFieldState.EMPTY,
+                0, 0, 0, false
         );
     }
 }

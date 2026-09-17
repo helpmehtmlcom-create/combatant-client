@@ -157,8 +157,9 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
         passes.add(DeferredPassSpec.builder("world.environment.sky.diffuse-resolve", DeferredStage.PRE_LIGHTING)
                 .priority(890)
                 .read(DeferredResource.SKY_DIFFUSE_SH, DeferredResource.SKY_ENVIRONMENT_STATE,
-                        DeferredResource.GBUFFER_GEOMETRY, DeferredResource.AMBIENT_BENT_NORMAL,
+                        DeferredResource.GBUFFER_GEOMETRY,
                         DeferredResource.RESOLVED_DEPTH, DeferredResource.GBUFFER_DEPTH)
+                .optionalRead(DeferredResource.AMBIENT_BENT_NORMAL)
                 .write(DeferredResource.SKY_DIFFUSE_IRRADIANCE)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.primaryView().current() != null

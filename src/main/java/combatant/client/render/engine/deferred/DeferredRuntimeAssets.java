@@ -45,10 +45,13 @@ public enum DeferredRuntimeAssets {
             Identifier.fromNamespaceAndPath("combatant", "shaders/deferred_terrain_publish.frag");
     public static final Identifier OPAQUE_PUBLISH_FRAGMENT =
             Identifier.fromNamespaceAndPath("combatant", "shaders/deferred_opaque_publish.frag");
+    public static final Identifier TEMPORAL_PRESENT_FRAGMENT =
+            Identifier.fromNamespaceAndPath("combatant", "shaders/deferred_temporal_present.frag");
 
     private static RenderPipeline terrainLighting;
     private static RenderPipeline terrainPublish;
     private static RenderPipeline opaquePublish;
+    private static RenderPipeline temporalPresent;
     private static long preparedResourceGeneration = Long.MIN_VALUE;
 
     public static boolean active() {
@@ -63,6 +66,7 @@ public enum DeferredRuntimeAssets {
         boolean deferredOnly = path.equals(TERRAIN_LIGHTING_FRAGMENT.getPath())
                 || path.equals(TERRAIN_PUBLISH_FRAGMENT.getPath())
                 || path.equals(OPAQUE_PUBLISH_FRAGMENT.getPath())
+                || path.equals(TEMPORAL_PRESENT_FRAGMENT.getPath())
                 || path.startsWith("shaders/deferred/");
         return !deferredOnly || active();
     }
@@ -86,6 +90,13 @@ public enum DeferredRuntimeAssets {
             throw new IllegalStateException("Deferred opaque publish assets are not active");
         }
         return opaquePublish;
+    }
+
+    public static RenderPipeline temporalPresent() {
+        if (!active() || temporalPresent == null) {
+            throw new IllegalStateException("Deferred temporal present assets are not active");
+        }
+        return temporalPresent;
     }
 
     @AssetLoad(value = AssetLoadPhase.ACTIVATE, scope = SCOPE, order = 100)
@@ -170,6 +181,21 @@ public enum DeferredRuntimeAssets {
                     .build();
             RenderPipelineRegistry.global().registerNative(opaquePublish);
         }
+        if (temporalPresent == null) {
+            temporalPresent = new ExtendedRenderPipelineBuilder(CombatantRenderPipelines.meshUniforms())
+                    .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/deferred_temporal_present"))
+                    .withDomain(PipelineDomain.FULLSCREEN)
+                    .withVertexFormat(CombatantVertexFormats.POS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+                    .withVertexShader(CombatantRenderPipelines.SHADER_DAMAGE_TINT_VERT)
+                    .withFragmentShader(TEMPORAL_PRESENT_FRAGMENT)
+                    .withSampler("u_Source")
+                    .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+                    .withDepthWrite(false)
+                    .withoutBlend()
+                    .withCull(false)
+                    .build();
+            RenderPipelineRegistry.global().registerNative(temporalPresent);
+        }
 
         final GpuDevice device = RenderSystem.getDevice();
         device.precompilePipeline(terrainLighting, (identifier, shaderType) -> {
@@ -183,6 +209,11 @@ public enum DeferredRuntimeAssets {
             return source;
         });
         device.precompilePipeline(opaquePublish, (identifier, shaderType) -> {
+            String source = CombatantShaderSources.load(resources, identifier, shaderType);
+            ShaderCostRegistry.analyze(identifier, shaderType, source);
+            return source;
+        });
+        device.precompilePipeline(temporalPresent, (identifier, shaderType) -> {
             String source = CombatantShaderSources.load(resources, identifier, shaderType);
             ShaderCostRegistry.analyze(identifier, shaderType, source);
             return source;

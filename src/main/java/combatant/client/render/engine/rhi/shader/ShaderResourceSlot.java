@@ -17,8 +17,13 @@ public record ShaderResourceSlot(int binding,
         if (binding < 0) throw new IllegalArgumentException("binding");
         if (kind == null) throw new IllegalArgumentException("kind");
         access = access == null ? StorageAccess.READ_WRITE : access;
-        if (format != null && kind != ShaderResourceKind.STORAGE_IMAGE && kind != ShaderResourceKind.STORAGE_VOLUME) {
-            throw new IllegalArgumentException("Expected format is only valid for storage image/volume slots");
+        if (format != null && kind != ShaderResourceKind.STORAGE_IMAGE
+                && kind != ShaderResourceKind.STORAGE_VOLUME
+                && kind != ShaderResourceKind.SAMPLED_VOLUME) {
+            throw new IllegalArgumentException("Expected format is only valid for storage image/volume or sampled-volume slots");
+        }
+        if (kind == ShaderResourceKind.SAMPLED_VOLUME && access != StorageAccess.READ_ONLY) {
+            throw new IllegalArgumentException("SAMPLED_VOLUME slots must be READ_ONLY");
         }
     }
 

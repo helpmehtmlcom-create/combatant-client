@@ -76,8 +76,7 @@ final class DeferredReactiveMaskSource implements AutoCloseable {
                 .read(DeferredResource.GBUFFER_DEPTH, DeferredResource.RESOLVED_DEPTH, DeferredResource.GBUFFER_MATERIAL_ID)
                 .write(DeferredResource.REACTIVE_MASK)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> temporalConsumersEnabled(context.settings())
-                        && context.isValid(DeferredResource.GBUFFER_DEPTH)
+                .when(context -> context.isValid(DeferredResource.GBUFFER_DEPTH)
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
                         && context.resources().texture(DeferredResource.GBUFFER_MATERIAL_ID) != null)
                 .execute(this::render)
@@ -162,10 +161,6 @@ final class DeferredReactiveMaskSource implements AutoCloseable {
         return id * 0x9E3779B1;
     }
 
-    private static boolean temporalConsumersEnabled(DeferredRuntimeConfig.Snapshot settings) {
-        return settings.indirectLightEnabled() && settings.indirectTemporalEnabled()
-                || settings.reflectionsEnabled() && settings.reflectionTemporalEnabled();
-    }
 
     private void ensureOwner(CombatantRhi rhi) {
         if (owner == rhi) return;

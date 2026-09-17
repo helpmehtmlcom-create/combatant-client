@@ -105,9 +105,10 @@ final class DeferredOpaqueCompositeSource implements AutoCloseable {
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.indirect.composite", DeferredStage.INDIRECT_COMPOSITE)
                 .read(DeferredResource.OPAQUE_BASE_RADIANCE, DeferredResource.GBUFFER_SURFACE,
-                        DeferredResource.GBUFFER_MATERIAL, DeferredResource.AMBIENT_OCCLUSION,
-                        DeferredResource.INDIRECT_LIGHT, DeferredResource.INDIRECT_CONFIDENCE,
+                        DeferredResource.GBUFFER_MATERIAL,
                         DeferredResource.GBUFFER_DEPTH, DeferredResource.RESOLVED_DEPTH)
+                .optionalRead(DeferredResource.AMBIENT_OCCLUSION,
+                        DeferredResource.INDIRECT_LIGHT, DeferredResource.INDIRECT_CONFIDENCE)
                 .write(DeferredResource.LIGHTING_COLOR)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.isValid(DeferredResource.OPAQUE_BASE_RADIANCE))
@@ -115,11 +116,11 @@ final class DeferredOpaqueCompositeSource implements AutoCloseable {
                 .build());
 
         passes.add(DeferredPassSpec.builder("world.reflection.composite", DeferredStage.REFLECTION_COMPOSITE)
-                .read(DeferredResource.LIGHTING_COLOR, DeferredResource.REFLECTION_COLOR,
-                        DeferredResource.REFLECTION_CONFIDENCE, DeferredResource.GBUFFER_SURFACE,
+                .read(DeferredResource.LIGHTING_COLOR, DeferredResource.GBUFFER_SURFACE,
                         DeferredResource.GBUFFER_GEOMETRY, DeferredResource.GBUFFER_MATERIAL,
                         DeferredResource.RESOLVED_DEPTH, DeferredResource.GBUFFER_DEPTH,
                         DeferredResource.SKY_SPECULAR_RADIANCE, DeferredResource.SKY_ENVIRONMENT_STATE)
+                .optionalRead(DeferredResource.REFLECTION_COLOR, DeferredResource.REFLECTION_CONFIDENCE)
                 .write(DeferredResource.OPAQUE_REFLECTED_RADIANCE)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.isValid(DeferredResource.LIGHTING_COLOR))

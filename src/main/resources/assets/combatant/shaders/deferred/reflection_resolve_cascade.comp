@@ -30,7 +30,7 @@ layout(std430, binding = 8) readonly buffer ReflectionTraceData {
     vec4 resolveParams;
 } u_Trace;
 
-struct CascadeFace {
+struct CombatantReflectionCascadeFace {
     mat4 viewProjection;
     vec4 atlasScaleBias;
     // x: near, y: far, z: face index, w: total face count.
@@ -40,7 +40,7 @@ struct CascadeFace {
 };
 
 layout(std430, binding = 9) readonly buffer ReflectionCascadeData {
-    CascadeFace faces[];
+    CombatantReflectionCascadeFace faces[];
 } u_Cascade;
 
 vec3 decodeOctahedral(vec2 encoded) {
@@ -59,44 +59,9 @@ vec3 reconstructView(vec2 uv, float depth) {
     return h.xyz / max(abs(h.w), 1e-7) * sign(h.w);
 }
 
-bool sampleCascade(vec3 currentWorldRelative,
-                   vec3 reflectedWorld,
-                   float surfaceDistance,
-                   out vec3 color) {
-    int totalFaces = clamp(int(u_Cascade.faces[0].rangeFace.w + 0.5), 0, 24);
-    int cascadeCount = totalFaces / 6;
-    if (cascadeCount <= 0) return false;
-
-    int selectedCascade = cascadeCount - 1;
-    for (int cascade = 0; cascade < 4; ++cascade) {
-        if (cascade >= cascadeCount) break;
-        float farPlane = u_Cascade.faces[cascade * 6].rangeFace.y;
-        if (surfaceDistance <= farPlane) {
-            selectedCascade = cascade;
-            break;
-        }
-    }
-
-    int firstFace = selectedCascade * 6;
-    for (int faceOffset = 0; faceOffset < 6; ++faceOffset) {
-        CascadeFace face = u_Cascade.faces[firstFace + faceOffset];
-        vec3 captureRelative = currentWorldRelative - face.originDelta.xyz;
-        vec3 probePoint = captureRelative + reflectedWorld * max(1.0, face.rangeFace.y);
-        vec4 clip = face.viewProjection * vec4(probePoint, 1.0);
-        if (clip.w <= 1e-6) continue;
-
-        vec2 localUv = clip.xy / clip.w * 0.5 + 0.5;
-        if (any(lessThan(localUv, vec2(0.001))) || any(greaterThan(localUv, vec2(0.999)))) continue;
-
-        vec2 atlasUv = localUv * face.atlasScaleBias.xy + face.atlasScaleBias.zw;
-        float capturedDepth = textureLod(u_CascadeDepth, atlasUv, 0.0).r;
-        if (capturedDepth <= 0.0) continue;
-
-        color = textureLod(u_CascadeColor, atlasUv, 0.0).rgb;
-        return true;
-    }
-    return false;
-}
+#define COMBATANT_REFLECTION_CASCADE_FACE(i) u_Cascade.faces[i]
+#moj_import <combatant:deferred_reflection_cascade.glsl>
+#undef COMBATANT_REFLECTION_CASCADE_FACE
 
 void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
@@ -126,7 +91,9 @@ void main() {
     vec3 reflectedWorld = normalize((u_Trace.inverseView * vec4(reflectedView, 0.0)).xyz);
 
     vec3 cascadeColor;
-    if (sampleCascade(currentWorldRelative, reflectedWorld, length(viewPosition), cascadeColor)) {
+    int totalFaces = clamp(int(u_Cascade.faces[0].rangeFace.w + 0.5), 0, 24);
+    if (combatantSampleReflectionCascade(u_CascadeColor, u_CascadeDepth, currentWorldRelative,
+            reflectedWorld, length(viewPosition), totalFaces, cascadeColor)) {
         float cascadeConfidence = u_Trace.resolveParams.y;
         imageStore(u_ReflectionColor, pixel, vec4(cascadeColor, 1.0));
         imageStore(u_ReflectionConfidence, pixel, vec4(cascadeConfidence, 0.0, 0.0, 0.0));

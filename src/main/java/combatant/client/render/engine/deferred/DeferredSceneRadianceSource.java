@@ -63,8 +63,9 @@ final class DeferredSceneRadianceSource implements AutoCloseable {
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.radiance.capture", DeferredStage.RADIANCE_CAPTURE)
-                .read(DeferredResource.DIRECT_LIGHTING_COLOR, DeferredResource.LOCAL_LIGHTING_COLOR,
+                .read(DeferredResource.DIRECT_LIGHTING_COLOR,
                         DeferredResource.SCENE_COLOR, DeferredResource.GBUFFER_DEPTH, DeferredResource.RESOLVED_DEPTH)
+                .optionalRead(DeferredResource.LOCAL_LIGHTING_COLOR)
                 .write(DeferredResource.OPAQUE_BASE_RADIANCE)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.isValid(DeferredResource.DIRECT_LIGHTING_COLOR)

@@ -21,6 +21,7 @@ public final class RenderResourceManager implements AutoCloseable {
     private final FramebufferPool framebufferPool = new FramebufferPool(leakTracker);
     private final MsaaFramebufferPool msaaFramebufferPool = new MsaaFramebufferPool(leakTracker);
     private final TexturePool texturePool = new TexturePool(leakTracker);
+    private final FrameGraphPhysicalResourcePool frameGraphResources = new FrameGraphPhysicalResourcePool(retirementQueue);
     private final SamplerCache samplerCache = new SamplerCache();
     private final GlyphAtlasManager glyphAtlasManager = new GlyphAtlasManager();
     private long frameId;
@@ -60,6 +61,7 @@ public final class RenderResourceManager implements AutoCloseable {
     public void beginFrame() {
         framebufferPool.beginFrame();
         msaaFramebufferPool.beginFrame();
+        frameGraphResources.beginFrame();
     }
 
     public void onFramePresented() {
@@ -83,6 +85,10 @@ public final class RenderResourceManager implements AutoCloseable {
         return texturePool;
     }
 
+    public FrameGraphPhysicalResourcePool frameGraphResources() {
+        return frameGraphResources;
+    }
+
     public SamplerCache samplers() {
         return samplerCache;
     }
@@ -96,11 +102,13 @@ public final class RenderResourceManager implements AutoCloseable {
     }
 
     public void onResize() {
+        frameGraphResources.invalidateAll();
         framebufferPool.invalidateSizeDependent();
         msaaFramebufferPool.invalidate();
     }
 
     public void onReload() {
+        frameGraphResources.invalidateAll();
         framebufferPool.invalidateSizeDependent();
         msaaFramebufferPool.invalidate();
         glyphAtlasManager.clear();
@@ -108,6 +116,7 @@ public final class RenderResourceManager implements AutoCloseable {
     }
 
     public void onWorldUnload() {
+        frameGraphResources.invalidateAll();
         framebufferPool.invalidateSizeDependent();
         msaaFramebufferPool.invalidate();
     }
@@ -140,6 +149,7 @@ public final class RenderResourceManager implements AutoCloseable {
 
     @Override
     public void close() {
+        frameGraphResources.close();
         retirementQueue.drainAll();
         framebufferPool.close();
         msaaFramebufferPool.close();

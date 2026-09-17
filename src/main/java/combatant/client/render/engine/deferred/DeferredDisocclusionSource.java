@@ -50,6 +50,8 @@ final class DeferredDisocclusionSource implements AutoCloseable {
             new ShaderResourceSlot(5, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
     ));
 
+    private static final float FINAL_TEMPORAL_DEPTH_THRESHOLD = 0.006f;
+
     private CombatantRhi owner;
     private RhiComputePipeline pipeline;
     private RhiStorageBuffer params;
@@ -60,14 +62,25 @@ final class DeferredDisocclusionSource implements AutoCloseable {
                 .write(DeferredResource.DISOCCLUSION_MASK)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> temporalConsumersEnabled(context.settings())
-                        && context.history(DeferredTemporalHistoryId.SCENE).valid()
-                        && context.isValid(DeferredResource.VELOCITY)
-                        && context.isValid(DeferredResource.MOTION_VALIDITY)
-                        && context.isValid(DeferredResource.RESOLVED_DEPTH)
-                        && context.resources().texture(DeferredResource.VELOCITY) != null
-                        && context.resources().texture(DeferredResource.MOTION_VALIDITY) != null
-                        && context.resources().texture(DeferredResource.RESOLVED_DEPTH) != null)
-                .execute(this::render)
+                        && available(context, DeferredResource.VELOCITY, DeferredResource.MOTION_VALIDITY,
+                        DeferredResource.RESOLVED_DEPTH))
+                .execute(context -> render(context, DeferredResource.VELOCITY, DeferredResource.MOTION_VALIDITY,
+                        DeferredResource.RESOLVED_DEPTH, DeferredResource.DISOCCLUSION_MASK,
+                        "Combatant temporal disocclusion mask", sharedDepthThreshold(context.settings())))
+                .build());
+
+        passes.add(DeferredPassSpec.builder("world.temporal.final-disocclusion", DeferredStage.POST_TRANSLUCENCY)
+                .priority(100)
+                .read(DeferredResource.FINAL_VELOCITY, DeferredResource.FINAL_MOTION_VALIDITY,
+                        DeferredResource.FINAL_RESOLVED_DEPTH, DeferredResource.HISTORY_DEPTH)
+                .write(DeferredResource.FINAL_DISOCCLUSION_MASK)
+                .requires(RhiShaderStage.COMPUTE)
+                .when(context -> available(context, DeferredResource.FINAL_VELOCITY,
+                        DeferredResource.FINAL_MOTION_VALIDITY, DeferredResource.FINAL_RESOLVED_DEPTH))
+                .execute(context -> render(context, DeferredResource.FINAL_VELOCITY,
+                        DeferredResource.FINAL_MOTION_VALIDITY, DeferredResource.FINAL_RESOLVED_DEPTH,
+                        DeferredResource.FINAL_DISOCCLUSION_MASK, "Combatant final temporal disocclusion mask",
+                        FINAL_TEMPORAL_DEPTH_THRESHOLD))
                 .build());
     }
 
@@ -83,15 +96,34 @@ final class DeferredDisocclusionSource implements AutoCloseable {
         owner = null;
     }
 
-    private void render(DeferredPassContext context) {
-        ensureOwner(context.rhi());
-        GpuTextureView velocity = requireTexture(context, DeferredResource.VELOCITY);
-        GpuTextureView motionValidity = requireTexture(context, DeferredResource.MOTION_VALIDITY);
-        GpuTextureView currentDepth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
-        GpuTextureView historyDepth = requireTexture(context, DeferredResource.HISTORY_DEPTH);
-        RhiStorageImage output = requireImage(context, DeferredResource.DISOCCLUSION_MASK);
+    private boolean available(DeferredPassContext context,
+                              DeferredResource velocityResource,
+                              DeferredResource validityResource,
+                              DeferredResource depthResource) {
+        return context.history(DeferredTemporalHistoryId.SCENE).valid()
+                && context.isValid(velocityResource)
+                && context.isValid(validityResource)
+                && context.isValid(depthResource)
+                && context.resources().texture(velocityResource) != null
+                && context.resources().texture(validityResource) != null
+                && context.resources().texture(depthResource) != null
+                && context.resources().texture(DeferredResource.HISTORY_DEPTH) != null;
+    }
 
-        float depthThreshold = sharedDepthThreshold(context.settings());
+    private void render(DeferredPassContext context,
+                        DeferredResource velocityResource,
+                        DeferredResource validityResource,
+                        DeferredResource depthResource,
+                        DeferredResource outputResource,
+                        String label,
+                        float depthThreshold) {
+        ensureOwner(context.rhi());
+        GpuTextureView velocity = requireTexture(context, velocityResource);
+        GpuTextureView motionValidity = requireTexture(context, validityResource);
+        GpuTextureView currentDepth = requireTexture(context, depthResource);
+        GpuTextureView historyDepth = requireTexture(context, DeferredResource.HISTORY_DEPTH);
+        RhiStorageImage output = requireImage(context, outputResource);
+
         float pixelScale = 1.0f / Math.max(1.0f, Math.min(output.descriptor().width(), output.descriptor().height()));
         Std430Writer writer = new Std430Writer(PARAMS_LAYOUT, 1)
                 .putVec4(0, "params", depthThreshold, pixelScale, 1.5f, 0.0f);
@@ -100,7 +132,7 @@ final class DeferredDisocclusionSource implements AutoCloseable {
 
         GpuSampler nearest = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
         context.advancedShaders().dispatch(new ComputeDispatchCommand(
-                "Combatant temporal disocclusion mask",
+                label,
                 pipeline(), groups(output.descriptor().width()), groups(output.descriptor().height()), 1,
                 List.of(new StorageBinding(5, paramBuffer, 0L, writer.byteSize(), StorageAccess.READ_ONLY)),
                 List.of(

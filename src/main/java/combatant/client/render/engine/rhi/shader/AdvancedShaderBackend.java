@@ -37,6 +37,21 @@ public interface AdvancedShaderBackend extends AutoCloseable {
         }
 
         @Override
+        public RhiVolumeCapabilities queryStorageVolumeCapabilities(StorageVolumeDescriptor descriptor) {
+            return RhiVolumeCapabilities.unsupported("Native 3D volume backend is unavailable");
+        }
+
+        @Override
+        public void copyStorageVolume(VolumeCopyCommand command) {
+            throw new UnsupportedOperationException("Native 3D volume copy is unavailable");
+        }
+
+        @Override
+        public void clearStorageVolume(VolumeClearCommand command) {
+            throw new UnsupportedOperationException("Native 3D volume clear is unavailable");
+        }
+
+        @Override
         public RhiComputePipeline createComputePipeline(ComputePipelineDescriptor descriptor) {
             throw new UnsupportedOperationException("Native compute backend is unavailable");
         }
@@ -77,6 +92,15 @@ public interface AdvancedShaderBackend extends AutoCloseable {
     RhiStorageImage createStorageImage(StorageImageDescriptor descriptor);
 
     RhiStorageVolume createStorageVolume(StorageVolumeDescriptor descriptor);
+
+    /** Descriptor-specific 3D resource support, including optional copy/clear paths and fallback reasons. */
+    RhiVolumeCapabilities queryStorageVolumeCapabilities(StorageVolumeDescriptor descriptor);
+
+    /** Records an exact-format native 3D image copy in the active backend command stream. */
+    void copyStorageVolume(VolumeCopyCommand command);
+
+    /** Clears complete mip levels selected by the target view. */
+    void clearStorageVolume(VolumeClearCommand command);
 
     RhiComputePipeline createComputePipeline(ComputePipelineDescriptor descriptor);
 

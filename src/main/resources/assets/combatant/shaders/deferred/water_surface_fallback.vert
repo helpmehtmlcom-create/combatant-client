@@ -50,6 +50,7 @@ out vec3 v_WorldPosition;
 out vec3 v_ViewNormal;
 out vec4 v_CurrentClip;
 out vec4 v_PreviousClip;
+out vec3 v_PreviousViewPosition;
 flat out uint v_MaterialId;
 flat out uint v_FluidTypeId;
 flat out uint v_MapMask;
@@ -122,6 +123,7 @@ void main() {
     v_ViewNormal = normalize(mat3(u_CurrentView) * normalWorld);
     v_CurrentClip = currentClip;
     v_PreviousClip = previousClip;
+    v_PreviousViewPosition = previousView.xyz;
     v_MaterialId = MaterialId;
     v_FluidTypeId = FluidTypeId;
     v_MapMask = MaterialMapMask;
