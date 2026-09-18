@@ -67,12 +67,6 @@ public abstract class LocalPlayerMixin implements ILocalPlayer {
 
     @Shadow
     public ClientInput input;
-    @Shadow
-    public float xxa;
-    @Shadow
-    public float zza;
-    @Shadow
-    protected boolean jumping;
     @Unique
     private float combatant$lastYaw;
     @Unique
@@ -361,9 +355,10 @@ public abstract class LocalPlayerMixin implements ILocalPlayer {
     private void freecam$blockWASD(CallbackInfo ci) {
         Freecam fc = Modules.get(Freecam.class);
         if (fc != null && fc.isEnabled() && fc.isCameraInput()) {
-            this.xxa = 0.0f;
-            this.zza = 0.0f;
-            this.jumping = false;
+            LocalPlayer self = (LocalPlayer) (Object) this;
+            self.xxa = 0.0f;
+            self.zza = 0.0f;
+            self.setJumping(false);
             ci.cancel();
         }
     }
@@ -530,10 +525,15 @@ public abstract class LocalPlayerMixin implements ILocalPlayer {
 
     @Unique
     private boolean shouldFreezeNow() {
-        boolean freezeModule = Modules.enabled(Freeze.class);
+        if (Modules.enabled(Freeze.class)) return true;
         Freecam freecam = Modules.get(Freecam.class);
-        boolean freecamFreeze = freecam != null && freecam.freezePlayer() && freecam.isCameraInput();
-        return freezeModule || freecamFreeze;
+        if (freecam != null && freecam.freezePlayer() && freecam.isCameraInput()) {
+            if (freecam.isGrimSafe()) {
+                return false;
+            }
+            return true;
+        }
+        return false;
     }
 
     @Inject(method = "sendPosition", at = @At("HEAD"), cancellable = true)
