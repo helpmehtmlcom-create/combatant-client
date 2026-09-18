@@ -8,6 +8,7 @@
 package combatant.client.render.engine.renderer.ui.runtime.style;
 
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+import combatant.client.render.engine.renderer.ui.runtime.debug.UiRuntimeValidation;
 import combatant.client.render.engine.renderer.ui.runtime.render.UiBlendSpec;
 import combatant.client.render.engine.text.FontInfo;
 
@@ -34,218 +35,276 @@ public final class UiStyleParser {
             if (part.isBlank()) continue;
             UiStyleToken token = UiStyleToken.parse(part);
             tokens.add(token);
-            apply(builder, token);
+            if (!apply(builder, token) && UiRuntimeValidation.enabled()) {
+                throw UiRuntimeValidation.invalid("Unknown UI style token '" + token.raw() + "'.");
+            }
         }
         tokens.trim();
         return new ParsedStyle(tokens, builder.build());
     }
 
-    private void apply(UiStyle.Builder builder, UiStyleToken token) {
+    private boolean apply(UiStyle.Builder builder, UiStyleToken token) {
         if (!token.variant().isBlank()) {
-            return;
+            return true;
         }
         String raw = token.raw().toLowerCase(Locale.ROOT);
         if (raw.startsWith("w-")) {
             float value = number(token.value(), -1.0f);
             if (value >= 0.0f) builder.width(value);
-            return;
+            return true;
         }
         if (raw.startsWith("h-")) {
             float value = number(token.value(), -1.0f);
             if (value >= 0.0f) builder.height(value);
-            return;
+            return true;
         }
         if (raw.startsWith("min-w-")) {
             builder.minWidth(number(raw.substring("min-w-".length()), 0.0f));
-            return;
+            return true;
         }
         if (raw.startsWith("min-h-")) {
             builder.minHeight(number(raw.substring("min-h-".length()), 0.0f));
-            return;
+            return true;
         }
         if (raw.startsWith("max-w-")) {
             builder.maxWidth(number(raw.substring("max-w-".length()), Float.MAX_VALUE));
-            return;
+            return true;
         }
         if (raw.startsWith("max-h-")) {
             builder.maxHeight(number(raw.substring("max-h-".length()), Float.MAX_VALUE));
-            return;
+            return true;
         }
         if (raw.startsWith("p-")) {
             builder.padding(number(token.value(), 0.0f));
-            return;
+            return true;
         }
         if (raw.startsWith("px-")) {
-            builder.padding(number(token.value(), 0.0f), 0.0f);
-            return;
+            float value = number(token.value(), 0.0f);
+            builder.paddingLeft(value).paddingRight(value);
+            return true;
         }
         if (raw.startsWith("py-")) {
-            builder.padding(0.0f, number(token.value(), 0.0f));
-            return;
+            float value = number(token.value(), 0.0f);
+            builder.paddingTop(value).paddingBottom(value);
+            return true;
+        }
+        if (raw.startsWith("pl-")) {
+            builder.paddingLeft(number(token.value(), 0.0f));
+            return true;
+        }
+        if (raw.startsWith("pt-")) {
+            builder.paddingTop(number(token.value(), 0.0f));
+            return true;
+        }
+        if (raw.startsWith("pr-")) {
+            builder.paddingRight(number(token.value(), 0.0f));
+            return true;
+        }
+        if (raw.startsWith("pb-")) {
+            builder.paddingBottom(number(token.value(), 0.0f));
+            return true;
         }
         if (raw.startsWith("m-")) {
             builder.margin(number(token.value(), 0.0f));
-            return;
+            return true;
         }
         if (raw.startsWith("mx-")) {
-            builder.margin(number(token.value(), 0.0f), 0.0f);
-            return;
+            float value = number(token.value(), 0.0f);
+            builder.marginLeft(value).marginRight(value);
+            return true;
         }
         if (raw.startsWith("my-")) {
-            builder.margin(0.0f, number(token.value(), 0.0f));
-            return;
+            float value = number(token.value(), 0.0f);
+            builder.marginTop(value).marginBottom(value);
+            return true;
         }
         if (raw.startsWith("ml-")) {
             builder.marginLeft(number(token.value(), 0.0f));
-            return;
+            return true;
         }
         if (raw.startsWith("mt-")) {
             builder.marginTop(number(token.value(), 0.0f));
-            return;
+            return true;
         }
         if (raw.startsWith("mr-")) {
             builder.marginRight(number(token.value(), 0.0f));
-            return;
+            return true;
         }
         if (raw.startsWith("mb-")) {
             builder.marginBottom(number(token.value(), 0.0f));
-            return;
+            return true;
         }
         if (raw.startsWith("gap-")) {
             builder.gap(number(token.value(), 0.0f));
-            return;
+            return true;
+        }
+        if ("flex".equals(raw)) {
+            builder.display(UiDisplay.FLEX);
+            return true;
+        }
+        if ("flex-row".equals(raw)) {
+            builder.display(UiDisplay.FLEX).flexDirection(UiFlexDirection.ROW);
+            return true;
+        }
+        if ("block".equals(raw)) {
+            builder.display(UiDisplay.BLOCK);
+            return true;
+        }
+        if ("flex-col".equals(raw) || "flex-column".equals(raw)) {
+            builder.display(UiDisplay.FLEX).flexDirection(UiFlexDirection.COLUMN);
+            return true;
         }
         if ("grow".equals(raw)) {
             builder.grow(1.0f);
-            return;
+            return true;
         }
         if (raw.startsWith("grow-")) {
             builder.grow(number(token.value(), 1.0f));
-            return;
+            return true;
         }
         if ("absolute".equals(raw)) {
             builder.absolute(true);
-            return;
+            return true;
         }
         if (raw.startsWith("x-")) {
             builder.offsetX(number(token.value(), 0.0f));
-            return;
+            return true;
         }
         if (raw.startsWith("y-")) {
             builder.offsetY(number(token.value(), 0.0f));
-            return;
+            return true;
+        }
+        if (raw.startsWith("right-")) {
+            builder.offsetRight(number(raw.substring("right-".length()), 0.0f));
+            return true;
+        }
+        if (raw.startsWith("bottom-")) {
+            builder.offsetBottom(number(raw.substring("bottom-".length()), 0.0f));
+            return true;
         }
         if (raw.startsWith("align-")) {
-            builder.align(UiAlign.parse(raw.substring("align-".length()), UiAlign.START));
-            return;
+            UiAlign align = UiAlign.parse(raw.substring("align-".length()), null);
+            if (align == null) return false;
+            builder.align(align);
+            return true;
         }
         if (raw.startsWith("justify-")) {
-            builder.justify(UiJustify.parse(raw.substring("justify-".length()), UiJustify.START));
-            return;
+            UiJustify justify = UiJustify.parse(raw.substring("justify-".length()), null);
+            if (justify == null) return false;
+            builder.justify(justify);
+            return true;
         }
         if (raw.startsWith("overflow-")) {
-            builder.overflow(UiOverflow.parse(raw.substring("overflow-".length()), UiOverflow.VISIBLE));
-            return;
+            UiOverflow overflow = UiOverflow.parse(raw.substring("overflow-".length()), null);
+            if (overflow == null) return false;
+            builder.overflow(overflow);
+            return true;
         }
         if ("scroll".equals(raw)) {
             builder.overflow(UiOverflow.SCROLL);
-            return;
+            return true;
         }
         if ("scroll-x".equals(raw)) {
             builder.overflow(UiOverflow.SCROLL_X);
-            return;
+            return true;
         }
         if ("scroll-y".equals(raw)) {
             builder.overflow(UiOverflow.SCROLL_Y);
-            return;
+            return true;
         }
         if (raw.startsWith("rounded-")) {
             builder.radius(number(token.value(), 0.0f));
-            return;
+            return true;
         }
         if (raw.startsWith("bg-")) {
             builder.backgroundColor(resolveColor(token.value(), 0x00000000));
-            return;
+            return true;
         }
         if (raw.startsWith("text-backend-")) {
             builder.textBackend(token.value());
-            return;
+            return true;
         }
         if (raw.startsWith("text-effect-")) {
             builder.textEffect(token.value(), 18);
-            return;
+            return true;
         }
         if (raw.startsWith("text-max-")) {
             builder.maxTextWidth(number(raw.substring("text-max-".length()), 0.0f));
-            return;
+            return true;
         }
         if (raw.startsWith("text-align-")) {
             builder.textAlign(raw.substring("text-align-".length()));
-            return;
+            return true;
         }
         if (raw.startsWith("text-")) {
             builder.textColor(resolveColor(token.value(), 0xFFFFFFFF));
-            return;
+            return true;
         }
         if (raw.startsWith("border-")) {
             builder.strokeColor(resolveColor(token.value(), 0x665A5A5A));
-            return;
+            return true;
         }
         if (raw.startsWith("font-")) {
             applyFont(builder, token.value());
-            return;
+            return true;
         }
         if (raw.startsWith("cursor-")) {
             builder.cursor(token.value());
-            return;
+            return true;
         }
         if (raw.startsWith("blend-")) {
             builder.blend(UiBlendSpec.parse(token.value()));
-            return;
+            return true;
+        }
+        if (raw.startsWith("opacity-")) {
+            builder.opacity(number(raw.substring("opacity-".length()), 1.0f));
+            return true;
         }
         if (raw.startsWith("blur-alpha-")) {
             builder.blur(8.0f, 1.0f, number(raw.substring("blur-alpha-".length()), 0.35f));
-            return;
+            return true;
         }
         if (raw.startsWith("blur-quality-")) {
             builder.blur(number(raw.substring("blur-quality-".length()), 8.0f), 1.0f, 0.35f);
-            return;
+            return true;
         }
         if ("blur".equals(raw)) {
             builder.blur(true);
-            return;
+            return true;
         }
         if ("glass".equals(raw) || "liquid-glass".equals(raw)) {
             builder.liquidGlass(true);
-            return;
+            return true;
         }
         if ("clip".equals(raw)) {
             builder.clip(true);
-            return;
+            return true;
         }
         if ("marquee".equals(raw)) {
             builder.marquee(true);
-            return;
+            return true;
         }
         if ("shadow-compact".equals(raw)) {
             builder.shadow(0x30000000, 4.5f, 0.10f);
-            return;
+            return true;
         }
         if ("shadow-panel".equals(raw)) {
             builder.shadow(0x26000000, 6.0f, 0.0f);
-            return;
+            return true;
         }
         if ("shadow-soft".equals(raw) || "shadow".equals(raw)) {
             builder.shadow(0x66000000, 10.0f, 0.18f);
-            return;
+            return true;
         }
         if ("shadow-text".equals(raw) || "text-shadow".equals(raw)) {
             builder.textShadow(true);
-            return;
+            return true;
         }
         if ("ellipsis".equals(raw)) {
             builder.ellipsis(true);
+            return true;
         }
+        return false;
     }
 
     private int resolveColor(String value, int fallback) {

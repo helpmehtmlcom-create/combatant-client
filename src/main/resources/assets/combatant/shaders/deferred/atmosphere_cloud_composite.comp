@@ -226,9 +226,17 @@ void main() {
     float backgroundDistance = sceneDistance >= 0.0 ? min(sceneDistance, u_Data.froxel.w) : u_Data.froxel.w;
 
     CloudSegment segments[3];
-    segments[0] = sampleCloudDepthAware(u_CloudRadiance, u_CloudDepth, uv, sceneDistance);
-    segments[1] = sampleCloudDepthAware(u_HighCloudRadiance, u_HighCloudDepth, uv, sceneDistance);
-    segments[2] = sampleCloudDepthAware(u_ConvectiveCloudRadiance, u_ConvectiveCloudDepth, uv, sceneDistance);
+    for (int i = 0; i < 3; ++i) {
+        segments[i].cloud = vec4(0.0, 0.0, 0.0, 1.0);
+        segments[i].depth = -1.0;
+    }
+    int cloudMask = int(u_Data.policy.z + 0.5);
+    if ((cloudMask & 1) != 0)
+        segments[0] = sampleCloudDepthAware(u_CloudRadiance, u_CloudDepth, uv, sceneDistance);
+    if ((cloudMask & 2) != 0)
+        segments[1] = sampleCloudDepthAware(u_HighCloudRadiance, u_HighCloudDepth, uv, sceneDistance);
+    if ((cloudMask & 4) != 0)
+        segments[2] = sampleCloudDepthAware(u_ConvectiveCloudRadiance, u_ConvectiveCloudDepth, uv, sceneDistance);
     int segmentCount;
     sortSegments(segments, segmentCount, backgroundDistance);
 

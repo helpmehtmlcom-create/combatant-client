@@ -35,6 +35,8 @@ public record DeferredTextureSpec(
         OUTPUT,
         /** HDR bloom working resolution, scaled from final output rather than render resolution. */
         BLOOM,
+        /** Tile grid used by output-resolution velocity dilation for camera motion blur. */
+        MOTION_TILE,
         SHADOW_OUTPUT,
         CONTACT_SHADOW_TRACE,
         AMBIENT_OCCLUSION,
@@ -49,6 +51,7 @@ public record DeferredTextureSpec(
             return switch (this) {
                 case FULL, OUTPUT -> 1.0f;
                 case BLOOM -> DeferredPostConfig.current().bloomInitialScale();
+                case MOTION_TILE -> 1.0f / DeferredCameraPostConfig.MOTION_TILE_SIZE;
                 case SHADOW_OUTPUT -> settings.shadowOutputScale();
                 case CONTACT_SHADOW_TRACE -> settings.contactShadowScale();
                 case AMBIENT_OCCLUSION -> settings.ambientOcclusionScale();
@@ -62,7 +65,7 @@ public record DeferredTextureSpec(
 
         public int width(int renderWidth, int outputWidth, DeferredRuntimeConfig.Snapshot settings) {
             if (this == OUTPUT) return Math.max(1, outputWidth > 0 ? outputWidth : renderWidth);
-            if (this == BLOOM) {
+            if (this == BLOOM || this == MOTION_TILE) {
                 int base = outputWidth > 0 ? outputWidth : renderWidth;
                 return scaledExtent(base, scale(settings));
             }
@@ -79,7 +82,7 @@ public record DeferredTextureSpec(
 
         public int height(int renderHeight, int outputHeight, DeferredRuntimeConfig.Snapshot settings) {
             if (this == OUTPUT) return Math.max(1, outputHeight > 0 ? outputHeight : renderHeight);
-            if (this == BLOOM) {
+            if (this == BLOOM || this == MOTION_TILE) {
                 int base = outputHeight > 0 ? outputHeight : renderHeight;
                 return scaledExtent(base, scale(settings));
             }

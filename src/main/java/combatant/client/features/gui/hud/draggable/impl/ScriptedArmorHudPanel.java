@@ -55,8 +55,6 @@ final class ScriptedArmorHudPanel {
                 module,
                 "armor",
                 panel.treeSignature(),
-                panel.dataSignature(),
-                panel.layoutSignature(),
                 panel.width,
                 panel.height,
                 fallback,
@@ -177,43 +175,6 @@ final class ScriptedArmorHudPanel {
             return h;
         }
 
-        long dataSignature() {
-            long h = 0xcbf29ce484222325L;
-            h = CachedUiScriptRuntime.mix(h, stateMode);
-            h = CachedUiScriptRuntime.mix(h, durabilityThreshold);
-            h = CachedUiScriptRuntime.mix(h, durabilityColorThreshold);
-            h = CachedUiScriptRuntime.mix(h, bgAlpha);
-            h = CachedUiScriptRuntime.mix(h, themeGradientStrength);
-            h = CachedUiScriptRuntime.mix(h, themeWindow);
-            h = CachedUiScriptRuntime.mix(h, themeSurface);
-            h = CachedUiScriptRuntime.mix(h, themeStrokeSoft);
-            h = CachedUiScriptRuntime.mix(h, themePanelStart);
-            h = CachedUiScriptRuntime.mix(h, themePanelEnd);
-            h = CachedUiScriptRuntime.mix(h, themeAccentStart);
-            h = CachedUiScriptRuntime.mix(h, themeAccentEnd);
-            if (items != null) {
-                for (LinkedHashMap<String, Object> item : items) {
-                    h = CachedUiScriptRuntime.mix(h, intValue(item.get("visualIndex")));
-                    h = CachedUiScriptRuntime.mix(h, string(item.get("item")));
-                    h = CachedUiScriptRuntime.mix(h, intValue(item.get("count")));
-                    h = CachedUiScriptRuntime.mix(h, intValue(item.get("damage")));
-                    h = CachedUiScriptRuntime.mix(h, intValue(item.get("maxDamage")));
-                    h = CachedUiScriptRuntime.mix(h, intValue(item.get("componentsHash")));
-                    h = CachedUiScriptRuntime.mix(h, stackHash(item.get("stack")));
-                }
-            }
-            return h;
-        }
-
-        long layoutSignature() {
-            long h = 0xcbf29ce484222325L;
-            h = CachedUiScriptRuntime.mix(h, x);
-            h = CachedUiScriptRuntime.mix(h, y);
-            h = CachedUiScriptRuntime.mix(h, width);
-            h = CachedUiScriptRuntime.mix(h, height);
-            return h;
-        }
-
         LinkedHashMap<String, LinkedHashMap<String, Object>> patches() {
             LinkedHashMap<String, LinkedHashMap<String, Object>> patches = new LinkedHashMap<>();
             if (items != null) {
@@ -240,12 +201,4 @@ final class ScriptedArmorHudPanel {
         return value instanceof Number n ? n.intValue() : 0;
     }
 
-    private static int stackHash(Object value) {
-        if (!(value instanceof ItemStack stack) || stack.isEmpty()) return 0;
-        int hash = ItemStack.hashItemAndComponents(stack);
-        hash = 31 * hash + stack.getCount();
-        hash = 31 * hash + stack.getDamageValue();
-        hash = 31 * hash + stack.getComponents().hashCode();
-        return hash;
-    }
 }

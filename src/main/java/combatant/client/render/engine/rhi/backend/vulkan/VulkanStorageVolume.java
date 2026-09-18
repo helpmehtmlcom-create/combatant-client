@@ -33,7 +33,6 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.lwjgl.util.vma.Vma.*;
-import static org.lwjgl.vulkan.KHRSynchronization2.*;
 import static org.lwjgl.vulkan.VK12.*;
 
 /** VkImage 3D allocation using the exact VkDevice/VMA allocator owned by Mojang. */
@@ -287,17 +286,16 @@ final class VulkanStorageVolume implements RhiStorageVolume, Destroyable {
         ensureOpen();
         if (generalLayout) return;
         try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkImageMemoryBarrier2.Buffer barrier = VkImageMemoryBarrier2.calloc(1, stack);
-            long dstAccess = 0L;
-            if (descriptor.storage() && descriptor.access().readable()) dstAccess |= VK_ACCESS_2_SHADER_STORAGE_READ_BIT_KHR;
-            if (descriptor.storage() && descriptor.access().writable()) dstAccess |= VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT_KHR;
-            if (descriptor.sampled()) dstAccess |= VK_ACCESS_2_SHADER_SAMPLED_READ_BIT_KHR;
-            if (descriptor.copySource()) dstAccess |= VK_ACCESS_2_TRANSFER_READ_BIT_KHR;
-            if (descriptor.copyDestination()) dstAccess |= VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR;
+            int dstAccess = 0;
+            if (descriptor.storage() && descriptor.access().readable()) dstAccess |= VK_ACCESS_SHADER_READ_BIT;
+            if (descriptor.storage() && descriptor.access().writable()) dstAccess |= VK_ACCESS_SHADER_WRITE_BIT;
+            if (descriptor.sampled()) dstAccess |= VK_ACCESS_SHADER_READ_BIT;
+            if (descriptor.copySource()) dstAccess |= VK_ACCESS_TRANSFER_READ_BIT;
+            if (descriptor.copyDestination()) dstAccess |= VK_ACCESS_TRANSFER_WRITE_BIT;
+
+            VkImageMemoryBarrier.Buffer barrier = VkImageMemoryBarrier.calloc(1, stack);
             barrier.get(0).sType$Default()
-                    .srcStageMask(VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT_KHR)
-                    .srcAccessMask(0L)
-                    .dstStageMask(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR)
+                    .srcAccessMask(0)
                     .dstAccessMask(dstAccess)
                     .oldLayout(VK_IMAGE_LAYOUT_UNDEFINED)
                     .newLayout(VK_IMAGE_LAYOUT_GENERAL)
@@ -310,10 +308,10 @@ final class VulkanStorageVolume implements RhiStorageVolume, Destroyable {
                     .levelCount(descriptor.mipLevels())
                     .baseArrayLayer(0)
                     .layerCount(1);
-            VkDependencyInfo dependency = VkDependencyInfo.calloc(stack)
-                    .sType$Default()
-                    .pImageMemoryBarriers(barrier);
-            vkCmdPipelineBarrier2KHR(commandBuffer, dependency);
+
+            vkCmdPipelineBarrier(commandBuffer,
+                    VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                    0, null, null, barrier);
         }
         generalLayout = true;
     }

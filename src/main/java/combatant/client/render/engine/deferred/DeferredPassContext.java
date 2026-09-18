@@ -33,6 +33,10 @@ public record DeferredPassContext(
         return rhi.advancedShaders();
     }
 
+    public boolean featureEnabled(DeferredFeature feature) {
+        return DeferredSmokeTestState.global().featureEnabledForFrame(feature, settings);
+    }
+
     public DeferredHistoryDescriptor history() {
         return primaryView.historyDescriptor();
     }

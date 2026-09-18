@@ -18,9 +18,9 @@ public final class UiStyleResolver {
 
     public UiStyle resolve(UiNodeSpec spec) {
         if (spec == null) return UiStyle.DEFAULT;
-        if (!spec.styleClass().isBlank()) {
-            return cache.resolve(spec.styleClass());
-        }
-        return spec.style();
+        UiStyle base = !spec.styleClass().isBlank()
+                ? cache.resolve(spec.styleClass())
+                : spec.style();
+        return spec.inlineStyle().apply(base);
     }
 }

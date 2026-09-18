@@ -96,12 +96,14 @@ final class GlStorageVolume implements RhiStorageVolume {
                     "3D volume descriptor lacks STORAGE_IMAGE usage",
                     RhiFeatureSupport.Fallback.RECREATE_WITH_REQUIRED_USAGE);
         } else if (descriptor.access().readable()
-                && GL43C.glGetInternalformati(GL12C.GL_TEXTURE_3D, internalFormat, GL43C.GL_SHADER_IMAGE_LOAD) != GL11C.GL_TRUE) {
+                && !supportsOperation(GL43C.glGetInternalformati(
+                        GL12C.GL_TEXTURE_3D, internalFormat, GL43C.GL_SHADER_IMAGE_LOAD))) {
             storage = RhiFeatureSupport.unsupported(
                     "OpenGL format does not support image load for 3D storage: " + descriptor.format(),
                     RhiFeatureSupport.Fallback.ALTERNATE_FORMAT);
         } else if (descriptor.access().writable()
-                && GL43C.glGetInternalformati(GL12C.GL_TEXTURE_3D, internalFormat, GL43C.GL_SHADER_IMAGE_STORE) != GL11C.GL_TRUE) {
+                && !supportsOperation(GL43C.glGetInternalformati(
+                        GL12C.GL_TEXTURE_3D, internalFormat, GL43C.GL_SHADER_IMAGE_STORE))) {
             storage = RhiFeatureSupport.unsupported(
                     "OpenGL format does not support image store for 3D storage: " + descriptor.format(),
                     RhiFeatureSupport.Fallback.ALTERNATE_FORMAT);
@@ -144,6 +146,14 @@ final class GlStorageVolume implements RhiStorageVolume {
                     RhiFeatureSupport.Fallback.DISABLE_CONSUMER);
         }
         return new RhiVolumeCapabilities(allocation, storage, sampled, mipViews, copy, clear);
+    }
+
+    /**
+     * ARB_internalformat_query2 operation queries are tri-state support levels, not GL booleans.
+     * FULL_SUPPORT and CAVEAT_SUPPORT both mean the operation is legal; only GL_NONE is unsupported.
+     */
+    private static boolean supportsOperation(int supportLevel) {
+        return supportLevel != GL11C.GL_NONE;
     }
 
     private static String firstFailure(RhiVolumeCapabilities capabilities, StorageVolumeDescriptor descriptor) {

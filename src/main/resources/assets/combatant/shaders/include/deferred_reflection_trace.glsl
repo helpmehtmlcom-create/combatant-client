@@ -30,7 +30,7 @@ struct CombatantReflectionTraceResult {
 vec3 combatantReflectionDecodeOctahedral(vec2 encoded) {
     vec2 f = encoded * 2.0 - 1.0;
     vec3 n = vec3(f, 1.0 - abs(f.x) - abs(f.y));
-    if (n.z < 0.0) n.xy = (1.0 - abs(n.yx)) * sign(n.xy);
+    if (n.z < 0.0) n.xy = (1.0 - abs(n.yx)) * vec2(n.x >= 0.0 ? 1.0 : -1.0, n.y >= 0.0 ? 1.0 : -1.0);
     return normalize(n);
 }
 
@@ -38,7 +38,7 @@ vec2 combatantReflectionEncodeOctahedral(vec3 normal) {
     vec3 n = normalize(normal);
     n /= max(abs(n.x) + abs(n.y) + abs(n.z), 1.0e-7);
     vec2 encoded = n.xy;
-    if (n.z < 0.0) encoded = (1.0 - abs(encoded.yx)) * sign(encoded.xy);
+    if (n.z < 0.0) encoded = (1.0 - abs(encoded.yx)) * vec2(encoded.x >= 0.0 ? 1.0 : -1.0, encoded.y >= 0.0 ? 1.0 : -1.0);
     return encoded * 0.5 + 0.5;
 }
 

@@ -13,7 +13,11 @@ import combatant.client.render.helpers.ScissorFunction;
 import java.util.ArrayDeque;
 import java.util.Deque;
 
-public final class UiClipStack {
+/**
+ * Retained-tree rectangular scissor stack used while {@link UiRenderer} walks runtime nodes.
+ * This is intentionally separate from renderer-side analytic/MSAA {@code UiClipStack}.
+ */
+public final class UiRuntimeScissorStack {
     private final Deque<Boolean> pushed = new ArrayDeque<>();
 
     public boolean push(UiBounds bounds, UiRenderContext context) {

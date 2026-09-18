@@ -1,0 +1,84 @@
+#version 430 core
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(binding = 0) uniform sampler2D u_Source;
+layout(rgba16f, binding = 1) writeonly uniform image2D u_Output;
+layout(std430, binding = 2) readonly buffer DebugParams {
+    vec4 decode;
+    vec4 aux;      // x=hist bins, y=far plane, zw=depth->NDC scale/bias
+    vec4 extent;   // xy=source/render extent, zw=debug output extent
+    mat4 inverseProjection;
+    mat4 projection;
+} u_Params;
+
+float component(vec4 value, int channel) {
+    if (channel == 1) return value.y;
+    if (channel == 2) return value.z;
+    if (channel == 3) return value.w;
+    return value.x;
+}
+
+vec2 signNotZero(vec2 v) {
+    return vec2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);
+}
+
+vec3 decodeOct(vec2 encoded) {
+    vec2 f = encoded * 2.0 - 1.0;
+    vec3 n = vec3(f, 1.0 - abs(f.x) - abs(f.y));
+    if (n.z < 0.0) n.xy = (1.0 - abs(n.yx)) * signNotZero(n.xy);
+    float lengthSquared = dot(n, n);
+    if (!(lengthSquared > 1.0e-12) || any(isnan(n)) || any(isinf(n))) return vec3(0.0, 0.0, 1.0);
+    return n * inversesqrt(lengthSquared);
+}
+
+vec3 reconstructView(vec2 uv, float depth) {
+    vec2 ndcXY = uv * 2.0 - 1.0;
+    float ndcZ = depth * u_Params.aux.z + u_Params.aux.w;
+    vec4 h = u_Params.inverseProjection * vec4(ndcXY, ndcZ, 1.0);
+    if (abs(h.w) < 1.0e-7) return vec3(0.0);
+    return h.xyz / h.w;
+}
+
+float displayLinearDepth(vec2 uv, float depth) {
+    if (depth <= 0.0) return 0.0;
+    vec3 viewPosition = reconstructView(uv, depth);
+    float linearDepth = max(-viewPosition.z, 0.0);
+    float farPlane = max(u_Params.aux.y, 1.0);
+    return clamp(log2(1.0 + linearDepth) / log2(1.0 + farPlane), 0.0, 1.0);
+}
+
+void main() {
+    ivec2 outSize = imageSize(u_Output);
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pixel, outSize))) return;
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(outSize);
+    vec4 value = textureLod(u_Source, uv, 0.0);
+    int mode = int(u_Params.decode.x + 0.5);
+    int channel = int(u_Params.decode.y + 0.5);
+    vec3 rgb;
+
+    if (mode == 1 || mode == 5) {
+        float v = component(value, channel);
+        rgb = vec3(clamp(v, 0.0, 1.0));
+    } else if (mode == 2) {
+        rgb = vec3(clamp(vec2(0.5) + value.xy * 16.0, 0.0, 1.0), 0.5);
+    } else if (mode == 3) {
+        rgb = vec3(clamp(value.x, 0.0, 1.0));
+    } else if (mode == 6) {
+        rgb = decodeOct(value.xy) * 0.5 + 0.5;
+    } else if (mode == 11) {
+        rgb = vec3(clamp(value.xy, 0.0, 1.0), 0.0);
+    } else if (mode == 12) {
+        vec3 decoded = decodeOct(value.xy);
+        bool finiteNormal = !any(isnan(decoded)) && !any(isinf(decoded));
+        float lengthError = finiteNormal ? abs(length(decoded) - 1.0) : 1.0;
+        rgb = finiteNormal ? vec3(clamp(lengthError * 128.0, 0.0, 1.0)) : vec3(1.0, 0.0, 1.0);
+    } else if (mode == 13) {
+        rgb = vec3(displayLinearDepth(uv, value.x));
+    } else if (mode == 14) {
+        // R=block-light baseline factor, G=sky-light baseline factor.
+        rgb = vec3(clamp(value.z, 0.0, 1.0), clamp(value.w, 0.0, 1.0), 0.0);
+    } else {
+        rgb = clamp(value.rgb, 0.0, 1.0);
+    }
+    imageStore(u_Output, pixel, vec4(rgb, 1.0));
+}

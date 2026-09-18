@@ -36,7 +36,11 @@ import combatant.client.render.engine.world.AerialPerspectiveLayout;
 import combatant.client.render.engine.world.SkyEnvironmentDescriptor;
 import combatant.client.render.engine.world.SkyEnvironmentProvider;
 import combatant.client.render.engine.world.SkyEnvironmentRegistry;
+import combatant.client.render.engine.world.environment.MinecraftBaselineLightState;
 import net.minecraft.resources.Identifier;
+import org.joml.Vector4f;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -50,6 +54,7 @@ import java.util.List;
  * neutral fallback.</p>
  */
 final class DeferredSkyEnvironmentSource implements AutoCloseable {
+    private static final Logger LOGGER = LoggerFactory.getLogger("Combatant");
     private static final int LOCAL_SIZE = 8;
     private static final int SKY_WIDTH = 256;
     private static final int SKY_HEIGHT = 128;
@@ -126,10 +131,15 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
     private long environmentGeneration;
     private long shGeneration = Long.MIN_VALUE;
     private long specularGeneration = Long.MIN_VALUE;
+    private boolean environmentUsable;
+    private boolean fallbackActive;
+    private String fallbackReason = "";
+    private String lastProviderFailure = "";
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.environment.sky.prepare", DeferredStage.PRE_LIGHTING)
                 .priority(820)
+                .feature(DeferredFeature.SKY)
                 .write(DeferredResource.SKY_RADIANCE, DeferredResource.SKY_ENVIRONMENT_STATE,
                         DeferredResource.ATMOSPHERE_TRANSMITTANCE,
                         DeferredResource.ATMOSPHERE_MULTI_SCATTERING,
@@ -140,6 +150,7 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
                 .build());
         passes.add(DeferredPassSpec.builder("world.environment.sky.diffuse-sh", DeferredStage.PRE_LIGHTING)
                 .priority(830)
+                .feature(DeferredFeature.SKY)
                 .read(DeferredResource.SKY_RADIANCE, DeferredResource.SKY_ENVIRONMENT_STATE)
                 .write(DeferredResource.SKY_DIFFUSE_SH)
                 .requires(RhiShaderStage.COMPUTE)
@@ -148,6 +159,7 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
                 .build());
         passes.add(DeferredPassSpec.builder("world.environment.sky.specular-prefilter", DeferredStage.PRE_LIGHTING)
                 .priority(840)
+                .feature(DeferredFeature.SKY)
                 .read(DeferredResource.SKY_RADIANCE, DeferredResource.SKY_ENVIRONMENT_STATE)
                 .write(DeferredResource.SKY_SPECULAR_RADIANCE)
                 .requires(RhiShaderStage.COMPUTE)
@@ -156,6 +168,7 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
                 .build());
         passes.add(DeferredPassSpec.builder("world.environment.sky.diffuse-resolve", DeferredStage.PRE_LIGHTING)
                 .priority(890)
+                .feature(DeferredFeature.SKY)
                 .read(DeferredResource.SKY_DIFFUSE_SH, DeferredResource.SKY_ENVIRONMENT_STATE,
                         DeferredResource.GBUFFER_GEOMETRY,
                         DeferredResource.RESOLVED_DEPTH, DeferredResource.GBUFFER_DEPTH)
@@ -198,23 +211,39 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
         bindResources(context);
 
         SkyEnvironmentProvider provider = SkyEnvironmentRegistry.resolve(context.worldState().skyProvider());
-        SkyEnvironmentDescriptor next = provider == null
-                ? SkyEnvironmentDescriptor.NONE
-                : provider.describe(context.worldState(), context.frame().frameId());
-        if (provider == null || next == null || !provider.id().equals(next.providerId())) {
-            next = SkyEnvironmentDescriptor.NONE;
-            provider = null;
+        SkyEnvironmentDescriptor next = SkyEnvironmentDescriptor.NONE;
+        String failureReason = "";
+        Throwable providerFailure = null;
+
+        if (provider != null) {
+            try {
+                next = provider.describe(context.worldState(), context.frame().frameId());
+                if (next == null || !provider.id().equals(next.providerId())) {
+                    failureReason = next == null ? "descriptor_null" : "descriptor_provider_mismatch";
+                    next = SkyEnvironmentDescriptor.NONE;
+                    provider = null;
+                }
+            } catch (Throwable failure) {
+                providerFailure = failure;
+                failureReason = "provider_describe_exception";
+                lastProviderFailure = logProviderFailure(provider, failure, lastProviderFailure);
+                next = SkyEnvironmentDescriptor.NONE;
+                provider = null;
+            }
+        } else {
+            failureReason = "provider_unavailable";
         }
 
-        boolean changed = provider != renderedProvider
+        // A fallback sky is cheap and frame-local because Minecraft's sky color/light factor can
+        // change continuously with time/weather. Native providers retain their own update policy.
+        boolean changed = provider == null
+                || !next.valid()
+                || provider != renderedProvider
                 || descriptor.valid() != next.valid()
                 || !descriptor.providerId().equals(next.providerId())
                 || next.requiresUpdate(renderedVersion);
         if (changed) {
             boolean produced = false;
-            if (provider != renderedProvider) {
-                clearEnvironment(context);
-            }
             if (provider != null && next.valid()) {
                 try {
                     provider.render(new SkyEnvironmentProvider.RenderContext(
@@ -224,24 +253,69 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
                             aerialPerspective, aerialTransmittance
                     ));
                     produced = true;
-                } catch (Throwable ignored) {
+                    environmentUsable = true;
+                    fallbackActive = false;
+                    fallbackReason = "";
+                    lastProviderFailure = "";
+                } catch (Throwable failure) {
+                    providerFailure = failure;
+                    failureReason = "provider_render_exception";
+                    lastProviderFailure = logProviderFailure(provider, failure, lastProviderFailure);
                     next = SkyEnvironmentDescriptor.NONE;
                     provider = null;
                 }
+            } else if (provider != null && !next.valid()) {
+                failureReason = "descriptor_unavailable";
             }
-            if (!produced) clearEnvironment(context);
+
+            if (!produced) {
+                clearEnvironment(context);
+                environmentUsable = true;
+                fallbackActive = true;
+                fallbackReason = failureReason.isBlank() ? "provider_unavailable" : failureReason;
+            }
             renderedProvider = provider;
             descriptor = next;
             renderedVersion = next.contentVersion();
             environmentGeneration++;
         }
         uploadState();
+        publishEnvironmentStatus(context, providerFailure);
+    }
+
+    private void publishEnvironmentStatus(DeferredPassContext context, Throwable providerFailure) {
+        DeferredResourceStatus status = fallbackActive ? DeferredResourceStatus.FALLBACK : DeferredResourceStatus.PRODUCED;
+        String reason = fallbackActive ? fallbackReason : "";
+        String message = providerFailure == null ? "" : providerFailure.getClass().getSimpleName()
+                + (providerFailure.getMessage() == null ? "" : ": " + providerFailure.getMessage());
+        DeferredResource[] outputs = {
+                DeferredResource.SKY_RADIANCE,
+                DeferredResource.SKY_ENVIRONMENT_STATE,
+                DeferredResource.ATMOSPHERE_TRANSMITTANCE,
+                DeferredResource.ATMOSPHERE_MULTI_SCATTERING,
+                DeferredResource.AERIAL_PERSPECTIVE,
+                DeferredResource.AERIAL_TRANSMITTANCE
+        };
+        for (DeferredResource output : outputs) {
+            context.resources().publishStatus(output, "world.environment.sky.prepare",
+                    status, reason, message, null);
+        }
+    }
+
+    private static String logProviderFailure(SkyEnvironmentProvider provider, Throwable failure, String previousKey) {
+        String providerId = provider == null ? "<unavailable>" : provider.id().toString();
+        String key = providerId + "|" + failure.getClass().getName() + "|" + String.valueOf(failure.getMessage());
+        if (!key.equals(previousKey)) {
+            LOGGER.warn("[Combatant][Renderer] sky provider {} failed; using declared fallback", providerId, failure);
+        }
+        return key;
     }
 
     private void buildDiffuseSh(DeferredPassContext context) {
         ensureOwner(context.rhi());
         ensureResources();
         bindResources(context);
+        publishDerivedSkyStatus(context, DeferredResource.SKY_DIFFUSE_SH, "world.environment.sky.diffuse-sh");
         if (shGeneration == environmentGeneration) return;
 
         GpuSampler skySampler = skySampler(false);
@@ -260,6 +334,7 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
         ensureOwner(context.rhi());
         ensureResources();
         bindResources(context);
+        publishDerivedSkyStatus(context, DeferredResource.SKY_SPECULAR_RADIANCE, "world.environment.sky.specular-prefilter");
         if (specularGeneration == environmentGeneration) return;
 
         Std430Writer params = new Std430Writer(SPECULAR_PARAMS_LAYOUT, SKY_MIPS);
@@ -325,10 +400,28 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
                 ),
                 List.of(new StorageImageBinding(4, output, StorageAccess.WRITE_ONLY))
         ));
+        publishDerivedSkyStatus(context, DeferredResource.SKY_DIFFUSE_IRRADIANCE,
+                "world.environment.sky.diffuse-resolve");
+    }
+
+    private void publishDerivedSkyStatus(DeferredPassContext context,
+                                         DeferredResource output,
+                                         String producerId) {
+        DeferredResourceProvenance source = context.resources().provenance(DeferredResource.SKY_RADIANCE);
+        DeferredResourceStatus status = source != null && source.status() == DeferredResourceStatus.FALLBACK
+                ? DeferredResourceStatus.FALLBACK : DeferredResourceStatus.PRODUCED;
+        String reason = status == DeferredResourceStatus.FALLBACK ? "sky_radiance_fallback" : "";
+        String message = source == null ? "" : source.message();
+        context.resources().publishStatus(output, producerId, status, reason, message, DeferredResource.SKY_RADIANCE);
     }
 
     private void clearEnvironment(DeferredPassContext context) {
-        clearImage(context, "Combatant neutral sky radiance fallback", skyRadiance);
+        MinecraftBaselineLightState baseline = context.worldState().baselineLightState();
+        float red = baseline.skyBackgroundR();
+        float green = baseline.skyBackgroundG();
+        float blue = baseline.skyBackgroundB();
+        RenderSystem.getDevice().createCommandEncoder().clearColorTexture(
+                skyRadiance.view().texture(), new Vector4f(red, green, blue, 1.0f));
         clearIdentityImage(context, "Combatant neutral atmosphere transmittance", atmosphereTransmittance);
         clearImage(context, "Combatant neutral atmosphere multiscattering", atmosphereMultiScattering);
         clearImage(context, "Combatant neutral aerial radiance", aerialPerspective);
@@ -354,7 +447,7 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
     private void uploadState() {
         Std430Writer writer = new Std430Writer(SKY_STATE_LAYOUT, 1)
                 .putVec4(0, "state0", descriptor.valid() ? 1.0f : 0.0f, SKY_MIPS,
-                        descriptor.updatePolicy().ordinal(), 0.0f)
+                        descriptor.updatePolicy().ordinal(), environmentUsable ? 1.0f : 0.0f)
                 .putVec4(0, "state1", SKY_WIDTH, SKY_HEIGHT,
                         (float) (descriptor.contentVersion() & 0x00FFFFFFL), 0.0f);
         skyState.upload(writer.buffer(), 0L);
@@ -501,6 +594,10 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
         renderedProvider = null;
         descriptor = SkyEnvironmentDescriptor.NONE;
         renderedVersion = Long.MIN_VALUE;
+        environmentUsable = false;
+        fallbackActive = false;
+        fallbackReason = "";
+        lastProviderFailure = "";
         environmentGeneration = 0L;
         shGeneration = Long.MIN_VALUE;
         specularGeneration = Long.MIN_VALUE;

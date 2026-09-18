@@ -12,7 +12,6 @@ import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import combatant.client.features.module.Modules;
-import combatant.client.features.module.modules.visuals.ReimaginedVisual;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.depth.PreTranslucentDepth;
 import combatant.client.render.engine.depth.WorldSceneDepth;
@@ -186,8 +185,8 @@ public final class PostProcessGraphResources implements AutoCloseable {
     }
 
     private static boolean needsPreTranslucentDepth() {
-        ReimaginedVisual module = Modules.get(ReimaginedVisual.class);
-        return module != null && module.needsPreTranslucentDepthCapture();
+        // Legacy ReimaginedVisual DoF no longer consumes PostProcessGraph depth captures.
+        return false;
     }
 
     public void releaseBackendResources(CombatantRhi owner) {

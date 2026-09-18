@@ -206,18 +206,11 @@ private static final float BASE_ICON_CARD = 24.0f;
         TextRenderer fallback = textRenderer != null ? textRenderer : TextRenderer.get();
         LinkedHashMap<String, Object> props = props(visible, drawWidth, drawHeight, drawBaseScale, drawScale);
         long treeSignature = signature(props);
-        long layoutSignature = 0xcbf29ce484222325L;
-        layoutSignature = CachedUiScriptRuntime.mix(layoutSignature, drawX);
-        layoutSignature = CachedUiScriptRuntime.mix(layoutSignature, drawY);
-        layoutSignature = CachedUiScriptRuntime.mix(layoutSignature, drawWidth);
-        layoutSignature = CachedUiScriptRuntime.mix(layoutSignature, drawHeight);
-
         UiRuntime baked = runtime.bake(
                 moduleHandle,
                 module,
                 "itemizer",
                 treeSignature,
-                layoutSignature,
                 drawWidth,
                 drawHeight,
                 fallback,

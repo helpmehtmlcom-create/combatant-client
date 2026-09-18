@@ -40,7 +40,9 @@ public final class DeferredPostConfig {
             float bloomSoftKnee,
             float bloomIntensity,
             float bloomInitialScale,
-            int bloomMaxMipCount
+            int bloomMaxMipCount,
+            boolean exposureEnabled,
+            boolean bloomEnabled
     ) {
         public Snapshot {
             histogramMinLogLuminance = finite(histogramMinLogLuminance, -16.0f);
@@ -66,13 +68,21 @@ public final class DeferredPostConfig {
                     floatProperty("combatant.render.post.bloom.softKnee", defaults.bloomSoftKnee),
                     floatProperty("combatant.render.post.bloom.intensity", defaults.bloomIntensity),
                     floatProperty("combatant.render.post.bloom.initialScale", defaults.bloomInitialScale),
-                    intProperty("combatant.render.post.bloom.maxMips", defaults.bloomMaxMipCount)
+                    intProperty("combatant.render.post.bloom.maxMips", defaults.bloomMaxMipCount),
+                    booleanProperty("combatant.render.post.exposure.enabled", defaults.exposureEnabled),
+                    booleanProperty("combatant.render.post.bloom.enabled", defaults.bloomEnabled)
             );
         }
 
         public static Snapshot defaults() {
             return new Snapshot(-16.0f, 16.0f, 262_144,
-                    1.0f, 0.5f, 0.05f, 0.5f, 8);
+                    1.0f, 0.5f, 0.05f, 0.5f, 8, true, true);
+        }
+
+
+        private static boolean booleanProperty(String key, boolean fallback) {
+            String value = System.getProperty(key);
+            return value == null || value.isBlank() ? fallback : Boolean.parseBoolean(value.trim());
         }
 
         private static int intProperty(String key, int fallback) {

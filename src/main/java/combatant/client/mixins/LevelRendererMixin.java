@@ -37,7 +37,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.visuals.BlockHighlight;
-import combatant.client.features.module.modules.visuals.ReimaginedVisual;
 import combatant.client.features.module.modules.visuals.WorldTweaks;
 import combatant.client.mixins.accessors.GameRendererAccessor;
 import combatant.client.mixins.accessors.LevelRendererAccessor;
@@ -49,7 +48,6 @@ import combatant.client.render.engine.world.environment.CloudProfileRegistry;
 import combatant.client.render.engine.world.environment.DimensionRenderProfile;
 import combatant.client.render.engine.world.environment.DimensionRenderProfileRegistry;
 import combatant.client.render.iris.IrisRuntime;
-import combatant.client.render.sky.CustomSkyboxRenderer;
 
 @Mixin(LevelRenderer.class)
 public abstract class LevelRendererMixin {
@@ -97,8 +95,9 @@ public abstract class LevelRendererMixin {
 
     @Unique
     private static boolean combatant$needsWorldSceneDepthCapture() {
-        ReimaginedVisual module = Modules.get(ReimaginedVisual.class);
-        return module != null && module.needsWorldSceneDepthCapture();
+        // Retained as a compatibility gate for the existing capture hook. ReimaginedVisual no
+        // longer uses WorldSceneDepth; deferred camera post consumes FINAL_RESOLVED_DEPTH.
+        return false;
     }
 
     @Unique
@@ -259,33 +258,17 @@ public abstract class LevelRendererMixin {
         ci.cancel();
     }
 
-    @Inject(method = "addSkyPass", at = @At("HEAD"), cancellable = true)
-    private void combatant$renderSky(FrameGraphBuilder frameGraphBuilder, net.minecraft.client.renderer.state.level.CameraRenderState cameraRenderState, GpuBufferSlice fog, CallbackInfo ci) {
-        if (IrisRuntime.isModLoaded()) return;
-        if (shouldSkipSky(cameraRenderState)) return;
-
+    @Inject(method = "addSkyPass", at = @At("HEAD"))
+    private void combatant$applyVanillaSkyOverrides(FrameGraphBuilder frameGraphBuilder,
+                                                     net.minecraft.client.renderer.state.level.CameraRenderState cameraRenderState,
+                                                     GpuBufferSlice fog, CallbackInfo ci) {
         LevelRendererAccessor accessor = (LevelRendererAccessor) this;
         SkyRenderState sky = accessor.combatant$getWorldRenderState().skyRenderState;
         if (sky == null || sky.skybox != DimensionType.Skybox.OVERWORLD) return;
-
         WorldTweaks worldTweaks = Modules.get(WorldTweaks.class);
-        if (worldTweaks != null) {
-            worldTweaks.applySkyOverrides(sky);
-        }
-
-        ReimaginedVisual module = Modules.get(ReimaginedVisual.class);
-        if (module == null || !module.isEnabled()) return;
-
-        Minecraft client = Minecraft.getInstance();
-        net.minecraft.client.Camera camera = client != null && client.gameRenderer != null
-                ? client.gameRenderer.mainCamera()
-                : null;
-        if (camera == null) return;
-
-        FramePass pass = frameGraphBuilder.addPass("combatant_sky");
-        targets.main = pass.readsAndWrites(targets.main);
-        pass.executes(() -> CustomSkyboxRenderer.render(camera, fog, sky, accessor.combatant$getSkyRendering()));
-        ci.cancel();
+        if (worldTweaks != null) worldTweaks.applySkyOverrides(sky);
+        // No cancellation: deferred OFF uses Minecraft's standard sky. Deferred sky ownership is
+        // handled by DeferredWorldPipeline, never by the legacy ReimaginedVisual shader sky.
     }
 
     @Inject(

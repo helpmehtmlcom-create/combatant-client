@@ -19,6 +19,7 @@ import combatant.client.render.engine.core.ViewportContext;
 import combatant.client.render.engine.profiler.ProfilerPhase;
 import combatant.client.render.engine.profiler.TracyGpuProfiler;
 import combatant.client.render.engine.renderer.MeshRenderer;
+import combatant.client.render.engine.renderer.ui.runtime.debug.UiRuntimeValidation;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.helpers.ScissorFunction;
 import combatant.client.render.helpers.ClipFunction;
@@ -43,8 +44,7 @@ public final class UiDeferredScheduler {
     private static final int MAX_BATCHER_POOL = Integer.getInteger("combatant.render.deferredBatcherPool", 16);
 
     private static ProjectionMatrixBuffer projection;
-    private static boolean recording;
-    private static boolean draining;
+    private static Lifecycle lifecycle = Lifecycle.IDLE;
     private static boolean deferredItemsPrepared;
     private static Renderer2D.Deferred2DLayer forcedLayer;
 
@@ -53,6 +53,13 @@ public final class UiDeferredScheduler {
     // explicitly when rendering into targets with different dimensions.
     private static int[] activeReplayScissor;
     private static boolean replayScissorSuspended;
+
+    private enum Lifecycle {
+        IDLE,
+        RECORDING,
+        READY,
+        DRAINING
+    }
 
     static {
         for (Renderer2D.Deferred2DLayer layer : Renderer2D.Deferred2DLayer.values()) {
@@ -67,16 +74,25 @@ public final class UiDeferredScheduler {
     }
 
     public static void beginExtractFrame() {
-        if (draining) return;
+        if (lifecycle == Lifecycle.DRAINING) {
+            invalidTransition("beginExtractFrame", "cannot begin extraction while deferred UI is draining");
+            return;
+        }
+        if (lifecycle == Lifecycle.RECORDING) {
+            invalidTransition("beginExtractFrame", "extraction is already recording");
+        }
         UiBlurResources.beginDeferredFrame();
         releaseSubmits(RECORDING);
         RECORDING.clear();
         deferredItemsPrepared = false;
-        recording = true;
+        lifecycle = Lifecycle.RECORDING;
     }
 
     public static void endExtractFrame() {
-        if (!recording) return;
+        if (lifecycle != Lifecycle.RECORDING) {
+            invalidTransition("endExtractFrame", "no deferred UI extraction is active");
+            return;
+        }
         for (ObjectArrayList<Deferred2DSubmit> ready : READY_BY_LAYER.values()) {
             releaseSubmits(ready);
             ready.clear();
@@ -88,7 +104,7 @@ public final class UiDeferredScheduler {
             RECORDING.set(i, null);
         }
         RECORDING.clear();
-        recording = false;
+        lifecycle = Lifecycle.READY;
     }
 
     /**
@@ -97,7 +113,11 @@ public final class UiDeferredScheduler {
      * replay, rounded clips and liquid-glass batches on every backend.
      */
     public static void prepareDeferredUiItems() {
-        if (deferredItemsPrepared || recording || draining) return;
+        if (deferredItemsPrepared) return;
+        if (lifecycle != Lifecycle.READY) {
+            invalidTransition("prepareDeferredUiItems", "items can only be prepared after extraction is finalized");
+            return;
+        }
 
         ITEM_PREPARATION_BATCHES.clear();
         for (ObjectArrayList<Deferred2DSubmit> ready : READY_BY_LAYER.values()) {
@@ -118,6 +138,10 @@ public final class UiDeferredScheduler {
     }
 
     public static void drain(Renderer2D.Deferred2DLayer layer) {
+        if (lifecycle != Lifecycle.READY) {
+            invalidTransition("drain", "deferred UI can only drain after endExtractFrame");
+            return;
+        }
         ObjectArrayList<Deferred2DSubmit> ready = readyList(layer);
         if (ready.isEmpty()) return;
 
@@ -133,7 +157,7 @@ public final class UiDeferredScheduler {
         var modelView = RenderSystem.getModelViewStack();
         boolean pushedModelView = false;
 
-        draining = true;
+        lifecycle = Lifecycle.DRAINING;
         try {
             UiBlurResources.beginUiUnderlayLayer(net.minecraft.client.Minecraft.getInstance(), layer);
             modelView.pushMatrix();
@@ -190,7 +214,7 @@ public final class UiDeferredScheduler {
                 }
             }
         } finally {
-            draining = false;
+            lifecycle = Lifecycle.READY;
             if (pushedModelView) modelView.popMatrix();
             MeshRenderer.setProjection(previousMeshProjection);
             if (previousViewport != null) ViewportContext.applyCaptured(previousViewport);
@@ -248,7 +272,7 @@ public final class UiDeferredScheduler {
 
     /** Temporarily removes the scheduler-owned framebuffer scissor for an offscreen pass. */
     static boolean suspendReplayScissorForOffscreenPass() {
-        if (!draining || activeReplayScissor == null || replayScissorSuspended) return false;
+        if (lifecycle != Lifecycle.DRAINING || activeReplayScissor == null || replayScissorSuspended) return false;
         ((IGpuDevice) RenderSystem.getDevice()).combatant$popScissor();
         replayScissorSuspended = true;
         return true;
@@ -285,11 +309,11 @@ public final class UiDeferredScheduler {
     }
 
     public static boolean shouldDefer() {
-        return recording && !draining;
+        return lifecycle == Lifecycle.RECORDING;
     }
 
     static boolean isDraining() {
-        return draining;
+        return lifecycle == Lifecycle.DRAINING;
     }
 
     public static void withLayer(Renderer2D.Deferred2DLayer layer, Runnable action) {
@@ -318,8 +342,14 @@ public final class UiDeferredScheduler {
         ));
     }
 
-    public static void enqueue(Deferred2DSubmit submit) {
-        if (submit != null) RECORDING.add(submit);
+    static void enqueue(Deferred2DSubmit submit) {
+        if (submit == null) return;
+        if (lifecycle != Lifecycle.RECORDING) {
+            invalidTransition("enqueue", "deferred UI submissions are only valid during extraction");
+            submit.release();
+            return;
+        }
+        RECORDING.add(submit);
     }
 
     public static Renderer2D.Deferred2DLayer layerForCurrentPhase(boolean pureItemOverlaySubmit) {
@@ -375,6 +405,14 @@ public final class UiDeferredScheduler {
                 submit.release();
                 submits.set(i, null);
             }
+        }
+    }
+
+    private static void invalidTransition(String operation, String reason) {
+        if (UiRuntimeValidation.enabled()) {
+            throw new IllegalStateException(
+                    "Illegal deferred UI lifecycle transition: " + operation + " while " + lifecycle + " (" + reason + ")."
+            );
         }
     }
 

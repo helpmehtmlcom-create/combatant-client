@@ -43,16 +43,6 @@ public abstract class GpuSurfaceMixin {
         AnimationUtility.onFrame();
     }
 
-    @Inject(method = "present", at = @At("TAIL"))
-    private void combatant$onPresentTail(CallbackInfo info) {
-        if (TracyGpuProfiler.isEnabled()) {
-            TracyGpuProfiler.onFrameEnd();
-        }
-        CombatantRenderSystem.onFramePresented();
-        Renderer2D.getBatchStats().onFrameStart();
-        UiBlurResources.invalidateWorldSource();
-    }
-
     @Redirect(
             method = "configure",
             at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/GpuSurfaceBackend;configure(Lcom/mojang/blaze3d/systems/GpuSurface$Configuration;)V")
@@ -80,6 +70,11 @@ public abstract class GpuSurfaceMixin {
     private void combatant$profileSurfaceBlit(GpuSurfaceBackend backend, CommandEncoderBackend encoder, GpuTextureView textureView) {
         try (ProfilerPhase.Scope ignored = ProfilerPhase.scope("surface:blit")) {
             backend.blitFromTexture(encoder, textureView);
+        } catch (RuntimeException | Error failure) {
+            // A lost/minimized surface can fail before present() is reached. Retire Combatant's
+            // frame here as well so transient resources and logical frame identity cannot leak.
+            combatant$finishFrameBoundary();
+            throw failure;
         }
     }
 
@@ -88,8 +83,23 @@ public abstract class GpuSurfaceMixin {
             at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/GpuSurfaceBackend;present()V")
     )
     private void combatant$profileSurfacePresent(GpuSurfaceBackend backend) {
-        try (ProfilerPhase.Scope ignored = ProfilerPhase.scope("surface:present")) {
-            backend.present();
+        try {
+            try (ProfilerPhase.Scope ignored = ProfilerPhase.scope("surface:present")) {
+                backend.present();
+            }
+        } finally {
+            // Surface loss/minimize may throw out of backend.present(). Combatant must still retire
+            // the logical frame or the next world render reuses stale frame id/uniform/transient state.
+            combatant$finishFrameBoundary();
         }
+    }
+
+    private void combatant$finishFrameBoundary() {
+        if (TracyGpuProfiler.isEnabled()) {
+            TracyGpuProfiler.onFrameEnd();
+        }
+        CombatantRenderSystem.onFramePresented();
+        Renderer2D.getBatchStats().onFrameStart();
+        UiBlurResources.invalidateWorldSource();
     }
 }

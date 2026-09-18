@@ -22,6 +22,7 @@ import net.caffeinemc.mods.sodium.client.render.viewport.Viewport;
 import net.caffeinemc.mods.sodium.client.render.SodiumWorldRenderer;
 import net.caffeinemc.mods.sodium.client.render.chunk.ChunkRenderMatrices;
 import net.caffeinemc.mods.sodium.client.render.chunk.RenderSectionManager;
+import net.caffeinemc.mods.sodium.client.render.chunk.UniformBufferManager;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.SortedRenderLists;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.DefaultTerrainRenderPasses;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.TerrainRenderPass;
@@ -86,6 +87,46 @@ public abstract class SodiumWorldRendererTerrainMixin implements SodiumWorldVisi
             );
         } else {
             CombatantRenderSystem.deferredWorld().beforeTerrainSubmission();
+        }
+    }
+
+    /**
+     * Own Sodium's once-per-frame terrain UBO at the exact update boundary.
+     *
+     * <p>Combatant can recursively submit arbitrary secondary cameras before any primary terrain
+     * layer. The transaction is therefore keyed to logical view ownership, not to SOLID/shadow/
+     * reflection ordering. DynamicUniformStorage keeps previously returned slices alive until
+     * Sodium endFrame(), so re-arming update() allocates/reuses a value-correct slice without
+     * overwriting an already submitted draw.</p>
+     */
+    @WrapOperation(
+            method = "renderLayer(Lnet/caffeinemc/mods/sodium/client/render/chunk/ChunkRenderMatrices;Lnet/caffeinemc/mods/sodium/client/render/chunk/terrain/TerrainRenderPass;DDDLnet/caffeinemc/mods/sodium/client/util/FogParameters;Lcom/mojang/blaze3d/textures/GpuSampler;)V",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/caffeinemc/mods/sodium/client/render/chunk/UniformBufferManager;update(Lnet/caffeinemc/mods/sodium/client/render/chunk/ChunkRenderMatrices;Lnet/caffeinemc/mods/sodium/client/util/FogParameters;)V"
+            ),
+            remap = false
+    )
+    private void combatant$terrainUniformTransaction(UniformBufferManager manager,
+                                                      ChunkRenderMatrices matrices,
+                                                      FogParameters fog,
+                                                      Operation<Void> original) {
+        SodiumSecondaryTerrainContext.State secondary = SodiumSecondaryTerrainContext.current();
+        boolean reload = secondary != null
+                ? secondary.beginTerrainUniformUpdate()
+                : SodiumSecondaryTerrainContext.primaryUniformsDirty();
+        if (reload) manager.prepareFrame();
+
+        boolean success = false;
+        try {
+            original.call(manager, matrices, fog);
+            success = true;
+        } finally {
+            if (secondary != null) {
+                secondary.finishTerrainUniformUpdate(reload, success);
+            } else {
+                SodiumSecondaryTerrainContext.finishPrimaryUniformUpdate(reload, success);
+            }
         }
     }
 

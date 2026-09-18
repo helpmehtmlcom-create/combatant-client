@@ -10,6 +10,7 @@ package combatant.client.render.engine.world;
 import combatant.client.render.engine.world.environment.AtmosphereState;
 import combatant.client.render.engine.world.environment.BiomeClimateState;
 import combatant.client.render.engine.world.environment.CelestialState;
+import combatant.client.render.engine.world.environment.MinecraftBaselineLightState;
 import combatant.client.render.engine.world.environment.WeatherState;
 import net.minecraft.resources.Identifier;
 
@@ -38,6 +39,7 @@ public record WorldRenderState(
         BiomeClimateState biomeClimate,
         CelestialState celestialState,
         WeatherState weatherState,
+        MinecraftBaselineLightState baselineLightState,
         DirectionalLightDescriptor directionalLight,
         long epoch
 ) {
@@ -63,6 +65,7 @@ public record WorldRenderState(
         biomeClimate = Objects.requireNonNullElse(biomeClimate, BiomeClimateState.EMPTY);
         celestialState = Objects.requireNonNullElse(celestialState, CelestialState.NONE);
         weatherState = Objects.requireNonNullElse(weatherState, WeatherState.NONE);
+        baselineLightState = Objects.requireNonNullElse(baselineLightState, MinecraftBaselineLightState.NEUTRAL);
         directionalLight = Objects.requireNonNullElse(directionalLight, DirectionalLightDescriptor.NONE);
     }
 
@@ -72,7 +75,7 @@ public record WorldRenderState(
                 NONE, NONE, NONE, NEUTRAL, NONE, NONE,
                 NEUTRAL, NEUTRAL, NEUTRAL, NONE,
                 AtmosphereState.NONE, BiomeClimateState.EMPTY, CelestialState.NONE, WeatherState.NONE,
-                DirectionalLightDescriptor.NONE, epoch
+                MinecraftBaselineLightState.NEUTRAL, DirectionalLightDescriptor.NONE, epoch
         );
     }
 

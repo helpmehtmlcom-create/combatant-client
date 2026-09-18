@@ -86,9 +86,9 @@ final class DeferredSecondaryShadowCasterSource implements AutoCloseable {
     }
 
     /**
-     * Render one shadow view. If no optional casters survive culling, terrain is written directly
-     * into the destination atlas. Otherwise terrain+features are merged in a view-sized scratch
-     * target and only the combined depth is copied into the atlas tile.
+     * Render one shadow view through a view-sized scratch target, then copy the resulting depth
+     * into the destination atlas tile. Blaze3D renderArea is a scissor, not a viewport; rendering
+     * directly into an atlas tile would therefore project the view against the complete atlas.
      */
     void render(DeferredPassContext context,
                 SodiumSecondaryTerrainContext.Purpose purpose,
@@ -96,12 +96,6 @@ final class DeferredSecondaryShadowCasterSource implements AutoCloseable {
                 TextureTarget destination,
                 SodiumWorldRenderer renderer,
                 SodiumTerrainSubmission primarySubmission) {
-        CasterBatch batch = collect(context, view);
-        if (batch.empty()) {
-            renderTerrain(purpose, view, destination, renderer, primarySubmission);
-            return;
-        }
-
         int width = view.hasExplicitViewport() ? view.viewportWidth() : destination.width;
         int height = view.hasExplicitViewport() ? view.viewportHeight() : destination.height;
         TextureTarget localTarget = ensureScratch(width, height);
@@ -113,7 +107,11 @@ final class DeferredSecondaryShadowCasterSource implements AutoCloseable {
 
         DeferredSecondaryView localView = view.withViewport(0, 0, width, height);
         renderTerrain(purpose, localView, localTarget, renderer, primarySubmission);
-        renderFeatures(context, localView, localTarget, batch);
+
+        CasterBatch batch = collect(context, localView);
+        if (!batch.empty()) {
+            renderFeatures(context, localView, localTarget, batch);
+        }
 
         int dstX = view.hasExplicitViewport() ? view.viewportX() : 0;
         int dstY = view.hasExplicitViewport() ? view.viewportY() : 0;
@@ -159,7 +157,7 @@ final class DeferredSecondaryShadowCasterSource implements AutoCloseable {
         ClientLevel level = minecraft == null ? null : minecraft.level;
         if (minecraft == null || level == null) return CasterBatch.EMPTY;
 
-        AABB worldBounds = worldBounds(view, config.boundsPadding());
+        AABB worldBounds = worldBounds(context, view, config.boundsPadding());
         FrustumIntersection frustum = new FrustumIntersection(view.viewProjection());
         Vec3 eye = secondaryEye(view);
 
@@ -391,7 +389,7 @@ final class DeferredSecondaryShadowCasterSource implements AutoCloseable {
         try {
             RenderSystem.outputColorTextureOverride = target.getColorTextureView();
             RenderSystem.outputDepthTextureOverride = target.getDepthTextureView();
-            RenderSystem.setProjectionMatrix(projectionBuffer.getBuffer(view.projection()), ProjectionType.PERSPECTIVE);
+            RenderSystem.setProjectionMatrix(projectionBuffer.getBuffer(view.projection()), projectionType(view));
             RenderSystem.getModelViewStack().set(view.view());
             MeshRenderer.setProjection(view.projection());
             RenderState.worldProjection.set(view.projection());
@@ -537,8 +535,15 @@ final class DeferredSecondaryShadowCasterSource implements AutoCloseable {
         return ((int) Math.floor(coordinate)) >> 4;
     }
 
-    private static AABB worldBounds(DeferredSecondaryView view, double padding) {
+    private static ProjectionType projectionType(DeferredSecondaryView view) {
+        return view.family() == DeferredViewFamily.SHADOW_CASCADE
+                ? ProjectionType.ORTHOGRAPHIC
+                : ProjectionType.PERSPECTIVE;
+    }
+
+    private static AABB worldBounds(DeferredPassContext context, DeferredSecondaryView view, double padding) {
         Matrix4f inverse = view.viewProjection().invert();
+        float nearClipZ = context.rhi().capabilities().zeroToOneDepth() ? 0.0f : -1.0f;
         double minX = Double.POSITIVE_INFINITY;
         double minY = Double.POSITIVE_INFINITY;
         double minZ = Double.POSITIVE_INFINITY;
@@ -546,7 +551,7 @@ final class DeferredSecondaryShadowCasterSource implements AutoCloseable {
         double maxY = Double.NEGATIVE_INFINITY;
         double maxZ = Double.NEGATIVE_INFINITY;
         for (int z = 0; z < 2; z++) {
-            float ndcZ = z == 0 ? -1.0f : 1.0f;
+            float ndcZ = z == 0 ? nearClipZ : 1.0f;
             for (int y = 0; y < 2; y++) {
                 float ndcY = y == 0 ? -1.0f : 1.0f;
                 for (int x = 0; x < 2; x++) {

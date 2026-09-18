@@ -9,7 +9,6 @@ const n = ui.num;
 const c = ui.str;
 const s = ui.fmt;
 const cls = ui.cls;
-const abs = ui.abs;
 const prop = ui.prop;
 const arr = ui.arr;
 const color = ui.color.get;
@@ -60,7 +59,14 @@ function entryNode(p, pal, entry, index) {
   if (text) children.push(text);
   return ui.stack({
     key: `entry:${prop(entry, "key", index)}`,
-    class: abs(pos.x, pos.y, pos.w, pos.h, `rounded-${s(Math.min(pos.w, pos.h) * 0.24)}`),
+    style: {
+      position: "absolute",
+      left: pos.x,
+      top: pos.y,
+      width: pos.w,
+      height: pos.h,
+      borderRadius: Math.min(pos.w, pos.h) * 0.24,
+    },
     children,
   });
 }
@@ -73,7 +79,7 @@ export function render(ctx) {
   const items = arr(p.items);
   return ui.root({
     key: "itemizer",
-    class: cls(`w-${s(w)}`, `h-${s(h)}`),
+    style: { width: w, height: h },
     children: items.map((entry, index) => entryNode(p, pal, entry, index)),
   });
 }

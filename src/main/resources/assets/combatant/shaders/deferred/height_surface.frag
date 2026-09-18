@@ -28,7 +28,7 @@ float unpack8(uint packedValue, uint shift) {
 vec2 encodeOct(vec3 n) {
     n /= abs(n.x) + abs(n.y) + abs(n.z);
     vec2 e = n.xy;
-    if (n.z < 0.0) e = (1.0 - abs(e.yx)) * sign(e.xy);
+    if (n.z < 0.0) e = (1.0 - abs(e.yx)) * vec2(e.x >= 0.0 ? 1.0 : -1.0, e.y >= 0.0 ? 1.0 : -1.0);
     return e * 0.5 + 0.5;
 }
 float encodeDistance(float d) {

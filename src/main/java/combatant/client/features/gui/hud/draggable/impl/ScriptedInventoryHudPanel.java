@@ -58,16 +58,6 @@ final class ScriptedInventoryHudPanel {
         return value instanceof Number n ? n.intValue() : 0;
     }
 
-    private static int stackHash(Object value) {
-        if (!(value instanceof ItemStack stack) || stack.isEmpty()) {
-            return 0;
-        }
-        int hash = ItemStack.hashItemAndComponents(stack);
-        hash = 31 * hash + stack.getCount();
-        hash = 31 * hash + stack.getDamageValue();
-        hash = 31 * hash + stack.getComponents().hashCode();
-        return hash;
-    }
 
     private static void putPatch(LinkedHashMap<String, LinkedHashMap<String, Object>> patches,
                                  String key,
@@ -105,8 +95,6 @@ final class ScriptedInventoryHudPanel {
                 module,
                 "inventory_panel",
                 panel.treeSignature(),
-                panel.dataSignature(),
-                panel.layoutSignature(),
                 panel.width,
                 panel.height,
                 fallback,
@@ -252,40 +240,6 @@ final class ScriptedInventoryHudPanel {
                     h = CachedUiScriptRuntime.mix(h, intValue(item.get("slot")));
                 }
             }
-            return h;
-        }
-
-        long dataSignature() {
-            long h = 0xcbf29ce484222325L;
-            h = CachedUiScriptRuntime.mix(h, (int) Math.min(Integer.MAX_VALUE, Math.max(0L, itemCount)));
-            h = CachedUiScriptRuntime.mix(h, headerIconColor);
-            h = CachedUiScriptRuntime.mix(h, headerIconGradientStart);
-            h = CachedUiScriptRuntime.mix(h, headerIconGradientEnd);
-            h = CachedUiScriptRuntime.mix(h, strokeEnabled);
-            h = CachedUiScriptRuntime.mix(h, strokeAlpha);
-            h = CachedUiScriptRuntime.mix(h, strokeGradient);
-            h = CachedUiScriptRuntime.mix(h, strokeStartColor);
-            h = CachedUiScriptRuntime.mix(h, strokeEndColor);
-            if (items != null) {
-                for (LinkedHashMap<String, Object> item : items) {
-                    h = CachedUiScriptRuntime.mix(h, intValue(item.get("slot")));
-                    h = CachedUiScriptRuntime.mix(h, string(item.get("item")));
-                    h = CachedUiScriptRuntime.mix(h, intValue(item.get("count")));
-                    h = CachedUiScriptRuntime.mix(h, intValue(item.get("damage")));
-                    h = CachedUiScriptRuntime.mix(h, intValue(item.get("maxDamage")));
-                    h = CachedUiScriptRuntime.mix(h, intValue(item.get("componentsHash")));
-                    h = CachedUiScriptRuntime.mix(h, stackHash(item.get("stack")));
-                }
-            }
-            return h;
-        }
-
-        long layoutSignature() {
-            long h = 0xcbf29ce484222325L;
-            h = CachedUiScriptRuntime.mix(h, x);
-            h = CachedUiScriptRuntime.mix(h, y);
-            h = CachedUiScriptRuntime.mix(h, width);
-            h = CachedUiScriptRuntime.mix(h, height);
             return h;
         }
 

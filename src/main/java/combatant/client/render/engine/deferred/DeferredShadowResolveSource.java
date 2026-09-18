@@ -60,7 +60,8 @@ final class DeferredShadowResolveSource implements AutoCloseable {
             new ShaderResourceSlot(3, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(4, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
             new ShaderResourceSlot(5, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
-            new ShaderResourceSlot(6, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
+            new ShaderResourceSlot(6, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(7, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY)
     ));
     private static final ShaderResourceLayout COMBINE_LAYOUT = new ShaderResourceLayout(List.of(
             new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
@@ -75,12 +76,13 @@ final class DeferredShadowResolveSource implements AutoCloseable {
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.shadow.cascade.resolve", DeferredStage.SHADOW_CASCADE_RESOLVE)
+                .feature(DeferredFeature.SHADOWS)
                 .read(DeferredResource.RESOLVED_DEPTH, DeferredResource.GBUFFER_DEPTH,
                         DeferredResource.GBUFFER_GEOMETRY, DeferredResource.SHADOW_DEPTH,
                         DeferredResource.SHADOW_CASCADE_DATA)
-                .write(DeferredResource.SHADOW_CASCADE_VISIBILITY)
+                .write(DeferredResource.SHADOW_CASCADE_VISIBILITY, DeferredResource.SHADOW_HARD_VISIBILITY)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.settings().shadowsEnabled()
+                .when(context -> context.featureEnabled(DeferredFeature.SHADOWS)
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
                         && context.isValid(DeferredResource.GBUFFER_DEPTH)
                         && context.resources().texture(DeferredResource.GBUFFER_GEOMETRY) != null
@@ -93,8 +95,7 @@ final class DeferredShadowResolveSource implements AutoCloseable {
                 .optionalRead(DeferredResource.SHADOW_CASCADE_VISIBILITY, DeferredResource.CONTACT_SHADOW)
                 .write(DeferredResource.SHADOW_COLOR)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.settings().shadowsEnabled()
-                        && (context.isValid(DeferredResource.SHADOW_CASCADE_VISIBILITY)
+                .when(context -> (context.isValid(DeferredResource.SHADOW_CASCADE_VISIBILITY)
                         || context.isValid(DeferredResource.CONTACT_SHADOW)))
                 .execute(this::combine)
                 .build());
@@ -123,11 +124,12 @@ final class DeferredShadowResolveSource implements AutoCloseable {
         GpuTextureView gbufferDepth = requireTexture(context, DeferredResource.GBUFFER_DEPTH);
         GpuTextureView shadowDepth = requireTexture(context, DeferredResource.SHADOW_DEPTH);
         RhiStorageImage output = requireImage(context, DeferredResource.SHADOW_CASCADE_VISIBILITY);
+        RhiStorageImage hardOutput = requireImage(context, DeferredResource.SHADOW_HARD_VISIBILITY);
         RhiStorageBuffer cascades = context.resources().buffer(DeferredResource.SHADOW_CASCADE_DATA);
         if (cascades == null) throw new IllegalStateException("Shadow cascade metadata is not bound");
 
         DeferredRuntimeConfig.Snapshot settings = context.settings();
-        boolean zeroToOne = isVulkan(context);
+        boolean zeroToOne = zeroToOneDepth(context);
         Std430Writer camera = new Std430Writer(CAMERA_LAYOUT, 1)
                 .putMat4(0, "inverseProjection", current.inverseProjection())
                 .putMat4(0, "inverseView", current.inverseView())
@@ -168,7 +170,10 @@ final class DeferredShadowResolveSource implements AutoCloseable {
                         new SampledTextureBinding(2, geometry, nearest),
                         new SampledTextureBinding(3, gbufferDepth, nearest)
                 ),
-                List.of(new StorageImageBinding(4, output, StorageAccess.WRITE_ONLY))
+                List.of(
+                        new StorageImageBinding(4, output, StorageAccess.WRITE_ONLY),
+                        new StorageImageBinding(7, hardOutput, StorageAccess.WRITE_ONLY)
+                )
         ));
     }
 
@@ -264,9 +269,8 @@ final class DeferredShadowResolveSource implements AutoCloseable {
         return value;
     }
 
-    private static boolean isVulkan(DeferredPassContext context) {
-        String backendName = context.rhi().capabilities().backendName();
-        return backendName != null && backendName.toLowerCase(Locale.ROOT).contains("vulkan");
+    private static boolean zeroToOneDepth(DeferredPassContext context) {
+        return context.rhi().capabilities().zeroToOneDepth();
     }
 
     private static int groups(int extent) {

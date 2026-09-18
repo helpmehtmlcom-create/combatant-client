@@ -13,6 +13,7 @@ import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
 import combatant.client.config.ConfigPaths;
 import combatant.client.render.engine.renderer.ui.runtime.core.UiProps;
+import combatant.client.render.engine.renderer.ui.runtime.debug.UiRuntimeValidation;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -22,8 +23,19 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * Resource loader for Combatant's intentionally small script-module dialect.
+ *
+ * <p>This is not a general ES-module linker: dependencies are recursively inlined and imports are
+ * removed before V8 execution. Supported runtime imports are side-effect imports and simple named
+ * imports without aliases; {@code import type} is ignored at runtime. Development validation rejects
+ * module syntax whose binding semantics cannot be preserved by this inliner.</p>
+ */
 public final class UiScriptModuleLoader {
-    private static final Pattern IMPORT_PATTERN = Pattern.compile("(?m)^\\s*import\\s+[^;]*?from\\s+['\"]([^'\"]+)['\"]\\s*;?\\s*$|^\\s*import\\s+['\"]([^'\"]+)['\"]\\s*;?\\s*$");
+    private static final Pattern IMPORT_PATTERN = Pattern.compile(
+            "(?m)^\\s*import\\s+(?:(.+?)\\s+from\\s+)?['\"]([^'\"]+)['\"]\\s*;?\\s*$"
+    );
+    private static final Pattern IMPORTED_NAME = Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*");
 
     private static Loaded loadExisting(ResourceManager manager, UiScriptModuleId id) throws IOException {
         if (id.hasExtension()) {
@@ -103,20 +115,83 @@ public final class UiScriptModuleLoader {
     private static String inlineImports(ResourceManager manager,
                                         UiScriptModuleId owner,
                                         String source,
-                                        Set<String> seen) throws IOException {
+                                        Set<String> seen,
+                                        Deque<String> stack) throws IOException {
         if (source == null || source.isBlank()) return source != null ? source : "";
         Matcher matcher = IMPORT_PATTERN.matcher(source);
         StringBuilder imports = new StringBuilder();
         while (matcher.find()) {
-            String spec = matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
+            String clause = matcher.group(1);
+            String spec = matcher.group(2);
+            ImportKind importKind = validateImportClause(owner, clause, spec);
+            if (importKind == ImportKind.TYPE_ONLY) continue;
+
             UiScriptModuleId dependency = resolveImport(owner, spec);
             if (dependency == null) continue;
             String key = dependency.toString();
+            if (stack.contains(key)) {
+                if (UiRuntimeValidation.enabled()) {
+                    throw new IOException("Circular UI script import: " + importChain(stack, key));
+                }
+                continue;
+            }
             if (!seen.add(key)) continue;
             Loaded loaded = loadExisting(manager, dependency);
-            imports.append(inlineImports(manager, loaded.getId(), loaded.source(), seen)).append('\n');
+            stack.addLast(key);
+            try {
+                imports.append(inlineImports(manager, loaded.getId(), loaded.source(), seen, stack)).append('\n');
+            } finally {
+                stack.removeLast();
+            }
         }
         return imports + matcher.replaceAll("");
+    }
+
+    private static ImportKind validateImportClause(UiScriptModuleId owner, String clause, String spec) throws IOException {
+        if (clause == null || clause.isBlank()) return ImportKind.RUNTIME;
+
+        String trimmed = clause.trim();
+        if (trimmed.startsWith("type ")) {
+            // Type-only imports have no runtime binding and must not pull declaration files into
+            // the executable dependency stream. The import statement is removed after this scan.
+            return ImportKind.TYPE_ONLY;
+        }
+
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            String names = trimmed.substring(1, trimmed.length() - 1).trim();
+            if (names.isEmpty()) return ImportKind.RUNTIME;
+            for (String rawName : names.split(",")) {
+                String name = rawName.trim();
+                if (name.isEmpty()) continue;
+                if (IMPORTED_NAME.matcher(name).matches()) continue;
+                return unsupportedImport(owner, clause, spec);
+            }
+            return ImportKind.RUNTIME;
+        }
+
+        return unsupportedImport(owner, clause, spec);
+    }
+
+    private static ImportKind unsupportedImport(UiScriptModuleId owner, String clause, String spec) throws IOException {
+        if (UiRuntimeValidation.enabled()) {
+            throw new IOException(
+                    "Unsupported UI script import in " + owner + ": import " + clause + " from \"" + spec + "\". "
+                            + "Runtime modules support side-effect imports, type-only imports, and named imports without aliases."
+            );
+        }
+        return ImportKind.RUNTIME;
+    }
+
+    private enum ImportKind {
+        RUNTIME,
+        TYPE_ONLY
+    }
+
+    private static String importChain(Deque<String> stack, String repeated) {
+        StringJoiner chain = new StringJoiner(" -> ");
+        for (String entry : stack) chain.add(entry);
+        chain.add(repeated);
+        return chain.toString();
     }
 
     private static UiScriptModuleId resolveImport(UiScriptModuleId owner, String spec) {
@@ -138,10 +213,13 @@ public final class UiScriptModuleLoader {
         }
         UiScriptModuleId moduleId = id != null ? id : new UiScriptModuleId("combatant", "main");
         Loaded loaded = loadExisting(manager, moduleId);
+        LinkedHashSet<String> seen = new LinkedHashSet<>();
+        ArrayDeque<String> stack = new ArrayDeque<>();
+        stack.addLast(loaded.getId().toString());
         return new UiScriptModule(
                 loaded.getId(),
                 UiScriptSourceKind.fromPath(loaded.getId().path()),
-                inlineImports(manager, loaded.getId(), loaded.source(), new LinkedHashSet<>()),
+                inlineImports(manager, loaded.getId(), loaded.source(), seen, stack),
                 new UiProps(Map.of("resource", loaded.identifier().toString()))
         );
     }

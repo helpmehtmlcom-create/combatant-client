@@ -120,6 +120,11 @@ public final class RhiCapabilities {
         return deviceInfo.backendName();
     }
 
+    /** Authoritative clip-space depth convention resolved by the active Blaze3D device. */
+    public boolean zeroToOneDepth() {
+        return deviceInfo.isZZeroToOne();
+    }
+
     public boolean persistentMapping() {
         return features().persistentMapping();
     }

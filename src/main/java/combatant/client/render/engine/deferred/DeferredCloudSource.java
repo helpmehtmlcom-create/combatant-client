@@ -121,6 +121,7 @@ final class DeferredCloudSource implements AutoCloseable {
     private void installGroup(ArrayList<DeferredPassSpec> passes, GroupOutputs group, int priority) {
         passes.add(DeferredPassSpec.builder("world.cloud.render." + group.name(), DeferredStage.SKY_COMPOSITE)
                 .priority(priority)
+                .feature(DeferredFeature.CLOUDS)
                 .read(DeferredResource.RESOLVED_DEPTH, DeferredResource.SKY_DIFFUSE_SH, DeferredResource.CLOUD_OCCUPANCY)
                 .write(group.radiance(), group.depth(), group.reprojection())
                 .requires(RhiShaderStage.COMPUTE)
@@ -220,7 +221,7 @@ final class DeferredCloudSource implements AutoCloseable {
                 .putVec4(0, "macroOrigin", macroOriginX, macroOriginZ, 0.0f, 0.0f)
                 .putVec4(0, "counts", cloudField.domainCount(),
                         cloudField.active() ? profile.maxRayDistanceBlocks() : 0.0f,
-                        isVulkan(context) ? 1.0f : 0.0f,
+                        zeroToOneDepth(context) ? 1.0f : 0.0f,
                         cloudField.active() ? 1.0f : 0.0f)
                 .putVec4(0, "quality", config.primarySteps(), config.lightSteps(),
                         config.maxPrimaryStepBlocks(), framePhase(context.frame().frameId()))
@@ -283,9 +284,8 @@ final class DeferredCloudSource implements AutoCloseable {
         return Math.floorMod(value, 65536);
     }
 
-    private static boolean isVulkan(DeferredPassContext context) {
-        String backendName = context.rhi().capabilities().backendName();
-        return backendName != null && backendName.toLowerCase(java.util.Locale.ROOT).contains("vulkan");
+    private static boolean zeroToOneDepth(DeferredPassContext context) {
+        return context.rhi().capabilities().zeroToOneDepth();
     }
 
     private static RhiStorageVolume requireVolume(DeferredPassContext context, DeferredResource resource) {

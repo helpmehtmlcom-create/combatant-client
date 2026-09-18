@@ -21,6 +21,7 @@ import combatant.client.render.engine.rhi.shader.StorageAccess;
 import combatant.client.render.engine.rhi.shader.StorageBufferDescriptor;
 import combatant.client.render.sodium.SodiumSecondaryTerrainContext;
 import combatant.client.render.sodium.SodiumTerrainSubmission;
+import combatant.client.util.logging.DebugLog;
 import net.caffeinemc.mods.sodium.client.render.SodiumWorldRenderer;
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
@@ -135,6 +136,10 @@ final class DeferredShadowMapSource implements AutoCloseable {
 
         Std430Writer writer = new Std430Writer(CASCADE_LAYOUT, DeferredShadowCascadeSource.MAX_CASCADE_COUNT);
         int count = Math.min(views.size(), DeferredShadowCascadeSource.MAX_CASCADE_COUNT);
+        StringBuilder footprint = DebugLog.isEnabled()
+                ? new StringBuilder(160).append("count=").append(count)
+                .append(" atlas=").append(width).append('x').append(height)
+                : null;
         for (int i = 0; i < count; i++) {
             DeferredSecondaryView view = views.get(i);
             Matrix4f viewProjection = view.viewProjection();
@@ -155,11 +160,33 @@ final class DeferredShadowMapSource implements AutoCloseable {
                     extentX / Math.max(1.0f, view.viewportWidth()),
                     extentY / Math.max(1.0f, view.viewportHeight())
             );
+            // Orthographic depth is linear. Store the normalized shadow-depth change produced by
+            // one world-space texel so receiver bias can be expressed in texels without depending
+            // on the shading normal/normal map.
+            float depthPerWorldUnit = Math.abs(projection.m22())
+                    * (rhi.capabilities().zeroToOneDepth() ? 1.0f : 0.5f);
             writer.putVec4(i, "shadowTexel",
                     1.0f / Math.max(1.0f, width),
                     1.0f / Math.max(1.0f, height),
                     worldTexel,
-                    0.0f
+                    depthPerWorldUnit * worldTexel
+            );
+            if (footprint != null) {
+                footprint.append(" c").append(i)
+                        .append("[")
+                        .append(String.format(java.util.Locale.ROOT, "%.2f..%.2f", view.nearPlane(), view.farPlane()))
+                        .append(" texel=")
+                        .append(String.format(java.util.Locale.ROOT, "%.5f", worldTexel))
+                        .append(" tile=").append(view.viewportWidth()).append('x').append(view.viewportHeight())
+                        .append(']');
+            }
+        }
+        if (footprint != null) {
+            String footprintState = footprint.toString();
+            DebugLog.infoOnChange(
+                    "combatant.deferred.shadow-footprint",
+                    footprintState,
+                    "[Deferred][Shadow] %s", footprintState
             );
         }
         cascadeData.upload(writer.buffer(), 0L);

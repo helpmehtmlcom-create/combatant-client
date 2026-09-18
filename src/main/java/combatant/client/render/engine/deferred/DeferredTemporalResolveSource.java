@@ -112,12 +112,33 @@ final class DeferredTemporalResolveSource implements AutoCloseable {
     private RhiComputePipeline historyPipeline;
     private RhiStorageBuffer initParams;
     private RhiStorageBuffer resolveParams;
+    private long temporalPolicyGeneration = Long.MIN_VALUE;
 
     void install(ArrayList<DeferredPassSpec> passes) {
+        passes.add(DeferredPassSpec.builder("world.temporal.taa.policy", DeferredStage.TEMPORAL_RESOLVE)
+                .priority(-500)
+                .execute(this::syncPolicy)
+                .build());
+        // Neutral final-temporal fallback: TAA OFF still publishes the canonical output-resolution
+        // HDR post input without reading or advancing TAA history. The initialization kernel also
+        // performs render->output reconstruction for TAAU extents.
+        passes.add(DeferredPassSpec.builder("world.temporal.taa.passthrough", DeferredStage.TEMPORAL_RESOLVE)
+                .priority(-400)
+                .read(DeferredResource.SCENE_COLOR)
+                .write(DeferredResource.TAA_RESOLVED_COLOR,
+                        DeferredResource.TAA_CONFIDENCE,
+                        DeferredResource.TAA_LOCK,
+                        DeferredResource.TAA_HISTORY_WEIGHT,
+                        DeferredResource.TAA_REJECTION_MASK)
+                .requires(RhiShaderStage.COMPUTE)
+                .when(context -> !context.featureEnabled(DeferredFeature.TAA) && baseAvailable(context))
+                .execute(this::initialize)
+                .build());
         // Reset/invalid frames use a graph contract that does not declare previous histories at
         // all. This makes "no previous history read after reset" true both in the shader bindings
         // and in the frame-graph resource contract.
         passes.add(DeferredPassSpec.builder("world.temporal.taa.initialize", DeferredStage.TEMPORAL_RESOLVE)
+                .feature(DeferredFeature.TAA)
                 .priority(-300)
                 .read(DeferredResource.SCENE_COLOR)
                 .write(DeferredResource.TAA_RESOLVED_COLOR,
@@ -131,6 +152,7 @@ final class DeferredTemporalResolveSource implements AutoCloseable {
                 .build());
 
         passes.add(DeferredPassSpec.builder("world.temporal.taa.resolve", DeferredStage.TEMPORAL_RESOLVE)
+                .feature(DeferredFeature.TAA)
                 .priority(-200)
                 .read(DeferredResource.SCENE_COLOR,
                         DeferredResource.FINAL_VELOCITY,
@@ -164,6 +186,7 @@ final class DeferredTemporalResolveSource implements AutoCloseable {
                 .build());
 
         passes.add(DeferredPassSpec.builder("world.temporal.taa.history", DeferredStage.TEMPORAL_RESOLVE)
+                .feature(DeferredFeature.TAA)
                 .priority(200)
                 .read(DeferredResource.TAA_RESOLVED_COLOR,
                         DeferredResource.TAA_CONFIDENCE,
@@ -179,13 +202,23 @@ final class DeferredTemporalResolveSource implements AutoCloseable {
                 .build());
     }
 
+    private void syncPolicy(DeferredPassContext context) {
+        long generation = DeferredTemporalConfig.generation();
+        if (generation == temporalPolicyGeneration) return;
+        if (temporalPolicyGeneration != Long.MIN_VALUE) {
+            context.temporalHistory().invalidate(DeferredTemporalHistoryId.TAA, DeferredHistoryResetReason.POLICY_CHANGE);
+        }
+        temporalPolicyGeneration = generation;
+    }
+
     private boolean baseAvailable(DeferredPassContext context) {
         return context.resources().texture(DeferredResource.SCENE_COLOR) != null
                 && context.primaryView().current() != null;
     }
 
     private boolean resolveAvailable(DeferredPassContext context) {
-        if (!baseAvailable(context) || !historyReadable(context)) return false;
+        if (!context.featureEnabled(DeferredFeature.TAA)
+                || !baseAvailable(context) || !historyReadable(context)) return false;
         DeferredTemporalConsumerContract contract = DeferredTemporalConsumerContract.finalFrame();
         return context.isValid(contract.velocity())
                 && context.isValid(contract.motionValidity())

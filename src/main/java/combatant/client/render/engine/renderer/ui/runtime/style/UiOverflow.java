@@ -23,7 +23,7 @@ public enum UiOverflow {
             case "SCROLL_X", "X" -> SCROLL_X;
             case "SCROLL_Y", "Y" -> SCROLL_Y;
             case "SCROLL", "AUTO" -> SCROLL;
-            default -> VISIBLE;
+            default -> fallback;
         };
     }
 

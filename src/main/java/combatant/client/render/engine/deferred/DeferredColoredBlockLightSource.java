@@ -117,13 +117,15 @@ final class DeferredColoredBlockLightSource implements AutoCloseable {
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.block-light.volume", DeferredStage.PRE_LIGHTING)
+                .feature(DeferredFeature.COLORED_BLOCK_LIGHT)
                 .priority(800)
                 .write(DeferredResource.BLOCK_LIGHT_VOLUME_SEED, DeferredResource.BLOCK_LIGHT_VOLUME_RADIANCE)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> config.enabled() && context.primaryView().current() != null)
+                .when(context -> context.featureEnabled(DeferredFeature.COLORED_BLOCK_LIGHT) && context.primaryView().current() != null)
                 .execute(this::updateVolume)
                 .build());
         passes.add(DeferredPassSpec.builder("world.block-light.resolve", DeferredStage.PRE_LIGHTING)
+                .feature(DeferredFeature.COLORED_BLOCK_LIGHT)
                 .priority(875)
                 .read(DeferredResource.BLOCK_LIGHT_VOLUME_RADIANCE,
                         DeferredResource.RESOLVED_DEPTH,
@@ -131,7 +133,7 @@ final class DeferredColoredBlockLightSource implements AutoCloseable {
                         DeferredResource.GBUFFER_GEOMETRY)
                 .write(DeferredResource.BLOCK_LIGHT_IRRADIANCE)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> config.enabled()
+                .when(context -> context.featureEnabled(DeferredFeature.COLORED_BLOCK_LIGHT)
                         && context.primaryView().current() != null
                         && context.isValid(DeferredResource.BLOCK_LIGHT_VOLUME_RADIANCE)
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
@@ -302,7 +304,7 @@ final class DeferredColoredBlockLightSource implements AutoCloseable {
         RhiStorageImage output = requireImage(context, DeferredResource.BLOCK_LIGHT_IRRADIANCE);
 
         Vec3 camera = view.cameraPosition();
-        boolean zeroToOne = isVulkan(context);
+        boolean zeroToOne = zeroToOneDepth(context);
         Std430Writer writer = new Std430Writer(RESOLVE_DATA_LAYOUT, 1)
                 .putMat4(0, "inverseProjection", view.inverseProjection())
                 .putMat4(0, "inverseView", view.inverseView())
@@ -481,9 +483,8 @@ final class DeferredColoredBlockLightSource implements AutoCloseable {
         return Math.max(1, (Math.max(1, extent) + localSize - 1) / localSize);
     }
 
-    private static boolean isVulkan(DeferredPassContext context) {
-        String name = context.rhi().capabilities().backendName();
-        return name != null && name.toLowerCase(Locale.ROOT).contains("vulkan");
+    private static boolean zeroToOneDepth(DeferredPassContext context) {
+        return context.rhi().capabilities().zeroToOneDepth();
     }
 
     private static void close(AutoCloseable value) {

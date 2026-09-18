@@ -12,6 +12,8 @@ import combatant.client.render.engine.renderer.ui.runtime.core.UiBounds;
 import combatant.client.render.engine.renderer.ui.runtime.core.UiNode;
 import combatant.client.render.engine.renderer.ui.runtime.render.UiTextRenderer;
 import combatant.client.render.engine.renderer.ui.runtime.style.UiAlign;
+import combatant.client.render.engine.renderer.ui.runtime.style.UiDisplay;
+import combatant.client.render.engine.renderer.ui.runtime.style.UiFlexDirection;
 import combatant.client.render.engine.renderer.ui.runtime.style.UiJustify;
 import combatant.client.render.engine.renderer.ui.runtime.style.UiStyle;
 import combatant.client.render.engine.text.TextRenderer;
@@ -66,12 +68,39 @@ public final class UiLayoutEngine {
 
     private static float absoluteRight(UiNode child) {
         UiStyle style = child.style();
-        return (style.offsetX() != null ? style.offsetX() : 0.0f) + style.marginLeft() + child.measuredWidth() + style.marginRight();
+        float left = style.offsetX() != null ? style.offsetX() : 0.0f;
+        float right = style.offsetRight() != null ? style.offsetRight() : 0.0f;
+        return left + right + style.marginLeft() + child.measuredWidth() + style.marginRight();
     }
 
     private static float absoluteBottom(UiNode child) {
         UiStyle style = child.style();
-        return (style.offsetY() != null ? style.offsetY() : 0.0f) + style.marginTop() + child.measuredHeight() + style.marginBottom();
+        float top = style.offsetY() != null ? style.offsetY() : 0.0f;
+        float bottom = style.offsetBottom() != null ? style.offsetBottom() : 0.0f;
+        return top + bottom + style.marginTop() + child.measuredHeight() + style.marginBottom();
+    }
+
+    private static Flow containerFlow(UiNode node) {
+        if (node == null) return null;
+        boolean container = switch (node.type()) {
+            case ROOT, PANEL, ROW, COLUMN, STACK, BUTTON, SCROLL, CANVAS -> true;
+            default -> false;
+        };
+        if (!container) return null;
+
+        UiStyle style = node.style();
+        UiDisplay display = style.display();
+        UiFlexDirection direction = style.flexDirection();
+        if (display == UiDisplay.BLOCK) return Flow.COLUMN;
+        if (display == UiDisplay.FLEX) {
+            return direction == UiFlexDirection.COLUMN ? Flow.COLUMN : Flow.ROW;
+        }
+        if (direction != null) return direction == UiFlexDirection.ROW ? Flow.ROW : Flow.COLUMN;
+        return switch (node.type()) {
+            case ROW -> Flow.ROW;
+            case COLUMN, PANEL -> Flow.COLUMN;
+            default -> Flow.STACK;
+        };
     }
 
     public void layout(UiNode root,
@@ -89,75 +118,79 @@ public final class UiLayoutEngine {
 
     private void measure(UiNode node, TextRenderer fallbackTextRenderer) {
         UiStyle style = node.style();
-        float contentW = 0.0f;
-        float contentH = 0.0f;
+        Flow flow = containerFlow(node);
+        if (flow != null) {
+            measureContainer(node, fallbackTextRenderer, style, flow);
+            return;
+        }
 
+        float contentW;
+        float contentH;
         switch (node.type()) {
             case TEXT -> {
                 String text = node.props().string("text", "");
                 contentW = textRenderer.measureWidth(fallbackTextRenderer, text, style);
                 contentH = textRenderer.measureHeight(fallbackTextRenderer, style);
             }
-            case ROW -> {
-                int visibleChildren = 0;
-                for (UiNode child : node.children()) {
-                    measure(child, fallbackTextRenderer);
-                    UiStyle childStyle = child.style();
-                    if (childStyle.absolute()) {
-                        contentW = Math.max(contentW, absoluteRight(child));
-                        contentH = Math.max(contentH, absoluteBottom(child));
-                        continue;
-                    }
-                    contentW += child.measuredWidth() + childStyle.marginX();
-                    contentH = Math.max(contentH, child.measuredHeight() + childStyle.marginY());
-                    visibleChildren++;
-                }
-                if (visibleChildren > 1) {
-                    contentW += style.gap() * (visibleChildren - 1);
-                }
-            }
-            case COLUMN, PANEL -> {
-                int visibleChildren = 0;
-                for (UiNode child : node.children()) {
-                    measure(child, fallbackTextRenderer);
-                    UiStyle childStyle = child.style();
-                    if (childStyle.absolute()) {
-                        contentW = Math.max(contentW, absoluteRight(child));
-                        contentH = Math.max(contentH, absoluteBottom(child));
-                        continue;
-                    }
-                    contentW = Math.max(contentW, child.measuredWidth() + childStyle.marginX());
-                    contentH += child.measuredHeight() + childStyle.marginY();
-                    visibleChildren++;
-                }
-                if (visibleChildren > 1) {
-                    contentH += style.gap() * (visibleChildren - 1);
-                }
-            }
             case IMAGE, SVG, SHAPE, CONNECTOR, ITEM, SPACER, DIVIDER, INPUT, INPUT_TEXT, CHECKBOX, SLIDER -> {
                 contentW = intrinsic(node, "intrinsicWidth", style.width() != null ? style.width() : 16.0f);
                 contentH = intrinsic(node, "intrinsicHeight", style.height() != null ? style.height() : 16.0f);
             }
-            case ROOT, STACK, BUTTON, SCROLL, CANVAS -> {
-                for (UiNode child : node.children()) {
-                    measure(child, fallbackTextRenderer);
-                    UiStyle childStyle = child.style();
-                    float right = childStyle.absolute()
-                            ? absoluteRight(child)
-                            : child.measuredWidth() + childStyle.marginX();
-                    float bottom = childStyle.absolute()
-                            ? absoluteBottom(child)
-                            : child.measuredHeight() + childStyle.marginY();
-                    contentW = Math.max(contentW, right);
-                    contentH = Math.max(contentH, bottom);
-                }
+            default -> {
+                contentW = 0.0f;
+                contentH = 0.0f;
             }
         }
+        finishMeasure(node, style, contentW, contentH);
+    }
 
-        float measuredW = contentW + style.paddingX();
-        float measuredH = contentH + style.paddingY();
+    private void measureContainer(UiNode node,
+                                  TextRenderer fallbackTextRenderer,
+                                  UiStyle style,
+                                  Flow flow) {
+        float contentW = 0.0f;
+        float contentH = 0.0f;
+        int flowChildren = 0;
+
+        for (UiNode child : node.children()) {
+            measure(child, fallbackTextRenderer);
+            UiStyle childStyle = child.style();
+            if (childStyle.absolute()) {
+                contentW = Math.max(contentW, absoluteRight(child));
+                contentH = Math.max(contentH, absoluteBottom(child));
+                continue;
+            }
+
+            switch (flow) {
+                case ROW -> {
+                    contentW += child.measuredWidth() + childStyle.marginX();
+                    contentH = Math.max(contentH, child.measuredHeight() + childStyle.marginY());
+                }
+                case COLUMN -> {
+                    contentW = Math.max(contentW, child.measuredWidth() + childStyle.marginX());
+                    contentH += child.measuredHeight() + childStyle.marginY();
+                }
+                case STACK -> {
+                    contentW = Math.max(contentW, child.measuredWidth() + childStyle.marginX());
+                    contentH = Math.max(contentH, child.measuredHeight() + childStyle.marginY());
+                }
+            }
+            flowChildren++;
+        }
+
+        if (flowChildren > 1) {
+            if (flow == Flow.ROW) contentW += style.gap() * (flowChildren - 1);
+            if (flow == Flow.COLUMN) contentH += style.gap() * (flowChildren - 1);
+        }
+        finishMeasure(node, style, contentW, contentH);
+    }
+
+    private static void finishMeasure(UiNode node, UiStyle style, float contentW, float contentH) {
         node.state().setContentSize(contentW, contentH);
-        node.setMeasuredSize(style.resolveWidth(measuredW), style.resolveHeight(measuredH));
+        node.setMeasuredSize(
+                style.resolveWidth(contentW + style.paddingX()),
+                style.resolveHeight(contentH + style.paddingY())
+        );
     }
 
     private void assign(UiNode node,
@@ -180,12 +213,15 @@ public final class UiLayoutEngine {
             contentY -= node.state().scrollY();
         }
 
-        switch (node.type()) {
+        Flow flow = containerFlow(node);
+        if (flow == null) {
+            assignStack(node, fallbackTextRenderer, contentX, contentY, contentW, contentH);
+            return;
+        }
+        switch (flow) {
             case ROW -> assignRow(node, fallbackTextRenderer, contentX, contentY, contentW, contentH);
-            case COLUMN, PANEL -> assignColumn(node, fallbackTextRenderer, contentX, contentY, contentW, contentH);
-            case ROOT, STACK, BUTTON, SCROLL, INPUT, INPUT_TEXT, CHECKBOX, SLIDER, DIVIDER, CANVAS, IMAGE, SVG, SHAPE,
-                 CONNECTOR, ITEM, SPACER, TEXT ->
-                    assignStack(node, fallbackTextRenderer, contentX, contentY, contentW, contentH);
+            case COLUMN -> assignColumn(node, fallbackTextRenderer, contentX, contentY, contentW, contentH);
+            case STACK -> assignStack(node, fallbackTextRenderer, contentX, contentY, contentW, contentH);
         }
     }
 
@@ -298,10 +334,53 @@ public final class UiLayoutEngine {
                                 float width,
                                 float height) {
         UiStyle style = child.style();
-        float childW = style.width() != null ? style.resolveWidth(child.measuredWidth()) : Math.min(width, child.measuredWidth());
-        float childH = style.height() != null ? style.resolveHeight(child.measuredHeight()) : Math.min(height, child.measuredHeight());
-        float childX = x + style.marginLeft() + (style.offsetX() != null ? style.offsetX() : 0.0f);
-        float childY = y + style.marginTop() + (style.offsetY() != null ? style.offsetY() : 0.0f);
+        Float left = style.offsetX();
+        Float top = style.offsetY();
+        Float right = style.offsetRight();
+        Float bottom = style.offsetBottom();
+
+        float horizontalInsets = style.marginX()
+                + (left != null ? left : 0.0f)
+                + (right != null ? right : 0.0f);
+        float verticalInsets = style.marginY()
+                + (top != null ? top : 0.0f)
+                + (bottom != null ? bottom : 0.0f);
+
+        float childW;
+        if (style.width() != null) {
+            childW = style.resolveWidth(child.measuredWidth());
+        } else if (left != null && right != null) {
+            childW = style.resolveWidth(Math.max(0.0f, width - horizontalInsets));
+        } else {
+            childW = style.resolveWidth(Math.min(Math.max(0.0f, width - style.marginX()), child.measuredWidth()));
+        }
+
+        float childH;
+        if (style.height() != null) {
+            childH = style.resolveHeight(child.measuredHeight());
+        } else if (top != null && bottom != null) {
+            childH = style.resolveHeight(Math.max(0.0f, height - verticalInsets));
+        } else {
+            childH = style.resolveHeight(Math.min(Math.max(0.0f, height - style.marginY()), child.measuredHeight()));
+        }
+
+        float childX = left != null
+                ? x + style.marginLeft() + left
+                : right != null
+                ? x + width - style.marginRight() - right - childW
+                : x + style.marginLeft();
+        float childY = top != null
+                ? y + style.marginTop() + top
+                : bottom != null
+                ? y + height - style.marginBottom() - bottom - childH
+                : y + style.marginTop();
+
         assign(child, fallbackTextRenderer, childX, childY, childW, childH);
+    }
+
+    private enum Flow {
+        ROW,
+        COLUMN,
+        STACK
     }
 }

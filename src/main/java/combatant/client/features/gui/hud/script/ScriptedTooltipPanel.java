@@ -102,7 +102,6 @@ public final class ScriptedTooltipPanel {
                 module,
                 runtimeKey + ":measure",
                 measureSignature,
-                measureSignature,
                 measureW,
                 MEASURE_HEIGHT,
                 fallbackText,
@@ -175,19 +174,11 @@ public final class ScriptedTooltipPanel {
         props.put("lineHeight", prepared.lineHeight());
 
         long treeSignature = CachedUiScriptRuntime.signature(props);
-        long layoutSignature = CachedUiScriptRuntime.mix(
-                CachedUiScriptRuntime.mix(
-                        CachedUiScriptRuntime.mix(treeSignature, x),
-                        y
-                ),
-                prepared.width() * 31.0f + prepared.height()
-        );
         UiRuntime baked = runtime.bake(
                 moduleHandle,
                 module,
                 runtimeKey + ":render",
                 treeSignature,
-                layoutSignature,
                 prepared.width(),
                 prepared.height(),
                 fallbackText,

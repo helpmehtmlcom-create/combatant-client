@@ -60,8 +60,41 @@ export const ui = {
   cls(...parts) {
     return parts.filter(Boolean).join(" ");
   },
+  style(...parts) {
+    return Object.assign({}, ...parts.filter(part => part && typeof part === "object" && !Array.isArray(part)));
+  },
+  children(...parts) {
+    return normalizeChildren(parts);
+  },
+  absolute(x = 0, y = 0, w = 0, h = 0, extra = {}) {
+    return ui.style({ position: "absolute", left: x, top: y, width: w, height: h }, extra);
+  },
   abs(x = 0, y = 0, w = 0, h = 0, extra = "") {
     return ui.cls("absolute", `x-${ui.fmt(x)}`, `y-${ui.fmt(y)}`, `w-${ui.fmt(w)}`, `h-${ui.fmt(h)}`, extra);
+  },
+  prop(value, key, fallback = undefined) {
+    if (value === null || value === undefined) return fallback;
+    try {
+      const direct = value[key];
+      if (direct !== undefined && direct !== null) return direct;
+    } catch (_) {
+    }
+    try {
+      if (typeof value.get === "function") {
+        const resolved = value.get(key);
+        if (resolved !== undefined && resolved !== null) return resolved;
+      }
+    } catch (_) {
+    }
+    return fallback;
+  },
+  arr(value) {
+    if (value === null || value === undefined) return [];
+    try {
+      return Array.from(value);
+    } catch (_) {
+      return [];
+    }
   },
   roundedRect({ key, x = 0, y = 0, w = 0, h = 0, radius = 0, r, fill, stroke, strokeWidth = 0, class: extra = "", ...rest } = {}) {
     return ui.shape({
@@ -259,6 +292,9 @@ export const ui = {
     });
   },
   color: {
+    get(value, key, fallback = "#00000000") {
+      return ui.str(ui.prop(value, key, fallback), fallback);
+    },
     alpha(hex, alpha = 1, fallback = "#00000000") {
       const src = ui.str(hex, fallback);
       if (!src.startsWith("#") || src.length !== 9) return src;
@@ -293,20 +329,102 @@ export const ui = {
 function normalize(type, init) {
   const {
     key = "",
-    class: className = "",
+    class: classValue = "",
+    className = "",
+    style = {},
+    width,
+    height,
+    minWidth,
+    minHeight,
+    maxWidth,
+    maxHeight,
+    grow,
+    display,
+    flexDirection,
+    absolute,
+    x,
+    y,
+    align,
+    justify,
+    overflow,
+    textAlign,
+    maxTextWidth,
+    ellipsis,
+    marquee,
     props = {},
     events = {},
+    onClick,
+    onChange,
+    onInput,
+    onScroll,
     meta = {},
     children = [],
     ...rest
   } = init ?? {};
+  const layoutStyle = {};
+  if (width !== undefined) layoutStyle.width = width;
+  if (height !== undefined) layoutStyle.height = height;
+  if (minWidth !== undefined) layoutStyle.minWidth = minWidth;
+  if (minHeight !== undefined) layoutStyle.minHeight = minHeight;
+  if (maxWidth !== undefined) layoutStyle.maxWidth = maxWidth;
+  if (maxHeight !== undefined) layoutStyle.maxHeight = maxHeight;
+  if (grow !== undefined) layoutStyle.flexGrow = grow;
+  if (display !== undefined) layoutStyle.display = display;
+  if (flexDirection !== undefined) layoutStyle.flexDirection = flexDirection;
+  if (absolute !== undefined) layoutStyle.absolute = absolute;
+  if (x !== undefined) layoutStyle.left = x;
+  if (y !== undefined) layoutStyle.top = y;
+  if (align !== undefined) {
+    if (type === "text" && (align === "left" || align === "right" || align === "center" || align === "end")) {
+      layoutStyle.textAlign = align;
+    } else {
+      layoutStyle.alignItems = align;
+    }
+  }
+  if (justify !== undefined) layoutStyle.justifyContent = justify;
+  if (overflow !== undefined) layoutStyle.overflow = overflow;
+  if (textAlign !== undefined) layoutStyle.textAlign = textAlign;
+  if (maxTextWidth !== undefined) layoutStyle.maxTextWidth = maxTextWidth;
+  if (ellipsis !== undefined) layoutStyle.ellipsis = ellipsis;
+  if (marquee !== undefined) layoutStyle.marquee = marquee;
+
+  const normalizedEvents = { ...events };
+  if (onClick !== undefined && onClick !== null) normalizedEvents.click = onClick;
+  if (onChange !== undefined && onChange !== null) normalizedEvents.change = onChange;
+  if (onInput !== undefined && onInput !== null) normalizedEvents.input = onInput;
+  if (onScroll !== undefined && onScroll !== null) normalizedEvents.scroll = onScroll;
   return {
     type,
     key,
-    class: className,
+    class: ui.cls(className, classValue),
+    style: ui.style(layoutStyle, style && typeof style === "object" && !Array.isArray(style) ? style : {}),
     props: { ...rest, ...props },
-    events,
+    events: normalizedEvents,
     meta,
-    children,
+    children: normalizeChildren(children),
   };
+}
+
+function normalizeChildren(value) {
+  const out = [];
+  const append = (child) => {
+    if (child === null || child === undefined || typeof child === "boolean") return;
+    if (Array.isArray(child)) {
+      for (const nested of child) append(nested);
+      return;
+    }
+    if (typeof child !== "string" && child) {
+      try {
+        const iterator = child[Symbol.iterator];
+        if (typeof iterator === "function") {
+          for (const nested of child) append(nested);
+          return;
+        }
+      } catch (_) {
+      }
+    }
+    out.push(child);
+  };
+  append(value);
+  return out;
 }

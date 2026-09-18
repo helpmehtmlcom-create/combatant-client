@@ -29,9 +29,13 @@ public final class UiStyle {
     private final float marginBottom;
     private final float gap;
     private final float grow;
+    private final UiDisplay display;
+    private final UiFlexDirection flexDirection;
     private final boolean absolute;
     private final Float offsetX;
     private final Float offsetY;
+    private final Float offsetRight;
+    private final Float offsetBottom;
     private final UiAlign align;
     private final UiJustify justify;
     private final UiOverflow overflow;
@@ -62,6 +66,7 @@ public final class UiStyle {
     private final String textAlign;
     private final String cursor;
     private final UiBlendSpec blend;
+    private final float opacity;
 
     private UiStyle(Builder builder) {
         this.width = builder.width;
@@ -80,9 +85,13 @@ public final class UiStyle {
         this.marginBottom = builder.marginBottom;
         this.gap = builder.gap;
         this.grow = builder.grow;
+        this.display = builder.display;
+        this.flexDirection = builder.flexDirection;
         this.absolute = builder.absolute;
         this.offsetX = builder.offsetX;
         this.offsetY = builder.offsetY;
+        this.offsetRight = builder.offsetRight;
+        this.offsetBottom = builder.offsetBottom;
         this.align = builder.align;
         this.justify = builder.justify;
         this.overflow = builder.overflow;
@@ -113,6 +122,7 @@ public final class UiStyle {
         this.textAlign = builder.textAlign;
         this.cursor = builder.cursor;
         this.blend = builder.blend;
+        this.opacity = builder.opacity;
     }
 
     private static float clamp(float value, Float min, Float max) {
@@ -124,6 +134,11 @@ public final class UiStyle {
 
     public static Builder builder() {
         return new Builder();
+    }
+
+    /** Creates a mutable builder initialized from an existing resolved style. */
+    public static Builder builder(UiStyle base) {
+        return new Builder(base != null ? base : DEFAULT);
     }
 
     public Float width() {
@@ -206,6 +221,16 @@ public final class UiStyle {
         return grow;
     }
 
+    /** Explicit display mode; null keeps the node type's legacy layout semantics. */
+    public UiDisplay display() {
+        return display;
+    }
+
+    /** Explicit flex direction; null uses row for display:flex or the node type's legacy flow. */
+    public UiFlexDirection flexDirection() {
+        return flexDirection;
+    }
+
     public boolean absolute() {
         return absolute;
     }
@@ -216,6 +241,14 @@ public final class UiStyle {
 
     public Float offsetY() {
         return offsetY;
+    }
+
+    public Float offsetRight() {
+        return offsetRight;
+    }
+
+    public Float offsetBottom() {
+        return offsetBottom;
     }
 
     public UiAlign align() {
@@ -338,6 +371,10 @@ public final class UiStyle {
         return blend;
     }
 
+    public float opacity() {
+        return opacity;
+    }
+
     public float resolveWidth(float fallback) {
         return clamp(width != null ? width : fallback, minWidth, maxWidth);
     }
@@ -363,9 +400,13 @@ public final class UiStyle {
         private float marginBottom;
         private float gap;
         private float grow;
+        private UiDisplay display;
+        private UiFlexDirection flexDirection;
         private boolean absolute;
         private Float offsetX;
         private Float offsetY;
+        private Float offsetRight;
+        private Float offsetBottom;
         private UiAlign align = UiAlign.START;
         private UiJustify justify = UiJustify.START;
         private UiOverflow overflow = UiOverflow.VISIBLE;
@@ -396,6 +437,67 @@ public final class UiStyle {
         private String textAlign = "left";
         private String cursor = "";
         private UiBlendSpec blend = UiBlendSpec.TRANSLUCENT;
+        private float opacity = 1.0f;
+
+        private Builder() {
+        }
+
+        private Builder(UiStyle base) {
+            this.width = base.width;
+            this.height = base.height;
+            this.minWidth = base.minWidth;
+            this.minHeight = base.minHeight;
+            this.maxWidth = base.maxWidth;
+            this.maxHeight = base.maxHeight;
+            this.paddingLeft = base.paddingLeft;
+            this.paddingTop = base.paddingTop;
+            this.paddingRight = base.paddingRight;
+            this.paddingBottom = base.paddingBottom;
+            this.marginLeft = base.marginLeft;
+            this.marginTop = base.marginTop;
+            this.marginRight = base.marginRight;
+            this.marginBottom = base.marginBottom;
+            this.gap = base.gap;
+            this.grow = base.grow;
+            this.display = base.display;
+            this.flexDirection = base.flexDirection;
+            this.absolute = base.absolute;
+            this.offsetX = base.offsetX;
+            this.offsetY = base.offsetY;
+            this.offsetRight = base.offsetRight;
+            this.offsetBottom = base.offsetBottom;
+            this.align = base.align;
+            this.justify = base.justify;
+            this.overflow = base.overflow;
+            this.radius = base.radius;
+            this.backgroundColor = base.backgroundColor;
+            this.strokeColor = base.strokeColor;
+            this.strokeWidth = base.strokeWidth;
+            this.shadowColor = base.shadowColor;
+            this.shadowBlur = base.shadowBlur;
+            this.shadowInnerAlpha = base.shadowInnerAlpha;
+            this.blur = base.blur;
+            this.liquidGlass = base.liquidGlass;
+            this.clip = base.clip;
+            this.marquee = base.marquee;
+            this.blurQuality = base.blurQuality;
+            this.blurBrightness = base.blurBrightness;
+            this.blurAlpha = base.blurAlpha;
+            this.textColor = base.textColor;
+            this.fontFamily = base.fontFamily;
+            this.fontType = base.fontType;
+            this.textScale = base.textScale;
+            this.textShadow = base.textShadow;
+            this.textEffect = base.textEffect;
+            this.textEffectSpeed = base.textEffectSpeed;
+            this.textBackend = base.textBackend;
+            this.maxTextWidth = base.maxTextWidth;
+            this.ellipsis = base.ellipsis;
+            this.textAlign = base.textAlign;
+            this.cursor = base.cursor;
+            this.blend = base.blend;
+            this.opacity = base.opacity;
+        }
 
         public Builder width(float width) {
             this.width = width;
@@ -440,6 +542,26 @@ public final class UiStyle {
             this.paddingTop = top;
             this.paddingRight = right;
             this.paddingBottom = bottom;
+            return this;
+        }
+
+        public Builder paddingLeft(float paddingLeft) {
+            this.paddingLeft = paddingLeft;
+            return this;
+        }
+
+        public Builder paddingTop(float paddingTop) {
+            this.paddingTop = paddingTop;
+            return this;
+        }
+
+        public Builder paddingRight(float paddingRight) {
+            this.paddingRight = paddingRight;
+            return this;
+        }
+
+        public Builder paddingBottom(float paddingBottom) {
+            this.paddingBottom = paddingBottom;
             return this;
         }
 
@@ -489,6 +611,16 @@ public final class UiStyle {
             return this;
         }
 
+        public Builder display(UiDisplay display) {
+            this.display = display;
+            return this;
+        }
+
+        public Builder flexDirection(UiFlexDirection flexDirection) {
+            this.flexDirection = flexDirection;
+            return this;
+        }
+
         public Builder absolute(boolean absolute) {
             this.absolute = absolute;
             return this;
@@ -501,6 +633,16 @@ public final class UiStyle {
 
         public Builder offsetY(float offsetY) {
             this.offsetY = offsetY;
+            return this;
+        }
+
+        public Builder offsetRight(float offsetRight) {
+            this.offsetRight = offsetRight;
+            return this;
+        }
+
+        public Builder offsetBottom(float offsetBottom) {
+            this.offsetBottom = offsetBottom;
             return this;
         }
 
@@ -544,6 +686,11 @@ public final class UiStyle {
             this.shadowColor = color;
             this.shadowBlur = Math.max(0.0f, blur);
             this.shadowInnerAlpha = Math.max(0.0f, Math.min(1.0f, innerAlpha));
+            return this;
+        }
+
+        public Builder clearShadow() {
+            this.shadowColor = null;
             return this;
         }
 
@@ -630,6 +777,11 @@ public final class UiStyle {
 
         public Builder blend(UiBlendSpec blend) {
             this.blend = blend != null ? blend : UiBlendSpec.TRANSLUCENT;
+            return this;
+        }
+
+        public Builder opacity(float opacity) {
+            this.opacity = Math.max(0.0f, Math.min(1.0f, opacity));
             return this;
         }
 

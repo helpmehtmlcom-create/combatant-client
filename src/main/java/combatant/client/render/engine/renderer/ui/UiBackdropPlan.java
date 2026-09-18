@@ -8,7 +8,7 @@
 package combatant.client.render.engine.renderer.ui;
 
 import combatant.client.render.engine.command.UiCommand;
-import combatant.client.render.engine.command.UiCommandBuffer;
+import combatant.client.render.engine.command.UiSemanticCommandBuffer;
 import combatant.client.render.engine.command.UiEffectRegionCommand;
 import combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest;
 import combatant.client.render.engine.renderer.ui.draw.UiRect;
@@ -25,14 +25,14 @@ public record UiBackdropPlan(List<Group> groups, int requestCount) {
         requestCount = Math.max(0, requestCount);
     }
 
-    public static UiBackdropPlan compile(UiCommandBuffer commands) {
-        if (commands == null || commands.size() == 0) return EMPTY;
+    public static UiBackdropPlan compile(UiSemanticCommandBuffer semanticCommands) {
+        if (semanticCommands == null || semanticCommands.size() == 0) return EMPTY;
 
         ArrayList<Group> groups = new ArrayList<>();
         Group current = null;
         int requests = 0;
         int commandIndex = 0;
-        for (UiCommand command : commands.commands()) {
+        for (UiCommand command : semanticCommands.commands()) {
             UiBackdropRequest request = backdropOf(command);
             if (request == null || request.equals(UiBackdropRequest.NONE)) {
                 current = null;

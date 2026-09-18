@@ -64,6 +64,8 @@ import combatant.client.render.engine.core.RenderPhase;
 import combatant.client.render.engine.core.RenderPhaseScope;
 import combatant.client.render.engine.depth.WorldSceneDepth;
 import combatant.client.render.engine.deferred.DeferredJitterSequence;
+import combatant.client.render.engine.deferred.DeferredFeature;
+import combatant.client.render.engine.deferred.DeferredRuntimeConfig;
 import combatant.client.render.engine.rhi.shader.RhiShaderStage;
 import combatant.client.render.engine.debug.UiClipDebugScene;
 import combatant.client.render.engine.msaa.MsaaWorldTarget;
@@ -157,10 +159,9 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
 
     @Unique
     private static boolean combatant$needsResolvedMainDepth() {
-        ReimaginedVisual module = Modules.get(ReimaginedVisual.class);
-        if (module == null) return false;
-        if (module.needsResolvedMainDepthCapture()) return true;
-        return MainConfig.get().getMsaa3dSamples() > 1 && module.isActive();
+        // Legacy ReimaginedVisual DoF depth capture is retired. Deferred camera post consumes
+        // FINAL_RESOLVED_DEPTH through the typed frame-graph contract instead.
+        return false;
     }
 
     @Inject(method = "tick", at = @At("HEAD"), cancellable = true)
@@ -517,6 +518,8 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
             Matrix4f jitteredProjection = unjitteredProjection;
             org.joml.Vector2f jitterPixels = new org.joml.Vector2f();
             if (CombatantRenderSystem.deferredWorld().enabled()
+                    && CombatantRenderSystem.deferredWorld().smokeTestState()
+                    .featureEnabled(DeferredFeature.TAA, DeferredRuntimeConfig.current())
                     && CombatantRenderSystem.rhi().advancedShaders().supports(RhiShaderStage.COMPUTE)) {
                 var mainTarget = minecraft.gameRenderer.mainRenderTarget();
                 var colorView = mainTarget != null ? mainTarget.getColorTextureView() : null;

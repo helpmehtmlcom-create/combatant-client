@@ -70,6 +70,20 @@ vec3 lightTransmittance(float r, vec3 up, vec3 lightDir) {
     return textureLod(u_Transmittance, transUv(r, mu), 0.0).rgb;
 }
 
+float environmentDiscProxy(vec3 viewDir, vec3 lightDir, float angularRadius) {
+    ivec2 size = imageSize(u_SkyRadiance);
+    float dTheta = PI / max(float(size.y), 1.0);
+    float dPhi = (2.0 * PI / max(float(size.x), 1.0))
+            * sqrt(max(0.0, 1.0 - viewDir.y * viewDir.y));
+    float texelRadius = 0.5 * sqrt(dTheta * dTheta + dPhi * dPhi);
+    float supportRadius = max(max(angularRadius, 1e-6), texelRadius * 1.25);
+    float areaScale = min(1.0, (angularRadius * angularRadius)
+            / max(supportRadius * supportRadius, 1e-8));
+    float angle = acos(clamp(dot(normalize(viewDir), normalize(lightDir)), -1.0, 1.0));
+    float kernel = 1.0 - smoothstep(supportRadius * 0.35, supportRadius, angle);
+    return areaScale * kernel;
+}
+
 vec3 integrateSky(vec3 viewDir) {
     float r0 = u_Atm.radii.z;
     float mu0 = viewDir.y;
@@ -113,14 +127,19 @@ vec3 integrateSky(vec3 viewDir) {
         throughput *= segmentT;
     }
 
+    // The canonical environment map is intentionally low frequency. Celestial discs can be
+    // smaller than one lat-long texel, so integrate their solid-angle energy into a stable proxy
+    // instead of using a center-sample threshold that flickers as the body crosses texel borders.
     vec3 observerT;
-    if (u_Atm.sunRadiance.a > 0.5 && dot(viewDir, normalize(u_Atm.sunDirection.xyz)) >= cos(u_Atm.sunDirection.w)) {
+    if (u_Atm.sunRadiance.a > 0.5 && u_Atm.sunDirection.y > -u_Atm.sunDirection.w) {
         observerT = textureLod(u_Transmittance, transUv(r0, u_Atm.sunDirection.y), 0.0).rgb;
-        radiance += u_Atm.sunRadiance.rgb * observerT;
+        float proxy = environmentDiscProxy(viewDir, u_Atm.sunDirection.xyz, u_Atm.sunDirection.w);
+        radiance += u_Atm.sunRadiance.rgb * observerT * proxy;
     }
-    if (u_Atm.moonRadiance.a > 0.5 && dot(viewDir, normalize(u_Atm.moonDirection.xyz)) >= cos(u_Atm.moonDirection.w)) {
+    if (u_Atm.moonRadiance.a > 0.5 && u_Atm.moonDirection.y > -u_Atm.moonDirection.w) {
         observerT = textureLod(u_Transmittance, transUv(r0, u_Atm.moonDirection.y), 0.0).rgb;
-        radiance += u_Atm.moonRadiance.rgb * observerT;
+        float proxy = environmentDiscProxy(viewDir, u_Atm.moonDirection.xyz, u_Atm.moonDirection.w);
+        radiance += u_Atm.moonRadiance.rgb * observerT * proxy;
     }
     return max(radiance, vec3(0.0));
 }

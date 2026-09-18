@@ -48,13 +48,11 @@ private final Minecraft mc = Minecraft.getInstance();
 
         TextRenderer resolvedText = textRenderer != null ? textRenderer : TextRenderer.get();
         long treeSignature = model.structuralSignature();
-        long layoutSignature = model.layoutSignature(treeSignature);
         UiRuntime runtime = scriptRuntime.updatePersistent(
                 moduleHandle,
                 module,
                 model.getId(),
                 treeSignature,
-                layoutSignature,
                 model.width(),
                 model.height(),
                 resolvedText,

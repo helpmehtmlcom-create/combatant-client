@@ -185,6 +185,12 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
     }
 
     void install(ArrayList<DeferredPassSpec> passes) {
+        passes.add(DeferredPassSpec.builder("world.water.routing-policy", DeferredStage.WATER_SURFACE)
+                .priority(-100)
+                .when(context -> !context.featureEnabled(DeferredFeature.WATER))
+                .execute(context -> disableWaterReplacement())
+                .build());
+
         passes.add(DeferredPassSpec.builder("world.height-surface", DeferredStage.HEIGHT_SURFACE)
                 .read(DeferredResource.MAIN_DEPTH)
                 .write(DeferredResource.SCENE_COLOR,
@@ -201,6 +207,7 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
                 .build());
 
         passes.add(DeferredPassSpec.builder("world.water.medium-boundary", DeferredStage.WATER_MEDIUM_BOUNDARY)
+                .feature(DeferredFeature.WATER)
                 .read(DeferredResource.RESOLVED_DEPTH)
                 .write(DeferredResource.WATER_MEDIUM_BOUNDARY)
                 .requires(RhiShaderStage.VERTEX, RhiShaderStage.FRAGMENT)
@@ -210,6 +217,7 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
                 .build());
 
         passes.add(DeferredPassSpec.builder("world.water.reflection-trace", DeferredStage.WATER_REFLECTION_TRACE)
+                .feature(DeferredFeature.WATER)
                 .read(DeferredResource.SCENE_RADIANCE,
                         DeferredResource.RESOLVED_DEPTH,
                         DeferredResource.GBUFFER_DEPTH,
@@ -232,6 +240,7 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
                 .build());
 
         passes.add(DeferredPassSpec.builder("world.water-surface", DeferredStage.WATER_SURFACE)
+                .feature(DeferredFeature.WATER)
                 .read(DeferredResource.MAIN_DEPTH,
                         DeferredResource.RESOLVED_DEPTH,
                         DeferredResource.SKY_SPECULAR_RADIANCE,
@@ -276,7 +285,7 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
     }
 
     private boolean waterReflectionAvailable(DeferredPassContext context) {
-        return context.settings().reflectionsEnabled()
+        return context.featureEnabled(DeferredFeature.REFLECTIONS)
                 && WaterSurfacePatchRouting.replacementActive()
                 && context.primaryView().current() != null
                 && context.isValid(DeferredResource.SCENE_RADIANCE)
@@ -811,18 +820,19 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
         WaterForwardProfile profile = WaterForwardProfile.FOUNDATION;
         CameraMediumState medium = CameraMediumState.capture();
 
-        boolean hasWaterReflection = context.settings().reflectionsEnabled()
+        boolean hasWaterReflection = context.featureEnabled(DeferredFeature.REFLECTIONS)
                 && context.isValid(DeferredResource.WATER_REFLECTION_COLOR)
                 && context.isValid(DeferredResource.WATER_REFLECTION_CONFIDENCE)
                 && context.resources().texture(DeferredResource.WATER_REFLECTION_COLOR) != null
                 && context.resources().texture(DeferredResource.WATER_REFLECTION_CONFIDENCE) != null;
         boolean hasCascade = hasReflectionCascade(context);
-        boolean hasSky = context.isValid(DeferredResource.SKY_SPECULAR_RADIANCE)
+        boolean hasSky = context.featureEnabled(DeferredFeature.SKY)
+                && context.isValid(DeferredResource.SKY_SPECULAR_RADIANCE)
                 && context.resources().texture(DeferredResource.SKY_SPECULAR_RADIANCE) != null;
         int skyMipCount = 1;
         RhiStorageImage skyImage = context.resources().storageImage(DeferredResource.SKY_SPECULAR_RADIANCE);
         if (hasSky && skyImage != null) skyMipCount = Math.max(1, skyImage.descriptor().mipLevels());
-        boolean zeroToOne = isVulkan(context);
+        boolean zeroToOne = zeroToOneDepth(context);
 
         return new WaterFrameUniforms.Frame(
                 currentView, currentProjection, currentInverseProjection, currentInverseView,
@@ -1222,6 +1232,11 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
         return waterFrameBuffer;
     }
 
+    private void disableWaterReplacement() {
+        waterActivationGeneration = Long.MIN_VALUE;
+        WaterSurfacePatchRouting.setReplacementActive(false);
+    }
+
     private void resetRoutingState() {
         heightActivationGeneration = Long.MIN_VALUE;
         waterActivationGeneration = Long.MIN_VALUE;
@@ -1312,8 +1327,8 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
         return view.texture() instanceof IMsaaTexture msaa ? Math.max(1, msaa.combatant$getSamples()) : 1;
     }
 
-    private static boolean isVulkan(DeferredPassContext context) {
-        return context.rhi().getClass().getName().toLowerCase(Locale.ROOT).contains("vulkan");
+    private static boolean zeroToOneDepth(DeferredPassContext context) {
+        return context.rhi().capabilities().zeroToOneDepth();
     }
 
     private static Identifier id(String path) {

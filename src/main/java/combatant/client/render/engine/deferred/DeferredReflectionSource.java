@@ -94,12 +94,13 @@ final class DeferredReflectionSource implements AutoCloseable {
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.reflection.prepare", DeferredStage.REFLECTION_PREPARE)
+                .feature(DeferredFeature.REFLECTIONS)
                 .read(DeferredResource.LIGHTING_COLOR, DeferredResource.RESOLVED_DEPTH,
                         DeferredResource.GBUFFER_DEPTH, DeferredResource.DEPTH_PYRAMID,
                         DeferredResource.GBUFFER_GEOMETRY, DeferredResource.GBUFFER_MATERIAL)
                 .write(DeferredResource.REFLECTION_TRACE_DATA)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.settings().reflectionsEnabled()
+                .when(context -> context.featureEnabled(DeferredFeature.REFLECTIONS)
                         && context.primaryView().current() != null
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
                         && context.isValid(DeferredResource.DEPTH_PYRAMID)
@@ -108,17 +109,19 @@ final class DeferredReflectionSource implements AutoCloseable {
                 .execute(this::prepareFrame)
                 .build());
         passes.add(DeferredPassSpec.builder("world.reflection.trace", DeferredStage.REFLECTION_TRACE)
+                .feature(DeferredFeature.REFLECTIONS)
                 .read(DeferredResource.LIGHTING_COLOR, DeferredResource.GBUFFER_GEOMETRY,
                         DeferredResource.GBUFFER_MATERIAL, DeferredResource.RESOLVED_DEPTH,
                         DeferredResource.GBUFFER_DEPTH, DeferredResource.DEPTH_PYRAMID,
                         DeferredResource.REFLECTION_TRACE_DATA)
                 .write(DeferredResource.REFLECTION_TRACE_COLOR, DeferredResource.REFLECTION_TRACE_CONFIDENCE)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.settings().reflectionsEnabled()
+                .when(context -> context.featureEnabled(DeferredFeature.REFLECTIONS)
                         && context.isValid(DeferredResource.REFLECTION_TRACE_DATA))
                 .execute(this::trace)
                 .build());
         passes.add(DeferredPassSpec.builder("world.reflection.resolve", DeferredStage.REFLECTION_RESOLVE)
+                .feature(DeferredFeature.REFLECTIONS)
                 .read(DeferredResource.REFLECTION_TRACE_COLOR, DeferredResource.REFLECTION_TRACE_CONFIDENCE,
                         DeferredResource.GBUFFER_GEOMETRY, DeferredResource.RESOLVED_DEPTH,
                         DeferredResource.REFLECTION_TRACE_DATA,
@@ -126,7 +129,7 @@ final class DeferredReflectionSource implements AutoCloseable {
                         DeferredResource.REFLECTION_CASCADE_DATA)
                 .write(DeferredResource.REFLECTION_RESOLVED_COLOR, DeferredResource.REFLECTION_RESOLVED_CONFIDENCE)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.settings().reflectionsEnabled()
+                .when(context -> context.featureEnabled(DeferredFeature.REFLECTIONS)
                         && context.isValid(DeferredResource.REFLECTION_TRACE_COLOR)
                         && context.isValid(DeferredResource.REFLECTION_TRACE_CONFIDENCE))
                 .execute(this::resolve)
@@ -152,7 +155,7 @@ final class DeferredReflectionSource implements AutoCloseable {
         DeferredPrimaryViewSource.FrameView current = context.primaryView().current();
         if (current == null) return;
         GpuTextureView depth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
-        boolean zeroToOne = isVulkan(context);
+        boolean zeroToOne = zeroToOneDepth(context);
         Std430Writer writer = new Std430Writer(TRACE_DATA_LAYOUT, 1)
                 .putMat4(0, "inverseProjection", current.inverseProjection())
                 .putMat4(0, "inverseView", current.inverseView())
@@ -361,9 +364,8 @@ final class DeferredReflectionSource implements AutoCloseable {
         return value;
     }
 
-    private static boolean isVulkan(DeferredPassContext context) {
-        String backendName = context.rhi().capabilities().backendName();
-        return backendName != null && backendName.toLowerCase(Locale.ROOT).contains("vulkan");
+    private static boolean zeroToOneDepth(DeferredPassContext context) {
+        return context.rhi().capabilities().zeroToOneDepth();
     }
 
     private static int groups(int extent) {

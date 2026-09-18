@@ -114,6 +114,7 @@ final class DeferredWaterReflectionTemporalSource implements AutoCloseable {
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.water.reflection.temporal", DeferredStage.WATER_REFLECTION_TEMPORAL)
+                .feature(DeferredFeature.WATER)
                 .read(DeferredResource.WATER_REFLECTION_TRACE_COLOR,
                         DeferredResource.WATER_REFLECTION_TRACE_CONFIDENCE,
                         DeferredResource.WATER_REFLECTION_REPROJECTION,
@@ -127,7 +128,7 @@ final class DeferredWaterReflectionTemporalSource implements AutoCloseable {
                         DeferredResource.WATER_REFLECTION_TEMPORAL_CONFIDENCE,
                         DeferredResource.WATER_REFLECTION_REJECTION)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.settings().reflectionsEnabled()
+                .when(context -> context.featureEnabled(DeferredFeature.REFLECTIONS)
                         && context.isValid(DeferredResource.WATER_REFLECTION_TRACE_COLOR)
                         && context.isValid(DeferredResource.WATER_REFLECTION_TRACE_CONFIDENCE)
                         && context.isValid(DeferredResource.WATER_REFLECTION_REPROJECTION)
@@ -137,6 +138,7 @@ final class DeferredWaterReflectionTemporalSource implements AutoCloseable {
                 .build());
 
         passes.add(DeferredPassSpec.builder("world.water.reflection.denoise", DeferredStage.WATER_REFLECTION_DENOISE)
+                .feature(DeferredFeature.WATER)
                 .read(DeferredResource.WATER_REFLECTION_TEMPORAL_COLOR,
                         DeferredResource.WATER_REFLECTION_TEMPORAL_CONFIDENCE,
                         DeferredResource.WATER_REFLECTION_GEOMETRY,
@@ -144,7 +146,7 @@ final class DeferredWaterReflectionTemporalSource implements AutoCloseable {
                 .write(DeferredResource.WATER_REFLECTION_FILTERED_COLOR,
                         DeferredResource.WATER_REFLECTION_FILTERED_CONFIDENCE)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.settings().reflectionsEnabled()
+                .when(context -> context.featureEnabled(DeferredFeature.REFLECTIONS)
                         && context.isValid(DeferredResource.WATER_REFLECTION_TEMPORAL_COLOR)
                         && context.isValid(DeferredResource.WATER_REFLECTION_TEMPORAL_CONFIDENCE)
                         && context.isValid(DeferredResource.WATER_REFLECTION_GEOMETRY)
@@ -153,6 +155,7 @@ final class DeferredWaterReflectionTemporalSource implements AutoCloseable {
                 .build());
 
         passes.add(DeferredPassSpec.builder("world.water.reflection.history", DeferredStage.WATER_REFLECTION_HISTORY)
+                .feature(DeferredFeature.WATER)
                 .read(DeferredResource.WATER_REFLECTION_FILTERED_COLOR,
                         DeferredResource.WATER_REFLECTION_FILTERED_CONFIDENCE,
                         DeferredResource.WATER_REFLECTION_DEPTHS)
@@ -161,7 +164,7 @@ final class DeferredWaterReflectionTemporalSource implements AutoCloseable {
                         DeferredResource.HISTORY_WATER_REFLECTION_SOURCE_DEPTH,
                         DeferredResource.HISTORY_WATER_REFLECTION_HIT_DEPTH)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.settings().reflectionsEnabled()
+                .when(context -> context.featureEnabled(DeferredFeature.REFLECTIONS)
                         && context.isValid(DeferredResource.WATER_REFLECTION_FILTERED_COLOR)
                         && context.isValid(DeferredResource.WATER_REFLECTION_FILTERED_CONFIDENCE)
                         && context.isValid(DeferredResource.WATER_REFLECTION_DEPTHS))
@@ -169,6 +172,7 @@ final class DeferredWaterReflectionTemporalSource implements AutoCloseable {
                 .build());
 
         passes.add(DeferredPassSpec.builder("world.water.reflection.resolve", DeferredStage.WATER_REFLECTION_RESOLVE)
+                .feature(DeferredFeature.WATER)
                 .read(DeferredResource.WATER_REFLECTION_FILTERED_COLOR,
                         DeferredResource.WATER_REFLECTION_FILTERED_CONFIDENCE,
                         DeferredResource.WATER_REFLECTION_CASCADE_COLOR,
@@ -176,7 +180,7 @@ final class DeferredWaterReflectionTemporalSource implements AutoCloseable {
                 .write(DeferredResource.WATER_REFLECTION_COLOR,
                         DeferredResource.WATER_REFLECTION_CONFIDENCE)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.settings().reflectionsEnabled()
+                .when(context -> context.featureEnabled(DeferredFeature.REFLECTIONS)
                         && context.isValid(DeferredResource.WATER_REFLECTION_FILTERED_COLOR)
                         && context.isValid(DeferredResource.WATER_REFLECTION_FILTERED_CONFIDENCE)
                         && context.isValid(DeferredResource.WATER_REFLECTION_CASCADE_COLOR)

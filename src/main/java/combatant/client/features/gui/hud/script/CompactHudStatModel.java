@@ -308,6 +308,8 @@ public final class CompactHudStatModel {
         h = mix(h, id);
         h = mix(h, visible);
         h = mix(h, scale);
+        // Radius is baked into root/clip utility classes and shell shape props.
+        h = mix(h, radius);
         h = background.mixStructure(h);
         h = icon.mixStructure(h);
         h = divider.mixStructure(h);
@@ -319,57 +321,15 @@ public final class CompactHudStatModel {
         return h;
     }
 
-    /**
-     * Dynamic signature for cheap runtime prop patching.
-     */
-    public long dynamicSignature() {
-        long h = 0xcbf29ce484222325L;
-        h = mix(h, icon.color);
-        h = mix(h, divider.color);
-        h = value.mixDynamic(h);
-        h = unit.mixDynamic(h);
-        h = extra.mixDynamic(h);
-        h = animation.mixDynamic(h);
-        for (var entry : data.entrySet()) {
-            h = mix(h, entry.getKey());
-            h = mixObject(h, entry.getValue());
-        }
-        return h;
-    }
-
-    public long treeSignature() {
-        return structuralSignature();
-    }
-
-    public long layoutSignature(long structuralSignature) {
-        long h = structuralSignature;
-        h = mix(h, rootX);
-        h = mix(h, rootY);
-        h = mix(h, reservedRootWidth());
-        h = mix(h, height);
-        h = mix(h, radius);
-        h = background.mixLayout(h);
-        h = icon.mixLayout(h);
-        h = divider.mixLayout(h);
-        h = value.mixLayout(h, reservedValueWidth());
-        h = unit.mixLayout(h, reservedUnitWidth());
-        h = extra.mixLayout(h, reservedExtraWidth());
-        return h;
-    }
-
-    public long layoutSignature(long structuralSignature, long ignoredDynamicSignature) {
-        return layoutSignature(structuralSignature);
-    }
-
-    public long layoutSignature() {
-        return layoutSignature(structuralSignature());
-    }
-
     public LinkedHashMap<String, LinkedHashMap<String, Object>> runtimePatches() {
         LinkedHashMap<String, LinkedHashMap<String, Object>> patches = new LinkedHashMap<>(12);
         putPropPatch(patches, "compact-stat:" + id, "renderBlurAlpha", background.blurAlpha);
         putPropPatch(patches, "fill", "startColor", color(background.primary));
         putPropPatch(patches, "fill", "endColor", color(background.secondary));
+        // These are renderer props, not layout-only values; patch them directly instead of
+        // relying on an unrelated layout signature to eventually rebuild the tree.
+        putPropPatch(patches, "fill", "strokeWidth", Math.max(0.45f, background.strokeWidth));
+        putPropPatch(patches, "fill", "softness", background.softness);
         float paintAlpha = Math.max(alpha01(background.primary), alpha01(background.secondary));
         float resolvedStrokeAlpha = background.strokeControlled
                 ? (background.strokeEnabled ? clamp01(background.strokeAlpha) : 0.0f)
@@ -388,20 +348,37 @@ public final class CompactHudStatModel {
         putPropPatch(patches, "fill", "strokeEndColor", strokeEnd);
         putPropPatch(patches, "top-glint", "startColor", alpha("#FFFFFFFF", 0.065f * paintAlpha));
         putPropPatch(patches, "top-glint", "endColor", "#00000000");
-        putPropPatch(patches, "icon:texture", "tint", color(icon.color));
-        putPropPatch(patches, "icon:glyph", "color", color(icon.color));
-        putPropPatch(patches, "divider", "fill", color(divider.color));
-        putTextPatch(patches, "value", value.text, color(value.color));
-        putTextPatch(patches, "unit", unit.text, color(unit.color));
-        putTextPatch(patches, "extra", extra.text, color(extra.color));
-        float progress = clamp01(animation.digitProgress);
-        float offset = animation.digitOffset;
-        putTextPatch(patches, "digit:current", value.text, alpha(color(value.color), progress), -offset * (1.0f - progress) + 2.0f);
-        putTextPatch(patches, "digit:prev", animation.previousValue, alpha(color(value.color), 1.0f - progress), offset * progress + 2.0f);
-        putTextPatch(patches, "x:v", stringData("xText", "0"), stringData("valueColor", color(value.color)));
-        putTextPatch(patches, "y:v", stringData("yText", "0"), stringData("valueColor", color(value.color)));
-        putTextPatch(patches, "z:v", stringData("zText", "0"), stringData("valueColor", color(value.color)));
-        putTextPatch(patches, "nether", stringData("netherText", ""), color(extra.color));
+        if (icon.visible) {
+            if ("glyph".equals(icon.kind)) {
+                putPropPatch(patches, "icon:glyph", "color", color(icon.color));
+            } else {
+                putPropPatch(patches, "icon:texture", "tint", color(icon.color));
+            }
+        }
+        if (divider.visible) {
+            putPropPatch(patches, "divider", "fill", color(divider.color));
+        }
+
+        if ("xyz".equals(id)) {
+            String coordinateColor = stringData("valueColor", color(value.color));
+            putTextPatch(patches, "x:v", stringData("xText", "0"), coordinateColor);
+            putTextPatch(patches, "y:v", stringData("yText", "0"), coordinateColor);
+            putTextPatch(patches, "z:v", stringData("zText", "0"), coordinateColor);
+            if (booleanData("showNether") && !stringData("netherText", "").isEmpty()) {
+                putTextPatch(patches, "nether", stringData("netherText", ""), color(extra.color));
+            }
+        } else if (animation.digitAnimation) {
+            float progress = clamp01(animation.digitProgress);
+            float offset = animation.digitOffset;
+            putTextPatch(patches, "digit:current", value.text, alpha(color(value.color), progress), -offset * (1.0f - progress) + 2.0f);
+            putTextPatch(patches, "digit:prev", animation.previousValue, alpha(color(value.color), 1.0f - progress), offset * progress + 2.0f);
+            if (unit.visible) putTextPatch(patches, "unit", unit.text, color(unit.color));
+            if (extra.visible) putTextPatch(patches, "extra", extra.text, color(extra.color));
+        } else {
+            if (value.visible) putTextPatch(patches, "value", value.text, color(value.color));
+            if (unit.visible) putTextPatch(patches, "unit", unit.text, color(unit.color));
+            if (extra.visible) putTextPatch(patches, "extra", extra.text, color(extra.color));
+        }
         return patches;
     }
 
@@ -413,8 +390,8 @@ public final class CompactHudStatModel {
         putBounds(patches, "fill", rootX, rootY, visualW, height);
         putBounds(patches, "top-glint", rootX + 1.0f, rootY + 1.0f, Math.max(0.0f, visualW - 2.0f), Math.max(1.0f, height * 0.42f));
         if (icon.visible) {
-            putBounds(patches, "icon:texture", rootX + icon.x, rootY + icon.y, icon.width, icon.height);
-            putBounds(patches, "icon:glyph", rootX + icon.x, rootY + icon.y, icon.width, icon.height);
+            String iconKey = "glyph".equals(icon.kind) ? "icon:glyph" : "icon:texture";
+            putBounds(patches, iconKey, rootX + icon.x, rootY + icon.y, icon.width, icon.height);
         }
         if (divider.visible) {
             putBounds(patches, "divider", rootX + divider.x, rootY + divider.y, divider.width, divider.height);
@@ -427,23 +404,23 @@ public final class CompactHudStatModel {
             putBounds(patches, "digit:clip", rootX + value.x, rootY + value.y - 2.0f, value.width, Math.max(8.0f, height));
             putBounds(patches, "digit:prev", rootX + value.x, rootY + value.y - 2.0f, value.width, Math.max(8.0f, height));
             putBounds(patches, "digit:current", rootX + value.x, rootY + value.y - 2.0f, value.width, Math.max(8.0f, height));
-            if (unit.visible)
+            if (unit.visible) {
                 putBounds(patches, "unit", rootX + unit.x, rootY + unit.y, unit.width, Math.max(8.0f, height));
-            else putBounds(patches, "unit", rootX, rootY, 0.0f, 0.0f);
-            if (extra.visible)
+            }
+            if (extra.visible) {
                 putBounds(patches, "extra", rootX + extra.x, rootY + extra.y, extra.width, Math.max(8.0f, height));
-            else putBounds(patches, "extra", rootX, rootY, 0.0f, 0.0f);
+            }
         } else {
             putBounds(patches, "text:layer", rootX, rootY, width, height);
-            if (value.visible)
+            if (value.visible) {
                 putBounds(patches, "value", rootX + value.x, rootY + value.y, value.width, Math.max(8.0f, height));
-            else putBounds(patches, "value", rootX, rootY, 0.0f, 0.0f);
-            if (unit.visible)
+            }
+            if (unit.visible) {
                 putBounds(patches, "unit", rootX + unit.x, rootY + unit.y, unit.width, Math.max(8.0f, height));
-            else putBounds(patches, "unit", rootX, rootY, 0.0f, 0.0f);
-            if (extra.visible)
+            }
+            if (extra.visible) {
                 putBounds(patches, "extra", rootX + extra.x, rootY + extra.y, extra.width, Math.max(8.0f, height));
-            else putBounds(patches, "extra", rootX, rootY, 0.0f, 0.0f);
+            }
         }
         return patches;
     }
@@ -553,7 +530,7 @@ public final class CompactHudStatModel {
         cursor += labelZW + pairGap;
         putBounds(patches, "z:v", cursor, rowY, valueZW, rowH);
         cursor += valueZW + gap;
-        if (booleanData("showNether")) {
+        if (booleanData("showNether") && !stringData("netherText", "").isEmpty()) {
             putBounds(patches, "nether", cursor, rowY, extraW, rowH);
         }
     }
@@ -648,34 +625,11 @@ public final class CompactHudStatModel {
             props.put("strokeEndColor", color(strokeEndColor));
         }
 
-        private long mix(long h) {
-            h = CompactHudStatModel.mix(h, effect);
-            h = CompactHudStatModel.mix(h, theme);
-            h = CompactHudStatModel.mix(h, blurAlpha);
-            h = CompactHudStatModel.mix(h, primary);
-            h = CompactHudStatModel.mix(h, secondary);
-            h = CompactHudStatModel.mix(h, stroke);
-            h = CompactHudStatModel.mix(h, strokeWidth);
-            h = CompactHudStatModel.mix(h, softness);
-            h = CompactHudStatModel.mix(h, strokeControlled);
-            h = CompactHudStatModel.mix(h, strokeEnabled);
-            h = CompactHudStatModel.mix(h, strokeAlpha);
-            h = CompactHudStatModel.mix(h, strokeGradient);
-            h = CompactHudStatModel.mix(h, strokeStartColor);
-            h = CompactHudStatModel.mix(h, strokeEndColor);
-            return h;
-        }
-
         private long mixStructure(long h) {
             h = CompactHudStatModel.mix(h, effect);
             return h;
         }
 
-        private long mixLayout(long h) {
-            h = CompactHudStatModel.mix(h, strokeWidth);
-            h = CompactHudStatModel.mix(h, softness);
-            return h;
-        }
     }
 
     public static final class Icon {
@@ -742,37 +696,17 @@ public final class CompactHudStatModel {
             props.put("iconColor", color(color));
         }
 
-        private long mix(long h) {
-            h = CompactHudStatModel.mix(h, visible);
-            h = CompactHudStatModel.mix(h, kind);
-            h = CompactHudStatModel.mix(h, id);
-            h = CompactHudStatModel.mix(h, glyph);
-            h = CompactHudStatModel.mix(h, font);
-            h = CompactHudStatModel.mix(h, x);
-            h = CompactHudStatModel.mix(h, y);
-            h = CompactHudStatModel.mix(h, width);
-            h = CompactHudStatModel.mix(h, height);
-            h = CompactHudStatModel.mix(h, scale);
-            return h;
-        }
-
         private long mixStructure(long h) {
             h = CompactHudStatModel.mix(h, visible);
             h = CompactHudStatModel.mix(h, kind);
             h = CompactHudStatModel.mix(h, id);
             h = CompactHudStatModel.mix(h, glyph);
             h = CompactHudStatModel.mix(h, font);
-            return h;
-        }
-
-        private long mixLayout(long h) {
-            h = CompactHudStatModel.mix(h, x);
-            h = CompactHudStatModel.mix(h, y);
-            h = CompactHudStatModel.mix(h, width);
-            h = CompactHudStatModel.mix(h, height);
+            // Glyph font scale is encoded in the generated class and cannot be fixed by a bounds patch.
             h = CompactHudStatModel.mix(h, scale);
             return h;
         }
+
     }
 
     public static final class Divider {
@@ -802,27 +736,11 @@ public final class CompactHudStatModel {
             props.put("dividerColor", color(color));
         }
 
-        private long mix(long h) {
-            h = CompactHudStatModel.mix(h, visible);
-            h = CompactHudStatModel.mix(h, x);
-            h = CompactHudStatModel.mix(h, y);
-            h = CompactHudStatModel.mix(h, width);
-            h = CompactHudStatModel.mix(h, height);
-            return h;
-        }
-
         private long mixStructure(long h) {
             h = CompactHudStatModel.mix(h, visible);
             return h;
         }
 
-        private long mixLayout(long h) {
-            h = CompactHudStatModel.mix(h, x);
-            h = CompactHudStatModel.mix(h, y);
-            h = CompactHudStatModel.mix(h, width);
-            h = CompactHudStatModel.mix(h, height);
-            return h;
-        }
     }
 
     public static final class TextRun {
@@ -877,17 +795,6 @@ public final class CompactHudStatModel {
             return h;
         }
 
-        private long mixLayout(long h, float reservedWidth) {
-            h = CompactHudStatModel.mix(h, reservedWidth);
-            return h;
-        }
-
-        private long mixDynamic(long h) {
-            h = CompactHudStatModel.mix(h, visible);
-            h = CompactHudStatModel.mix(h, text);
-            h = CompactHudStatModel.mix(h, color);
-            return h;
-        }
     }
 
     public static final class Animation {
@@ -931,12 +838,5 @@ public final class CompactHudStatModel {
             return h;
         }
 
-        private long mixDynamic(long h) {
-            h = CompactHudStatModel.mix(h, effectTime);
-            h = CompactHudStatModel.mix(h, previousValue);
-            h = CompactHudStatModel.mix(h, digitProgress);
-            h = CompactHudStatModel.mix(h, digitOffset);
-            return h;
-        }
     }
 }

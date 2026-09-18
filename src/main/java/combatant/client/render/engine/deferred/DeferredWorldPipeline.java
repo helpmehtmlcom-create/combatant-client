@@ -21,7 +21,6 @@ import net.minecraft.client.Minecraft;
 import combatant.client.mixininterface.IMsaaTexture;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.material.MaterialAtlasManager;
-import combatant.client.render.engine.profiler.TracyGpuProfiler;
 import combatant.client.render.sodium.fluid.SurfacePatchRouting;
 import combatant.client.render.engine.rhi.FullscreenDrawCommand;
 import combatant.client.render.engine.rhi.resource.RenderResourceManager;
@@ -64,6 +63,8 @@ public final class DeferredWorldPipeline {
     private volatile boolean requestedEnabled = Boolean.parseBoolean(
             System.getProperty("combatant.render.deferred", "false")
     );
+    /** Prevents a persistent UI/controller request from retrying the same failed activation every frame. */
+    private volatile boolean activationFailureLatched;
     private volatile LifecycleState lifecycleState = LifecycleState.DISABLED;
     private long geometryPipelineGeneration;
 
@@ -71,6 +72,7 @@ public final class DeferredWorldPipeline {
     private long targetFrameId = Long.MIN_VALUE;
     private DeferredRuntimeConfig.Snapshot frameSettings = DeferredRuntimeConfig.current();
     private long frameSettingsGeneration = DeferredRuntimeConfig.generation();
+    private long environmentSettingsGeneration = DeferredEnvironmentFeatureConfig.generation();
     private long temporalPolicyGeneration = Long.MIN_VALUE;
     private long temporalScaleSignature = Long.MIN_VALUE;
     private int temporalWidth = -1;
@@ -81,7 +83,9 @@ public final class DeferredWorldPipeline {
     private final AtomicReference<DeferredHistoryResetReason> pendingExternalHistoryReset =
             new AtomicReference<>(DeferredHistoryResetReason.NONE);
     private boolean clearedThisFrame;
+    private boolean lightingAttemptedThisFrame;
     private boolean lightingResolvedThisFrame;
+    private boolean rawPrimaryDebugThisFrame;
     private boolean frameSetupExecuted;
     private boolean shadowExecuted;
     private boolean preGeometryExecuted;
@@ -108,7 +112,57 @@ public final class DeferredWorldPipeline {
 
     /** Runtime toggle. The requested state is committed at the next safe world-frame boundary. */
     public void requestEnabled(boolean enabled) {
-        requestedEnabled = enabled;
+        if (!enabled) {
+            requestedEnabled = false;
+            // An explicit off request arms a clean retry for the next off -> on transition.
+            activationFailureLatched = false;
+            return;
+        }
+        if (!activationFailureLatched) requestedEnabled = true;
+    }
+
+    /** Renderer-owned smoke/debug state. UI modules may adapt to this API but are not dependencies. */
+    public DeferredSmokeTestState smokeTestState() {
+        return DeferredSmokeTestState.global();
+    }
+
+    public void setFeatureOverride(DeferredFeature feature, DeferredFeatureOverride override) {
+        DeferredSmokeTestState.global().setFeatureOverride(feature, override);
+    }
+
+    public void clearFeatureOverrides() {
+        DeferredSmokeTestState.global().clearFeatureOverrides();
+    }
+
+    public void setSmokeIsolationMode(boolean enabled) {
+        DeferredSmokeTestState.global().setIsolationMode(enabled);
+    }
+
+    public void setDebugView(DeferredDebugView view) {
+        DeferredSmokeTestState.global().setDebugView(view);
+    }
+
+    public void setDebugVolumeSlice(DeferredDebugVolumeAxis axis, float normalizedPosition) {
+        DeferredSmokeTestState.global().setVolumeSlice(axis, normalizedPosition);
+    }
+
+    /** Programmatic diagnostics for smoke tools and the future ReimaginedVisual adapter. */
+    public DeferredDebugDiagnostics debugDiagnostics() {
+        DeferredSmokeTestState state = DeferredSmokeTestState.global();
+        DeferredSmokeTestState.Snapshot smoke = state.snapshot();
+        DeferredHistoryResetReason primaryReason = primaryView.historyDescriptor().resetReason();
+        DeferredHistoryResetReason resetReason = primaryReason != null && primaryReason != DeferredHistoryResetReason.NONE
+                ? primaryReason : state.lastHistoryResetReason();
+        String backend = "unknown";
+        try {
+            String candidate = CombatantRenderSystem.rhi().capabilities().backendName();
+            if (candidate != null && !candidate.isBlank()) backend = candidate;
+        } catch (Throwable ignored) { }
+        return new DeferredDebugDiagnostics(
+                lifecycleState, backend, smoke.debugView(), smoke.overrides(), smoke.isolationMode(),
+                smoke.volumeAxis(), smoke.volumeSlice(), resetReason, state.unavailableDebugResourceReason(),
+                worldStateSource.diagnostics(), resourceBindings.provenanceSnapshot()
+        );
     }
 
     /** Thread-safe typed lifecycle event from exact Minecraft producers such as player teleport. */
@@ -187,6 +241,7 @@ public final class DeferredWorldPipeline {
             worldRenderState = worldStateSource.current();
             CombatantRenderSystem.deferredGraph().releasePhysicalResources(CombatantRenderSystem.rhi());
             geometryPipelineGeneration++;
+            activationFailureLatched = false;
             lifecycleState = LifecycleState.ACTIVE;
             DebugLog.renderThreadOnChange(
                     "combatant.deferred.lifecycle",
@@ -196,6 +251,7 @@ public final class DeferredWorldPipeline {
             );
         } catch (Throwable error) {
             requestedEnabled = false;
+            activationFailureLatched = true;
             lifecycleState = LifecycleState.FAILED;
             try {
                 if (AssetAutoLoader.isScopeActive(DeferredRuntimeAssets.SCOPE)) {
@@ -220,6 +276,7 @@ public final class DeferredWorldPipeline {
             primaryView.queueHistoryReset(DeferredHistoryResetReason.BACKEND_RECREATION);
         } catch (Throwable error) {
             requestedEnabled = false;
+            activationFailureLatched = true;
             lifecycleState = LifecycleState.FAILED;
             releasePhysicalResources();
             try {
@@ -238,6 +295,7 @@ public final class DeferredWorldPipeline {
     public void shutdownRuntime() {
         RenderSystem.assertOnRenderThread();
         requestedEnabled = false;
+        activationFailureLatched = false;
         geometryPipelineGeneration++;
         releasePhysicalResources();
         primaryView.reset();
@@ -277,6 +335,7 @@ public final class DeferredWorldPipeline {
             );
         } catch (Throwable error) {
             requestedEnabled = false;
+            activationFailureLatched = true;
             lifecycleState = LifecycleState.FAILED;
             DebugLog.error("[Deferred] runtime deactivation failed", error);
         }
@@ -382,8 +441,11 @@ public final class DeferredWorldPipeline {
     public boolean resolveLighting(GpuTextureView sceneColor,
                                    GpuSampler gbufferSampler,
                                    LightingState state) {
-        if (!enabled() || lightingResolvedThisFrame || targets == null) return false;
+        if (!enabled() || lightingAttemptedThisFrame || targets == null) return false;
         RenderSystem.assertOnRenderThread();
+        // An externally-driven lighting draw is a single frame transaction. If it fails, later
+        // terrain callbacks must not re-enter PRE_LIGHTING after graph resources have advanced.
+        lightingAttemptedThisFrame = true;
 
         GeometryTargets geometry = targets;
         if (sceneColor.getWidth(0) != geometry.width() || sceneColor.getHeight(0) != geometry.height()) {
@@ -411,6 +473,40 @@ public final class DeferredWorldPipeline {
             resourceBindings.bindTexture(DeferredResource.GBUFFER_AUXILIARY, inputs.auxiliary());
             resourceBindings.bindTexture(DeferredResource.GBUFFER_MATERIAL, inputs.material());
             resourceBindings.bindTexture(DeferredResource.GBUFFER_MATERIAL_ID, inputs.materialId());
+
+            // Primary-capture isolation must not depend on lighting, temporal state, post or the
+            // framegraph debug compositor. Publish the captured attachment directly at the exact
+            // opaque/cutout boundary so a broken image here proves the fault is Sodium -> MRT.
+            DeferredDebugView debugView = DeferredSmokeTestState.global().frameSnapshot().debugView();
+            if (debugView == DeferredDebugView.GBUFFER_BASE || debugView == DeferredDebugView.GBUFFER_DEPTH) {
+                GpuTextureView debugSource = inputs.surface();
+                if (debugView == DeferredDebugView.GBUFFER_DEPTH) {
+                    executeStage(DeferredStage.DEPTH_RESOLVE);
+                    debugSource = resourceBindings.texture(DeferredResource.GBUFFER_DEPTH);
+                    if (debugSource == null) {
+                        throw new IllegalStateException("Direct primary depth debug source is unavailable");
+                    }
+                }
+                CombatantRenderSystem.rhi().drawFullscreen(
+                        FullscreenDrawCommand.builder("Combatant Direct Primary " + debugView)
+                                .colorAttachment(sceneColor)
+                                .pipeline(DeferredRuntimeAssets.temporalPresent())
+                                .sampler("u_Source", debugSource, gbufferSampler)
+                                .build()
+                );
+                rawPrimaryDebugThisFrame = true;
+                lightingResolvedThisFrame = false;
+                resourceBindings.bindTexture(DeferredResource.SCENE_COLOR, sceneColor);
+                DebugLog.infoOnChange(
+                        "combatant.deferred.primary-direct-debug",
+                        debugView + "|" + debugSource.getWidth(0) + "x" + debugSource.getHeight(0)
+                                + "->" + sceneColor.getWidth(0) + "x" + sceneColor.getHeight(0),
+                        "[Deferred][PrimaryCapture] direct view=%s source=%dx%d target=%dx%d",
+                        debugView, debugSource.getWidth(0), debugSource.getHeight(0),
+                        sceneColor.getWidth(0), sceneColor.getHeight(0)
+                );
+                return true;
+            }
             if (!postGeometryExecuted) {
                 executeStage(DeferredStage.POST_GEOMETRY_COMPUTE);
                 executeStage(DeferredStage.DEPTH_RESOLVE);
@@ -441,8 +537,7 @@ public final class DeferredWorldPipeline {
                     ? resourceBindings.texture(DeferredResource.AMBIENT_OCCLUSION) : inputs.surface();
             GpuTextureView cloudShadowVisibility = cloudShadowValid
                     ? resourceBindings.texture(DeferredResource.CLOUD_SHADOW_VISIBILITY) : inputs.surface();
-            boolean zeroToOneDepth = CombatantRenderSystem.rhi().capabilities().backendName() != null
-                    && CombatantRenderSystem.rhi().capabilities().backendName().toLowerCase(Locale.ROOT).contains("vulkan");
+            boolean zeroToOneDepth = CombatantRenderSystem.rhi().capabilities().zeroToOneDepth();
             DeferredLightingUniforms.update(
                     state, worldRenderState, primaryView.current(), zeroToOneDepth, shadowValid, ambientOcclusionValid,
                     cloudShadowValid
@@ -458,37 +553,37 @@ public final class DeferredWorldPipeline {
             if (directLighting == null) {
                 throw new IllegalStateException("Deferred direct-lighting target is unavailable");
             }
-            FullscreenDrawCommand lightingCommand = FullscreenDrawCommand.builder("Combatant Deferred Terrain Lighting")
-                    .colorAttachment(directLighting)
-                    .pipeline(DeferredRuntimeAssets.terrainLighting())
-                    .uniform("DeferredLighting", DeferredLightingUniforms.get())
-                    .sampler("u_GbufferSurface", inputs.surface(), gbufferSampler)
-                    .sampler("u_GbufferGeometry", inputs.geometry(), gbufferSampler)
-                    .sampler("u_GbufferMaterial", inputs.material(), gbufferSampler)
-                    .sampler("u_GbufferDepth", gbufferDepth, gbufferSampler)
-                    .sampler("u_EnvironmentIrradiance", environmentIrradiance, gbufferSampler)
-                    .sampler("u_ResolvedDepth", resolvedDepth, gbufferSampler)
-                    .sampler("u_ShadowVisibility", shadowVisibility, gbufferSampler)
-                    .sampler("u_CloudShadowVisibility", cloudShadowVisibility, gbufferSampler)
-                    .sampler("u_AmbientVisibility", ambientVisibility, gbufferSampler)
-                    .build();
+            CombatantRenderSystem.rhi().drawFullscreen(
+                    FullscreenDrawCommand.builder("Combatant Deferred Terrain Lighting")
+                            .colorAttachment(directLighting)
+                            .pipeline(DeferredRuntimeAssets.terrainLighting())
+                            .uniform("DeferredLighting", DeferredLightingUniforms.get())
+                            .sampler("u_GbufferSurface", inputs.surface(), gbufferSampler)
+                            .sampler("u_GbufferGeometry", inputs.geometry(), gbufferSampler)
+                            .sampler("u_GbufferMaterial", inputs.material(), gbufferSampler)
+                            .sampler("u_GbufferDepth", gbufferDepth, gbufferSampler)
+                            .sampler("u_EnvironmentIrradiance", environmentIrradiance, gbufferSampler)
+                            .sampler("u_ResolvedDepth", resolvedDepth, gbufferSampler)
+                            .sampler("u_ShadowVisibility", shadowVisibility, gbufferSampler)
+                            .sampler("u_CloudShadowVisibility", cloudShadowVisibility, gbufferSampler)
+                            .sampler("u_AmbientVisibility", ambientVisibility, gbufferSampler)
+                            .build()
+            );
 
             // Forward compatibility rendering still targets Minecraft's scene image. Only terrain
             // pixels are published here; sky and other non-G-buffer producers remain untouched.
-            FullscreenDrawCommand publishCommand = FullscreenDrawCommand.builder("Combatant Deferred Terrain Publish")
-                    .colorAttachment(sceneColor)
-                    .pipeline(DeferredRuntimeAssets.terrainPublish())
-                    .uniform("DeferredLighting", DeferredLightingUniforms.get())
-                    .sampler("u_Source", directLighting, gbufferSampler)
-                    .sampler("u_GbufferAuxiliary", inputs.auxiliary(), gbufferSampler)
-                    .sampler("u_GbufferDepth", gbufferDepth, gbufferSampler)
-                    .build();
-
-            try (TracyGpuProfiler.Scope ignoredGpu = TracyGpuProfiler.beginZone(
-                    "deferred/lighting/world.lighting.neutral")) {
-                CombatantRenderSystem.rhi().drawFullscreen(lightingCommand);
-                CombatantRenderSystem.rhi().drawFullscreen(publishCommand);
-            }
+            CombatantRenderSystem.rhi().drawFullscreen(
+                    FullscreenDrawCommand.builder("Combatant Deferred Terrain Publish")
+                            .colorAttachment(sceneColor)
+                            .pipeline(DeferredRuntimeAssets.terrainPublish())
+                            .uniform("DeferredLighting", DeferredLightingUniforms.get())
+                            .sampler("u_Source", directLighting, gbufferSampler)
+                            .sampler("u_GbufferAuxiliary", inputs.auxiliary(), gbufferSampler)
+                            .sampler("u_GbufferDepth", gbufferDepth, gbufferSampler)
+                            .build()
+            );
+            // The external graph pass owns both DIRECT_LIGHTING_COLOR and SCENE_COLOR. Publish
+            // validity only after both native draws completed successfully.
             CombatantRenderSystem.deferredGraph().completeExternalPass("world.lighting.neutral", resourceBindings);
             lightingResolvedThisFrame = true;
             resourceBindings.bindTexture(DeferredResource.SCENE_COLOR, sceneColor);
@@ -568,12 +663,18 @@ public final class DeferredWorldPipeline {
         long frameId = CombatantRenderSystem.ensureFrameContext().frameId();
         if (frameStateId == frameId) return;
         frameStateId = frameId;
+        DeferredSmokeTestState.global().beginFrame(frameId);
         DeferredHistoryResetReason externalReset = pendingExternalHistoryReset.getAndSet(DeferredHistoryResetReason.NONE);
         if (externalReset != DeferredHistoryResetReason.NONE) {
             primaryView.invalidateHistory(frameId, externalReset);
         }
         frameSettings = DeferredRuntimeConfig.current();
         frameSettingsGeneration = DeferredRuntimeConfig.generation();
+        long currentEnvironmentGeneration = DeferredEnvironmentFeatureConfig.generation();
+        if (environmentSettingsGeneration != currentEnvironmentGeneration) {
+            primaryView.invalidateHistory(frameId, DeferredHistoryResetReason.POLICY_CHANGE);
+            environmentSettingsGeneration = currentEnvironmentGeneration;
+        }
         worldRenderState = worldStateSource.capture(Minecraft.getInstance().level, primaryView.current());
         long scaleSignature = temporalResolutionPolicySignature(frameSettings);
         if (temporalScaleSignature != Long.MIN_VALUE && temporalScaleSignature != scaleSignature) {
@@ -586,10 +687,26 @@ public final class DeferredWorldPipeline {
         DeferredHistoryDescriptor history = primaryView.historyDescriptor();
         resourceBindings.beginFrame(frameId, history.epoch());
         temporalHistory.beginFrame(frameId, history, resourceBindings, frameSettings);
+        for (DeferredFeature feature : DeferredSmokeTestState.global().consumePendingTemporalResetFeatures()) {
+            for (DeferredTemporalHistoryId historyId : feature.temporalHistories()) {
+                temporalHistory.invalidate(historyId, DeferredHistoryResetReason.SUBSYSTEM_REENABLED);
+            }
+        }
+        DeferredSmokeTestState.Snapshot smoke = DeferredSmokeTestState.global().frameSnapshot();
+        DebugLog.renderThreadOnChange(
+                "combatant.deferred.smoke",
+                DeferredSmokeTestState.global().generation() + "|" + smoke.debugView() + "|"
+                        + smoke.isolationMode() + "|" + smoke.overrides(),
+                "[Deferred][Smoke] view=%s isolation=%s overrides=%s backend=%s lifecycle=%s",
+                smoke.debugView(), smoke.isolationMode(), smoke.overrides(),
+                CombatantRenderSystem.rhi().capabilities().backendName(), lifecycleState
+        );
         objectMotion.beginFrame(frameId, history.epoch());
         secondaryViews.beginFrame(frameId);
         clearedThisFrame = false;
+        lightingAttemptedThisFrame = false;
         lightingResolvedThisFrame = false;
+        rawPrimaryDebugThisFrame = false;
         frameSetupExecuted = false;
         shadowExecuted = false;
         preGeometryExecuted = false;
@@ -649,7 +766,14 @@ public final class DeferredWorldPipeline {
         if (!enabled() || targets == null) return;
         resourceBindings.bindTexture(DeferredResource.SCENE_COLOR, sceneColor);
         resourceBindings.bindTexture(DeferredResource.MAIN_DEPTH, depth);
+        if (rawPrimaryDebugThisFrame) return;
         executeStage(DeferredStage.FORWARD_OPAQUE);
+        if (!lightingResolvedThisFrame) {
+            // Preserve Minecraft's forward scene as the declared fallback. Running reflection,
+            // clouds, froxels, water and temporal post on a failed HDR lighting transaction both
+            // wastes GPU time and exposes graph resources whose producer never completed.
+            return;
+        }
 
         // Forward opaque/entity rendering may have changed the primary depth after the terrain
         // deferred resolve. Refresh the screen-space tracing inputs at the real opaque/translucent
@@ -674,39 +798,41 @@ public final class DeferredWorldPipeline {
         executeStage(DeferredStage.REFLECTION_HISTORY);
         executeStage(DeferredStage.REFLECTION_COMPOSITE);
         executeStage(DeferredStage.SKY_COMPOSITE);
+        executeStage(DeferredStage.WATER_MEDIUM_BOUNDARY);
         executeStage(DeferredStage.VOLUMETRIC_MEDIA_INJECT);
         executeStage(DeferredStage.VOLUMETRIC_MEDIA_INTEGRATE);
         executeStage(DeferredStage.VOLUMETRIC_MEDIA_COMPOSITE);
+        executeStage(DeferredStage.WATER_REFLECTION_TRACE);
+        executeStage(DeferredStage.WATER_REFLECTION_TEMPORAL);
+        executeStage(DeferredStage.WATER_REFLECTION_DENOISE);
+        executeStage(DeferredStage.WATER_REFLECTION_HISTORY);
+        executeStage(DeferredStage.WATER_REFLECTION_RESOLVE);
         executeStage(DeferredStage.WATER_SURFACE);
         executeStage(DeferredStage.PRE_TRANSLUCENCY);
     }
 
     public void beforePostProcess(GpuTextureView sceneColor, @Nullable GpuTextureView resolvedDepth) {
-        if (!enabled() || targets == null) return;
+        if (!enabled() || targets == null || !lightingResolvedThisFrame) return;
         resourceBindings.bindTexture(DeferredResource.SCENE_COLOR, sceneColor);
         resourceBindings.bindTexture(DeferredResource.MAIN_DEPTH, resolvedDepth);
         executeStage(DeferredStage.POST_TRANSLUCENCY);
         executeStage(DeferredStage.TEMPORAL_RESOLVE);
-        // The temporal result is the canonical scene input for Combatant post-processing. At
-        // 1:1 resolution the TAA source has also published it back into Minecraft's scene target;
-        // at TAAU resolution this logical handoff preserves the full output-resolution result for
-        // the future exposure/bloom/post chain without downsampling it back to render resolution.
-        if (resourceBindings.isValid(DeferredResource.TAA_RESOLVED_COLOR)) {
-            GpuTextureView temporalScene = resourceBindings.texture(DeferredResource.TAA_RESOLVED_COLOR);
-            if (temporalScene != null) resourceBindings.bindTexture(DeferredResource.SCENE_COLOR, temporalScene);
-        }
+        // TAA_RESOLVED_COLOR is the canonical output-resolution HDR post input. Keep SCENE_COLOR
+        // bound to Minecraft's actual presentation target: post passes read the typed HDR contract
+        // directly, and only publish back when source/target extents are compatible. This avoids
+        // silently collapsing TAAU back to render resolution.
         executeStage(DeferredStage.PRE_POST_PROCESS);
     }
 
     public void afterPostProcess(GpuTextureView sceneColor, @Nullable GpuTextureView resolvedDepth) {
-        if (!enabled() || targets == null) return;
+        if (!enabled() || targets == null || !lightingResolvedThisFrame) return;
         resourceBindings.bindTexture(DeferredResource.SCENE_COLOR, sceneColor);
         resourceBindings.bindTexture(DeferredResource.MAIN_DEPTH, resolvedDepth);
         executeStage(DeferredStage.POST_PROCESS);
     }
 
     public void finalComposite(GpuTextureView sceneColor, @Nullable GpuTextureView resolvedDepth) {
-        if (!enabled() || targets == null) return;
+        if (!enabled() || targets == null || rawPrimaryDebugThisFrame) return;
         resourceBindings.bindTexture(DeferredResource.SCENE_COLOR, sceneColor);
         resourceBindings.bindTexture(DeferredResource.MAIN_DEPTH, resolvedDepth);
         executeStage(DeferredStage.FINAL_COMPOSITE);
@@ -729,6 +855,12 @@ public final class DeferredWorldPipeline {
     public @Nullable GpuTextureView finalTemporalSceneColor() {
         return resourceBindings.isValid(DeferredResource.TAA_RESOLVED_COLOR)
                 ? resourceBindings.texture(DeferredResource.TAA_RESOLVED_COLOR) : null;
+    }
+
+    /** Output-resolution HDR color after deferred camera effects (DoF/motion blur or passthrough). */
+    public @Nullable GpuTextureView finalPostHdrColor() {
+        return resourceBindings.isValid(DeferredResource.POST_HDR_COLOR)
+                ? resourceBindings.texture(DeferredResource.POST_HDR_COLOR) : finalTemporalSceneColor();
     }
 
     /** Frame-local cascade/probe registry exposed to deferred extension producers. */
@@ -760,6 +892,9 @@ public final class DeferredWorldPipeline {
         shadowExecuted = false;
         preGeometryExecuted = false;
         postGeometryExecuted = false;
+        lightingAttemptedThisFrame = false;
+        lightingResolvedThisFrame = false;
+        rawPrimaryDebugThisFrame = false;
         primaryView.reset();
         temporalHistory.reset(DeferredHistoryResetReason.RENDERER_RESET);
         objectMotion.reset();

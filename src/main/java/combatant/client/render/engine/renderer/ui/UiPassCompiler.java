@@ -11,7 +11,7 @@ import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import combatant.client.render.engine.command.UiCommand;
-import combatant.client.render.engine.command.UiCommandBuffer;
+import combatant.client.render.engine.command.UiSemanticCommandBuffer;
 import combatant.client.render.engine.command.UiCommandKind;
 import combatant.client.render.engine.renderer.MeshRenderer;
 import combatant.client.render.engine.renderer.Renderer2D;
@@ -58,7 +58,7 @@ public final class UiPassCompiler {
         return !pending.isEmpty();
     }
 
-    public UiBatchPlan compile(UiCommandBuffer commands) {
+    public UiBatchPlan compile(UiSemanticCommandBuffer semanticCommands) {
         // Drain first. Work recorded while this plan executes belongs to the next compile iteration.
         List<Object> queued;
         if (pending.isEmpty()) {
@@ -85,9 +85,9 @@ public final class UiPassCompiler {
         int effects = 0;
         int commandCount = 0;
 
-        if (commands != null) {
-            commandCount = commands.size();
-            for (UiCommand command : commands.commands()) {
+        if (semanticCommands != null) {
+            commandCount = semanticCommands.size();
+            for (UiCommand command : semanticCommands.commands()) {
                 UiCommandKind kind = command.kind();
                 switch (kind) {
                     case SHAPE -> shapes++;
@@ -108,13 +108,13 @@ public final class UiPassCompiler {
             }
         }
 
-        if (commands != null) {
-            commands.stats().addCompiledPasses(executablePasses.size());
-            commands.stats().addCompiledOrderedBatches(orderedBatches);
-            commands.stats().addCompiledCaptureAwarePasses(captureAwarePasses);
+        if (semanticCommands != null) {
+            semanticCommands.stats().addCompiledPasses(executablePasses.size());
+            semanticCommands.stats().addCompiledOrderedBatches(orderedBatches);
+            semanticCommands.stats().addCompiledCaptureAwarePasses(captureAwarePasses);
         }
 
-        UiBackdropPlan backdropPlan = UiBackdropPlan.compile(commands);
+        UiBackdropPlan backdropPlan = UiBackdropPlan.compile(semanticCommands);
         return new UiBatchPlan(
                 executablePasses,
                 commandCount,

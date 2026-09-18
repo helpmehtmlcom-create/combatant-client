@@ -728,15 +728,11 @@ public final class DynamicIsland extends AbstractHudElement {
                 titleRenderer, metaRenderer
         );
         long treeSignature = islandStructuralSignature(props);
-        long dataSignature = CachedUiScriptRuntime.signature(props.asMap());
-        long layoutSignature = treeSignature;
         UiRuntime baked = scriptRuntime.bake(
                 moduleHandle,
                 loaded,
                 "dynamic_island",
                 treeSignature,
-                dataSignature,
-                layoutSignature,
                 width,
                 height,
                 textRenderer,

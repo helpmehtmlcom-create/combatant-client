@@ -96,6 +96,7 @@ final class DeferredCloudOccupancySource implements AutoCloseable {
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.cloud.occupancy", DeferredStage.PRE_LIGHTING)
                 .priority(650)
+                .feature(DeferredFeature.CLOUDS)
                 .write(DeferredResource.CLOUD_OCCUPANCY)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.primaryView().current() != null)

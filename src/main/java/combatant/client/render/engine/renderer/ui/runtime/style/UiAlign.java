@@ -21,7 +21,7 @@ public enum UiAlign {
             case "CENTER", "MIDDLE" -> CENTER;
             case "END", "RIGHT", "BOTTOM" -> END;
             case "STRETCH", "FILL" -> STRETCH;
-            default -> START;
+            default -> fallback;
         };
     }
 }

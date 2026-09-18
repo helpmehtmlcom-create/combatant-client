@@ -70,6 +70,7 @@ final class DeferredIndirectLightSource implements AutoCloseable {
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.indirect.prepare", DeferredStage.INDIRECT_PREPARE)
+                .feature(DeferredFeature.INDIRECT_LIGHT)
                 .read(DeferredResource.OPAQUE_BASE_RADIANCE, DeferredResource.RESOLVED_DEPTH,
                         DeferredResource.DEPTH_PYRAMID, DeferredResource.GBUFFER_GEOMETRY)
                 .write(DeferredResource.INDIRECT_TRACE_DATA)
@@ -78,6 +79,7 @@ final class DeferredIndirectLightSource implements AutoCloseable {
                 .execute(this::prepareFrame)
                 .build());
         passes.add(DeferredPassSpec.builder("world.indirect.trace", DeferredStage.INDIRECT_TRACE)
+                .feature(DeferredFeature.INDIRECT_LIGHT)
                 .read(DeferredResource.OPAQUE_BASE_RADIANCE, DeferredResource.RESOLVED_DEPTH,
                         DeferredResource.DEPTH_PYRAMID, DeferredResource.GBUFFER_GEOMETRY,
                         DeferredResource.INDIRECT_TRACE_DATA)
@@ -101,7 +103,7 @@ final class DeferredIndirectLightSource implements AutoCloseable {
     }
 
     private boolean available(DeferredPassContext context) {
-        return context.settings().indirectLightEnabled()
+        return context.featureEnabled(DeferredFeature.INDIRECT_LIGHT)
                 && context.primaryView().current() != null
                 && context.isValid(DeferredResource.OPAQUE_BASE_RADIANCE)
                 && context.isValid(DeferredResource.RESOLVED_DEPTH)
@@ -116,7 +118,7 @@ final class DeferredIndirectLightSource implements AutoCloseable {
 
         GpuTextureView depth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
         DeferredRuntimeConfig.Snapshot settings = context.settings();
-        boolean zeroToOne = isVulkan(context);
+        boolean zeroToOne = zeroToOneDepth(context);
         Std430Writer writer = new Std430Writer(DATA_LAYOUT, 1)
                 .putMat4(0, "inverseProjection", current.inverseProjection())
                 .putMat4(0, "projection", current.projection())
@@ -229,9 +231,8 @@ final class DeferredIndirectLightSource implements AutoCloseable {
         return value;
     }
 
-    private static boolean isVulkan(DeferredPassContext context) {
-        String backendName = context.rhi().capabilities().backendName();
-        return backendName != null && backendName.toLowerCase(Locale.ROOT).contains("vulkan");
+    private static boolean zeroToOneDepth(DeferredPassContext context) {
+        return context.rhi().capabilities().zeroToOneDepth();
     }
 
     private static int groups(int extent) {

@@ -66,6 +66,7 @@ final class DeferredReflectionDenoiseSource implements AutoCloseable {
 
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.reflection.denoise", DeferredStage.REFLECTION_DENOISE)
+                .feature(DeferredFeature.REFLECTIONS)
                 .read(DeferredResource.REFLECTION_TEMPORAL_COLOR,
                         DeferredResource.REFLECTION_TEMPORAL_CONFIDENCE,
                         DeferredResource.GBUFFER_GEOMETRY,
@@ -73,8 +74,7 @@ final class DeferredReflectionDenoiseSource implements AutoCloseable {
                         DeferredResource.RESOLVED_DEPTH)
                 .write(DeferredResource.REFLECTION_COLOR, DeferredResource.REFLECTION_CONFIDENCE)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> context.settings().reflectionsEnabled()
-                        && context.isValid(DeferredResource.REFLECTION_TEMPORAL_COLOR)
+                .when(context -> context.isValid(DeferredResource.REFLECTION_TEMPORAL_COLOR)
                         && context.isValid(DeferredResource.REFLECTION_TEMPORAL_CONFIDENCE)
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
                         && context.resources().texture(DeferredResource.GBUFFER_GEOMETRY) != null

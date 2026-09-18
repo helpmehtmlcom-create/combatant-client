@@ -127,7 +127,11 @@ public final class DeferredRuntimeConfig {
             boolean reflectionDenoiseEnabled,
             int reflectionDenoiseRadius,
             float reflectionDenoiseDepthThreshold,
-            float reflectionDenoiseNormalThreshold
+            float reflectionDenoiseNormalThreshold,
+            boolean coloredBlockLightEnabled,
+            boolean dynamicLightsEnabled,
+            boolean participatingMediaEnabled,
+            boolean waterEnabled
     ) {
         public static Snapshot defaults() {
             return new Snapshot(
@@ -180,13 +184,13 @@ public final class DeferredRuntimeConfig {
                     2048,
                     0.5f,
                     64.0f,
-                    0.10f,
+                    0.0f,
+                    0.0f,
+                    0.75f,
                     1.0f,
-                    1.0f,
-                    1.5f,
-                    2.5f,
-                    24.0f,
-                    8.0f,
+                    0.0f,
+                    0.0f,
+                    0.0f,
                     0,
                     true,
                     0.9f,
@@ -197,7 +201,11 @@ public final class DeferredRuntimeConfig {
                     true,
                     2,
                     0.02f,
-                    0.85f
+                    0.85f,
+                    true,
+                    true,
+                    true,
+                    true
             );
         }
 
@@ -271,7 +279,11 @@ public final class DeferredRuntimeConfig {
                     booleanProperty("combatant.render.deferred.reflectionDenoise", d.reflectionDenoiseEnabled),
                     intProperty("combatant.render.deferred.reflectionDenoiseRadius", d.reflectionDenoiseRadius),
                     floatProperty("combatant.render.deferred.reflectionDenoiseDepthThreshold", d.reflectionDenoiseDepthThreshold),
-                    floatProperty("combatant.render.deferred.reflectionDenoiseNormalThreshold", d.reflectionDenoiseNormalThreshold)
+                    floatProperty("combatant.render.deferred.reflectionDenoiseNormalThreshold", d.reflectionDenoiseNormalThreshold),
+                    booleanProperty("combatant.render.deferred.coloredBlockLight", d.coloredBlockLightEnabled),
+                    booleanProperty("combatant.render.deferred.dynamicLights", d.dynamicLightsEnabled),
+                    booleanProperty("combatant.render.deferred.participatingMedia", d.participatingMediaEnabled),
+                    booleanProperty("combatant.render.deferred.water", d.waterEnabled)
             ).validated();
         }
 
@@ -343,7 +355,11 @@ public final class DeferredRuntimeConfig {
                     reflectionDenoiseEnabled,
                     clamp(reflectionDenoiseRadius, 0, 4),
                     clamp(reflectionDenoiseDepthThreshold, 0.00001f, 0.25f),
-                    clamp(reflectionDenoiseNormalThreshold, 0.0f, 1.0f)
+                    clamp(reflectionDenoiseNormalThreshold, 0.0f, 1.0f),
+                    coloredBlockLightEnabled,
+                    dynamicLightsEnabled,
+                    participatingMediaEnabled,
+                    waterEnabled
             );
         }
 
@@ -450,6 +466,10 @@ public final class DeferredRuntimeConfig {
         private int reflectionDenoiseRadius;
         private float reflectionDenoiseDepthThreshold;
         private float reflectionDenoiseNormalThreshold;
+        private boolean coloredBlockLightEnabled;
+        private boolean dynamicLightsEnabled;
+        private boolean participatingMediaEnabled;
+        private boolean waterEnabled;
 
         private Builder(Snapshot s) {
             if (s == null) s = Snapshot.defaults();
@@ -520,6 +540,10 @@ public final class DeferredRuntimeConfig {
             reflectionDenoiseRadius = s.reflectionDenoiseRadius();
             reflectionDenoiseDepthThreshold = s.reflectionDenoiseDepthThreshold();
             reflectionDenoiseNormalThreshold = s.reflectionDenoiseNormalThreshold();
+            coloredBlockLightEnabled = s.coloredBlockLightEnabled();
+            dynamicLightsEnabled = s.dynamicLightsEnabled();
+            participatingMediaEnabled = s.participatingMediaEnabled();
+            waterEnabled = s.waterEnabled();
         }
 
         public Builder ambientOcclusionEnabled(boolean value) { ambientOcclusionEnabled = value; return this; }
@@ -589,6 +613,10 @@ public final class DeferredRuntimeConfig {
         public Builder reflectionDenoiseRadius(int value) { reflectionDenoiseRadius = value; return this; }
         public Builder reflectionDenoiseDepthThreshold(float value) { reflectionDenoiseDepthThreshold = value; return this; }
         public Builder reflectionDenoiseNormalThreshold(float value) { reflectionDenoiseNormalThreshold = value; return this; }
+        public Builder coloredBlockLightEnabled(boolean value) { coloredBlockLightEnabled = value; return this; }
+        public Builder dynamicLightsEnabled(boolean value) { dynamicLightsEnabled = value; return this; }
+        public Builder participatingMediaEnabled(boolean value) { participatingMediaEnabled = value; return this; }
+        public Builder waterEnabled(boolean value) { waterEnabled = value; return this; }
 
         public Snapshot build() {
             return new Snapshot(
@@ -658,7 +686,11 @@ public final class DeferredRuntimeConfig {
                     reflectionDenoiseEnabled,
                     reflectionDenoiseRadius,
                     reflectionDenoiseDepthThreshold,
-                    reflectionDenoiseNormalThreshold
+                    reflectionDenoiseNormalThreshold,
+                    coloredBlockLightEnabled,
+                    dynamicLightsEnabled,
+                    participatingMediaEnabled,
+                    waterEnabled
             ).validated();
         }
     }

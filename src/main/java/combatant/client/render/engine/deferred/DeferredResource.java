@@ -78,6 +78,9 @@ public enum DeferredResource {
     SHADOW_CASCADE_DATA(FrameGraphResourceKey.transientBuffer("world.shadow.cascades"), null),
     SHADOW_CASCADE_VISIBILITY(FrameGraphResourceKey.transientTexture("world.shadow.cascade_visibility"),
             DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.SHADOW_OUTPUT, false)),
+    /** Center-tap hard compare before spatial filtering; normalization/debug only. */
+    SHADOW_HARD_VISIBILITY(FrameGraphResourceKey.transientTexture("world.shadow.hard_visibility"),
+            DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.SHADOW_OUTPUT, false)),
     CONTACT_SHADOW(FrameGraphResourceKey.transientTexture("world.shadow.contact"),
             DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.CONTACT_SHADOW_TRACE, false)),
     SHADOW_COLOR(FrameGraphResourceKey.transientTexture("world.shadow.color"),
@@ -189,11 +192,11 @@ public enum DeferredResource {
                             * DeferredCloudConfig.current().shadowAltitudeSlices(), false)),
     CLOUD_SHADOW_VISIBILITY(FrameGraphResourceKey.transientTexture("world.cloud.shadow_visibility"),
             DeferredTextureSpec.compute(GpuFormat.R8_UNORM, DeferredTextureSpec.ResolutionClass.FULL, false)),
-    FROXEL_MEDIA_SEGMENT_RADIANCE(FrameGraphResourceKey.transientTexture("world.media.froxel.segment_radiance"), null),
-    FROXEL_MEDIA_SEGMENT_TRANSMITTANCE(FrameGraphResourceKey.transientTexture("world.media.froxel.segment_transmittance"), null),
-    FROXEL_MEDIA_PROPERTIES(FrameGraphResourceKey.transientTexture("world.media.froxel.properties"), null),
-    FROXEL_MEDIA_INTEGRATED_RADIANCE(FrameGraphResourceKey.transientTexture("world.media.froxel.integrated_radiance"), null),
-    FROXEL_MEDIA_INTEGRATED_TRANSMITTANCE(FrameGraphResourceKey.transientTexture("world.media.froxel.integrated_transmittance"), null),
+    FROXEL_MEDIA_SEGMENT_RADIANCE(FrameGraphResourceKey.transientVolume("world.media.froxel.segment_radiance"), null),
+    FROXEL_MEDIA_SEGMENT_TRANSMITTANCE(FrameGraphResourceKey.transientVolume("world.media.froxel.segment_transmittance"), null),
+    FROXEL_MEDIA_PROPERTIES(FrameGraphResourceKey.transientVolume("world.media.froxel.properties"), null),
+    FROXEL_MEDIA_INTEGRATED_RADIANCE(FrameGraphResourceKey.transientVolume("world.media.froxel.integrated_radiance"), null),
+    FROXEL_MEDIA_INTEGRATED_TRANSMITTANCE(FrameGraphResourceKey.transientVolume("world.media.froxel.integrated_transmittance"), null),
     SCENE_RADIANCE(FrameGraphResourceKey.transientTexture("world.scene_radiance"),
             DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.FULL, false)),
     INDIRECT_TRACE_DATA(FrameGraphResourceKey.transientBuffer("world.indirect_trace_data"), null),
@@ -322,6 +325,36 @@ public enum DeferredResource {
     /** Final HDR bloom radiance, kept separate for future post composition/tonemapping. */
     BLOOM_COLOR(FrameGraphResourceKey.transientTexture("world.post.bloom.color"),
             DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.BLOOM, false)),
+    /** Output-resolution depth sampled at the canonical post-TAA boundary. */
+    POST_RESOLVED_DEPTH(FrameGraphResourceKey.transientTexture("world.post.depth"),
+            DeferredTextureSpec.compute(GpuFormat.R32_FLOAT, DeferredTextureSpec.ResolutionClass.OUTPUT, false)),
+    /** Persistent autofocus scalar/state; source-owned until generic persistent buffers are materialized by the graph. */
+    DOF_FOCUS_STATE(FrameGraphResourceKey.persistentBuffer("world.post.dof.focus"), null),
+    /** HDR result after depth-of-field. */
+    DOF_COLOR(FrameGraphResourceKey.transientTexture("world.post.dof.color"),
+            DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.OUTPUT, false)),
+    /** Signed/normalized circle-of-confusion diagnostic, exposed to the renderer debug layer. */
+    DOF_COC(FrameGraphResourceKey.transientTexture("world.post.dof.coc"),
+            DeferredTextureSpec.compute(GpuFormat.R32_FLOAT, DeferredTextureSpec.ResolutionClass.OUTPUT, false)),
+    /** Per-tile largest valid final velocity in output pixels. */
+    MOTION_TILE_MAX(FrameGraphResourceKey.transientTexture("world.post.motion.tile_max"),
+            DeferredTextureSpec.compute(GpuFormat.RG16_FLOAT, DeferredTextureSpec.ResolutionClass.MOTION_TILE, false)),
+    /** Neighbor-dilated tile velocity used by the depth-aware gather. */
+    MOTION_NEIGHBOR_MAX(FrameGraphResourceKey.transientTexture("world.post.motion.neighbor_max"),
+            DeferredTextureSpec.compute(GpuFormat.RG16_FLOAT, DeferredTextureSpec.ResolutionClass.MOTION_TILE, false)),
+    /** Canonical HDR camera-post output before future grading/tonemap. */
+    POST_HDR_COLOR(FrameGraphResourceKey.transientTexture("world.post.hdr.color"),
+            DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.OUTPUT, false)),
+    /**
+     * Generic non-mutating debug presentation target at output resolution.
+     *
+     * <p>The compositor writes this as a storage image and may also clear it to an explicit
+     * unavailable sentinel. The clear operation is a render-attachment operation in Minecraft's
+     * GPU API, so the target must advertise both usages. Debug source textures remain sample-only;
+     * only the canonical presentation target owns this broader usage contract.</p>
+     */
+    DEBUG_PRESENTATION(FrameGraphResourceKey.transientTexture("world.debug.presentation"),
+            DeferredTextureSpec.computeAttachment(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.OUTPUT)),
     LIGHT_LIST(FrameGraphResourceKey.transientBuffer("world.light_list"), null),
     INDIRECT_DRAWS(FrameGraphResourceKey.transientBuffer("world.indirect_draws"), null),
     /** Persistent eye-adaptation state; never encoded into a color-history pixel. */

@@ -35,4 +35,10 @@ public record UiRenderContext(Renderer2D renderer,
                            UiProjectionMode projectionMode) {
         this(renderer, textRenderer, drawContext, tickDelta, projectionMode, 1.0f);
     }
+
+    public UiRenderContext multiplyAlpha(float multiplier) {
+        float resolved = Math.max(0.0f, Math.min(1.0f, multiplier));
+        if (resolved >= 0.9999f) return this;
+        return new UiRenderContext(renderer, textRenderer, drawContext, tickDelta, projectionMode, alpha * resolved);
+    }
 }
