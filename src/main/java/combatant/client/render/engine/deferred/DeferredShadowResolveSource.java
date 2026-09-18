@@ -60,7 +60,8 @@ final class DeferredShadowResolveSource implements AutoCloseable {
             new ShaderResourceSlot(3, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(4, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
             new ShaderResourceSlot(5, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
-            new ShaderResourceSlot(6, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
+            new ShaderResourceSlot(6, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(7, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY)
     ));
     private static final ShaderResourceLayout COMBINE_LAYOUT = new ShaderResourceLayout(List.of(
             new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
@@ -79,7 +80,7 @@ final class DeferredShadowResolveSource implements AutoCloseable {
                 .read(DeferredResource.RESOLVED_DEPTH, DeferredResource.GBUFFER_DEPTH,
                         DeferredResource.GBUFFER_GEOMETRY, DeferredResource.SHADOW_DEPTH,
                         DeferredResource.SHADOW_CASCADE_DATA)
-                .write(DeferredResource.SHADOW_CASCADE_VISIBILITY)
+                .write(DeferredResource.SHADOW_CASCADE_VISIBILITY, DeferredResource.SHADOW_HARD_VISIBILITY)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.featureEnabled(DeferredFeature.SHADOWS)
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
@@ -123,6 +124,7 @@ final class DeferredShadowResolveSource implements AutoCloseable {
         GpuTextureView gbufferDepth = requireTexture(context, DeferredResource.GBUFFER_DEPTH);
         GpuTextureView shadowDepth = requireTexture(context, DeferredResource.SHADOW_DEPTH);
         RhiStorageImage output = requireImage(context, DeferredResource.SHADOW_CASCADE_VISIBILITY);
+        RhiStorageImage hardOutput = requireImage(context, DeferredResource.SHADOW_HARD_VISIBILITY);
         RhiStorageBuffer cascades = context.resources().buffer(DeferredResource.SHADOW_CASCADE_DATA);
         if (cascades == null) throw new IllegalStateException("Shadow cascade metadata is not bound");
 
@@ -168,7 +170,10 @@ final class DeferredShadowResolveSource implements AutoCloseable {
                         new SampledTextureBinding(2, geometry, nearest),
                         new SampledTextureBinding(3, gbufferDepth, nearest)
                 ),
-                List.of(new StorageImageBinding(4, output, StorageAccess.WRITE_ONLY))
+                List.of(
+                        new StorageImageBinding(4, output, StorageAccess.WRITE_ONLY),
+                        new StorageImageBinding(7, hardOutput, StorageAccess.WRITE_ONLY)
+                )
         ));
     }
 

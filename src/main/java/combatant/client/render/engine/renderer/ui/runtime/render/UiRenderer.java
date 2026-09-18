@@ -22,7 +22,8 @@ public final class UiRenderer {
     private final UiAssetResolver assetResolver;
     private final UiImageRendererBridge imageRenderer = new UiImageRendererBridge();
     private final UiItemRendererBridge itemRenderer = new UiItemRendererBridge();
-    private final UiPrimitiveRenderer primitiveRenderer = new UiPrimitiveRenderer();
+    private final UiShapeRenderer shapeRenderer = new UiShapeRenderer();
+    private final UiConnectorRenderer connectorRenderer = new UiConnectorRenderer();
     private final UiBoxRenderer boxRenderer = new UiBoxRenderer();
     private final UiTextNodeRenderer textNodeRenderer;
     private final UiScrollbarRenderer scrollbarRenderer = new UiScrollbarRenderer();
@@ -82,8 +83,8 @@ public final class UiRenderer {
                         UiAssetRef asset = assetResolver.resolve(node.props());
                         imageRenderer.render(node, asset, nodeContext);
                     }
-                    case SHAPE -> primitiveRenderer.renderShape(node, nodeContext);
-                    case CONNECTOR -> primitiveRenderer.renderConnector(node, nodeContext);
+                    case SHAPE -> shapeRenderer.render(node, nodeContext);
+                    case CONNECTOR -> connectorRenderer.render(node, nodeContext);
                     case ITEM -> itemRenderer.render(node, nodeContext);
                     default -> {
                     }

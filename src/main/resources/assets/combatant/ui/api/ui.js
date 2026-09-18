@@ -339,6 +339,8 @@ function normalize(type, init) {
     maxWidth,
     maxHeight,
     grow,
+    display,
+    flexDirection,
     absolute,
     x,
     y,
@@ -367,6 +369,8 @@ function normalize(type, init) {
   if (maxWidth !== undefined) layoutStyle.maxWidth = maxWidth;
   if (maxHeight !== undefined) layoutStyle.maxHeight = maxHeight;
   if (grow !== undefined) layoutStyle.flexGrow = grow;
+  if (display !== undefined) layoutStyle.display = display;
+  if (flexDirection !== undefined) layoutStyle.flexDirection = flexDirection;
   if (absolute !== undefined) layoutStyle.absolute = absolute;
   if (x !== undefined) layoutStyle.left = x;
   if (y !== undefined) layoutStyle.top = y;

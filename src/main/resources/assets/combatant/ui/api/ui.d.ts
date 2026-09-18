@@ -91,6 +91,9 @@ export type UiInlineStyle = {
   gap?: number;
   grow?: number;
   flexGrow?: number;
+  /** Browser-like container flow. display:flex defaults to row; block maps to vertical flow. */
+  display?: "flex" | "block";
+  flexDirection?: "row" | "column";
 
   position?: "absolute" | "relative" | "static" | "flow";
   absolute?: boolean;
@@ -166,6 +169,9 @@ export type UiLayoutProps = {
   maxHeight?: number;
   /** Main-axis grow weight inside row/column layout. */
   grow?: number;
+  /** Browser-style flow aliases promoted into inline style. */
+  display?: "flex" | "block";
+  flexDirection?: "row" | "column";
   /** Removes the node from normal parent flow and uses x/y offsets. */
   absolute?: boolean;
   /** Absolute x offset inside parent content area. */

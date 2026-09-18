@@ -26,6 +26,17 @@ final class DeferredShadowCascadeSource {
     static final int MAX_CASCADE_COUNT = 8;
     private static final float DEFAULT_NEAR_DISTANCE = 0.1f;
     private static final float BOUNDS_PADDING = 2.0f;
+    private static final float RADIUS_QUANTIZATION = 16.0f;
+    private static final float BASIS_EPSILON_SQUARED = 1.0e-6f;
+
+    /**
+     * Parallel-transported light up vector. A hard Y/Z helper-axis threshold makes the whole CSM
+     * basis jump when the celestial direction crosses that threshold; carrying the previous up
+     * vector through the new light plane keeps slow celestial motion continuous instead.
+     */
+    private final Vector3f previousLightDirection = new Vector3f();
+    private final Vector3f previousLightUp = new Vector3f();
+    private boolean lightBasisValid;
 
     void prepare(DeferredPassContext context) {
         DeferredPrimaryViewSource.FrameView primary = context.primaryView().current();
@@ -59,6 +70,7 @@ final class DeferredShadowCascadeSource {
         // contract and therefore derive from the authoritative unjittered camera projection.
         Matrix4f projection = primary.unjitteredProjection();
         Vector3f lightDirection = directional.direction(new Vector3f());
+        Vector3f lightUp = stableLightUp(lightDirection);
 
         int resolution = context.settings().shadowResolution();
         float blendFraction = context.settings().shadowCascadeBlendFraction();
@@ -81,6 +93,7 @@ final class DeferredShadowCascadeSource {
                     projection,
                     inverseView,
                     lightDirection,
+                    lightUp,
                     context.settings().shadowCasterDistance(),
                     resolution,
                     (cascade % columns) * resolution,
@@ -100,6 +113,7 @@ final class DeferredShadowCascadeSource {
                                                        Matrix4fc cameraProjection,
                                                        Matrix4fc inverseCameraView,
                                                        Vector3f lightDirection,
+                                                       Vector3f lightUp,
                                                        float casterDistance,
                                                        int resolution,
                                                        int viewportX,
@@ -114,50 +128,43 @@ final class DeferredShadowCascadeSource {
         for (Vector3f corner : corners) {
             radius = Math.max(radius, corner.distance(center));
         }
-        radius = Math.max(1.0f, radius);
+        // Stable CSM uses a rotation-invariant square receiver extent. A tight light-space AABB
+        // changes width/height while the primary camera rotates, which changes world-units per
+        // shadow texel every frame even when the light and split distances are fixed.
+        radius = Math.max(1.0f, radius + BOUNDS_PADDING);
+        radius = (float) Math.ceil(radius * RADIUS_QUANTIZATION) / RADIUS_QUANTIZATION;
 
-        Vector3f up = Math.abs(lightDirection.y) > 0.95f
-                ? new Vector3f(0.0f, 0.0f, 1.0f)
-                : new Vector3f(0.0f, 1.0f, 0.0f);
         Vector3f eye = new Vector3f(center).fma(radius + casterDistance + BOUNDS_PADDING, lightDirection);
-        Matrix4f lightView = new Matrix4f().lookAt(eye, center, up);
+        Matrix4f lightView = new Matrix4f().lookAt(eye, center, lightUp);
 
-        float minX = Float.POSITIVE_INFINITY;
-        float minY = Float.POSITIVE_INFINITY;
         float minZ = Float.POSITIVE_INFINITY;
-        float maxX = Float.NEGATIVE_INFINITY;
-        float maxY = Float.NEGATIVE_INFINITY;
         float maxZ = Float.NEGATIVE_INFINITY;
         Vector3f transformed = new Vector3f();
         for (Vector3f corner : corners) {
             transformPosition(lightView, corner, transformed);
-            minX = Math.min(minX, transformed.x);
-            minY = Math.min(minY, transformed.y);
             minZ = Math.min(minZ, transformed.z);
-            maxX = Math.max(maxX, transformed.x);
-            maxY = Math.max(maxY, transformed.y);
             maxZ = Math.max(maxZ, transformed.z);
         }
 
-        minX -= BOUNDS_PADDING;
-        minY -= BOUNDS_PADDING;
-        maxX += BOUNDS_PADDING;
-        maxY += BOUNDS_PADDING;
-
-        // Snap the orthographic window to whole shadow texels. This is source stability, not
-        // artistic filtering: camera sub-texel motion must not continuously move the projection.
-        float extentX = Math.max(0.001f, maxX - minX);
-        float extentY = Math.max(0.001f, maxY - minY);
-        float texelX = extentX / (float) resolution;
-        float texelY = extentY / (float) resolution;
-        float centerX = (minX + maxX) * 0.5f;
-        float centerY = (minY + maxY) * 0.5f;
-        centerX = Math.round(centerX / texelX) * texelX;
-        centerY = Math.round(centerY / texelY) * texelY;
-        minX = centerX - extentX * 0.5f;
-        maxX = centerX + extentX * 0.5f;
-        minY = centerY - extentY * 0.5f;
-        maxY = centerY + extentY * 0.5f;
+        // The renderer is camera-relative, so snapping a camera-relative center is a no-op under
+        // camera translation. Anchor the square projection to the ABSOLUTE world-space light grid,
+        // then express the small snapped offset back in this camera-relative light view.
+        float extent = Math.max(0.001f, radius * 2.0f);
+        float worldTexel = extent / (float) Math.max(1, resolution);
+        Vector3f absoluteCenter = new Vector3f(
+                (float) (cameraOrigin.x + center.x),
+                (float) (cameraOrigin.y + center.y),
+                (float) (cameraOrigin.z + center.z)
+        );
+        Vector3f absoluteCenterLight = transformDirection(lightView, absoluteCenter, new Vector3f());
+        float snappedWorldX = Math.round(absoluteCenterLight.x / worldTexel) * worldTexel;
+        float snappedWorldY = Math.round(absoluteCenterLight.y / worldTexel) * worldTexel;
+        float deltaX = absoluteCenterLight.x - snappedWorldX;
+        float deltaY = absoluteCenterLight.y - snappedWorldY;
+        float minX = -radius - deltaX;
+        float maxX = radius - deltaX;
+        float minY = -radius - deltaY;
+        float maxY = radius - deltaY;
 
         // Keep an explicit caster band on the light-facing side of the receiver frustum.
         // Extending only the far plane would include geometry behind the receivers while clipping
@@ -186,6 +193,42 @@ final class DeferredShadowCascadeSource {
                 nearDistance,
                 farDistance
         );
+    }
+
+    private Vector3f stableLightUp(Vector3f lightDirection) {
+        Vector3f direction = new Vector3f(lightDirection).normalize();
+        Vector3f up = new Vector3f();
+
+        if (lightBasisValid && previousLightDirection.dot(direction) > 0.5f) {
+            // Parallel transport the previous up vector into the plane perpendicular to the new
+            // light direction. This keeps orientation continuous for normal celestial movement.
+            up.set(previousLightUp).fma(-previousLightUp.dot(direction), direction);
+            if (up.lengthSquared() > BASIS_EPSILON_SQUARED) {
+                up.normalize();
+                if (up.dot(previousLightUp) < 0.0f) up.negate();
+            } else {
+                up.zero();
+            }
+        }
+
+        if (up.lengthSquared() <= BASIS_EPSILON_SQUARED) {
+            // Initial/fallback basis: pick the world cardinal axis least parallel to the light,
+            // then project it onto the light plane. No near-parallel Y/Z threshold is involved.
+            float ax = Math.abs(direction.x);
+            float ay = Math.abs(direction.y);
+            float az = Math.abs(direction.z);
+            Vector3f helper = ax <= ay && ax <= az
+                    ? new Vector3f(1.0f, 0.0f, 0.0f)
+                    : (ay <= az
+                    ? new Vector3f(0.0f, 1.0f, 0.0f)
+                    : new Vector3f(0.0f, 0.0f, 1.0f));
+            up.set(helper).fma(-helper.dot(direction), direction).normalize();
+        }
+
+        previousLightDirection.set(direction);
+        previousLightUp.set(up);
+        lightBasisValid = true;
+        return new Vector3f(up);
     }
 
     private static Vector3f[] frustumCorners(float nearDistance,

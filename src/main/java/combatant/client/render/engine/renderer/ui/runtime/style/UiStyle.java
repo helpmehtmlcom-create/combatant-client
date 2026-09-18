@@ -29,6 +29,8 @@ public final class UiStyle {
     private final float marginBottom;
     private final float gap;
     private final float grow;
+    private final UiDisplay display;
+    private final UiFlexDirection flexDirection;
     private final boolean absolute;
     private final Float offsetX;
     private final Float offsetY;
@@ -83,6 +85,8 @@ public final class UiStyle {
         this.marginBottom = builder.marginBottom;
         this.gap = builder.gap;
         this.grow = builder.grow;
+        this.display = builder.display;
+        this.flexDirection = builder.flexDirection;
         this.absolute = builder.absolute;
         this.offsetX = builder.offsetX;
         this.offsetY = builder.offsetY;
@@ -215,6 +219,16 @@ public final class UiStyle {
 
     public float grow() {
         return grow;
+    }
+
+    /** Explicit display mode; null keeps the node type's legacy layout semantics. */
+    public UiDisplay display() {
+        return display;
+    }
+
+    /** Explicit flex direction; null uses row for display:flex or the node type's legacy flow. */
+    public UiFlexDirection flexDirection() {
+        return flexDirection;
     }
 
     public boolean absolute() {
@@ -386,6 +400,8 @@ public final class UiStyle {
         private float marginBottom;
         private float gap;
         private float grow;
+        private UiDisplay display;
+        private UiFlexDirection flexDirection;
         private boolean absolute;
         private Float offsetX;
         private Float offsetY;
@@ -443,6 +459,8 @@ public final class UiStyle {
             this.marginBottom = base.marginBottom;
             this.gap = base.gap;
             this.grow = base.grow;
+            this.display = base.display;
+            this.flexDirection = base.flexDirection;
             this.absolute = base.absolute;
             this.offsetX = base.offsetX;
             this.offsetY = base.offsetY;
@@ -590,6 +608,16 @@ public final class UiStyle {
 
         public Builder grow(float grow) {
             this.grow = Math.max(0.0f, grow);
+            return this;
+        }
+
+        public Builder display(UiDisplay display) {
+            this.display = display;
+            return this;
+        }
+
+        public Builder flexDirection(UiFlexDirection flexDirection) {
+            this.flexDirection = flexDirection;
             return this;
         }
 

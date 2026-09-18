@@ -33,7 +33,7 @@ public final class UiInlineStyle {
             "paddingleft", "paddingtop", "paddingright", "paddingbottom",
             "margin", "marginx", "marginhorizontal", "marginy", "marginvertical",
             "marginleft", "margintop", "marginright", "marginbottom",
-            "gap", "grow", "flexgrow",
+            "gap", "grow", "flexgrow", "display", "flexdirection",
             "position", "absolute", "left", "top", "right", "bottom", "x", "y",
             "align", "alignitems", "justify", "justifycontent", "overflow",
             "radius", "borderradius",
@@ -93,6 +93,19 @@ public final class UiInlineStyle {
         applyNumber(builder::gap, "gap");
         Float grow = firstNumber("flexgrow", "grow");
         if (grow != null) builder.grow(grow);
+
+        String display = text("display");
+        if (display != null) {
+            UiDisplay parsed = UiDisplay.parse(display, null);
+            if (parsed != null) builder.display(parsed);
+            else invalid("UI inline style 'display' currently supports flex or block, got '" + display + "'.");
+        }
+        String flexDirection = text("flexdirection");
+        if (flexDirection != null) {
+            UiFlexDirection parsed = UiFlexDirection.parse(flexDirection, null);
+            if (parsed != null) builder.flexDirection(parsed);
+            else invalid("UI inline style 'flexDirection' has unknown value '" + flexDirection + "'.");
+        }
 
         String position = text("position");
         if (position != null) {

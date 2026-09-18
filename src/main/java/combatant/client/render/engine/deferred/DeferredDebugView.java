@@ -46,6 +46,8 @@ public enum DeferredDebugView {
     TAA_CONFIDENCE(DeferredResource.TAA_CONFIDENCE, SourceKind.TEXTURE, DeferredDebugDecodeMode.CONFIDENCE_MASK, 0, DeferredFeature.TAA),
     TAA_LOCK(DeferredResource.TAA_LOCK, SourceKind.TEXTURE, DeferredDebugDecodeMode.CONFIDENCE_MASK, 0, DeferredFeature.TAA),
 
+    SHADOW_DEPTH_ATLAS(DeferredResource.SHADOW_DEPTH, SourceKind.TEXTURE, DeferredDebugDecodeMode.DEPTH, 0, DeferredFeature.SHADOWS),
+    DIRECTIONAL_SHADOW_HARD_VISIBILITY(DeferredResource.SHADOW_HARD_VISIBILITY, SourceKind.TEXTURE, DeferredDebugDecodeMode.SCALAR, 0, DeferredFeature.SHADOWS),
     DIRECTIONAL_SHADOW_VISIBILITY(DeferredResource.SHADOW_CASCADE_VISIBILITY, SourceKind.TEXTURE, DeferredDebugDecodeMode.SCALAR, 0, DeferredFeature.SHADOWS),
     CONTACT_SHADOW(DeferredResource.CONTACT_SHADOW, SourceKind.TEXTURE, DeferredDebugDecodeMode.SCALAR, 0, DeferredFeature.CONTACT_SHADOWS),
     AO(DeferredResource.AMBIENT_OCCLUSION, SourceKind.TEXTURE, DeferredDebugDecodeMode.SCALAR, 0, DeferredFeature.GTAO),

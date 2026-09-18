@@ -23,7 +23,7 @@ import java.util.Map;
 public final class UiScriptObjectConverter {
     private static final List<String> RESERVED_NODE_KEYS = List.of(
             "type", "key", "class", "className", "style", "props", "events", "meta", "children",
-            "width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight", "grow", "absolute",
+            "width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight", "grow", "display", "flexDirection", "absolute",
             "x", "y", "align", "justify", "overflow", "textAlign", "maxTextWidth", "ellipsis", "marquee",
             "onClick", "onChange", "onInput", "onScroll"
     );
@@ -159,6 +159,8 @@ public final class UiScriptObjectConverter {
         promote(node, style, "maxWidth", "maxWidth");
         promote(node, style, "maxHeight", "maxHeight");
         promote(node, style, "grow", "grow");
+        promote(node, style, "display", "display");
+        promote(node, style, "flexDirection", "flexDirection");
         promote(node, style, "absolute", "absolute");
         promote(node, style, "x", "x");
         promote(node, style, "y", "y");

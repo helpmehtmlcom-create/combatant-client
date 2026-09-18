@@ -404,8 +404,6 @@ final class XaeroMapSettingsPanel {
                 module,
                 "map-settings",
                 signature,
-                signature,
-                signature,
                 width,
                 height,
                 ClickGuiRenderer.getOnestMedium(),

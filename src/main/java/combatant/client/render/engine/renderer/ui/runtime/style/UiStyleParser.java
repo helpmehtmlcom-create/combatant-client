@@ -138,6 +138,22 @@ public final class UiStyleParser {
             builder.gap(number(token.value(), 0.0f));
             return true;
         }
+        if ("flex".equals(raw)) {
+            builder.display(UiDisplay.FLEX);
+            return true;
+        }
+        if ("flex-row".equals(raw)) {
+            builder.display(UiDisplay.FLEX).flexDirection(UiFlexDirection.ROW);
+            return true;
+        }
+        if ("block".equals(raw)) {
+            builder.display(UiDisplay.BLOCK);
+            return true;
+        }
+        if ("flex-col".equals(raw) || "flex-column".equals(raw)) {
+            builder.display(UiDisplay.FLEX).flexDirection(UiFlexDirection.COLUMN);
+            return true;
+        }
         if ("grow".equals(raw)) {
             builder.grow(1.0f);
             return true;
