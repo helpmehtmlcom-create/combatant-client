@@ -8,12 +8,14 @@
 package combatant.client.util.entity;
 
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.entity.EntityDimensions;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import combatant.client.events.impl.MovementInputEvent;
 import combatant.client.render.helpers.TickDelta;
-
 public enum EagleUtil {
     ;
     private static final double STEP_HEIGHT = 0.5;
@@ -23,6 +25,9 @@ public enum EagleUtil {
     private static final double MIN_TICK_DELTA_LEAD = 0.25;
     private static final double CENTER_DEAD_ANGLE_COS = 0.34;
     private static final int DIAGONAL_RESCUE_TICKS = 2;
+    private static final Direction[] HORIZONTAL_DIRECTIONS = {
+            Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST
+    };
 
     public static EdgeCheck checkEdge(LocalPlayer player, MovementInputEvent event, double edgeDistance) {
         return checkEdge(player, event, edgeDistance, TickDelta.tickProgress(false));
@@ -63,6 +68,116 @@ public enum EagleUtil {
 
     public static boolean shouldDiagonalRescue(LocalPlayer player, MovementInputEvent event, double edgeDistance) {
         return checkEdge(player, event, edgeDistance).diagonalRescue();
+    }
+    /**
+     * Checks if moving by the specified threshold in any horizontal cardinal direction puts the
+     * player's bounding box edge or corner over air (i.e. would fall).
+     *
+     * @param player        the local player to test
+     * @param edgeThreshold horizontal distance threshold in blocks to test in each direction
+     * @return {@code true} if moving in any cardinal direction causes the player to fall or overhang air
+     */
+    public static boolean isStandingOnEdge(LocalPlayer player, double edgeThreshold) {
+        if (player == null || player.level() == null) {
+            return false;
+        }
+        double threshold = Math.max(0.0, edgeThreshold);
+        for (Direction dir : HORIZONTAL_DIRECTIONS) {
+            Vec3 testPos = player.position().add(dir.getStepX() * threshold, 0.0, dir.getStepZ() * threshold);
+            if (wouldBeCloseToFallOff(player, testPos) || isLeadingEdgeOverAir(player, testPos, dir)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Evaluates North, South, East, and West to determine which horizontal direction has the nearest
+     * cliff or edge relative to the player's current position.
+     *
+     * @param player the local player to evaluate
+     * @return the nearest horizontal {@link Direction}, or {@code null} if no cliff/edge is found within range or player is null
+     */
+    public static Direction getNearestEdgeDirection(LocalPlayer player) {
+        if (player == null || player.level() == null) {
+            return null;
+        }
+
+        Direction nearest = null;
+        double minDistance = Double.MAX_VALUE;
+        double maxSearchDist = 2.5;
+        double stepSize = 0.05;
+
+        // First check outward steps along each cardinal direction
+        for (Direction dir : HORIZONTAL_DIRECTIONS) {
+            for (double dist = stepSize; dist <= maxSearchDist; dist += stepSize) {
+                Vec3 testPos = player.position().add(dir.getStepX() * dist, 0.0, dir.getStepZ() * dist);
+                if (isLeadingEdgeOverAir(player, testPos, dir)) {
+                    if (dist < minDistance) {
+                        minDistance = dist;
+                        nearest = dir;
+                    }
+                    break;
+                }
+            }
+        }
+
+        // If player already overhangs at current position, check which leading edge is over air
+        if (nearest == null) {
+            for (Direction dir : HORIZONTAL_DIRECTIONS) {
+                if (isLeadingEdgeOverAir(player, player.position(), dir)) {
+                    return dir;
+                }
+            }
+        }
+
+        return nearest;
+    }
+
+    private static boolean isLeadingEdgeOverAir(LocalPlayer player, Vec3 position, Direction dir) {
+        if (player == null || position == null || player.level() == null) {
+            return false;
+        }
+        EntityDimensions dimensions = player.getDimensions(player.getPose());
+        AABB box = dimensions.makeBoundingBox(position);
+        double checkY = box.minY - 0.1;
+        BlockPos.MutableBlockPos mpos = new BlockPos.MutableBlockPos();
+
+        double centerX = (box.minX + box.maxX) * 0.5;
+        double centerZ = (box.minZ + box.maxZ) * 0.5;
+        double inset = 0.08;
+
+        double[][] corners = switch (dir) {
+            case NORTH -> new double[][]{
+                    {centerX, box.minZ},
+                    {box.minX + inset, box.minZ},
+                    {box.maxX - inset, box.minZ}
+            };
+            case SOUTH -> new double[][]{
+                    {centerX, box.maxZ},
+                    {box.minX + inset, box.maxZ},
+                    {box.maxX - inset, box.maxZ}
+            };
+            case WEST -> new double[][]{
+                    {box.minX, centerZ},
+                    {box.minX, box.minZ + inset},
+                    {box.minX, box.maxZ - inset}
+            };
+            case EAST -> new double[][]{
+                    {box.maxX, centerZ},
+                    {box.maxX, box.minZ + inset},
+                    {box.maxX, box.maxZ - inset}
+            };
+            default -> new double[][]{{centerX, centerZ}};
+        };
+        for (double[] corner : corners) {
+            mpos.set(corner[0], checkY, corner[1]);
+            BlockState state = player.level().getBlockState(mpos);
+            if (state.isAir() || state.getCollisionShape(player.level(), mpos).isEmpty()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static double horizontalSpeed(LocalPlayer player) {

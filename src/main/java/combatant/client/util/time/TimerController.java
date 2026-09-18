@@ -30,6 +30,10 @@ public final class TimerController {
     public static final int IMPORTANT_FOR_USAGE_2 = 2000;
     public static final int IMPORTANT_FOR_PLAYER_LIFE = 10000;
 
+    private static double timerBalanceMs = 0.0;
+    private static final double MAX_BALANCE_MS = 500.0;
+    private static final double MIN_BALANCE_MS = -50.0;
+
     private final Map<Object, Request> requests = new LinkedHashMap<>();
     private long sequence;
 
@@ -50,6 +54,65 @@ public final class TimerController {
 
     public static void clear(Object provider) {
         INSTANCE.clearProvider(provider);
+    }
+
+    /**
+     * Gets the current anti-cheat timer balance in milliseconds.
+     *
+     * @return current balance in ms
+     */
+    public static synchronized double getTimerBalanceMs() {
+        return timerBalanceMs;
+    }
+
+    /**
+     * Records a game tick for anti-cheat timer balance monitoring.
+     * Normal 1.0x tick length is 50.0ms (50,000,000 ns).
+     * When activeSpeed > 1.0f, drains balance by (activeSpeed - 1.0f) * 50.0.
+     * When activeSpeed < 1.0f, charges balance by (1.0f - activeSpeed) * 50.0 up to MAX_BALANCE_MS.
+     *
+     * @param elapsedNanos elapsed tick duration in nanoseconds
+     * @param activeSpeed the active timer speed multiplier
+     */
+    public static synchronized void recordTick(long elapsedNanos, float activeSpeed) {
+        if (activeSpeed > 1.0f) {
+            timerBalanceMs -= (activeSpeed - 1.0f) * 50.0;
+        } else if (activeSpeed < 1.0f) {
+            timerBalanceMs = Math.min(MAX_BALANCE_MS, timerBalanceMs + (1.0f - activeSpeed) * 50.0);
+        }
+    }
+
+    /**
+     * Checks if running at requestedSpeed for durationTicks would breach MIN_BALANCE_MS.
+     *
+     * @param requestedSpeed the proposed timer speed multiplier
+     * @param durationTicks the planned duration in ticks
+     * @return true if timer balance remains >= MIN_BALANCE_MS
+     */
+    public static synchronized boolean hasTimerBalance(float requestedSpeed, int durationTicks) {
+        if (Float.isNaN(requestedSpeed) || Float.isInfinite(requestedSpeed) || requestedSpeed <= 1.0f || durationTicks <= 0) {
+            return true;
+        }
+        double drain = (double) durationTicks * (requestedSpeed - 1.0f) * 50.0;
+        return (timerBalanceMs - drain) >= MIN_BALANCE_MS;
+    }
+
+    /**
+     * Returns the maximum number of ticks that can run at requestedSpeed before reaching MIN_BALANCE_MS.
+     *
+     * @param requestedSpeed the proposed timer speed multiplier
+     * @return maximum safe burst ticks, or Integer.MAX_VALUE if requestedSpeed <= 1.0f
+     */
+    public static synchronized int getSafeBurstTicks(float requestedSpeed) {
+        if (Float.isNaN(requestedSpeed) || Float.isInfinite(requestedSpeed) || requestedSpeed <= 1.0f) {
+            return Integer.MAX_VALUE;
+        }
+        double drainPerTick = (requestedSpeed - 1.0f) * 50.0;
+        double available = timerBalanceMs - MIN_BALANCE_MS;
+        if (available <= 0.0) {
+            return 0;
+        }
+        return (int) Math.floor(available / drainPerTick);
     }
 
     private static float sanitize(float timerSpeed) {
@@ -79,6 +142,9 @@ public final class TimerController {
 
     public synchronized void reset() {
         requests.clear();
+        synchronized (TimerController.class) {
+            timerBalanceMs = 0.0;
+        }
     }
 
     public synchronized float activeTimerSpeed() {

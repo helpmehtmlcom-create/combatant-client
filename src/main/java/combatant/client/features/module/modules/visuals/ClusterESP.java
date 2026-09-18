@@ -17,6 +17,7 @@ import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.ModuleSubCategory;
+import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.renderer.Renderer3D;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
@@ -220,10 +221,10 @@ public class ClusterESP extends Module {
                 renderer.line(box.maxX, box.minY, box.minZ, box.maxX, box.maxY, box.minZ, r, g, b, lineA);
                 renderer.line(box.maxX, box.minY, box.maxZ, box.maxX, box.maxY, box.maxZ, r, g, b, lineA);
                 renderer.line(box.minX, box.minY, box.maxZ, box.minX, box.maxY, box.maxZ, r, g, b, lineA);
-
                 if (tracers.get()) {
-                    Vec3 center = cluster.center();
-                    renderer.line(camPos.x, camPos.y, camPos.z, center.x, center.y, center.z, r, g, b, 240);
+                    Vec3 center = box.getCenter();
+                    Vec3 start = RenderState.tracerOrigin();
+                    renderer.line(start.x, start.y, start.z, center.x, center.y, center.z, r, g, b, 240);
                 }
             }
         }

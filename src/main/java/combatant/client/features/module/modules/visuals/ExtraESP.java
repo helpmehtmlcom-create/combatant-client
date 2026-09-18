@@ -17,6 +17,7 @@ import combatant.client.events.impl.GameTickEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.render.engine.RenderState;
 import combatant.client.features.module.ModuleSubCategory;
 import combatant.client.render.engine.renderer.Renderer3D;
 import net.minecraft.client.Minecraft;
@@ -320,7 +321,8 @@ public class ExtraESP extends Module {
 
             if (renderTracers.get()) {
                 Vec3 center = box.getCenter();
-                renderer.line(camPos.x, camPos.y, camPos.z, center.x, center.y, center.z, r, g, b, 180);
+                Vec3 start = RenderState.tracerOrigin();
+                renderer.line(start.x, start.y, start.z, center.x, center.y, center.z, r, g, b, 180);
             }
         }
     }

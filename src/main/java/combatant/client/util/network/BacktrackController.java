@@ -35,6 +35,7 @@ import combatant.client.util.player.NetworkStatsUtil;
 import combatant.client.util.target.TargetManager;
 import combatant.client.util.target.TargetingUtil;
 
+import java.util.List;
 import java.util.Deque;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ThreadLocalRandom;
@@ -204,12 +205,95 @@ public final class BacktrackController {
         return before.position().lerp(after.position(), factor);
     }
 
-    public AABB getInterpolatedHitbox(long targetTimeMs) {
-        Vec3 pos = getInterpolatedPosition(targetTimeMs);
-        if (target != null) {
-            return target.getDimensions(target.getPose()).makeBoundingBox(pos);
+    /**
+     * Finds the sample in hitboxHistory closest in time to targetTimeMs.
+     *
+     * @param targetTimeMs target time in milliseconds
+     * @return the closest HitboxSample, or null if history is empty
+     */
+    public HitboxSample getClosestSample(long targetTimeMs) {
+        if (hitboxHistory.isEmpty()) {
+            return null;
         }
+        HitboxSample closest = null;
+        long minDiff = Long.MAX_VALUE;
+        for (HitboxSample sample : hitboxHistory) {
+            long diff = Math.abs(sample.timestamp() - targetTimeMs);
+            if (diff < minDiff) {
+                minDiff = diff;
+                closest = sample;
+            }
+        }
+        return closest;
+    }
+
+    /**
+     * Linearly interpolates min/max coordinates between the two samples bracketing targetTimeMs,
+     * or falls back to closest sample.
+     *
+     * @param targetTimeMs target time in milliseconds
+     * @return interpolated or fallback AABB bounding box
+     */
+    public AABB getInterpolatedHitbox(long targetTimeMs) {
+        if (hitboxHistory.isEmpty()) {
+            if (target != null) {
+                return target.getBoundingBox();
+            }
+            Vec3 pos = delayedPosition.getBase();
+            return new AABB(pos, pos);
+        }
+
+        HitboxSample before = null;
+        HitboxSample after = null;
+        for (HitboxSample sample : hitboxHistory) {
+            if (sample.timestamp() <= targetTimeMs) {
+                if (before == null || sample.timestamp() > before.timestamp()) {
+                    before = sample;
+                }
+            }
+            if (sample.timestamp() >= targetTimeMs) {
+                if (after == null || sample.timestamp() < after.timestamp()) {
+                    after = sample;
+                }
+            }
+        }
+
+        if (before != null && after != null) {
+            if (before == after || before.timestamp() == after.timestamp()) {
+                return before.boundingBox();
+            }
+            double factor = (double) (targetTimeMs - before.timestamp()) / (after.timestamp() - before.timestamp());
+            factor = Math.clamp(factor, 0.0, 1.0);
+            AABB b1 = before.boundingBox();
+            AABB b2 = after.boundingBox();
+            double minX = b1.minX + (b2.minX - b1.minX) * factor;
+            double minY = b1.minY + (b2.minY - b1.minY) * factor;
+            double minZ = b1.minZ + (b2.minZ - b1.minZ) * factor;
+            double maxX = b1.maxX + (b2.maxX - b1.maxX) * factor;
+            double maxY = b1.maxY + (b2.maxY - b1.maxY) * factor;
+            double maxZ = b1.maxZ + (b2.maxZ - b1.maxZ) * factor;
+            return new AABB(minX, minY, minZ, maxX, maxY, maxZ);
+        }
+
+        HitboxSample closest = getClosestSample(targetTimeMs);
+        if (closest != null) {
+            return closest.boundingBox();
+        }
+
+        if (target != null) {
+            return target.getBoundingBox();
+        }
+        Vec3 pos = delayedPosition.getBase();
         return new AABB(pos, pos);
+    }
+
+    /**
+     * Returns an unmodifiable snapshot list of the current hitbox history.
+     *
+     * @return unmodifiable list snapshot of hitboxHistory
+     */
+    public List<HitboxSample> getHitboxHistorySnapshot() {
+        return List.copyOf(hitboxHistory);
     }
 
     public AABB getPingInterpolatedHitbox() {

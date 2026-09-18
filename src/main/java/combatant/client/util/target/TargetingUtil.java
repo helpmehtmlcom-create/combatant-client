@@ -19,6 +19,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.tags.ItemTags;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
@@ -33,6 +34,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -232,32 +234,113 @@ public enum TargetingUtil {
     }
 
     /**
+     * Checks if the player's bounding box intersects any cobweb block or if the player is standing in soul sand.
+     *
+     * @param player the player to check
+     * @param level the level context
+     * @return true if webbed or standing in soul sand
+     */
+    public static boolean isWebbed(Player player, Level level) {
+        if (player == null || level == null) return false;
+        AABB box = player.getBoundingBox();
+        int minX = (int) Math.floor(box.minX);
+        int maxX = (int) Math.floor(box.maxX);
+        int minY = (int) Math.floor(box.minY);
+        int maxY = (int) Math.floor(box.maxY);
+        int minZ = (int) Math.floor(box.minZ);
+        int maxZ = (int) Math.floor(box.maxZ);
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    pos.set(x, y, z);
+                    BlockState state = level.getBlockState(pos);
+                    if (state.is(Blocks.COBWEB) && box.intersects(new AABB(pos))) {
+                        return true;
+                    }
+                    if (state.is(Blocks.SOUL_SAND) && box.intersects(new AABB(pos))) {
+                        return true;
+                    }
+                }
+            }
+        }
+        BlockPos feet = player.blockPosition();
+        return level.getBlockState(feet).is(Blocks.SOUL_SAND)
+                || level.getBlockState(BlockPos.containing(player.getX(), player.getY() - 0.2, player.getZ())).is(Blocks.SOUL_SAND);
+    }
+
+    /**
+     * Checks if the player's bounding box intersects any solid block collision shapes.
+     *
+     * @param player the player to check
+     * @param level the level context
+     * @return true if intersecting a solid block's collision shape
+     */
+    public static boolean isPhasing(Player player, Level level) {
+        if (player == null || level == null) return false;
+        AABB box = player.getBoundingBox();
+        int minX = (int) Math.floor(box.minX);
+        int maxX = (int) Math.floor(box.maxX);
+        int minY = (int) Math.floor(box.minY);
+        int maxY = (int) Math.floor(box.maxY);
+        int minZ = (int) Math.floor(box.minZ);
+        int maxZ = (int) Math.floor(box.maxZ);
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    pos.set(x, y, z);
+                    BlockState state = level.getBlockState(pos);
+                    if (!state.isAir() && state.blocksMotion()) {
+                        VoxelShape collisionShape = state.getCollisionShape(level, pos);
+                        if (!collisionShape.isEmpty()) {
+                            for (AABB blockBox : collisionShape.toAabbs()) {
+                                if (box.intersects(blockBox.move(x, y, z))) {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * Resolves the player's defensive hole status (burrowed, bedrock hole, obsidian hole, open).
+     * Evaluates the 4 horizontal neighbor blocks at the player's feet (north, south, east, west)
+     * and the floor block (below).
+     *
+     * @param player the player to evaluate
+     * @param level the level context
+     * @return the resolved {@link HoleStatus}
      */
     public static HoleStatus getHoleStatus(Player player, Level level) {
         if (player == null || level == null) return HoleStatus.OPEN;
         if (isBurrowed(player, level)) return HoleStatus.BURROWED;
 
         BlockPos feet = player.blockPosition();
-        boolean allBedrock = true;
-        boolean allSafe = true;
+        BlockPos[] surrounding = new BlockPos[]{
+                feet.north(),
+                feet.south(),
+                feet.east(),
+                feet.west(),
+                feet.below()
+        };
 
-        for (Direction dir : Direction.Plane.HORIZONTAL) {
-            BlockPos surround = feet.relative(dir);
-            BlockState state = level.getBlockState(surround);
-            if (state.is(Blocks.BEDROCK)) {
-                continue;
+        boolean allBedrock = true;
+        for (BlockPos pos : surrounding) {
+            BlockState state = level.getBlockState(pos);
+            if (!state.is(Blocks.BEDROCK)) {
+                allBedrock = false;
             }
-            allBedrock = false;
             if (!isBlastResistant(state)) {
-                allSafe = false;
-                break;
+                return HoleStatus.OPEN;
             }
         }
 
-        if (!allSafe) return HoleStatus.OPEN;
-        BlockState downState = level.getBlockState(feet.below());
-        if (allBedrock && downState.is(Blocks.BEDROCK)) {
+        if (allBedrock) {
             return HoleStatus.BEDROCK;
         }
         return HoleStatus.OBSIDIAN;
@@ -376,6 +459,92 @@ public enum TargetingUtil {
         }
 
         return threat;
+    }
+
+    /**
+     * Calculates a threat rating from 0 to 100 based on:
+     * - Weapon in main hand (Mace = +35, End Crystal = +30, Netherite/Diamond Sword/Axe = +25, Bow = +15, Wind Charge = +20)
+     * - Armor tier (Netherite = +25, Diamond = +20, Iron = +10, Naked = +0)
+     * - Active effects (Strength = +15, Speed = +10, Resistance = +10)
+     * - Aim orientation toward self (target looking within 30 degrees of self = +15)
+     *
+     * @param target the target player to evaluate
+     * @param self the local player reference
+     * @return threat rating from 0 to 100
+     */
+    public static int calculateThreatLevel(Player target, Player self) {
+        if (target == null) return 0;
+        int threat = 0;
+
+        // Weapon in main hand
+        ItemStack mainHand = target.getMainHandItem();
+        if (!mainHand.isEmpty()) {
+            Item item = mainHand.getItem();
+            if (item instanceof MaceItem || item == Items.MACE) {
+                threat += 35;
+            } else if (item == Items.END_CRYSTAL) {
+                threat += 30;
+            } else if (item == Items.NETHERITE_SWORD || item == Items.NETHERITE_AXE
+                    || item == Items.DIAMOND_SWORD || item == Items.DIAMOND_AXE) {
+                threat += 25;
+            } else if (item == Items.WIND_CHARGE) {
+                threat += 20;
+            } else if (item == Items.BOW || item == Items.CROSSBOW) {
+                threat += 15;
+            }
+        }
+
+        // Armor tier
+        boolean hasNetherite = false;
+        boolean hasDiamond = false;
+        boolean hasIron = false;
+        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET}) {
+            ItemStack armor = target.getItemBySlot(slot);
+            if (armor.isEmpty()) continue;
+            Item item = armor.getItem();
+            if (item == Items.NETHERITE_HELMET || item == Items.NETHERITE_CHESTPLATE
+                    || item == Items.NETHERITE_LEGGINGS || item == Items.NETHERITE_BOOTS) {
+                hasNetherite = true;
+            } else if (item == Items.DIAMOND_HELMET || item == Items.DIAMOND_CHESTPLATE
+                    || item == Items.DIAMOND_LEGGINGS || item == Items.DIAMOND_BOOTS) {
+                hasDiamond = true;
+            } else if (item == Items.IRON_HELMET || item == Items.IRON_CHESTPLATE
+                    || item == Items.IRON_LEGGINGS || item == Items.IRON_BOOTS) {
+                hasIron = true;
+            }
+        }
+        if (hasNetherite) {
+            threat += 25;
+        } else if (hasDiamond) {
+            threat += 20;
+        } else if (hasIron) {
+            threat += 10;
+        }
+
+        // Active effects
+        if (target.hasEffect(MobEffects.STRENGTH)) {
+            threat += 15;
+        }
+        if (target.hasEffect(MobEffects.SPEED)) {
+            threat += 10;
+        }
+        if (target.hasEffect(MobEffects.RESISTANCE)) {
+            threat += 10;
+        }
+
+        // Aim orientation toward self
+        if (self != null) {
+            Vec3 lookVec = target.getViewVector(1.0f).normalize();
+            Vec3 toSelf = self.getEyePosition().subtract(target.getEyePosition());
+            if (toSelf.lengthSqr() > 1.0E-6) {
+                double dot = lookVec.dot(toSelf.normalize());
+                if (dot >= Math.cos(Math.toRadians(30.0))) {
+                    threat += 15;
+                }
+            }
+        }
+
+        return Math.min(100, Math.max(0, threat));
     }
 
     public static boolean isNaked(Player player) {

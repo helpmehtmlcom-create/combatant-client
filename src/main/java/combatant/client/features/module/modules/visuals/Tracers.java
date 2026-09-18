@@ -17,6 +17,7 @@ import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.renderer.texture.AbstractTexture;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
+import combatant.client.render.engine.RenderState;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec2;
@@ -189,11 +190,7 @@ public class Tracers extends Module {
         if (!isEnabled() || mc.level == null || mc.player == null) return;
         if (!isLinesMode()) return;
 
-        Vec3 camPos = getActiveCameraPos(tickDelta);
-        if (camPos == null) return;
-        Vec3 look = getActiveCameraLook(tickDelta);
-        if (look == null) return;
-        Vec3 start = camPos.add(look.scale(10.0));
+        Vec3 start = RenderState.tracerOrigin();
         for (Player p : mc.level.players()) {
             if (p == mc.player) continue;
             if (!traceFriendsValue.get() && CategoryService.isFriend(p)) continue;
@@ -323,9 +320,7 @@ public class Tracers extends Module {
     ) {
         if (mc.player == null || mc.level == null || targets == null || targets.isEmpty()) return;
 
-        Vec3 camPos = getActiveCameraPos(tickDelta);
-        Vec3 look = getActiveCameraLook(tickDelta);
-        Vec3 start = camPos.add(look.scale(10.0));
+        Vec3 start = RenderState.tracerOrigin();
 
         int a = (argb >> 24) & 255;
         int r = (argb >> 16) & 255;

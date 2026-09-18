@@ -20,6 +20,7 @@ import net.minecraft.world.phys.Vec3;
 import combatant.client.util.aiming.RotationManager;
 import combatant.client.util.aiming.data.Rotation;
 import combatant.client.util.player.inventory.InventorySwap;
+import combatant.client.util.player.InteractionUtil;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -363,6 +364,48 @@ public final class BlockMiningSystem {
         Long time = rebreakCache.get(pos);
         if (time == null) return false;
         return System.currentTimeMillis() - time <= maxAgeMs;
+    }
+
+    /**
+     * Checks if a block can be broken instantly with the specified tool.
+     *
+     * @param pos the block position
+     * @param tool the tool stack to check with
+     * @return true if destroy progress is greater than or equal to 1.0f
+     */
+    public boolean isInstantBreak(BlockPos pos, ItemStack tool) {
+        if (pos == null || mc.player == null || mc.level == null) return false;
+        BlockState state = mc.level.getBlockState(pos);
+        if (state.isAir()) return false;
+        float progress = MiningDamageCalculator.calculateDestroyProgress(
+                mc.player,
+                tool != null ? tool : ItemStack.EMPTY,
+                state,
+                pos
+        );
+        return progress >= 1.0f;
+    }
+
+    /**
+     * Checks if a block can be packet-broken.
+     * Requires the position to be non-null, within vanilla block reach of the player,
+     * and not unbreakable (such as bedrock or air).
+     *
+     * @param pos the block position
+     * @return true if the block can be targeted for packet breaking
+     */
+    public boolean canPacketBreak(BlockPos pos) {
+        if (pos == null || mc.player == null || mc.level == null) {
+            return false;
+        }
+        if (!InteractionUtil.isInReach(mc.player, Vec3.atCenterOf(pos), InteractionUtil.VANILLA_BLOCK_REACH)) {
+            return false;
+        }
+        BlockState state = mc.level.getBlockState(pos);
+        if (state.isAir() || state.is(Blocks.BEDROCK) || state.getDestroySpeed(mc.level, pos) < 0.0f) {
+            return false;
+        }
+        return true;
     }
 
     /**

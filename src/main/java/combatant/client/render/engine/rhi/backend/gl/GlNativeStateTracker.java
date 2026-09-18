@@ -48,6 +48,7 @@ public final class GlNativeStateTracker {
     private static boolean lineSmoothEnabled;
     private static boolean lineWidthKnown;
     private static float lineWidth;
+    private static int activeTextureUnit = -1;
 
     private GlNativeStateTracker() {
     }
@@ -82,6 +83,7 @@ public final class GlNativeStateTracker {
         alphaToCoverageKnown = false;
         lineSmoothKnown = false;
         lineWidthKnown = false;
+        activeTextureUnit = -1;
     }
 
     public static void invalidateStencil() {
@@ -164,5 +166,18 @@ public final class GlNativeStateTracker {
         }
         lineSmoothEnabled = enabled;
         lineSmoothKnown = true;
+    }
+
+    /**
+     * Differentially binds the active OpenGL texture unit via Blaze3D.
+     *
+     * @param unit the 0-indexed texture unit
+     */
+    public static void activeTexture(int unit) {
+        if (activeTextureUnit == unit) {
+            return;
+        }
+        activeTextureUnit = unit;
+        GlStateManager._activeTexture(GL13C.GL_TEXTURE0 + unit);
     }
 }

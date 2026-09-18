@@ -17,6 +17,7 @@ import combatant.client.render.engine.renderer.Renderer3D;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
+import combatant.client.render.engine.RenderState;
 import net.minecraft.world.entity.vehicle.minecart.MinecartChest;
 import net.minecraft.world.entity.vehicle.minecart.MinecartHopper;
 import net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity;
@@ -147,7 +148,8 @@ public class StorageESP extends Module {
                 int r = (argb >>> 16) & 0xFF;
                 int g = (argb >>> 8) & 0xFF;
                 int b = argb & 0xFF;
-                target.line(camPos.x, camPos.y, camPos.z, center.x, center.y, center.z, r, g, b, a);
+                Vec3 start = RenderState.tracerOrigin();
+                target.line(start.x, start.y, start.z, center.x, center.y, center.z, r, g, b, a);
             }
         }
     }

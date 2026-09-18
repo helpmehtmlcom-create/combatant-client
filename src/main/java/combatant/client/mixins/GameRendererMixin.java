@@ -270,10 +270,21 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
             RenderState.rendering3D = true;
             Vec3 capturedCameraPos = CombatantWorldMatrices.cameraPosition();
             RenderState.cameraPos = capturedCameraPos != null ? capturedCameraPos : mainCamera.position();
-            RenderState.cameraRotation.set(mainCamera.rotation());
+            if (position != null) {
+                position.getNormalizedRotation(RenderState.cameraRotation).conjugate();
+            } else {
+                RenderState.cameraRotation.set(mainCamera.rotation());
+            }
             RenderState.cameraYaw = mainCamera.yRot();
             RenderState.cameraPitch = mainCamera.xRot();
-            RenderState.cameraLook = Vec3.directionFromRotation(RenderState.cameraPitch, RenderState.cameraYaw).normalize();
+            org.joml.Vector3f lookDir = new org.joml.Vector3f(0.0f, 0.0f, -1.0f);
+            if (position != null) {
+                org.joml.Matrix4f invPos = new org.joml.Matrix4f(position).invert();
+                invPos.transformDirection(lookDir);
+            } else {
+                lookDir.rotate(mainCamera.rotation());
+            }
+            RenderState.cameraLook = new Vec3(lookDir.x, lookDir.y, lookDir.z).normalize();
             RenderState.cameraSubmersion = mainCamera.getFluidInCamera();
             RenderState.worldTranslucent = isWorldTranslucent(RenderState.cameraSubmersion);
             RenderState.frustum = mainCamera != null
@@ -693,9 +704,21 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
             RenderState.rendering3D = true;
             Vec3 capturedCameraPos = CombatantWorldMatrices.cameraPosition();
             RenderState.cameraPos = capturedCameraPos != null ? capturedCameraPos : mainCamera.position();
-            RenderState.cameraRotation.set(mainCamera.rotation());
+            if (position != null) {
+                position.getNormalizedRotation(RenderState.cameraRotation).conjugate();
+            } else {
+                RenderState.cameraRotation.set(mainCamera.rotation());
+            }
             RenderState.cameraYaw = mainCamera.yRot();
             RenderState.cameraPitch = mainCamera.xRot();
+            org.joml.Vector3f postLookDir = new org.joml.Vector3f(0.0f, 0.0f, -1.0f);
+            if (position != null) {
+                org.joml.Matrix4f invPos = new org.joml.Matrix4f(position).invert();
+                invPos.transformDirection(postLookDir);
+            } else {
+                postLookDir.rotate(mainCamera.rotation());
+            }
+            RenderState.cameraLook = new Vec3(postLookDir.x, postLookDir.y, postLookDir.z).normalize();
 
             if (combatant$postRenderer == null) {
                 combatant$postRenderer = new Renderer3D(

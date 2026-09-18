@@ -17,6 +17,7 @@ import combatant.client.events.EventHandler;
 import combatant.client.events.impl.GameTickEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
+import combatant.client.render.engine.RenderState;
 import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.ModuleSubCategory;
 import combatant.client.render.engine.renderer.Renderer3D;
@@ -200,9 +201,11 @@ public class ChunkFinder extends Module {
                                 Direction.Axis axis = state.getValue(BlockStateProperties.AXIS);
                                 if (axis == Direction.Axis.X || axis == Direction.Axis.Z) {
                                     BlockPos pos = new BlockPos(baseX + x, worldY, baseZ + z);
+                                    int minY = mc.level != null ? mc.level.getMinY() : -64;
+                                    int maxY = mc.level != null ? mc.level.getMaxY() : 320;
                                     return new FlaggedFeature(cPos, pos, "Rotated Deepslate (Axis " + axis + ")",
-                                            new AABB(cPos.getMinBlockX(), worldY - 2, cPos.getMinBlockZ(),
-                                                    cPos.getMaxBlockX() + 1, worldY + 2, cPos.getMaxBlockZ() + 1));
+                                            new AABB(cPos.getMinBlockX(), minY, cPos.getMinBlockZ(),
+                                                    cPos.getMaxBlockX() + 1, maxY, cPos.getMaxBlockZ() + 1));
                                 }
                             }
                         }
@@ -214,45 +217,55 @@ public class ChunkFinder extends Module {
             if (cobblestoneLines.get() && section.maybeHas(s -> s.is(Blocks.COBBLESTONE))) {
                 BlockPos found = checkCollinear(section, baseX, baseY, baseZ, Blocks.COBBLESTONE, cobbleMinLength.get());
                 if (found != null) {
+                    int minY = mc.level != null ? mc.level.getMinY() : -64;
+                    int maxY = mc.level != null ? mc.level.getMaxY() : 320;
                     return new FlaggedFeature(cPos, found, "Cobblestone Trail (" + cobbleMinLength.get() + "+)",
-                            new AABB(cPos.getMinBlockX(), found.getY() - 1, cPos.getMinBlockZ(),
-                                    cPos.getMaxBlockX() + 1, found.getY() + 3, cPos.getMaxBlockZ() + 1));
+                            new AABB(cPos.getMinBlockX(), minY, cPos.getMinBlockZ(),
+                                    cPos.getMaxBlockX() + 1, maxY, cPos.getMaxBlockZ() + 1));
                 }
             }
 
             if (tuffLines.get() && section.maybeHas(s -> s.is(Blocks.TUFF))) {
                 BlockPos found = checkCollinear(section, baseX, baseY, baseZ, Blocks.TUFF, tuffMinLength.get());
                 if (found != null) {
+                    int minY = mc.level != null ? mc.level.getMinY() : -64;
+                    int maxY = mc.level != null ? mc.level.getMaxY() : 320;
                     return new FlaggedFeature(cPos, found, "Tuff Line (" + tuffMinLength.get() + "+)",
-                            new AABB(cPos.getMinBlockX(), found.getY() - 1, cPos.getMinBlockZ(),
-                                    cPos.getMaxBlockX() + 1, found.getY() + 3, cPos.getMaxBlockZ() + 1));
+                            new AABB(cPos.getMinBlockX(), minY, cPos.getMinBlockZ(),
+                                    cPos.getMaxBlockX() + 1, maxY, cPos.getMaxBlockZ() + 1));
                 }
             }
 
             if (andesiteLines.get() && section.maybeHas(s -> s.is(Blocks.ANDESITE))) {
                 BlockPos found = checkCollinear(section, baseX, baseY, baseZ, Blocks.ANDESITE, andesiteMinLength.get());
                 if (found != null) {
+                    int minY = mc.level != null ? mc.level.getMinY() : -64;
+                    int maxY = mc.level != null ? mc.level.getMaxY() : 320;
                     return new FlaggedFeature(cPos, found, "Andesite Line (" + andesiteMinLength.get() + "+)",
-                            new AABB(cPos.getMinBlockX(), found.getY() - 1, cPos.getMinBlockZ(),
-                                    cPos.getMaxBlockX() + 1, found.getY() + 3, cPos.getMaxBlockZ() + 1));
+                            new AABB(cPos.getMinBlockX(), minY, cPos.getMinBlockZ(),
+                                    cPos.getMaxBlockX() + 1, maxY, cPos.getMaxBlockZ() + 1));
                 }
             }
 
             if (dioriteLines.get() && section.maybeHas(s -> s.is(Blocks.DIORITE))) {
                 BlockPos found = checkCollinear(section, baseX, baseY, baseZ, Blocks.DIORITE, dioriteMinLength.get());
                 if (found != null) {
+                    int minY = mc.level != null ? mc.level.getMinY() : -64;
+                    int maxY = mc.level != null ? mc.level.getMaxY() : 320;
                     return new FlaggedFeature(cPos, found, "Diorite Line (" + dioriteMinLength.get() + "+)",
-                            new AABB(cPos.getMinBlockX(), found.getY() - 1, cPos.getMinBlockZ(),
-                                    cPos.getMaxBlockX() + 1, found.getY() + 3, cPos.getMaxBlockZ() + 1));
+                            new AABB(cPos.getMinBlockX(), minY, cPos.getMinBlockZ(),
+                                    cPos.getMaxBlockX() + 1, maxY, cPos.getMaxBlockZ() + 1));
                 }
             }
 
             if (obsidianLines.get() && section.maybeHas(s -> s.is(Blocks.OBSIDIAN))) {
                 BlockPos found = checkCollinear(section, baseX, baseY, baseZ, Blocks.OBSIDIAN, obsidianMinLength.get());
                 if (found != null) {
+                    int minY = mc.level != null ? mc.level.getMinY() : -64;
+                    int maxY = mc.level != null ? mc.level.getMaxY() : 320;
                     return new FlaggedFeature(cPos, found, "Obsidian Highway/Line (" + obsidianMinLength.get() + "+)",
-                            new AABB(cPos.getMinBlockX(), found.getY() - 1, cPos.getMinBlockZ(),
-                                    cPos.getMaxBlockX() + 1, found.getY() + 3, cPos.getMaxBlockZ() + 1));
+                            new AABB(cPos.getMinBlockX(), minY, cPos.getMinBlockZ(),
+                                    cPos.getMaxBlockX() + 1, maxY, cPos.getMaxBlockZ() + 1));
                 }
             }
         }
@@ -401,7 +414,8 @@ public class ChunkFinder extends Module {
 
             if (renderTracers.get()) {
                 Vec3 center = box.getCenter();
-                renderer.line(camPos.x, camPos.y, camPos.z, center.x, center.y, center.z, r, g, b, 210);
+                Vec3 start = RenderState.tracerOrigin();
+                renderer.line(start.x, start.y, start.z, center.x, center.y, center.z, r, g, b, 210);
             }
         }
     }

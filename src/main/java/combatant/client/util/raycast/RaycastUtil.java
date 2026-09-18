@@ -20,6 +20,13 @@ import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.ButtonBlock;
+import net.minecraft.world.level.block.LeverBlock;
+import net.minecraft.world.level.block.SignBlock;
+import net.minecraft.world.level.block.TorchBlock;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
@@ -29,6 +36,7 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.util.function.Predicate;
+import java.util.Optional;
 
 /**
  * Centralized raycast helpers for entities, blocks, voxel clipping, and line-of-sight.
@@ -395,5 +403,189 @@ public enum RaycastUtil {
         }
 
         return best;
+    }
+
+    /**
+     * Raycasts against a specific target entity using eye position and rotation angles,
+     * applying optional hitbox inflation.
+     *
+     * @param viewer viewing entity
+     * @param target target entity to test
+     * @param maxRange maximum raycast reach
+     * @param yaw horizontal rotation in degrees
+     * @param pitch vertical rotation in degrees
+     * @param hitboxInflation padding added to the target bounding box
+     * @return EntityHitResult with hit coordinates, or null if missed or out of range
+     */
+    public static EntityHitResult raycastEntity(Entity viewer,
+                                                Entity target,
+                                                double maxRange,
+                                                float yaw,
+                                                float pitch,
+                                                double hitboxInflation) {
+        if (viewer == null || target == null || maxRange <= 0.0) {
+            return null;
+        }
+
+        Vec3 eyes = viewer.getEyePosition();
+        Vec3 dir = Vec3.directionFromRotation(pitch, yaw);
+        Vec3 end = eyes.add(dir.scale(maxRange));
+
+        AABB box = target.getBoundingBox().inflate(hitboxInflation);
+        if (box.contains(eyes)) {
+            return new EntityHitResult(target, eyes);
+        }
+
+        Optional<Vec3> hit = box.clip(eyes, end);
+        return hit.map(vec3 -> new EntityHitResult(target, vec3)).orElse(null);
+    }
+
+    /**
+     * Casts a ray from a start position along yaw and pitch up to maxDistance, returning
+     * the Euclidean distance to the block impact point or maxDistance if nothing was hit.
+     *
+     * @param level the level to raycast in
+     * @param from start coordinate
+     * @param yaw horizontal rotation in degrees
+     * @param pitch vertical rotation in degrees
+     * @param maxDistance maximum ray distance
+     * @return distance to block impact or maxDistance on miss
+     */
+    public static double raycastBlockDistance(Level level,
+                                              Vec3 from,
+                                              float yaw,
+                                              float pitch,
+                                              double maxDistance) {
+        if (level == null || from == null || maxDistance <= 0.0) {
+            return maxDistance;
+        }
+
+        Vec3 dir = Vec3.directionFromRotation(pitch, yaw);
+        Vec3 to = from.add(dir.scale(maxDistance));
+
+        BlockHitResult hit = level.clip(new ClipContext(
+                from,
+                to,
+                ClipContext.Block.COLLIDER,
+                ClipContext.Fluid.NONE,
+                CollisionContext.empty()
+        ));
+
+        if (hit.getType() == HitResult.Type.MISS) {
+            return maxDistance;
+        }
+
+        return Math.min(maxDistance, from.distanceTo(hit.getLocation()));
+    }
+
+    /**
+     * Line of sight detection from player eyes to a target point that ignores passable
+     * or decorative blocks (grass, flowers, torches, signs, buttons, levers), continuing
+     * checks until a solid obstacle or the target point is encountered.
+     *
+     * @param player the viewing player
+     * @param point target world coordinate
+     * @return true if visible through passable/decorative blocks, false if blocked by solid obstacle
+     */
+    public static boolean canSeeIgnoringTransparent(Player player, Vec3 point) {
+        if (player == null || point == null) {
+            return false;
+        }
+        Level level = player.level();
+        if (level == null) {
+            return false;
+        }
+
+        Vec3 current = player.getEyePosition();
+        if (current.distanceToSqr(point) < 1.0e-4) {
+            return true;
+        }
+
+        Vec3 totalDelta = point.subtract(current);
+        double totalDistance = totalDelta.length();
+        if (totalDistance < 1.0e-4) {
+            return true;
+        }
+        Vec3 dir = totalDelta.scale(1.0 / totalDistance);
+
+        for (int step = 0; step < 32; step++) {
+            HitResult res = level.clip(new ClipContext(
+                    current,
+                    point,
+                    ClipContext.Block.OUTLINE,
+                    ClipContext.Fluid.NONE,
+                    player
+            ));
+
+            if (res.getType() == HitResult.Type.MISS) {
+                return true;
+            }
+
+            if (res instanceof BlockHitResult blockHit) {
+                Vec3 hitLoc = blockHit.getLocation();
+                if (hitLoc.distanceToSqr(point) < 0.01) {
+                    return true;
+                }
+                BlockPos hitPos = blockHit.getBlockPos();
+                BlockState state = level.getBlockState(hitPos);
+                if (!isPassableOrDecorative(level, hitPos, state)) {
+                    return false;
+                }
+
+                AABB blockBox = new AABB(hitPos);
+                if (blockBox.contains(point)) {
+                    return true;
+                }
+
+                Vec3 exitPoint = blockBox.clip(point, current).orElse(null);
+                Vec3 next = (exitPoint != null)
+                        ? exitPoint.add(dir.scale(0.01))
+                        : hitLoc.add(dir.scale(0.05));
+
+                if (next.subtract(player.getEyePosition()).dot(dir) >= totalDistance) {
+                    return true;
+                }
+                current = next;
+            } else {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Determines whether a block is passable or decorative (such as grass, flowers, torches,
+     * signs, buttons, levers, or blocks without physical collision).
+     *
+     * @param level level instance
+     * @param pos block position
+     * @param state block state
+     * @return true if passable or decorative
+     */
+    public static boolean isPassableOrDecorative(Level level, BlockPos pos, BlockState state) {
+        if (state == null || state.isAir()) {
+            return true;
+        }
+        if (state.is(Blocks.GRASS_BLOCK)) {
+            return false;
+        }
+        if (state.getCollisionShape(level, pos).isEmpty() || !state.blocksMotion()) {
+            return true;
+        }
+        if (state.canBeReplaced()) {
+            return true;
+        }
+        if (state.is(BlockTags.FLOWERS)
+                || state.is(BlockTags.SIGNS)
+                || state.is(BlockTags.BUTTONS)
+                || state.is(BlockTags.CORALS)
+                || state.is(BlockTags.CANDLES)) {
+            return true;
+        }
+        Block block = state.getBlock();
+        return block instanceof ButtonBlock
+                || block instanceof LeverBlock
+                || block instanceof TorchBlock
+                || block instanceof SignBlock;
     }
 }
