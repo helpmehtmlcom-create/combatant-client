@@ -473,11 +473,13 @@ public final class SodiumGlBackend implements CombatantRhi {
             // blit as if it were world geometry (shrinking/offsetting lighting, post and debug
             // presentation). MeshData remains bound for legacy fullscreen vertex shaders, but its
             // transforms must be identity; only the viewport payload is meaningful here.
+            int width = Math.max(1, command.colorAttachment != null ? command.colorAttachment.getWidth(0) : 1);
+            int height = Math.max(1, command.colorAttachment != null ? command.colorAttachment.getHeight(0) : 1);
             MeshUniforms.update(
                     projectionScratch.identity(),
                     modelViewScratch.identity(),
-                    command.colorAttachment != null ? command.colorAttachment.getWidth(0) : 1.0f,
-                    command.colorAttachment != null ? command.colorAttachment.getHeight(0) : 1.0f
+                    width,
+                    height
             );
             GpuBufferSlice meshData = MeshUniforms.get();
 
