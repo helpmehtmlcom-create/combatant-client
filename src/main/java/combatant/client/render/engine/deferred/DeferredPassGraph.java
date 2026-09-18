@@ -193,6 +193,7 @@ public final class DeferredPassGraph {
                     pass.executor().execute(context);
                     markWrites(pass, context.resources());
                 } catch (Throwable t) {
+                    markFailedWrites(pass, context.resources(), t);
                     DebugLog.warnOnChange(
                             "deferred.pass.failed." + pass.id(),
                             t.getClass().getSimpleName() + "|" + t.getMessage(),
@@ -338,8 +339,14 @@ public final class DeferredPassGraph {
             out.append("  ").append(logical.resource().name())
                     .append(" physical=").append(logical.physicalAllocationId() < 0 ? "external" : logical.physicalAllocationId())
                     .append(" aliasGroup=").append(logical.aliasGroup() < 0 ? "-" : logical.aliasGroup())
-                    .append(" produced=").append(resource != null && bindings != null && bindings.isValid(resource))
-                    .append('\n');
+                    .append(" produced=").append(resource != null && bindings != null && bindings.isValid(resource));
+            DeferredResourceProvenance provenance = resource == null || bindings == null ? null : bindings.provenance(resource);
+            if (provenance != null) {
+                out.append(" status=").append(provenance.status())
+                        .append(" producer=").append(provenance.producerPassId());
+                if (!provenance.reasonCode().isBlank()) out.append(" reason=").append(provenance.reasonCode());
+            }
+            out.append('\n');
         }
         return out.toString();
     }
@@ -395,7 +402,21 @@ public final class DeferredPassGraph {
         for (var use : pass.resources()) {
             if (!use.access().writes()) continue;
             DeferredResource resource = resource(use.resource());
-            if (resource != null) resources.markWritten(resource);
+            if (resource == null) continue;
+            resources.publishProducedIfAbsentForPass(resource, pass.id());
+            resources.markWritten(resource);
+        }
+    }
+
+    private static void markFailedWrites(DeferredPassSpec pass, DeferredResourceBindings resources, Throwable failure) {
+        String message = failure == null ? "" : failure.getClass().getSimpleName()
+                + (failure.getMessage() == null ? "" : ": " + failure.getMessage());
+        for (var use : pass.resources()) {
+            if (!use.access().writes()) continue;
+            DeferredResource resource = resource(use.resource());
+            if (resource == null) continue;
+            resources.publishStatus(resource, pass.id(), DeferredResourceStatus.FAILED,
+                    "pass_exception", message, null);
         }
     }
 

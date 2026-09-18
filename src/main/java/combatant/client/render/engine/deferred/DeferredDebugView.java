@@ -36,6 +36,8 @@ public enum DeferredDebugView {
     AO(DeferredResource.AMBIENT_OCCLUSION, SourceKind.TEXTURE, DeferredDebugDecodeMode.SCALAR, 0, DeferredFeature.GTAO),
     INDIRECT(DeferredResource.INDIRECT_LIGHT, SourceKind.TEXTURE, DeferredDebugDecodeMode.REGULAR_COLOR, -1, DeferredFeature.INDIRECT_LIGHT),
     COLORED_BLOCK_LIGHT(DeferredResource.BLOCK_LIGHT_IRRADIANCE, SourceKind.TEXTURE, DeferredDebugDecodeMode.REGULAR_COLOR, -1, DeferredFeature.COLORED_BLOCK_LIGHT),
+    SKY_DIFFUSE_IRRADIANCE(DeferredResource.SKY_DIFFUSE_IRRADIANCE, SourceKind.TEXTURE, DeferredDebugDecodeMode.REGULAR_COLOR, -1, DeferredFeature.SKY),
+    ENVIRONMENT_IRRADIANCE(DeferredResource.ENVIRONMENT_IRRADIANCE, SourceKind.TEXTURE, DeferredDebugDecodeMode.REGULAR_COLOR, -1, null),
     REFLECTION_COLOR(DeferredResource.REFLECTION_COLOR, SourceKind.TEXTURE, DeferredDebugDecodeMode.REGULAR_COLOR, -1, DeferredFeature.REFLECTIONS),
     REFLECTION_CONFIDENCE(DeferredResource.REFLECTION_CONFIDENCE, SourceKind.TEXTURE, DeferredDebugDecodeMode.CONFIDENCE_MASK, 0, DeferredFeature.REFLECTIONS),
 

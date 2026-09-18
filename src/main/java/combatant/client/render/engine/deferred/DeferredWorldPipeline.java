@@ -160,7 +160,8 @@ public final class DeferredWorldPipeline {
         } catch (Throwable ignored) { }
         return new DeferredDebugDiagnostics(
                 lifecycleState, backend, smoke.debugView(), smoke.overrides(), smoke.isolationMode(),
-                smoke.volumeAxis(), smoke.volumeSlice(), resetReason, state.unavailableDebugResourceReason()
+                smoke.volumeAxis(), smoke.volumeSlice(), resetReason, state.unavailableDebugResourceReason(),
+                worldStateSource.diagnostics(), resourceBindings.provenanceSnapshot()
         );
     }
 

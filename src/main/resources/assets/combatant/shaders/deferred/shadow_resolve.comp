@@ -113,12 +113,6 @@ float receiverPlaneBias(ShadowCascade cascade, vec3 worldRelative, vec3 normalWo
     return max(tangentSlope, bitangentSlope) * u_Camera.shadowParams0.z;
 }
 
-float hash12(vec2 p) {
-    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
-}
-
 vec2 rotateOffset(vec2 value, float angle) {
     float c = cos(angle);
     float s = sin(angle);
@@ -225,7 +219,10 @@ void main() {
     vec3 worldRelative = reconstructCameraRelativeWorld(uv, depth);
     vec3 normalView = decodeOctahedral(textureLod(u_GbufferGeometry, uv, 0.0).rg);
     vec3 normalWorld = normalize(mat3(u_Camera.inverseView) * normalView);
-    float rotation = hash12(vec2(pixel) + vec2(float(cascadeIndex) * 17.0, 11.0)) * 6.28318530718;
+    // Non-temporal normalization path: keep the filter kernel stable in shadow/cascade space.
+    // Screen-pixel hashing made the same world receiver select a different kernel while the camera
+    // translated, producing visible crawling even when the shadow map itself was unchanged.
+    float rotation = float(cascadeIndex) * 2.39996322973;
 
     bool primaryValid = false;
     float visibility = filteredCascadeVisibility(

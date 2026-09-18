@@ -167,7 +167,7 @@ void main() {
     vec2 uv = (vec2(pixel) + 0.5) / vec2(size);
     vec3 base = max(textureLod(u_BaseRadiance, uv, 0.0).rgb, vec3(0.0));
     float depth = textureLod(u_Depth, uv, 0.0).r;
-    if (depth <= 0.0 && u_SkyState.state0.x > 0.5) {
+    if (depth <= 0.0 && (u_SkyState.state0.x > 0.5 || u_SkyState.state0.w > 0.5)) {
         vec3 ray = worldRay(uv);
         base = max(textureLod(u_SkyRadiance, latLongFromDirection(ray), 0.0).rgb, vec3(0.0));
         if (u_Data.flags.y > 0.5) {

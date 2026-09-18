@@ -39,6 +39,8 @@ public final class DeferredResourceBindings {
     private final EnumMap<DeferredResource, RhiStorageBuffer> buffers = new EnumMap<>(DeferredResource.class);
     private final EnumMap<DeferredResource, RhiStorageImage> images = new EnumMap<>(DeferredResource.class);
     private final EnumMap<DeferredResource, RhiStorageVolume> volumes = new EnumMap<>(DeferredResource.class);
+    private final EnumMap<DeferredResource, DeferredResourceProvenance> provenance = new EnumMap<>(DeferredResource.class);
+    private final EnumMap<DeferredResource, Long> provenanceGenerations = new EnumMap<>(DeferredResource.class);
     private final Map<Integer, AliasState> activeAliases = new HashMap<>();
     private final EnumSet<DeferredResource> graphAccessedThisFrame = EnumSet.noneOf(DeferredResource.class);
 
@@ -72,6 +74,7 @@ public final class DeferredResourceBindings {
         this.historyEpoch = historyEpoch;
         activeAliases.clear();
         graphAccessedThisFrame.clear();
+        provenance.clear();
         clearBindings();
     }
 
@@ -94,6 +97,8 @@ public final class DeferredResourceBindings {
         historyEpoch = Long.MIN_VALUE;
         outputWidth = 0;
         outputHeight = 0;
+        provenance.clear();
+        provenanceGenerations.clear();
         clearBindings();
         detachFrameGraph();
     }
@@ -225,6 +230,41 @@ public final class DeferredResourceBindings {
         if (resource == null) return false;
         if (graphLogical(resource) != null) return isBound(resource) && isValid(resource);
         return isBound(resource) && isValid(resource);
+    }
+
+    /** Semantic producer result for diagnostics. This is intentionally separate from logical validity. */
+    public void publishStatus(DeferredResource resource,
+                              String producerPassId,
+                              DeferredResourceStatus status,
+                              String reasonCode,
+                              String message,
+                              DeferredResource upstreamResource) {
+        if (resource == null) return;
+        long generation = provenanceGenerations.merge(resource, 1L, Long::sum);
+        provenance.put(resource, new DeferredResourceProvenance(
+                resource, producerPassId, frameId, generation, status, reasonCode, message, upstreamResource
+        ));
+    }
+
+    /** Returns the current-frame semantic producer result, if one has been published. */
+    public @Nullable DeferredResourceProvenance provenance(DeferredResource resource) {
+        return resource == null ? null : provenance.get(resource);
+    }
+
+    public Map<DeferredResource, DeferredResourceProvenance> provenanceSnapshot() {
+        return Map.copyOf(provenance);
+    }
+
+    /**
+     * Publishes PRODUCED only when the pass itself did not already publish a more specific result
+     * (for example FALLBACK after a provider exception).
+     */
+    void publishProducedIfAbsentForPass(DeferredResource resource, String producerPassId) {
+        if (resource == null) return;
+        DeferredResourceProvenance current = provenance.get(resource);
+        if (current != null && current.frameId() == frameId
+                && current.producerPassId().equals(producerPassId)) return;
+        publishStatus(resource, producerPassId, DeferredResourceStatus.PRODUCED, "", "", null);
     }
 
     /** Called only after a producer completed successfully. */

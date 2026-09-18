@@ -143,6 +143,22 @@ final class DeferredDebugCompositorSource implements AutoCloseable {
         if (!valid) {
             return unavailable(state, view, "resource unavailable: " + resource.key().name());
         }
+        DeferredResourceProvenance provenance = context.resources().provenance(resource);
+        if (provenance != null && (provenance.status() == DeferredResourceStatus.FAILED
+                || provenance.status() == DeferredResourceStatus.MISSING_INPUT
+                || provenance.status() == DeferredResourceStatus.UNAVAILABLE)) {
+            return unavailable(state, view, "resource " + provenance.status() + ": "
+                    + resource.key().name() + (provenance.reasonCode().isBlank()
+                    ? "" : " (" + provenance.reasonCode() + ")"));
+        }
+        if (provenance != null && provenance.status() == DeferredResourceStatus.FALLBACK) {
+            DebugLog.renderThreadOnChange(
+                    "combatant.deferred.debug.fallback." + resource.name(),
+                    provenance.producerPassId() + "|" + provenance.reasonCode(),
+                    "[Deferred][Debug] resource=%s is FALLBACK producer=%s reason=%s",
+                    resource.key().name(), provenance.producerPassId(), provenance.reasonCode()
+            );
+        }
         state.setUnavailableDebugResourceReason("");
         DebugLog.renderThreadOnChange(
                 "combatant.deferred.debug.ready",

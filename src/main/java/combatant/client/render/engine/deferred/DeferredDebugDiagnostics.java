@@ -18,7 +18,9 @@ public record DeferredDebugDiagnostics(
         DeferredDebugVolumeAxis volumeAxis,
         float volumeSlice,
         DeferredHistoryResetReason historyResetReason,
-        String unavailableDebugResourceReason
+        String unavailableDebugResourceReason,
+        DeferredEnvironmentCaptureDiagnostics environmentCapture,
+        Map<DeferredResource, DeferredResourceProvenance> resourceProvenance
 ) {
     public DeferredDebugDiagnostics {
         backend = backend == null || backend.isBlank() ? "unknown" : backend;
@@ -27,5 +29,8 @@ public record DeferredDebugDiagnostics(
         volumeAxis = volumeAxis == null ? DeferredDebugVolumeAxis.Z : volumeAxis;
         historyResetReason = historyResetReason == null ? DeferredHistoryResetReason.NONE : historyResetReason;
         unavailableDebugResourceReason = unavailableDebugResourceReason == null ? "" : unavailableDebugResourceReason;
+        environmentCapture = environmentCapture == null
+                ? DeferredEnvironmentCaptureDiagnostics.unknown(Long.MIN_VALUE) : environmentCapture;
+        resourceProvenance = resourceProvenance == null ? Map.of() : Map.copyOf(resourceProvenance);
     }
 }
