@@ -508,7 +508,7 @@ public final class ModulesMenuScreen {
             float fontSize = count >= 3 ? 6.5f * scale : 7.0f * scale;
             float fontY = tabsY + middle(textHeight(semibold, fontSize), tabsH) + 0.5f * scale;
             float tw = ClickGuiRenderer.textWidth(semibold, sub.title(), fontSize);
-            ClickGuiRenderer.drawText(semibold, sub.title(), tx + (tabW - tw) * 0.5f, fontY, fontSize, textColor);
+            ClickGuiRenderer.drawText(semibold, sub.title(), tx + (tabW - tw) * 0.5f, fontY, fontSize, textColor, false);
         }
 
         float sepY = tabsY + tabsH + 2.5f * scale;

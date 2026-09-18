@@ -7,536 +7,246 @@
 
 package combatant.client.features.module.modules.visuals;
 
-import combatant.client.config.values.EnumValue;
+import combatant.client.config.values.BooleanValue;
+import combatant.client.config.values.ModeValue;
 import combatant.client.config.values.NumberValue;
 import combatant.client.config.values.RGBAColorValue;
+import combatant.client.events.EventHandler;
+import combatant.client.events.impl.GameTickEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
-import combatant.client.features.module.WorldPhase;
-import combatant.client.render.engine.RenderState;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.features.module.ModuleSubCategory;
 import combatant.client.render.engine.renderer.Renderer3D;
-import combatant.client.render.engine.uniform.MeshBuilder;
-import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.util.Mth;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 @ModuleInfo(
         id = "holeesp",
-        displayName = "HoleESP",
-        aliases = {"holes"},
+        displayName = "Hole ESP",
+        description = "Detects artificial 1x1 shafts and 3x1 stairs dug down by players to hide underground bases.",
         category = ModuleCategory.VISUALS,
-        description = "Highlights safe obsidian, bedrock, 2x1, and void holes for crystal combat positioning."
+        subCategory = ModuleSubCategory.DONUTSMP,
+        aliases = {"shaftesp", "mineshaftfinder", "dropesp"}
 )
-public final class HoleESP extends Module {
-
-    public enum RenderMode {
-        BOX,
-        OUTLINE,
-        FLAT
-    }
-
-    public enum HoleType {
-        BEDROCK,
-        OBSIDIAN,
-        TWO_BY_ONE,
-        VOID
-    }
-
-    private static final Direction[] HORIZONTAL = {
-            Direction.NORTH,
-            Direction.SOUTH,
-            Direction.EAST,
-            Direction.WEST
-    };
-
-    private static final int RESCAN_TICKS = 8;
-    private static final int BASE_FILL_ALPHA = 60;
+public class HoleESP extends Module {
 
     private final Minecraft mc = Minecraft.getInstance();
 
-    private final NumberValue<Integer> range =
-            num("range", 10, 2, 32);
-    private final EnumValue<RenderMode> mode =
-            enumMode("mode", RenderMode.BOX);
-    private final RGBAColorValue bedrockColor =
-            color("bedrock_color", "#FF00FF51");
-    private final RGBAColorValue obsidianColor =
-            color("obsidian_color", "#FF7A00FF");
-    private final RGBAColorValue voidColor =
-            color("void_color", "#FFFF0033");
+    private final ModeValue detectionMode =
+            modeSetting("hole_mode", "detection_mode", "All", "All", "Holes", "3x1 Holes");
+    private final NumberValue<Integer> chunksPerTick =
+            num("hole_chunks_per_tick", "chunks_per_tick", 10, 1, 100);
+    private final NumberValue<Integer> minHoleDepth =
+            num("hole_min_depth", "min_depth", 4, 2, 30);
+    private final NumberValue<Integer> minHeight =
+            num("hole_min_y", "min_y_offset", -64, -64, 319);
+    private final NumberValue<Integer> maxHeight =
+            num("hole_max_y", "max_y_offset", 128, -64, 319);
 
-    private List<Hole> cachedHoles = List.of();
-    private BlockPos lastPlayerPos;
-    private int lastScanTick;
-    private int ticks;
+    private final BooleanValue renderFill =
+            bool("hole_fill", "fill", true);
+    private final BooleanValue renderOutline =
+            bool("hole_outline", "outline", true);
+
+    private final RGBAColorValue hole1x1Color =
+            color("hole_1x1_color", "#FFFF0000"); // Red
+    private final RGBAColorValue hole3x1Color =
+            color("hole_3x1_color", "#FFFFA500"); // Orange
+
+    public record DiscoveredHole(BlockPos topPos, int depth, boolean is3x1, AABB box) {
+    }
+
+    private final Map<BlockPos, DiscoveredHole> detectedHoles = new ConcurrentHashMap<>();
+    private final List<ChunkCoord> chunkQueue = new ArrayList<>();
+    private int chunkCursor = 0;
+
+    public record ChunkCoord(int x, int z) {
+    }
+
+    @Override
+    public void onEnable() {
+        detectedHoles.clear();
+        chunkQueue.clear();
+        chunkCursor = 0;
+    }
 
     @Override
     public void onDisable() {
-        cachedHoles = List.of();
-        lastPlayerPos = null;
-        lastScanTick = 0;
-        ticks = 0;
+        detectedHoles.clear();
+        chunkQueue.clear();
     }
 
-    @Override
-    public void onTick() {
-        if (!isEnabled() || mc.level == null || mc.player == null) {
-            cachedHoles = List.of();
-            return;
-        }
+    @EventHandler
+    public void onGameTick(GameTickEvent event) {
+        if (mc.player == null || mc.level == null) return;
 
-        ticks++;
-        BlockPos currentPos = mc.player.blockPosition();
-        if (lastPlayerPos == null || !lastPlayerPos.equals(currentPos) || (ticks - lastScanTick) >= RESCAN_TICKS) {
-            cachedHoles = scanHoles(mc.level, mc.player.position());
-            lastPlayerPos = currentPos;
-            lastScanTick = ticks;
-        }
-    }
+        int playerChunkX = mc.player.getBlockX() >> 4;
+        int playerChunkZ = mc.player.getBlockZ() >> 4;
+        int radius = 6;
 
-    @Override
-    public WorldPhase getWorldPhase() {
-        return WorldPhase.END_MAIN;
-    }
-
-    @Override
-    public void onRenderWorldEngine(Renderer3D renderer, Renderer3D depthRenderer, float tickDelta) {
-        if (!isEnabled() || renderer == null || mc.level == null || mc.player == null || cachedHoles.isEmpty()) {
-            return;
-        }
-
-        Renderer3D target = depthRenderer != null ? depthRenderer : renderer;
-        float previousLineWidth = RenderState.lineWidth;
-        RenderState.lineWidth = 1.5f;
-        try {
-            RenderMode currentMode = mode.get();
-            for (Hole hole : cachedHoles) {
-                if (!Renderer3D.Culling.isInFrustum(hole.box())) {
-                    continue;
+        if (chunkQueue.isEmpty() || chunkCursor >= chunkQueue.size()) {
+            chunkQueue.clear();
+            for (int cx = playerChunkX - radius; cx <= playerChunkX + radius; cx++) {
+                for (int cz = playerChunkZ - radius; cz <= playerChunkZ + radius; cz++) {
+                    chunkQueue.add(new ChunkCoord(cx, cz));
                 }
-                renderHole(target, hole, currentMode);
             }
-        } finally {
-            RenderState.lineWidth = previousLineWidth;
+            chunkCursor = 0;
         }
-    }
 
-    private void renderHole(Renderer3D renderer, Hole hole, RenderMode currentMode) {
-        AABB box = hole.box();
-        int color = hole.argb();
-        int line = colorForDistance(box, color, (color >>> 24) & 0xFF);
-        int fillBottom = colorForDistance(box, color, BASE_FILL_ALPHA);
-        int fillTop = colorForDistance(box, color, 0);
+        int budget = chunksPerTick.get();
+        int minY = minHeight.get();
+        int maxY = maxHeight.get();
+        int requiredDepth = minHoleDepth.get();
+        String mode = detectionMode.get();
 
-        switch (currentMode) {
-            case BOX -> {
-                addVerticalFadeBox(renderer, box, fillBottom, fillTop);
-                addFullOutline(renderer, box, line);
-            }
-            case OUTLINE -> addFullOutline(renderer, box, line);
-            case FLAT -> {
-                addFlatFloor(renderer, box, fillBottom);
-                addBottomOutline(renderer, box, line);
-            }
-        }
-    }
+        while (budget > 0 && chunkCursor < chunkQueue.size()) {
+            ChunkCoord coord = chunkQueue.get(chunkCursor++);
+            budget--;
 
-    private List<Hole> scanHoles(ClientLevel level, Vec3 center) {
-        int r = range.get();
-        int rY = Math.min(r, 6);
-        List<Hole> found = new ArrayList<>();
-        List<AABB> acceptedBoxes = new ArrayList<>();
-        LongOpenHashSet consumed = new LongOpenHashSet();
+            LevelChunk chunk = mc.level.getChunkSource().getChunk(coord.x, coord.z, false);
+            if (chunk == null || chunk.isEmpty()) continue;
 
-        int minX = Mth.floor(center.x - r);
-        int minY = Math.max(level.getMinY(), Mth.floor(center.y - rY));
-        int minZ = Mth.floor(center.z - r);
-        int maxX = Mth.floor(center.x + r);
-        int maxY = Math.min(level.getMaxY() - 1, Mth.floor(center.y + rY));
-        int maxZ = Mth.floor(center.z + r);
-        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+            int baseX = coord.x << 4;
+            int baseZ = coord.z << 4;
 
-        for (int x = minX; x <= maxX; x++) {
-            if (Math.abs((x + 0.5) - center.x) > r) continue;
-            for (int z = minZ; z <= maxZ; z++) {
-                if (Math.abs((z + 0.5) - center.z) > r) continue;
-                for (int scanY = minY; scanY <= maxY; scanY++) {
-                    if (Math.abs((scanY + 0.5) - center.y) > rY) continue;
-                    cursor.set(x, scanY, z);
-                    if (!isReplaceable(level.getBlockState(cursor))) continue;
+            for (int x = 0; x < 16; x++) {
+                for (int z = 0; z < 16; z++) {
+                    int worldX = baseX + x;
+                    int worldZ = baseZ + z;
 
-                    long packed = cursor.asLong();
-                    if (consumed.contains(packed)) continue;
+                    // 1x1 Hole check
+                    if (mode.equals("All") || mode.equals("Holes")) {
+                        check1x1Column(worldX, worldZ, minY, maxY, requiredDepth);
+                    }
 
-                    BlockPos pos = cursor.immutable();
-                    Hole hole = resolveHole(level, pos);
-                    if (hole == null || intersectsAny(hole.box(), acceptedBoxes)) continue;
-
-                    found.add(hole);
-                    acceptedBoxes.add(hole.box());
-                    for (BlockPos holePos : hole.positions()) {
-                        consumed.add(holePos.asLong());
+                    // 3x1 Hole check (only every 3 blocks along X or Z to avoid overlapping)
+                    if ((mode.equals("All") || mode.equals("3x1 Holes")) && (x % 3 == 0 || z % 3 == 0)) {
+                        check3x1Area(worldX, worldZ, minY, maxY, requiredDepth);
                     }
                 }
             }
         }
-
-        return List.copyOf(found);
     }
 
-    private Hole resolveHole(ClientLevel level, BlockPos pos) {
-        if (!isReplaceable(level, pos)
-                || !isReplaceable(level, pos.above())
-                || !isReplaceable(level, pos.above(2))) {
-            return null;
-        }
+    private void check1x1Column(int x, int z, int minY, int maxY, int requiredDepth) {
+        int currentAirRun = 0;
+        int runTopY = maxY;
 
-        // 1. Check for Void hole
-        if (isVoidHole(level, pos)) {
-            return new Hole(box(pos, 1, 1), voidColor.getArgb(), HoleType.VOID, List.of(pos));
-        }
-
-        // 2. Check 1x1 Bedrock hole
-        if (validBedrock(level, pos)) {
-            return new Hole(box(pos, 1, 1), bedrockColor.getArgb(), HoleType.BEDROCK, List.of(pos));
-        }
-
-        // 3. Check 1x1 Obsidian / Indestructible hole
-        if (validIndestructible(level, pos)) {
-            return new Hole(box(pos, 1, 1), obsidianColor.getArgb(), HoleType.OBSIDIAN, List.of(pos));
-        }
-
-        // 4. Check 2x1 hole
-        List<BlockPos> two = twoBlockShape(level, pos);
-        if (two != null) {
-            if (validBedrockShape(level, two)) {
-                return new Hole(box(two), bedrockColor.getArgb(), HoleType.TWO_BY_ONE, two);
-            }
-            if (validIndestructibleShape(level, two)) {
-                return new Hole(box(two), obsidianColor.getArgb(), HoleType.TWO_BY_ONE, two);
+        for (int y = maxY; y >= minY; y--) {
+            BlockState state = mc.level.getBlockState(new BlockPos(x, y, z));
+            if (state.isAir()) {
+                if (currentAirRun == 0) {
+                    runTopY = y;
+                }
+                currentAirRun++;
+            } else {
+                if (currentAirRun >= requiredDepth && isSurroundedBySolid(x, z, runTopY, currentAirRun)) {
+                    BlockPos top = new BlockPos(x, runTopY, z);
+                    AABB box = new AABB(x, runTopY - currentAirRun + 1, z, x + 1, runTopY + 1, z + 1);
+                    detectedHoles.put(top, new DiscoveredHole(top, currentAirRun, false, box));
+                }
+                currentAirRun = 0;
             }
         }
 
-        return null;
+        if (currentAirRun >= requiredDepth && isSurroundedBySolid(x, z, runTopY, currentAirRun)) {
+            BlockPos top = new BlockPos(x, runTopY, z);
+            AABB box = new AABB(x, runTopY - currentAirRun + 1, z, x + 1, runTopY + 1, z + 1);
+            detectedHoles.put(top, new DiscoveredHole(top, currentAirRun, false, box));
+        }
     }
 
-    private boolean isVoidHole(ClientLevel level, BlockPos pos) {
-        // Void hole: surrounded horizontally by safe blocks, but opens directly into the void below
-        boolean voidBelow = false;
-        if (pos.getY() <= level.getMinY()) {
-            voidBelow = true;
-        } else {
-            boolean allAirBelow = true;
-            for (int y = pos.getY() - 1; y >= level.getMinY(); y--) {
-                if (!isReplaceable(level, new BlockPos(pos.getX(), y, pos.getZ()))) {
-                    allAirBelow = false;
+    private boolean isSurroundedBySolid(int x, int z, int topY, int depth) {
+        // Sample middle of the run to verify walls are solid
+        int midY = topY - (depth / 2);
+        return !mc.level.getBlockState(new BlockPos(x + 1, midY, z)).isAir()
+                && !mc.level.getBlockState(new BlockPos(x - 1, midY, z)).isAir()
+                && !mc.level.getBlockState(new BlockPos(x, midY, z + 1)).isAir()
+                && !mc.level.getBlockState(new BlockPos(x, midY, z - 1)).isAir();
+    }
+
+    private void check3x1Area(int x, int z, int minY, int maxY, int requiredDepth) {
+        // Check 3x1 along X axis
+        boolean air3x1 = true;
+        for (int dx = 0; dx < 3; dx++) {
+            if (!mc.level.getBlockState(new BlockPos(x + dx, maxY, z)).isAir()) {
+                air3x1 = false;
+                break;
+            }
+        }
+        if (air3x1) {
+            int depth = 0;
+            for (int y = maxY; y >= minY; y--) {
+                boolean layerAir = true;
+                for (int dx = 0; dx < 3; dx++) {
+                    if (!mc.level.getBlockState(new BlockPos(x + dx, y, z)).isAir()) {
+                        layerAir = false;
+                        break;
+                    }
+                }
+                if (layerAir) {
+                    depth++;
+                } else {
                     break;
                 }
             }
-            voidBelow = allAirBelow;
-        }
-
-        if (!voidBelow) {
-            return false;
-        }
-
-        for (Direction dir : HORIZONTAL) {
-            if (!isSafeBlock(level, pos.relative(dir))) {
-                return false;
+            if (depth >= requiredDepth) {
+                BlockPos top = new BlockPos(x, maxY, z);
+                AABB box = new AABB(x, maxY - depth + 1, z, x + 3, maxY + 1, z + 1);
+                detectedHoles.put(top, new DiscoveredHole(top, depth, true, box));
             }
         }
-        return true;
     }
 
-    private static boolean validBedrock(ClientLevel level, BlockPos pos) {
-        return isBedrock(level, pos.below())
-                && isBedrock(level, pos.east())
-                && isBedrock(level, pos.west())
-                && isBedrock(level, pos.south())
-                && isBedrock(level, pos.north());
-    }
+    @Override
+    public void onRenderWorldEngine(Renderer3D renderer, Renderer3D depthRenderer, float tickDelta) {
+        if (mc.player == null || detectedHoles.isEmpty()) return;
 
-    private static boolean validIndestructible(ClientLevel level, BlockPos pos) {
-        return isSafeBlock(level, pos.below())
-                && isSafeBlock(level, pos.east())
-                && isSafeBlock(level, pos.west())
-                && isSafeBlock(level, pos.south())
-                && isSafeBlock(level, pos.north());
-    }
+        for (DiscoveredHole hole : detectedHoles.values()) {
+            AABB box = hole.box();
+            if (box == null) continue;
 
-    private static List<BlockPos> twoBlockShape(ClientLevel level, BlockPos pos) {
-        for (Direction direction : HORIZONTAL) {
-            BlockPos other = pos.relative(direction);
-            if (isReplaceable(level, other)
-                    && isReplaceable(level, other.above())
-                    && isReplaceable(level, other.above(2))) {
-                return List.of(pos, other);
-            }
-        }
-        return null;
-    }
+            int argb = hole.is3x1() ? hole3x1Color.getArgb() : hole1x1Color.getArgb();
+            int r = (argb >>> 16) & 0xFF;
+            int g = (argb >>> 8) & 0xFF;
+            int b = argb & 0xFF;
 
-    private static boolean validBedrockShape(ClientLevel level, List<BlockPos> positions) {
-        for (BlockPos check : positions) {
-            if (!isBedrock(level, check.below())) {
-                return false;
-            }
-            for (Direction direction : HORIZONTAL) {
-                BlockPos surround = check.relative(direction);
-                if (!positions.contains(surround) && !isBedrock(level, surround)) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
-    private static boolean validIndestructibleShape(ClientLevel level, List<BlockPos> positions) {
-        boolean hasIndestructible = false;
-        for (BlockPos check : positions) {
-            BlockPos below = check.below();
-            if (isIndestructible(level, below)) {
-                hasIndestructible = true;
-            } else if (!isBedrock(level, below)) {
-                return false;
+            if (renderFill.get()) {
+                int fillA = 35;
+                renderer.quad(box.minX, box.minY, box.minZ, box.maxX, box.minY, box.minZ, box.maxX, box.minY, box.maxZ, box.minX, box.minY, box.maxZ, r, g, b, fillA);
+                renderer.quad(box.minX, box.maxY, box.minZ, box.minX, box.maxY, box.maxZ, box.maxX, box.maxY, box.maxZ, box.maxX, box.maxY, box.minZ, r, g, b, fillA);
+                renderer.quad(box.minX, box.minY, box.maxZ, box.maxX, box.minY, box.maxZ, box.maxX, box.maxY, box.maxZ, box.minX, box.maxY, box.maxZ, r, g, b, fillA);
+                renderer.quad(box.minX, box.minY, box.minZ, box.minX, box.maxY, box.minZ, box.maxX, box.maxY, box.minZ, box.maxX, box.minY, box.minZ, r, g, b, fillA);
+                renderer.quad(box.maxX, box.minY, box.minZ, box.maxX, box.maxY, box.minZ, box.maxX, box.maxY, box.maxZ, box.maxX, box.minY, box.maxZ, r, g, b, fillA);
+                renderer.quad(box.minX, box.minY, box.minZ, box.minX, box.minY, box.maxZ, box.minX, box.maxY, box.maxZ, box.minX, box.maxY, box.minZ, r, g, b, fillA);
             }
 
-            for (Direction direction : HORIZONTAL) {
-                BlockPos surround = check.relative(direction);
-                if (positions.contains(surround)) {
-                    continue;
-                }
-                if (isIndestructible(level, surround)) {
-                    hasIndestructible = true;
-                } else if (!isBedrock(level, surround)) {
-                    return false;
-                }
+            if (renderOutline.get()) {
+                int lineA = 220;
+                renderer.line(box.minX, box.minY, box.minZ, box.maxX, box.minY, box.minZ, r, g, b, lineA);
+                renderer.line(box.maxX, box.minY, box.minZ, box.maxX, box.minY, box.maxZ, r, g, b, lineA);
+                renderer.line(box.maxX, box.minY, box.maxZ, box.minX, box.minY, box.maxZ, r, g, b, lineA);
+                renderer.line(box.minX, box.minY, box.maxZ, box.minX, box.minY, box.minZ, r, g, b, lineA);
+
+                renderer.line(box.minX, box.maxY, box.minZ, box.maxX, box.maxY, box.minZ, r, g, b, lineA);
+                renderer.line(box.maxX, box.maxY, box.minZ, box.maxX, box.maxY, box.maxZ, r, g, b, lineA);
+                renderer.line(box.maxX, box.maxY, box.maxZ, box.minX, box.maxY, box.maxZ, r, g, b, lineA);
+                renderer.line(box.minX, box.maxY, box.maxZ, box.minX, box.maxY, box.minZ, r, g, b, lineA);
+
+                renderer.line(box.minX, box.minY, box.minZ, box.minX, box.maxY, box.minZ, r, g, b, lineA);
+                renderer.line(box.maxX, box.minY, box.minZ, box.maxX, box.maxY, box.minZ, r, g, b, lineA);
+                renderer.line(box.maxX, box.minY, box.maxZ, box.maxX, box.maxY, box.maxZ, r, g, b, lineA);
+                renderer.line(box.minX, box.minY, box.maxZ, box.minX, box.maxY, box.maxZ, r, g, b, lineA);
             }
         }
-        return hasIndestructible;
-    }
-
-    private static boolean isSafeBlock(ClientLevel level, BlockPos pos) {
-        return isBedrock(level, pos) || isIndestructible(level, pos);
-    }
-
-    private static boolean isBedrock(ClientLevel level, BlockPos pos) {
-        return level != null && block(level, pos) == Blocks.BEDROCK;
-    }
-
-    private static boolean isIndestructible(ClientLevel level, BlockPos pos) {
-        Block block = block(level, pos);
-        return block == Blocks.OBSIDIAN
-                || block == Blocks.NETHERITE_BLOCK
-                || block == Blocks.CRYING_OBSIDIAN
-                || block == Blocks.RESPAWN_ANCHOR;
-    }
-
-    private static boolean isReplaceable(ClientLevel level, BlockPos pos) {
-        if (level == null || pos == null || pos.getY() < level.getMinY() || pos.getY() >= level.getMaxY()) {
-            return false;
-        }
-        return isReplaceable(level.getBlockState(pos));
-    }
-
-    private static boolean isReplaceable(BlockState state) {
-        return state.isAir() || state.canBeReplaced() || !state.getFluidState().isEmpty();
-    }
-
-    private static Block block(ClientLevel level, BlockPos pos) {
-        if (level == null || pos == null || pos.getY() < level.getMinY() || pos.getY() >= level.getMaxY()) {
-            return Blocks.AIR;
-        }
-        return level.getBlockState(pos).getBlock();
-    }
-
-    private int colorForDistance(AABB box, int argb, int alpha) {
-        if (box == null || mc.player == null) return argb;
-        Vec3 center = box.getCenter();
-        double dx = center.x - mc.player.getX();
-        double dz = center.z - mc.player.getZ();
-        double distSqr = dx * dx + dz * dz;
-        if (!Double.isFinite(distSqr) || distSqr < 0.0) return argb;
-        double maxSqr = Math.max(1.0, (double) range.get() * range.get());
-        float factor = (float) (distSqr / maxSqr);
-        factor = 1.0f - easeOutExpo(factor);
-        factor = Mth.clamp(factor, 0.0f, 1.0f);
-
-        int baseAlpha = (argb >>> 24) & 0xFF;
-        int outAlpha = Mth.clamp((int) (factor * Math.min(alpha, baseAlpha)), 0, 255);
-        return (outAlpha << 24) | (argb & 0x00FFFFFF);
-    }
-
-    private static float easeOutExpo(float x) {
-        return x >= 1.0f ? 1.0f : (float) (1.0f - Math.pow(2.0, -10.0f * x));
-    }
-
-    private static boolean intersectsAny(AABB box, List<AABB> boxes) {
-        for (AABB other : boxes) {
-            if (other.intersects(box)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static AABB box(BlockPos pos, int widthX, int widthZ) {
-        return new AABB(
-                pos.getX(),
-                pos.getY(),
-                pos.getZ(),
-                pos.getX() + widthX,
-                pos.getY() + 1.0,
-                pos.getZ() + widthZ
-        );
-    }
-
-    private static AABB box(List<BlockPos> positions) {
-        int minX = Integer.MAX_VALUE;
-        int minY = Integer.MAX_VALUE;
-        int minZ = Integer.MAX_VALUE;
-        int maxX = Integer.MIN_VALUE;
-        int maxZ = Integer.MIN_VALUE;
-
-        for (BlockPos pos : positions) {
-            minX = Math.min(minX, pos.getX());
-            minY = Math.min(minY, pos.getY());
-            minZ = Math.min(minZ, pos.getZ());
-            maxX = Math.max(maxX, pos.getX());
-            maxZ = Math.max(maxZ, pos.getZ());
-        }
-
-        return new AABB(minX, minY, minZ, maxX + 1, minY + 1.0, maxZ + 1);
-    }
-
-    private static void addVerticalFadeBox(Renderer3D renderer, AABB box, int bottomArgb, int topArgb) {
-        MeshBuilder mesh = renderer.batch(CombatantRenderPipelines.WORLD_COLORED, Renderer3D.DepthMode.MAIN);
-        if (mesh == null) {
-            return;
-        }
-
-        int bottomA = (bottomArgb >>> 24) & 0xFF;
-        int bottomR = (bottomArgb >>> 16) & 0xFF;
-        int bottomG = (bottomArgb >>> 8) & 0xFF;
-        int bottomB = bottomArgb & 0xFF;
-        int topA = (topArgb >>> 24) & 0xFF;
-        int topR = (topArgb >>> 16) & 0xFF;
-        int topG = (topArgb >>> 8) & 0xFF;
-        int topB = topArgb & 0xFF;
-
-        addGradientQuad(mesh, box.minX, box.minY, box.maxZ, box.maxX, box.minY, box.maxZ,
-                box.maxX, box.maxY, box.maxZ, box.minX, box.maxY, box.maxZ,
-                bottomR, bottomG, bottomB, bottomA, topR, topG, topB, topA);
-        addGradientQuad(mesh, box.minX, box.minY, box.minZ, box.minX, box.maxY, box.minZ,
-                box.maxX, box.maxY, box.minZ, box.maxX, box.minY, box.minZ,
-                bottomR, bottomG, bottomB, bottomA, topR, topG, topB, topA);
-        addGradientQuad(mesh, box.maxX, box.minY, box.minZ, box.maxX, box.maxY, box.minZ,
-                box.maxX, box.maxY, box.maxZ, box.maxX, box.minY, box.maxZ,
-                bottomR, bottomG, bottomB, bottomA, topR, topG, topB, topA);
-        addGradientQuad(mesh, box.minX, box.minY, box.minZ, box.minX, box.minY, box.maxZ,
-                box.minX, box.maxY, box.maxZ, box.minX, box.maxY, box.minZ,
-                bottomR, bottomG, bottomB, bottomA, topR, topG, topB, topA);
-    }
-
-    private static void addFlatFloor(Renderer3D renderer, AABB box, int argb) {
-        int a = (argb >>> 24) & 0xFF;
-        if (a <= 0) return;
-        int r = (argb >>> 16) & 0xFF;
-        int g = (argb >>> 8) & 0xFF;
-        int b = argb & 0xFF;
-
-        renderer.quad(box.minX, box.minY, box.minZ,
-                box.maxX, box.minY, box.minZ,
-                box.maxX, box.minY, box.maxZ,
-                box.minX, box.minY, box.maxZ,
-                r, g, b, a);
-    }
-
-    private static void addGradientQuad(MeshBuilder mesh,
-                                        double x1, double y1, double z1,
-                                        double x2, double y2, double z2,
-                                        double x3, double y3, double z3,
-                                        double x4, double y4, double z4,
-                                        int bottomR, int bottomG, int bottomB, int bottomA,
-                                        int topR, int topG, int topB, int topA) {
-        mesh.ensureQuadCapacity();
-        double minY = Math.min(Math.min(y1, y2), Math.min(y3, y4));
-        double maxY = Math.max(Math.max(y1, y2), Math.max(y3, y4));
-        double midY = (minY + maxY) * 0.5;
-        int i1 = fadeVertex(mesh, x1, y1, z1, midY, bottomR, bottomG, bottomB, bottomA, topR, topG, topB, topA);
-        int i2 = fadeVertex(mesh, x2, y2, z2, midY, bottomR, bottomG, bottomB, bottomA, topR, topG, topB, topA);
-        int i3 = fadeVertex(mesh, x3, y3, z3, midY, bottomR, bottomG, bottomB, bottomA, topR, topG, topB, topA);
-        int i4 = fadeVertex(mesh, x4, y4, z4, midY, bottomR, bottomG, bottomB, bottomA, topR, topG, topB, topA);
-        mesh.quad(i1, i2, i3, i4);
-    }
-
-    private static int fadeVertex(MeshBuilder mesh,
-                                  double x, double y, double z, double midY,
-                                  int bottomR, int bottomG, int bottomB, int bottomA,
-                                  int topR, int topG, int topB, int topA) {
-        boolean bottom = y <= midY;
-        return mesh.vec3(x, y, z)
-                .color(
-                        bottom ? bottomR : topR,
-                        bottom ? bottomG : topG,
-                        bottom ? bottomB : topB,
-                        bottom ? bottomA : topA
-                )
-                .next();
-    }
-
-    private static void addBottomOutline(Renderer3D renderer, AABB box, int argb) {
-        int a = (argb >>> 24) & 0xFF;
-        if (a <= 0) return;
-        int r = (argb >>> 16) & 0xFF;
-        int g = (argb >>> 8) & 0xFF;
-        int b = argb & 0xFF;
-
-        renderer.line(box.minX, box.minY, box.minZ, box.maxX, box.minY, box.minZ, r, g, b, a);
-        renderer.line(box.maxX, box.minY, box.minZ, box.maxX, box.minY, box.maxZ, r, g, b, a);
-        renderer.line(box.maxX, box.minY, box.maxZ, box.minX, box.minY, box.maxZ, r, g, b, a);
-        renderer.line(box.minX, box.minY, box.maxZ, box.minX, box.minY, box.minZ, r, g, b, a);
-    }
-
-    private static void addFullOutline(Renderer3D renderer, AABB box, int argb) {
-        int a = (argb >>> 24) & 0xFF;
-        if (a <= 0) return;
-        int r = (argb >>> 16) & 0xFF;
-        int g = (argb >>> 8) & 0xFF;
-        int b = argb & 0xFF;
-
-        // Bottom
-        renderer.line(box.minX, box.minY, box.minZ, box.maxX, box.minY, box.minZ, r, g, b, a);
-        renderer.line(box.maxX, box.minY, box.minZ, box.maxX, box.minY, box.maxZ, r, g, b, a);
-        renderer.line(box.maxX, box.minY, box.maxZ, box.minX, box.minY, box.maxZ, r, g, b, a);
-        renderer.line(box.minX, box.minY, box.maxZ, box.minX, box.minY, box.minZ, r, g, b, a);
-
-        // Top
-        renderer.line(box.minX, box.maxY, box.minZ, box.maxX, box.maxY, box.minZ, r, g, b, a);
-        renderer.line(box.maxX, box.maxY, box.minZ, box.maxX, box.maxY, box.maxZ, r, g, b, a);
-        renderer.line(box.maxX, box.maxY, box.maxZ, box.minX, box.maxY, box.maxZ, r, g, b, a);
-        renderer.line(box.minX, box.maxY, box.maxZ, box.minX, box.maxY, box.minZ, r, g, b, a);
-
-        // Verticals
-        renderer.line(box.minX, box.minY, box.minZ, box.minX, box.maxY, box.minZ, r, g, b, a);
-        renderer.line(box.maxX, box.minY, box.minZ, box.maxX, box.maxY, box.minZ, r, g, b, a);
-        renderer.line(box.maxX, box.minY, box.maxZ, box.maxX, box.maxY, box.maxZ, r, g, b, a);
-        renderer.line(box.minX, box.minY, box.maxZ, box.minX, box.maxY, box.maxZ, r, g, b, a);
-    }
-
-    private record Hole(AABB box, int argb, HoleType type, List<BlockPos> positions) {
     }
 }

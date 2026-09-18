@@ -97,7 +97,12 @@ public enum ModuleSubCategory {
 
     private static ModuleSubCategory resolveVisuals(String id) {
         if (id.contains("donut") || id.contains("chunkradar") || id.contains("shulkerviewer")
-                || id.contains("stashfinder") || id.contains("basefinder") || id.contains("spawneresp")) {
+                || id.contains("stashfinder") || id.contains("basefinder") || id.contains("spawneresp")
+                || id.contains("spawnernametag") || id.contains("regionmap") || id.contains("chunkfinder")
+                || id.contains("netherite") || id.contains("debris") || id.contains("direction")
+                || id.contains("bedrock") || id.contains("cluster") || id.contains("lightfinder")
+                || id.contains("beehive") || id.contains("spawnerbeacon") || id.contains("extraesp")
+                || id.contains("holeesp")) {
             return DONUTSMP;
         }
         return NORMAL;
@@ -105,14 +110,20 @@ public enum ModuleSubCategory {
 
     private static ModuleSubCategory resolvePlayer(String id) {
         if (id.contains("autosell") || id.contains("storagestealer") || id.contains("spawnerdrop")
-                || id.contains("echestfarmer") || id.contains("shitdropper")) {
+                || id.contains("echestfarmer") || id.contains("shitdropper") || id.contains("spawnerprotect")
+                || id.contains("gamblerigger") || id.contains("fakepay") || id.contains("autobasedig")
+                || id.contains("autoconfirm") || id.contains("ahsniper") || id.contains("silenthome")
+                || id.contains("rtp") || id.contains("boneorder") || id.contains("deliver")
+                || id.contains("meteorantiban") || id.contains("playerdetect") || id.contains("panicsell")) {
             return DONUTSMP;
         }
         return NORMAL;
     }
 
     private static ModuleSubCategory resolveMisc(String id) {
-        if (id.contains("staffalert") || id.contains("stashfinder") || id.contains("panic")) {
+        if (id.contains("staffalert") || id.contains("stashfinder") || id.contains("panic")
+                || id.contains("fakeroles") || id.contains("fakestats") || id.contains("coordsnapper")
+                || id.contains("staffdetector") || id.contains("stafftracker") || id.contains("reloadchunk")) {
             return DONUTSMP;
         }
         return NORMAL;

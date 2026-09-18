@@ -79,6 +79,14 @@ enum ModulesMenuStyle {
     static int rowHover() {
         return rowHover;
     }
+    static int accent() {
+        return themeAccent;
+    }
+
+    static int panelHover() {
+        return rowHover;
+    }
+
 
     static int shadow() {
         return shadow;

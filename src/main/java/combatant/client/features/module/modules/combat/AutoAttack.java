@@ -42,6 +42,7 @@ import combatant.client.events.impl.PacketEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubCategory;
 import combatant.client.features.module.Modules;
 import combatant.client.features.relations.CategoryRules;
 import combatant.client.features.relations.CategoryType;
@@ -62,7 +63,8 @@ import java.util.LinkedHashMap;
         id = "triggerbot",
         displayName = "TriggerBot",
         description = "Automatically attacks nearby hostile targets or players when weapon attack cooldown is fully charged.",
-        category = ModuleCategory.COMBAT
+        category = ModuleCategory.COMBAT,
+        subCategory = ModuleSubCategory.LEGIT
 )
 public class AutoAttack extends Module {
 
