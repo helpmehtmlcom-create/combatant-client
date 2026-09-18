@@ -66,12 +66,16 @@ public final class UiLayoutEngine {
 
     private static float absoluteRight(UiNode child) {
         UiStyle style = child.style();
-        return (style.offsetX() != null ? style.offsetX() : 0.0f) + style.marginLeft() + child.measuredWidth() + style.marginRight();
+        float left = style.offsetX() != null ? style.offsetX() : 0.0f;
+        float right = style.offsetRight() != null ? style.offsetRight() : 0.0f;
+        return left + right + style.marginLeft() + child.measuredWidth() + style.marginRight();
     }
 
     private static float absoluteBottom(UiNode child) {
         UiStyle style = child.style();
-        return (style.offsetY() != null ? style.offsetY() : 0.0f) + style.marginTop() + child.measuredHeight() + style.marginBottom();
+        float top = style.offsetY() != null ? style.offsetY() : 0.0f;
+        float bottom = style.offsetBottom() != null ? style.offsetBottom() : 0.0f;
+        return top + bottom + style.marginTop() + child.measuredHeight() + style.marginBottom();
     }
 
     public void layout(UiNode root,
@@ -298,10 +302,47 @@ public final class UiLayoutEngine {
                                 float width,
                                 float height) {
         UiStyle style = child.style();
-        float childW = style.width() != null ? style.resolveWidth(child.measuredWidth()) : Math.min(width, child.measuredWidth());
-        float childH = style.height() != null ? style.resolveHeight(child.measuredHeight()) : Math.min(height, child.measuredHeight());
-        float childX = x + style.marginLeft() + (style.offsetX() != null ? style.offsetX() : 0.0f);
-        float childY = y + style.marginTop() + (style.offsetY() != null ? style.offsetY() : 0.0f);
+        Float left = style.offsetX();
+        Float top = style.offsetY();
+        Float right = style.offsetRight();
+        Float bottom = style.offsetBottom();
+
+        float horizontalInsets = style.marginX()
+                + (left != null ? left : 0.0f)
+                + (right != null ? right : 0.0f);
+        float verticalInsets = style.marginY()
+                + (top != null ? top : 0.0f)
+                + (bottom != null ? bottom : 0.0f);
+
+        float childW;
+        if (style.width() != null) {
+            childW = style.resolveWidth(child.measuredWidth());
+        } else if (left != null && right != null) {
+            childW = style.resolveWidth(Math.max(0.0f, width - horizontalInsets));
+        } else {
+            childW = style.resolveWidth(Math.min(Math.max(0.0f, width - style.marginX()), child.measuredWidth()));
+        }
+
+        float childH;
+        if (style.height() != null) {
+            childH = style.resolveHeight(child.measuredHeight());
+        } else if (top != null && bottom != null) {
+            childH = style.resolveHeight(Math.max(0.0f, height - verticalInsets));
+        } else {
+            childH = style.resolveHeight(Math.min(Math.max(0.0f, height - style.marginY()), child.measuredHeight()));
+        }
+
+        float childX = left != null
+                ? x + style.marginLeft() + left
+                : right != null
+                ? x + width - style.marginRight() - right - childW
+                : x + style.marginLeft();
+        float childY = top != null
+                ? y + style.marginTop() + top
+                : bottom != null
+                ? y + height - style.marginBottom() - bottom - childH
+                : y + style.marginTop();
+
         assign(child, fallbackTextRenderer, childX, childY, childW, childH);
     }
 }

@@ -16,11 +16,26 @@ public enum DeferredDebugView {
     OFF(null, SourceKind.NONE, DeferredDebugDecodeMode.REGULAR_COLOR, -1, null),
 
     GBUFFER_BASE(DeferredResource.GBUFFER_SURFACE, SourceKind.TEXTURE, DeferredDebugDecodeMode.REGULAR_COLOR, -1, null),
+    GBUFFER_NORMAL_ENCODED(DeferredResource.GBUFFER_GEOMETRY, SourceKind.TEXTURE, DeferredDebugDecodeMode.NORMAL_OCT_ENCODED, -1, null),
     GBUFFER_NORMAL(DeferredResource.GBUFFER_GEOMETRY, SourceKind.TEXTURE, DeferredDebugDecodeMode.NORMAL_OCT, -1, null),
+    GBUFFER_NORMAL_LENGTH_ERROR(DeferredResource.GBUFFER_GEOMETRY, SourceKind.TEXTURE, DeferredDebugDecodeMode.NORMAL_LENGTH_ERROR, -1, null),
+    GBUFFER_LIGHT_BASELINE(DeferredResource.GBUFFER_GEOMETRY, SourceKind.TEXTURE, DeferredDebugDecodeMode.LIGHT_PAIR, -1, null),
+    GBUFFER_MATERIAL_AO(DeferredResource.GBUFFER_SURFACE, SourceKind.TEXTURE, DeferredDebugDecodeMode.SCALAR, 3, null),
     GBUFFER_ROUGHNESS(DeferredResource.GBUFFER_MATERIAL, SourceKind.TEXTURE, DeferredDebugDecodeMode.SCALAR, 0, null),
+    GBUFFER_METALLIC(DeferredResource.GBUFFER_MATERIAL, SourceKind.TEXTURE, DeferredDebugDecodeMode.SCALAR, 1, null),
+    GBUFFER_F0(DeferredResource.GBUFFER_MATERIAL, SourceKind.TEXTURE, DeferredDebugDecodeMode.SCALAR, 2, null),
     GBUFFER_MATERIAL(DeferredResource.GBUFFER_MATERIAL, SourceKind.TEXTURE, DeferredDebugDecodeMode.REGULAR_COLOR, -1, null),
     GBUFFER_MATERIAL_ID(DeferredResource.GBUFFER_MATERIAL_ID, SourceKind.UINT_TEXTURE, DeferredDebugDecodeMode.INTEGER_ID, -1, null),
     GBUFFER_DEPTH(DeferredResource.GBUFFER_DEPTH, SourceKind.TEXTURE, DeferredDebugDecodeMode.DEPTH, 0, null),
+    GBUFFER_DEPTH_RAW(DeferredResource.GBUFFER_DEPTH, SourceKind.TEXTURE, DeferredDebugDecodeMode.DEPTH, 0, null),
+    GBUFFER_DEPTH_LINEAR(DeferredResource.GBUFFER_DEPTH, SourceKind.TEXTURE, DeferredDebugDecodeMode.LINEAR_DEPTH, 0, null),
+    RESOLVED_DEPTH_RAW(DeferredResource.RESOLVED_DEPTH, SourceKind.TEXTURE, DeferredDebugDecodeMode.DEPTH, 0, null),
+
+    REFLECTION_ELIGIBILITY_MASK(null, SourceKind.SHARED_INPUTS, DeferredDebugDecodeMode.SHARED_REFLECTION_ELIGIBILITY, -1, null),
+    RECONSTRUCTED_VIEW_POSITION(null, SourceKind.SHARED_INPUTS, DeferredDebugDecodeMode.SHARED_RECONSTRUCTED_POSITION, -1, null),
+    REPROJECTED_UV_ERROR(null, SourceKind.SHARED_INPUTS, DeferredDebugDecodeMode.SHARED_REPROJECTION_ERROR, -1, null),
+    DEPTH_DISCONTINUITY(null, SourceKind.SHARED_INPUTS, DeferredDebugDecodeMode.SHARED_DEPTH_DISCONTINUITY, -1, null),
+    RENDER_TO_OUTPUT_UV_SCALE(null, SourceKind.SHARED_INPUTS, DeferredDebugDecodeMode.SHARED_UV_SCALE, -1, null),
 
     FINAL_VELOCITY(DeferredResource.FINAL_VELOCITY, SourceKind.TEXTURE, DeferredDebugDecodeMode.SIGNED_VELOCITY, -1, null),
     MOTION_VALIDITY(DeferredResource.FINAL_MOTION_VALIDITY, SourceKind.TEXTURE, DeferredDebugDecodeMode.CONFIDENCE_MASK, 0, null),
@@ -68,7 +83,7 @@ public enum DeferredDebugView {
     SKY_RADIANCE(DeferredResource.SKY_RADIANCE, SourceKind.TEXTURE, DeferredDebugDecodeMode.REGULAR_COLOR, -1, DeferredFeature.SKY),
     WEATHER_SKY_VISIBILITY(DeferredResource.SKY_VISIBILITY, SourceKind.TEXTURE, DeferredDebugDecodeMode.SCALAR, 0, DeferredFeature.WEATHER);
 
-    public enum SourceKind { NONE, TEXTURE, UINT_TEXTURE, VOLUME, BUFFER }
+    public enum SourceKind { NONE, TEXTURE, UINT_TEXTURE, VOLUME, BUFFER, SHARED_INPUTS }
 
     private final @Nullable DeferredResource resource;
     private final SourceKind sourceKind;

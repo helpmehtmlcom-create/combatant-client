@@ -31,16 +31,16 @@ export type UiNodeType =
 /** String reference dispatched through UiActionRegistry. */
 export type UiActionRef = string;
 
-/** Event map stored on a node spec. Function callbacks are authoring-side only. */
+/** Event map stored on a node spec. Values reference registered runtime actions. */
 export type UiEvents = {
   /** Fired by pointer release on the same pressed node. */
-  click?: UiActionRef | (() => void);
+  click?: UiActionRef;
   /** Value change event for host-backed controls. */
-  change?: UiActionRef | ((value: unknown) => void);
+  change?: UiActionRef;
   /** Text/input event for host-backed controls. */
-  input?: UiActionRef | ((value: string) => void);
+  input?: UiActionRef;
   /** Scroll event for scroll containers or host-backed controls. */
-  scroll?: UiActionRef | ((amount: number) => void);
+  scroll?: UiActionRef;
 };
 
 /** Asset kind name passed to UiAssetResolver and UiAssetRegistry. */
@@ -59,6 +59,96 @@ export type UiAlign = "start" | "center" | "end" | "stretch";
 export type UiJustify = "start" | "center" | "end" | "between";
 /** Overflow mode. Non-visible modes clip and may use scroll state. */
 export type UiOverflow = "visible" | "hidden" | "scroll-x" | "scroll-y" | "scroll";
+
+export type UiInlineStyle = {
+  width?: number;
+  height?: number;
+  minWidth?: number;
+  minHeight?: number;
+  maxWidth?: number;
+  maxHeight?: number;
+
+  padding?: number;
+  paddingX?: number;
+  paddingHorizontal?: number;
+  paddingY?: number;
+  paddingVertical?: number;
+  paddingLeft?: number;
+  paddingTop?: number;
+  paddingRight?: number;
+  paddingBottom?: number;
+
+  margin?: number;
+  marginX?: number;
+  marginHorizontal?: number;
+  marginY?: number;
+  marginVertical?: number;
+  marginLeft?: number;
+  marginTop?: number;
+  marginRight?: number;
+  marginBottom?: number;
+
+  gap?: number;
+  grow?: number;
+  flexGrow?: number;
+
+  position?: "absolute" | "relative" | "static" | "flow";
+  absolute?: boolean;
+  left?: number;
+  top?: number;
+  right?: number;
+  bottom?: number;
+  x?: number;
+  y?: number;
+
+  align?: UiAlign;
+  alignItems?: UiAlign;
+  justify?: UiJustify;
+  justifyContent?: UiJustify;
+  overflow?: UiOverflow;
+
+  radius?: number;
+  borderRadius?: number;
+  background?: string | number;
+  backgroundColor?: string | number;
+  borderColor?: string | number;
+  strokeColor?: string | number;
+  borderWidth?: number;
+  strokeWidth?: number;
+
+  shadow?: false | { color?: string | number; blur?: number; innerAlpha?: number };
+  boxShadow?: false | { color?: string | number; blur?: number; innerAlpha?: number };
+  shadowColor?: string | number;
+  shadowBlur?: number;
+  shadowInnerAlpha?: number;
+
+  blur?: boolean;
+  blurQuality?: number;
+  blurBrightness?: number;
+  blurAlpha?: number;
+  liquidGlass?: boolean;
+  clip?: boolean;
+  marquee?: boolean;
+
+  color?: string | number;
+  textColor?: string | number;
+  fontFamily?: string;
+  fontWeight?: number | "normal" | "bold" | "semibold" | string;
+  fontStyle?: "normal" | "italic";
+  fontScale?: number;
+  textScale?: number;
+  textShadow?: boolean;
+  textEffect?: string;
+  textEffectSpeed?: number;
+  textBackend?: string;
+  maxTextWidth?: number;
+  ellipsis?: boolean;
+  textAlign?: "left" | "center" | "right" | "end" | string;
+  cursor?: string;
+  blend?: string;
+  /** Multiplies this node and its rendered subtree alpha. */
+  opacity?: number;
+};
 
 /** Layout fields that can be placed inline on node init objects. */
 export type UiLayoutProps = {
@@ -82,8 +172,8 @@ export type UiLayoutProps = {
   x?: number;
   /** Absolute y offset inside parent content area. */
   y?: number;
-  /** Parent-controlled cross-axis alignment. */
-  align?: UiAlign;
+  /** Parent-controlled cross-axis alignment. left/right/top/bottom are web-style aliases. */
+  align?: UiAlign | "left" | "right" | "top" | "bottom";
   /** Parent-controlled main-axis placement. */
   justify?: UiJustify;
   /** Overflow and scroll behavior. */
@@ -112,6 +202,15 @@ export type UiNode = {
   key?: string;
   /** Utility token class string parsed by UiStyleParser. */
   class?: string;
+  /** React-style alias merged with class. */
+  className?: string;
+  /** Sparse inline style applied after class tokens. */
+  style?: UiInlineStyle;
+  /** Convenience event aliases normalized into events. */
+  onClick?: UiActionRef;
+  onChange?: UiActionRef;
+  onInput?: UiActionRef;
+  onScroll?: UiActionRef;
   /** Raw data props visible to renderers, input, and asset providers. */
   props?: Record<string, unknown>;
   /** Event bindings by event name. */
@@ -123,15 +222,17 @@ export type UiNode = {
 } & UiLayoutProps;
 
 /** Text node shape. */
-export type UiTextNode = UiNode & {
+export type UiTextNode = Omit<UiNode, "align"> & {
   type: "text";
   /** Text content. */
   text?: string;
-  /** Maximum text width in UI pixels. */
-  maxWidth?: number;
+  /** Maximum rendered text width in UI pixels. Layout maxWidth remains available through style/maxWidth. */
+  maxTextWidth?: number;
+  /** Legacy text-alignment alias accepted by normalize(). */
+  align?: "left" | "center" | "right" | "end";
   /** Text alignment inside the node bounds. */
-  align?: "left" | "center" | "right";
-  /** Enables text shortening when maxWidth is set. */
+  textAlign?: "left" | "center" | "right" | "end";
+  /** Enables text shortening when maxTextWidth is set. */
   ellipsis?: boolean;
   /** Enables clipping mode for scrolling/fading text behavior. */
   marquee?: boolean;
@@ -452,10 +553,13 @@ export type UiConnectorNode = UiNode & {
   closed?: boolean;
 };
 
-export type NodeInit = Omit<UiNode, "type">;
-export type TextInit = Omit<UiTextNode, "type"> | string;
-export type ImageInit = Omit<UiImageNode, "type"> | string;
-export type ShapeInit = Omit<UiShapeNode, "type">;
+/** Authoring-side child input. normalize() flattens nested iterables and drops booleans/null/undefined. */
+export type UiChildInput = UiNode | readonly UiChildInput[] | Iterable<UiChildInput> | boolean | null | undefined;
+
+export type NodeInit = Omit<UiNode, "type" | "children"> & { children?: UiChildInput };
+export type TextInit = (Omit<UiTextNode, "type" | "children"> & { children?: UiChildInput }) | string;
+export type ImageInit = (Omit<UiImageNode, "type" | "children"> & { children?: UiChildInput }) | string;
+export type ShapeInit = Omit<UiShapeNode, "type" | "children"> & { children?: UiChildInput };
 
 /** Host snapshot used by compact HUD stat widgets before Java rendering is replaced. */
 export type CompactHudStatProps = {
@@ -560,6 +664,9 @@ export interface UiFactory {
   clamp(value: unknown, min?: number, max?: number): number;
   fmt(value: number, digits?: number, fallback?: string): string;
   cls(...parts: Array<string | false | null | undefined>): string;
+  style(...parts: Array<UiInlineStyle | false | null | undefined>): UiInlineStyle;
+  children(...parts: UiChildInput[]): UiNode[];
+  absolute(x?: number, y?: number, w?: number, h?: number, extra?: UiInlineStyle): UiInlineStyle;
   abs(x?: number, y?: number, w?: number, h?: number, extra?: string): string;
   /** Safe property lookup supporting plain objects and host map-like values. */
   prop<T = unknown>(value: unknown, key: string, fallback?: T): T | unknown;

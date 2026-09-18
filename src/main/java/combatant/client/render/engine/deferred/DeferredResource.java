@@ -342,9 +342,16 @@ public enum DeferredResource {
     /** Canonical HDR camera-post output before future grading/tonemap. */
     POST_HDR_COLOR(FrameGraphResourceKey.transientTexture("world.post.hdr.color"),
             DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.OUTPUT, false)),
-    /** Generic non-mutating debug presentation target at output resolution. */
+    /**
+     * Generic non-mutating debug presentation target at output resolution.
+     *
+     * <p>The compositor writes this as a storage image and may also clear it to an explicit
+     * unavailable sentinel. The clear operation is a render-attachment operation in Minecraft's
+     * GPU API, so the target must advertise both usages. Debug source textures remain sample-only;
+     * only the canonical presentation target owns this broader usage contract.</p>
+     */
     DEBUG_PRESENTATION(FrameGraphResourceKey.transientTexture("world.debug.presentation"),
-            DeferredTextureSpec.compute(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.OUTPUT, false)),
+            DeferredTextureSpec.computeAttachment(GpuFormat.RGBA16_FLOAT, DeferredTextureSpec.ResolutionClass.OUTPUT)),
     LIGHT_LIST(FrameGraphResourceKey.transientBuffer("world.light_list"), null),
     INDIRECT_DRAWS(FrameGraphResourceKey.transientBuffer("world.indirect_draws"), null),
     /** Persistent eye-adaptation state; never encoded into a color-history pixel. */

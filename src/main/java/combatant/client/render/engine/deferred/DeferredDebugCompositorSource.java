@@ -48,10 +48,14 @@ final class DeferredDebugCompositorSource implements AutoCloseable {
     private static final Identifier VOLUME_R32F_SHADER = id("deferred/debug_volume_r32f");
     private static final Identifier EXPOSURE_SHADER = id("deferred/debug_exposure");
     private static final Identifier HISTOGRAM_SHADER = id("deferred/debug_histogram");
+    private static final Identifier SHARED_INPUT_SHADER = id("deferred/debug_shared_inputs");
 
     private static final Std430StructLayout PARAMS_LAYOUT = Std430StructLayout.builder()
             .member("decode", Std430Type.VEC4) // x=mode, y=channel, z=axis, w=slice
-            .member("aux", Std430Type.VEC4)    // x=histogram bin count
+            .member("aux", Std430Type.VEC4)    // x=hist bins, y=far plane, zw=depth->NDC scale/bias
+            .member("extent", Std430Type.VEC4) // xy=render/source extent, zw=debug output extent
+            .member("inverseProjection", Std430Type.MAT4)
+            .member("projection", Std430Type.MAT4)
             .build();
 
     private static final ShaderResourceLayout TEXTURE_LAYOUT = new ShaderResourceLayout(List.of(
@@ -69,6 +73,14 @@ final class DeferredDebugCompositorSource implements AutoCloseable {
             new ShaderResourceSlot(1, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
             new ShaderResourceSlot(2, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
     ));
+    private static final ShaderResourceLayout SHARED_INPUT_LAYOUT = new ShaderResourceLayout(List.of(
+            new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(1, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(2, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(3, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(4, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
+            new ShaderResourceSlot(5, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
+    ));
 
     private CombatantRhi owner;
     private RhiComputePipeline texturePipeline;
@@ -77,6 +89,7 @@ final class DeferredDebugCompositorSource implements AutoCloseable {
     private RhiComputePipeline volumeR32fPipeline;
     private RhiComputePipeline exposurePipeline;
     private RhiComputePipeline histogramPipeline;
+    private RhiComputePipeline sharedInputPipeline;
     private RhiStorageBuffer params;
 
     void install(ArrayList<DeferredPassSpec> passes) {
@@ -108,6 +121,7 @@ final class DeferredDebugCompositorSource implements AutoCloseable {
         volumeR32fPipeline();
         exposurePipeline();
         histogramPipeline();
+        sharedInputPipeline();
         params();
     }
 
@@ -130,6 +144,33 @@ final class DeferredDebugCompositorSource implements AutoCloseable {
             return unavailable(state, view, "feature " + feature + " is disabled"
                     + (reason.isBlank() ? "" : " (" + reason + ")"));
         }
+        if (view.sourceKind() == DeferredDebugView.SourceKind.SHARED_INPUTS) {
+            boolean valid = context.primaryView().current() != null
+                    && context.isValid(DeferredResource.GBUFFER_GEOMETRY)
+                    && context.resources().texture(DeferredResource.GBUFFER_GEOMETRY) != null
+                    && context.isValid(DeferredResource.GBUFFER_MATERIAL)
+                    && context.resources().texture(DeferredResource.GBUFFER_MATERIAL) != null
+                    && context.isValid(DeferredResource.GBUFFER_DEPTH)
+                    && context.resources().texture(DeferredResource.GBUFFER_DEPTH) != null
+                    && context.isValid(DeferredResource.RESOLVED_DEPTH)
+                    && context.resources().texture(DeferredResource.RESOLVED_DEPTH) != null;
+            if (!valid) {
+                return unavailable(state, view, "shared input set unavailable: geometry/material/gbuffer-depth/resolved-depth/view");
+            }
+            state.setUnavailableDebugResourceReason("");
+            DeferredPrimaryViewSource.FrameView current = context.primaryView().current();
+            String resolution = current == null ? "unknown"
+                    : current.renderWidth() + "x" + current.renderHeight() + "->"
+                    + current.outputWidth() + "x" + current.outputHeight();
+            DebugLog.renderThreadOnChange(
+                    "combatant.deferred.debug.ready",
+                    view.name() + "|" + resolution + "|" + context.rhi().capabilities().zeroToOneDepth(),
+                    "[Deferred][Debug] view=%s source=SHARED_INPUTS render/output=%s zeroToOneDepth=%s ready",
+                    view, resolution, context.rhi().capabilities().zeroToOneDepth()
+            );
+            return true;
+        }
+
         DeferredResource resource = view.resource();
         if (resource == null) {
             return unavailable(state, view, "debug view has no bound renderer resource");
@@ -138,7 +179,7 @@ final class DeferredDebugCompositorSource implements AutoCloseable {
             case TEXTURE, UINT_TEXTURE -> context.isValid(resource) && context.resources().texture(resource) != null;
             case VOLUME -> context.isValid(resource) && context.resources().storageVolume(resource) != null;
             case BUFFER -> context.isValid(resource) && context.resources().buffer(resource) != null;
-            case NONE -> false;
+            case SHARED_INPUTS, NONE -> false;
         };
         if (!valid) {
             return unavailable(state, view, "resource unavailable: " + resource.key().name());
@@ -186,24 +227,55 @@ final class DeferredDebugCompositorSource implements AutoCloseable {
         DeferredDebugView view = state.debugView();
         RhiStorageImage output = requireImage(context, DeferredResource.DEBUG_PRESENTATION);
         if (!available(context)) {
-            // An unavailable typed debug producer must never masquerade as a successful scene view.
-            // Magenta is a debug-only invalid sentinel; the precise producer failure remains in the
-            // smoke-test diagnostic string/log rather than being inferred from image contents.
+            // DEBUG_PRESENTATION deliberately owns render-attachment usage so an unavailable source
+            // can be visualized without imposing render-attachment usage on arbitrary debug inputs.
+            String reason = DeferredSmokeTestState.global().unavailableDebugResourceReason();
             RenderSystem.getDevice().createCommandEncoder().clearColorTexture(
                     output.view().texture(), new org.joml.Vector4f(1.0f, 0.0f, 1.0f, 1.0f));
+            context.resources().publishStatus(
+                    DeferredResource.DEBUG_PRESENTATION, "world.debug.compose", DeferredResourceStatus.FALLBACK,
+                    "debug_source_unavailable", reason, view.resource());
             return;
         }
         DeferredResource resource = view.resource();
+        DeferredPrimaryViewSource.FrameView current = context.primaryView().current();
+
+        int sourceWidth = output.descriptor().width();
+        int sourceHeight = output.descriptor().height();
+        if ((view.sourceKind() == DeferredDebugView.SourceKind.TEXTURE
+                || view.sourceKind() == DeferredDebugView.SourceKind.UINT_TEXTURE) && resource != null) {
+            GpuTextureView source = requireTexture(context, resource);
+            sourceWidth = source.getWidth(0);
+            sourceHeight = source.getHeight(0);
+        } else if (view.sourceKind() == DeferredDebugView.SourceKind.SHARED_INPUTS && current != null) {
+            sourceWidth = current.renderWidth() > 0 ? current.renderWidth() : sourceWidth;
+            sourceHeight = current.renderHeight() > 0 ? current.renderHeight() : sourceHeight;
+        }
+
+        boolean zeroToOne = context.rhi().capabilities().zeroToOneDepth();
+        float farPlane = current != null && current.farPlane() > 0.0f ? current.farPlane() : 1.0f;
+        org.joml.Matrix4f inverseProjection = current != null
+                ? current.inverseProjection() : new org.joml.Matrix4f();
+        org.joml.Matrix4f projection = current != null
+                ? current.projection() : new org.joml.Matrix4f();
 
         Std430Writer writer = new Std430Writer(PARAMS_LAYOUT, 1)
                 .putVec4(0, "decode", view.decodeMode().shaderId(), view.channel(),
                         state.volumeAxis().shaderId(), state.volumeSlice())
-                .putVec4(0, "aux", DeferredPostConfig.HISTOGRAM_BINS, 0.0f, 0.0f, 0.0f);
+                .putVec4(0, "aux", DeferredPostConfig.HISTOGRAM_BINS, farPlane,
+                        zeroToOne ? 1.0f : 2.0f, zeroToOne ? 0.0f : -1.0f)
+                .putVec4(0, "extent", sourceWidth, sourceHeight,
+                        output.descriptor().width(), output.descriptor().height())
+                .putMat4(0, "inverseProjection", inverseProjection)
+                .putMat4(0, "projection", projection);
         RhiStorageBuffer parameterBuffer = params();
         parameterBuffer.upload(writer.buffer(), 0L);
         StorageBinding parameterBinding = new StorageBinding(
                 2, parameterBuffer, 0L, writer.byteSize(), StorageAccess.READ_ONLY);
+        StorageBinding sharedParameterBinding = new StorageBinding(
+                5, parameterBuffer, 0L, writer.byteSize(), StorageAccess.READ_ONLY);
         StorageImageBinding targetBinding = new StorageImageBinding(1, output, StorageAccess.WRITE_ONLY, 0);
+        StorageImageBinding sharedTargetBinding = new StorageImageBinding(4, output, StorageAccess.WRITE_ONLY, 0);
 
         int groupsX = groups(output.descriptor().width());
         int groupsY = groups(output.descriptor().height());
@@ -242,6 +314,17 @@ final class DeferredDebugCompositorSource implements AutoCloseable {
                         ), List.of(), List.of(targetBinding)
                 ));
             }
+            case SHARED_INPUTS -> context.advancedShaders().dispatch(new ComputeDispatchCommand(
+                    "Combatant shared-input debug " + view.name(), sharedInputPipeline(), groupsX, groupsY, 1,
+                    List.of(sharedParameterBinding),
+                    List.of(
+                            new SampledTextureBinding(0, requireTexture(context, DeferredResource.GBUFFER_GEOMETRY), nearest),
+                            new SampledTextureBinding(1, requireTexture(context, DeferredResource.GBUFFER_MATERIAL), nearest),
+                            new SampledTextureBinding(2, requireTexture(context, DeferredResource.GBUFFER_DEPTH), nearest),
+                            new SampledTextureBinding(3, requireTexture(context, DeferredResource.RESOLVED_DEPTH), nearest)
+                    ),
+                    List.of(sharedTargetBinding)
+            ));
             case NONE -> { }
         }
     }
@@ -312,6 +395,10 @@ final class DeferredDebugCompositorSource implements AutoCloseable {
         return pipeline("combatant-debug-histogram", HISTOGRAM_SHADER, BUFFER_LAYOUT,
                 histogramPipeline, value -> histogramPipeline = value);
     }
+    private RhiComputePipeline sharedInputPipeline() {
+        return pipeline("combatant-debug-shared-inputs", SHARED_INPUT_SHADER, SHARED_INPUT_LAYOUT,
+                sharedInputPipeline, value -> sharedInputPipeline = value);
+    }
 
     private RhiComputePipeline pipeline(String label, Identifier shader, ShaderResourceLayout layout,
                                         RhiComputePipeline existing,
@@ -338,6 +425,12 @@ final class DeferredDebugCompositorSource implements AutoCloseable {
         for (DeferredDebugView view : DeferredDebugView.values()) {
             if (view.resource() != null && view.resource() != DeferredResource.DEBUG_PRESENTATION) {
                 resources.add(view.resource());
+            }
+            if (view.sourceKind() == DeferredDebugView.SourceKind.SHARED_INPUTS) {
+                resources.add(DeferredResource.GBUFFER_GEOMETRY);
+                resources.add(DeferredResource.GBUFFER_MATERIAL);
+                resources.add(DeferredResource.GBUFFER_DEPTH);
+                resources.add(DeferredResource.RESOLVED_DEPTH);
             }
         }
         return resources.toArray(DeferredResource[]::new);
@@ -373,6 +466,7 @@ final class DeferredDebugCompositorSource implements AutoCloseable {
         volumeR32fPipeline = close(volumeR32fPipeline);
         exposurePipeline = close(exposurePipeline);
         histogramPipeline = close(histogramPipeline);
+        sharedInputPipeline = close(sharedInputPipeline);
         params = close(params);
     }
     private static RhiComputePipeline close(RhiComputePipeline value) {

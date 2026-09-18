@@ -18,7 +18,27 @@ public enum DeferredDebugDecodeMode {
     VOLUME_COLOR(7),
     VOLUME_SCALAR(8),
     EXPOSURE_VALUE(9),
-    HISTOGRAM(10);
+    HISTOGRAM(10),
+
+    /** Raw octahedral payload as RG for producer-side inspection. */
+    NORMAL_OCT_ENCODED(11),
+    /** Decoded-normal unit-length/finite diagnostic. */
+    NORMAL_LENGTH_ERROR(12),
+    /** View-linear depth shown with logarithmic far-plane normalization. */
+    LINEAR_DEPTH(13),
+    /** Packed renderer-owned baseline block/sky light pair (R=block, G=sky). */
+    LIGHT_PAIR(14),
+
+    /** Current reflection trace eligibility: exactly the shared G-buffer ownership policy. */
+    SHARED_REFLECTION_ELIGIBILITY(20),
+    /** Reconstructed current view-space position diagnostic. */
+    SHARED_RECONSTRUCTED_POSITION(21),
+    /** Projection(reconstruct(depth)) UV/depth residual. */
+    SHARED_REPROJECTION_ERROR(22),
+    /** Local view-depth discontinuity diagnostic. */
+    SHARED_DEPTH_DISCONTINUITY(23),
+    /** Render-resolution to output-resolution mapping diagnostic. */
+    SHARED_UV_SCALE(24);
 
     private final int shaderId;
 

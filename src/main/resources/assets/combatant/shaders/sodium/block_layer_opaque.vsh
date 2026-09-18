@@ -20,6 +20,7 @@ flat out uint v_CombatantSurfaceFlags;
 out vec4 v_CombatantBaseColor;
 out vec2 v_CombatantLightCoord;
 out vec3 v_CombatantViewPosition;
+out float v_CombatantVertexAo;
 flat out uint v_CombatantMaterialParams;
 flat out uint v_CombatantMaterialId;
 flat out uint v_CombatantMaterialMeta;
@@ -144,6 +145,9 @@ void main() {
     v_CombatantBaseColor = a_CombatantBaseColor;
     v_CombatantLightCoord = _vert_tex_light_coord;
     v_CombatantViewPosition = viewPosition.xyz;
+    // AO is per-vertex data. Keep it smooth; packing it inside the flat material meta makes each
+    // triangle inherit only its provoking vertex and creates the visible diagonal faceting.
+    v_CombatantVertexAo = float(a_CombatantMaterialMeta & 255u) / 255.0;
     v_CombatantMaterialParams = _material_params;
     v_CombatantMaterialId = a_CombatantMaterialData;
     v_CombatantMaterialMeta = a_CombatantMaterialMeta;

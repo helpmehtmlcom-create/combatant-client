@@ -9,6 +9,7 @@ package combatant.client.render.engine.renderer.ui.runtime.core;
 
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+import combatant.client.render.engine.renderer.ui.runtime.style.UiInlineStyle;
 import combatant.client.render.engine.renderer.ui.runtime.style.UiStyle;
 
 import java.util.Arrays;
@@ -29,6 +30,7 @@ import java.util.Map;
  *     <li>{@code props} - node data such as text, asset, value, or item.</li>
  *     <li>{@code style} - resolved style or direct Java style.</li>
  *     <li>{@code styleClass} - utility token string.</li>
+ *     <li>{@code inlineStyle} - sparse script-authored style layered over the resolved base.</li>
  *     <li>{@code events} - map event name -> action ref.</li>
  *     <li>{@code metadata} - extra data for debug/tools.</li>
  *     <li>{@code children} - child specs.</li>
@@ -40,6 +42,7 @@ public final class UiNodeSpec {
     private final UiProps props;
     private final UiStyle style;
     private final String styleClass;
+    private final UiInlineStyle inlineStyle;
     private final Map<String, String> events;
     private final Map<String, Object> metadata;
     private final List<UiNodeSpec> children;
@@ -53,7 +56,7 @@ public final class UiNodeSpec {
                       UiStyle style,
                       String styleClass,
                       List<UiNodeSpec> children) {
-        this(key, type, props, style, styleClass, Map.of(), Map.of(), children);
+        this(key, type, props, style, styleClass, UiInlineStyle.EMPTY, Map.of(), Map.of(), children);
     }
 
     public UiNodeSpec(String key,
@@ -64,11 +67,24 @@ public final class UiNodeSpec {
                       Map<String, String> events,
                       Map<String, ?> metadata,
                       List<UiNodeSpec> children) {
+        this(key, type, props, style, styleClass, UiInlineStyle.EMPTY, events, metadata, children);
+    }
+
+    public UiNodeSpec(String key,
+                      UiNodeType type,
+                      UiProps props,
+                      UiStyle style,
+                      String styleClass,
+                      UiInlineStyle inlineStyle,
+                      Map<String, String> events,
+                      Map<String, ?> metadata,
+                      List<UiNodeSpec> children) {
         this.key = key != null ? key : "";
         this.type = type != null ? type : UiNodeType.PANEL;
         this.props = props != null ? props : UiProps.EMPTY;
         this.style = style != null ? style : UiStyle.DEFAULT;
         this.styleClass = styleClass != null ? styleClass : "";
+        this.inlineStyle = inlineStyle != null ? inlineStyle : UiInlineStyle.EMPTY;
         this.events = events == null || events.isEmpty()
                 ? Map.of()
                 : new Object2ObjectOpenHashMap<>(events);
@@ -152,6 +168,13 @@ public final class UiNodeSpec {
      */
     public String styleClass() {
         return styleClass;
+    }
+
+    /**
+     * Sparse inline style authored by script nodes. It is applied after utility classes.
+     */
+    public UiInlineStyle inlineStyle() {
+        return inlineStyle;
     }
 
     /**

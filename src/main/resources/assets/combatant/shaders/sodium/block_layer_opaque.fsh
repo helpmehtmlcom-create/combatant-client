@@ -22,6 +22,7 @@ flat in uint v_CombatantSurfaceFlags;
 in vec4 v_CombatantBaseColor;
 in vec2 v_CombatantLightCoord;
 in vec3 v_CombatantViewPosition;
+in float v_CombatantVertexAo;
 flat in uint v_CombatantMaterialParams;
 flat in uint v_CombatantMaterialId;
 flat in uint v_CombatantMaterialMeta;
@@ -110,7 +111,7 @@ vec2 combatant_encode_octahedral(vec3 normal) {
     normal /= abs(normal.x) + abs(normal.y) + abs(normal.z);
     vec2 encoded = normal.xy;
     if (normal.z < 0.0) {
-        encoded = (1.0 - abs(encoded.yx)) * sign(encoded.xy);
+        encoded = (1.0 - abs(encoded.yx)) * vec2(encoded.x >= 0.0 ? 1.0 : -1.0, encoded.y >= 0.0 ? 1.0 : -1.0);
     }
     return encoded * 0.5 + 0.5;
 }
@@ -181,7 +182,7 @@ void main() {
         viewNormal = normalize(mat3(tangent, bitangent, geometricNormal) * tangentNormal);
     }
 
-    float vertexAo = combatant_unpack_unorm8(v_CombatantMaterialMeta, 0u);
+    float vertexAo = clamp(v_CombatantVertexAo, 0.0, 1.0);
     float materialAo = 1.0;
     float roughness = combatant_unpack_unorm8(v_CombatantMaterialSurface, 0u);
     float metallic = combatant_unpack_unorm8(v_CombatantMaterialSurface, 8u);

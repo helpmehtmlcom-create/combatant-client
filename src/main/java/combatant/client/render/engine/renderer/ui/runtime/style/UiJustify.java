@@ -21,7 +21,7 @@ public enum UiJustify {
             case "CENTER", "MIDDLE" -> CENTER;
             case "END", "RIGHT", "BOTTOM" -> END;
             case "BETWEEN", "SPACE_BETWEEN" -> BETWEEN;
-            default -> START;
+            default -> fallback;
         };
     }
 }
