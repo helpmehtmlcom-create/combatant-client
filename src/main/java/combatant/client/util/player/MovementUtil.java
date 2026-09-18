@@ -16,15 +16,30 @@ package combatant.client.util.player;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.util.Mth;
+import net.minecraft.world.damagesource.CombatRules;
+import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec2;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import combatant.client.util.aiming.RotationManager;
-
 public enum MovementUtil {
     ;
 
@@ -114,7 +129,178 @@ public enum MovementUtil {
         if (state.is(Blocks.SLIME_BLOCK)) {
             return 0.8f;
         }
+        if (state.is(Blocks.HONEY_BLOCK)) {
+            return 0.6f;
+        }
+        if (state.is(Blocks.ICE) || state.is(Blocks.PACKED_ICE) || state.is(Blocks.FROSTED_ICE)) {
+            return 0.98f;
+        }
+        if (state.is(Blocks.BLUE_ICE)) {
+            return 0.989f;
+        }
         return state.getBlock().getFriction();
+    }
+
+    /**
+     * Computes the jump velocity of the player (base 0.42F) scaled with Jump Boost amplifier.
+     */
+    public static float getJumpVelocity(Player player) {
+        float base = 0.42f;
+        if (player == null) return base;
+        MobEffectInstance jumpBoost = player.getEffect(MobEffects.JUMP_BOOST);
+        if (jumpBoost != null) {
+            base += (jumpBoost.getAmplifier() + 1) * 0.1f;
+        }
+        return base;
+    }
+
+    /**
+     * Scans the 4 bottom corners of the player's bounding box plus center down to the nearest
+     * collision shape or solid block up to maxDistance.
+     */
+    public static double getDistanceToGround(Player player, double maxDistance) {
+        if (player == null || player.level() == null || maxDistance <= 0.0) return 0.0;
+        Level level = player.level();
+        AABB bb = player.getBoundingBox();
+        double playerBottomY = bb.minY;
+
+        double[][] samples = {
+                { (bb.minX + bb.maxX) * 0.5, (bb.minZ + bb.maxZ) * 0.5 },
+                { bb.minX + 0.001, bb.minZ + 0.001 },
+                { bb.minX + 0.001, bb.maxZ - 0.001 },
+                { bb.maxX - 0.001, bb.minZ + 0.001 },
+                { bb.maxX - 0.001, bb.maxZ - 0.001 }
+        };
+
+        double highestLandingY = Double.NEGATIVE_INFINITY;
+        int startBlockY = Mth.floor(playerBottomY);
+        int endBlockY = Math.max(level.getMinY(), Mth.floor(playerBottomY - maxDistance));
+
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        for (double[] sample : samples) {
+            double sx = sample[0];
+            double sz = sample[1];
+            int bx = Mth.floor(sx);
+            int bz = Mth.floor(sz);
+
+            for (int y = startBlockY; y >= endBlockY; y--) {
+                pos.set(bx, y, bz);
+                BlockState state = level.getBlockState(pos);
+                if (state.isAir()) continue;
+
+                VoxelShape collisionShape = state.getCollisionShape(level, pos);
+                if (!collisionShape.isEmpty()) {
+                    double maxY = (double) y + collisionShape.max(net.minecraft.core.Direction.Axis.Y);
+                    if (maxY <= playerBottomY + 1.0E-5) {
+                        highestLandingY = Math.max(highestLandingY, maxY);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (highestLandingY == Double.NEGATIVE_INFINITY) {
+            return maxDistance;
+        }
+        return Math.max(0.0, Math.min(maxDistance, playerBottomY - highestLandingY));
+    }
+
+    /**
+     * Checks if there are no solid blocks below the player down to the level minimum build height.
+     */
+    public static boolean isOverVoid(Player player) {
+        if (player == null || player.level() == null) return false;
+        Level level = player.level();
+        int minY = level.getMinY();
+        double playerBottomY = player.getBoundingBox().minY;
+        if (playerBottomY < minY) return true;
+
+        AABB bb = player.getBoundingBox();
+        int minX = Mth.floor(bb.minX);
+        int maxX = Mth.floor(bb.maxX);
+        int minZ = Mth.floor(bb.minZ);
+        int maxZ = Mth.floor(bb.maxZ);
+        int startY = Mth.floor(playerBottomY);
+
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        for (int y = startY; y >= minY; y--) {
+            for (int x = minX; x <= maxX; x++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    pos.set(x, y, z);
+                    BlockState state = level.getBlockState(pos);
+                    if (!state.isAir() && !state.getCollisionShape(level, pos).isEmpty()) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Calculates maximum fall height the player can survive based on health, armor,
+     * Feather Falling, Resistance, and Absorption.
+     */
+    public static float getSafeFallDistance(Player player) {
+        if (player == null) return 3.0f;
+        float health = player.getHealth() + Math.max(0.0f, player.getAbsorptionAmount());
+        if (health <= 0.0f) return 3.0f;
+
+        double safeAttr = player.getAttributes().hasAttribute(Attributes.SAFE_FALL_DISTANCE)
+                ? player.getAttributeValue(Attributes.SAFE_FALL_DISTANCE)
+                : 3.0;
+        float baseSafe = (float) safeAttr;
+
+        // Binary search / iterative simulation to find the max fall distance where damage < health
+        float low = baseSafe;
+        float high = 300.0f;
+        for (int step = 0; step < 20; step++) {
+            float mid = (low + high) * 0.5f;
+            float dmg = calculateEstimatedFallDamage(player, mid, baseSafe);
+            if (dmg < health) {
+                low = mid;
+            } else {
+                high = mid;
+            }
+        }
+        return low;
+    }
+
+    private static float calculateEstimatedFallDamage(Player player, float totalFallDistance, float baseSafe) {
+        float rawFall = totalFallDistance - baseSafe;
+        if (rawFall <= 0.0f) return 0.0f;
+
+        double multiplier = player.getAttributes().hasAttribute(Attributes.FALL_DAMAGE_MULTIPLIER)
+                ? player.getAttributeValue(Attributes.FALL_DAMAGE_MULTIPLIER)
+                : 1.0;
+        float raw = (float) Math.floor(rawFall * multiplier);
+        if (raw <= 0.0f) return 0.0f;
+
+        DamageSource source = player.damageSources().fall();
+        float armor = player.getArmorValue();
+        float toughness = (float) player.getAttributeValue(Attributes.ARMOR_TOUGHNESS);
+        float damage = CombatRules.getDamageAfterAbsorb(player, raw, source, armor, toughness);
+
+        MobEffectInstance resistance = player.getEffect(MobEffects.RESISTANCE);
+        if (resistance != null) {
+            int reduced = 25 - (resistance.getAmplifier() + 1) * 5;
+            damage = Math.max(damage * reduced / 25.0f, 0.0f);
+        }
+
+        float featherFalling = 0.0f;
+        ItemStack boots = player.getItemBySlot(EquipmentSlot.FEET);
+        if (boots != null && !boots.isEmpty() && player.level() != null) {
+            Registry<Enchantment> registry = player.level().registryAccess().lookupOrThrow(Registries.ENCHANTMENT);
+            Enchantment ff = registry.getValue(Enchantments.FEATHER_FALLING);
+            if (ff != null) {
+                featherFalling = EnchantmentHelper.getItemEnchantmentLevel(registry.wrapAsHolder(ff), boots) * 3.0f;
+            }
+        }
+
+        if (featherFalling > 0.0f) {
+            damage = CombatRules.getDamageAfterMagicAbsorb(damage, featherFalling);
+        }
+        return damage;
     }
 
     /**

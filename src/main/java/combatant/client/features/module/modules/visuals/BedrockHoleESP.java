@@ -6,6 +6,7 @@
  */
 
 package combatant.client.features.module.modules.visuals;
+import combatant.client.features.module.WorldPhase;
 
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.NumberValue;
@@ -205,5 +206,10 @@ public class BedrockHoleESP extends Module {
                 renderer.line(box.minX, box.minY, box.maxZ, box.minX, box.maxY, box.maxZ, lr, lg, lb, la);
             }
         }
+    }
+
+    @Override
+    public WorldPhase getWorldPhase() {
+        return WorldPhase.END_MAIN;
     }
 }

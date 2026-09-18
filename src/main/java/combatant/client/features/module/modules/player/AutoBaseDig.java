@@ -6,6 +6,8 @@
  */
 
 package combatant.client.features.module.modules.player;
+import combatant.client.features.module.WorldPhase;
+import combatant.client.features.module.HudPhase;
 
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.ModeValue;
@@ -425,5 +427,15 @@ public class AutoBaseDig extends Module {
             renderer.quad(cx + 1, cy, cz, cx + 1, cy + 1, cz, cx + 1, cy + 1, cz + 1, cx + 1, cy, cz + 1, 0, 255, 0, 60);
             renderer.quad(cx, cy, cz, cx, cy, cz + 1, cx, cy + 1, cz + 1, cx, cy + 1, cz, 0, 255, 0, 60);
         }
+    }
+
+    @Override
+    public WorldPhase getWorldPhase() {
+        return WorldPhase.END_MAIN;
+    }
+
+    @Override
+    public HudPhase getHudPhase() {
+        return HudPhase.LAST;
     }
 }

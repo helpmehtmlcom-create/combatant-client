@@ -114,54 +114,50 @@ public final class DonutIndicator extends DraggableHudElement {
             rows.add(new TelemetryRow("🛡️", "Radar", "Scanning (Safe)", 0xFF55FF55));
         }
 
-        float baseScale = HudScale.scale(screenW, screenH) * (hud.getFontSize() / 18f);
-        float drawScale = baseScale * scale.get().floatValue();
-
-        float headerH = 15.0f * drawScale;
-        float rowH = 11.5f * drawScale;
-        float pad = 6.0f * drawScale;
+        float fontH = Math.max(12.0f, (float) textRenderer.getHeight(true));
+        float pad = 8.0f;
+        float headerH = fontH + 6.0f;
+        float rowH = fontH + 4.0f;
 
         // Measure max text width
-        float maxRowW = 110.0f;
-        String headerTitle = "🍩 DonutSMP Radar (" + rows.size() + ")";
-        float headerW = (float) textRenderer.getWidth(headerTitle);
-        maxRowW = Math.max(maxRowW, headerW);
+        String headerTitle = "DonutSMP Radar (" + rows.size() + ")";
+        float maxRowW = (float) textRenderer.getWidth(headerTitle, true);
 
         for (TelemetryRow row : rows) {
-            String full = row.icon() + " " + row.label() + ": " + row.value();
-            float w = (float) textRenderer.getWidth(full);
+            String full = row.label() + ": " + row.value();
+            float w = (float) textRenderer.getWidth(full, true);
             if (w > maxRowW) maxRowW = w;
         }
 
-        float boxW = (maxRowW + (pad * 2.5f)) * drawScale;
-        float boxH = (headerH + (rows.size() * rowH) + pad * 1.5f);
+        float boxW = maxRowW + (pad * 2.5f);
+        float boxH = headerH + (rows.size() * rowH) + pad;
 
         int bgArgb = bgColor.getArgb();
         int strokeArgb = strokeColor.getArgb();
 
         // 1. Draw rounded container backdrop
-        renderer.roundedRect(x, y, boxW, boxH, 4.0f * drawScale, bgArgb);
-        renderer.roundedRectStroke(x, y, boxW, boxH, 4.0f * drawScale, 1.0f * drawScale, strokeArgb);
+        renderer.roundedRect(x, y, boxW, boxH, 6.0f, bgArgb);
+        renderer.roundedRectStroke(x, y, boxW, boxH, 6.0f, 1.5f, strokeArgb);
 
         // 2. Draw Header
         float curY = y + pad;
         textRenderer.render(headerTitle, x + pad, curY, new RenderColor(strokeArgb), true);
 
         // Header divider line
-        curY += headerH - (4.0f * drawScale);
-        renderer.line(x + pad, curY, x + boxW - pad, curY, (strokeArgb & 0x00FFFFFF) | 0x44000000);
-        curY += 4.0f * drawScale;
+        curY += headerH - 2.0f;
+        renderer.line(x + pad, curY, x + boxW - pad, curY, (strokeArgb & 0x00FFFFFF) | 0x55000000);
+        curY += 6.0f;
 
         // 3. Draw Telemetry Rows
         for (TelemetryRow row : rows) {
-            String line = row.icon() + " " + row.label() + ": ";
-            float iconLabelW = (float) textRenderer.getWidth(line);
+            String labelPart = row.label() + ": ";
+            float labelW = (float) textRenderer.getWidth(labelPart, true);
 
-            // Icon & Label
-            textRenderer.render(line, x + pad, curY, new RenderColor(0xFFDDDDDD), true);
+            // Label
+            textRenderer.render(labelPart, x + pad, curY, new RenderColor(0xFFDDDDDD), true);
 
             // Value with specific highlight color
-            textRenderer.render(row.value(), x + pad + iconLabelW, curY, new RenderColor(row.colorArgb()), true);
+            textRenderer.render(row.value(), x + pad + labelW, curY, new RenderColor(row.colorArgb()), true);
 
             curY += rowH;
         }

@@ -6,6 +6,7 @@
  */
 
 package combatant.client.features.module.modules.player;
+import combatant.client.features.module.HudPhase;
 
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.StringValue;
@@ -192,5 +193,10 @@ public class PlayerDetect extends Module {
     private static String escapeJson(String s) {
         if (s == null) return "";
         return s.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    @Override
+    public HudPhase getHudPhase() {
+        return HudPhase.LAST;
     }
 }

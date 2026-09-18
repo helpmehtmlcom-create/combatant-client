@@ -6,6 +6,7 @@
  */
 
 package combatant.client.features.module.modules.visuals;
+import combatant.client.features.module.WorldPhase;
 
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.NumberValue;
@@ -147,5 +148,10 @@ public class SpawnerBeacon extends Module {
             // Pillar center vertical lines for sharp visibility from distance
             renderer.line(x + 0.5, y + 1, z + 0.5, x + 0.5, byTop, z + 0.5, r, g, b, 220);
         }
+    }
+
+    @Override
+    public WorldPhase getWorldPhase() {
+        return WorldPhase.END_MAIN;
     }
 }

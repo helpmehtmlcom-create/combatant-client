@@ -81,11 +81,40 @@ public class MultiPlayerGameModeMixin {
     }
 
     @Inject(method = "startDestroyBlock", at = @At("HEAD"), cancellable = true)
-    private void combatant$speedMineStart(BlockPos pos, Direction direction, CallbackInfoReturnable<Boolean> cir) {
+    private void combatant$startDestroyBlock(BlockPos pos, Direction direction, CallbackInfoReturnable<Boolean> cir) {
+        Freecam fc = Modules.get(Freecam.class);
+        if (fc != null && fc.isEnabled()) {
+            Minecraft mc = Minecraft.getInstance();
+            if (!fc.allowInteract() || (mc.player != null && mc.player.getEyePosition().distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > 36.0)) {
+                cir.setReturnValue(false);
+                cir.cancel();
+                return;
+            }
+        }
         SpeedMine speedMine = Modules.get(SpeedMine.class);
         if (speedMine != null && speedMine.onStartDestroyBlock(pos, direction)) {
             cir.setReturnValue(true);
             cir.cancel();
+        }
+    }
+
+    @Inject(method = "continueDestroyBlock", at = @At("HEAD"), cancellable = true)
+    private void freecam$continueDestroyBlock(BlockPos pos, Direction direction, CallbackInfoReturnable<Boolean> cir) {
+        Freecam fc = Modules.get(Freecam.class);
+        if (fc != null && fc.isEnabled()) {
+            Minecraft mc = Minecraft.getInstance();
+            if (!fc.allowInteract() || (mc.player != null && mc.player.getEyePosition().distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > 36.0)) {
+                cir.setReturnValue(false);
+                cir.cancel();
+            }
+        }
+    }
+
+    @Inject(method = "stopDestroyBlock", at = @At("HEAD"), cancellable = true)
+    private void freecam$stopDestroyBlock(CallbackInfo ci) {
+        Freecam fc = Modules.get(Freecam.class);
+        if (fc != null && fc.isEnabled() && !fc.allowInteract()) {
+            ci.cancel();
         }
     }
 
@@ -153,9 +182,11 @@ public class MultiPlayerGameModeMixin {
     private void freecam$block(LocalPlayer player, InteractionHand hand, BlockHitResult hit,
                                CallbackInfoReturnable<InteractionResult> cir) {
         Freecam fc = Modules.get(Freecam.class);
-        if (fc != null && fc.isEnabled() && !fc.allowInteract()) {
-            cir.setReturnValue(InteractionResult.PASS);
-            cir.cancel();
+        if (fc != null && fc.isEnabled()) {
+            if (!fc.allowInteract() || player.getEyePosition().distanceToSqr(hit.getLocation()) > 36.0) {
+                cir.setReturnValue(InteractionResult.PASS);
+                cir.cancel();
+            }
         }
     }
 
@@ -172,16 +203,26 @@ public class MultiPlayerGameModeMixin {
     private void freecam$entity(Player player, Entity entity, EntityHitResult hit, InteractionHand hand,
                                 CallbackInfoReturnable<InteractionResult> cir) {
         Freecam fc = Modules.get(Freecam.class);
-        if (fc != null && fc.isEnabled() && !fc.allowInteract()) {
-            cir.setReturnValue(InteractionResult.PASS);
-            cir.cancel();
+        if (fc != null && fc.isEnabled()) {
+            if (!fc.allowInteract() || player.getEyePosition().distanceToSqr(entity.position()) > 36.0) {
+                cir.setReturnValue(InteractionResult.PASS);
+                cir.cancel();
+            }
         }
     }
 
     @Inject(method = "attack(Lnet/minecraft/world/entity/player/Player;Lnet/minecraft/world/entity/Entity;)V",
-            at = @At("HEAD"))
+            at = @At("HEAD"), cancellable = true)
     private void onAttackEntity(Player player, Entity target, CallbackInfo ci) {
         if (!((WorldAccessor) player.level()).combatant$isClient()) return;
+
+        Freecam fc = Modules.get(Freecam.class);
+        if (fc != null && fc.isEnabled()) {
+            if (!fc.allowInteract() || player.getEyePosition().distanceToSqr(target.position()) > 36.0) {
+                ci.cancel();
+                return;
+            }
+        }
 
         if (player instanceof LocalPlayer clientPlayer) {
             Criticals criticals = Modules.get(Criticals.class);

@@ -36,6 +36,7 @@ import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Explosion;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
@@ -81,15 +82,111 @@ public enum ExplosionDamageUtil {
         if (explosionPos == null || target == null) return 0.0f;
         return getCrystalDamage(target, explosionPos, 0, false);
     }
+    public static boolean canAnchorExplode(Level level) {
+        return level != null && level.dimension() != Level.NETHER;
+    }
+
+    public static boolean canBedExplode(Level level) {
+        return level != null && (level.dimension() == Level.NETHER || level.dimension() == Level.END);
+    }
 
     public static float calculateAnchorDamage(BlockPos anchorPos, LivingEntity target) {
-        if (anchorPos == null || target == null) return 0.0f;
+        if (anchorPos == null || target == null || !canAnchorExplode(target.level())) return 0.0f;
         return getExplosionDamage(target, Vec3.atCenterOf(anchorPos), 5.0f, 0, false);
     }
 
     public static float calculateBedDamage(BlockPos bedPos, LivingEntity target) {
-        if (bedPos == null || target == null) return 0.0f;
+        if (bedPos == null || target == null || !canBedExplode(target.level())) return 0.0f;
         return getExplosionDamage(target, Vec3.atCenterOf(bedPos), 5.0f, 0, false);
+    }
+
+    public static float calculateWindChargeDamage(Vec3 explosionPos, LivingEntity target) {
+        if (explosionPos == null || target == null) return 0.0f;
+        return getExplosionDamage(target, explosionPos, 1.2f, 0, false);
+    }
+
+    public static float calculateMaceDamage(Player attacker, LivingEntity target, float fallDistance, ItemStack mace) {
+        if (target == null) return 0.0f;
+
+        float baseDamage = 6.0f;
+        float fallBonus = 0.0f;
+        if (fallDistance > 1.5f) {
+            if (fallDistance <= 3.0f) {
+                fallBonus = fallDistance * 4.0f;
+            } else if (fallDistance <= 8.0f) {
+                fallBonus = 12.0f + (fallDistance - 3.0f) * 2.0f;
+            } else {
+                fallBonus = 22.0f + (fallDistance - 8.0f) * 1.0f;
+            }
+        }
+
+        float densityBonus = 0.0f;
+        int breachLevel = 0;
+        if (mace != null && !mace.isEmpty()) {
+            int densityLevel = getEnchantmentLevel(Enchantments.DENSITY, mace, attacker != null ? attacker : target);
+            if (densityLevel > 0 && fallDistance > 0.0f) {
+                densityBonus = densityLevel * 0.5f * fallDistance;
+            }
+            breachLevel = getEnchantmentLevel(Enchantments.BREACH, mace, attacker != null ? attacker : target);
+        }
+
+        float rawDamage = baseDamage + fallBonus + densityBonus;
+
+        float armor = getEffectiveArmor(target);
+        if (breachLevel > 0) {
+            float reductionFactor = Math.min(breachLevel * 0.15f, 0.60f);
+            armor = Math.max(0.0f, armor * (1.0f - reductionFactor));
+        }
+        float toughness = getEffectiveToughness(target);
+
+        DamageSource source = null;
+        if (attacker != null) {
+            source = attacker.damageSources().mace(attacker);
+        } else if (target.level() != null) {
+            source = target.damageSources().generic();
+        } else {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc != null && mc.level != null) {
+                source = mc.level.damageSources().generic();
+            }
+        }
+
+        float armorDamage;
+        if (source != null) {
+            armorDamage = CombatRules.getDamageAfterAbsorb(target, rawDamage, source, armor, toughness);
+        } else {
+            float f = 2.0f + toughness / 4.0f;
+            float g = Mth.clamp(armor - rawDamage / f, armor * 0.2f, 20.0f);
+            armorDamage = rawDamage * (1.0f - g / 25.0f);
+        }
+        float resistanceDamage = applyResistanceReduction(target, armorDamage);
+
+        float protection = getGeneralProtectionAmount(target);
+        float cappedProtection = Math.min(protection, 20.0f);
+        float finalDamage = cappedProtection > 0.0f ? CombatRules.getDamageAfterMagicAbsorb(resistanceDamage, cappedProtection) : resistanceDamage;
+
+        if (Float.isNaN(finalDamage) || Float.isInfinite(finalDamage)) {
+            return 0.0f;
+        }
+        return Math.max(finalDamage, 0.0f);
+    }
+
+    public record ExplosionSurvival(float remainingHealth, boolean poppedTotem, boolean lethal) {
+    }
+
+    public static ExplosionSurvival predictExplosionSurvival(LivingEntity target, Vec3 explosionPos, float power) {
+        if (target == null || explosionPos == null || !target.isAlive() || target.isRemoved() || target.getHealth() <= 0.0f) {
+            return new ExplosionSurvival(0.0f, false, true);
+        }
+        float damage = getExplosionDamage(target, explosionPos, power, 0, false);
+        float totalHealth = target.getHealth() + target.getAbsorptionAmount();
+        boolean willPop = willPopTotem(damage, target);
+        if (willPop) {
+            return new ExplosionSurvival(1.0f, true, false);
+        }
+        boolean lethal = isLethal(damage, target);
+        float remaining = lethal ? 0.0f : Math.max(0.0f, totalHealth - damage);
+        return new ExplosionSurvival(remaining, false, lethal);
     }
 
     public static boolean isSafeFromExplosion(Vec3 pos, LocalPlayer player, double maxSelfDamage) {
@@ -688,16 +785,38 @@ public enum ExplosionDamageUtil {
                 + getEnchantmentLevel(Enchantments.PROTECTION, stack);
     }
 
+    private static float getGeneralProtectionAmount(LivingEntity entity) {
+        if (entity == null) return 0.0f;
+        float total = 0.0f;
+        for (EquipmentSlot slot : ARMOR_SLOTS) {
+            ItemStack stack = entity.getItemBySlot(slot);
+            if (stack != null && !stack.isEmpty()) {
+                total += getEnchantmentLevel(Enchantments.PROTECTION, stack, entity);
+            }
+        }
+        return total;
+    }
+
     private static int getEnchantmentLevel(ResourceKey<Enchantment> key, ItemStack stack) {
-        Holder<Enchantment> entry = getEnchantmentEntry(key);
+        return getEnchantmentLevel(key, stack, null);
+    }
+
+    private static int getEnchantmentLevel(ResourceKey<Enchantment> key, ItemStack stack, LivingEntity contextEntity) {
+        Holder<Enchantment> entry = getEnchantmentEntry(key, contextEntity);
         return entry != null ? EnchantmentHelper.getItemEnchantmentLevel(entry, stack) : 0;
     }
 
     private static Holder<Enchantment> getEnchantmentEntry(ResourceKey<Enchantment> key) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc == null || mc.level == null || key == null) return null;
+        return getEnchantmentEntry(key, null);
+    }
 
-        var registryAccess = mc.level.registryAccess();
+    private static Holder<Enchantment> getEnchantmentEntry(ResourceKey<Enchantment> key, LivingEntity contextEntity) {
+        if (key == null) return null;
+        Minecraft mc = Minecraft.getInstance();
+        var level = (mc != null && mc.level != null) ? mc.level : (contextEntity != null ? contextEntity.level() : null);
+        if (level == null) return null;
+
+        var registryAccess = level.registryAccess();
         if (registryAccess != cachedRegistryAccess) {
             cachedRegistryAccess = registryAccess;
             cachedProtection = null;

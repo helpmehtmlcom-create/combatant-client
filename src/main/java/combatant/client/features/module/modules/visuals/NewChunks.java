@@ -6,6 +6,7 @@
  */
 
 package combatant.client.features.module.modules.visuals;
+import combatant.client.features.module.WorldPhase;
 
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.NumberValue;
@@ -199,5 +200,10 @@ public final class NewChunks extends Module {
         renderer.line(maxX, minY, minZ, maxX, minY, maxZ, r, g, b, lineAlpha);
         renderer.line(maxX, minY, maxZ, minX, minY, maxZ, r, g, b, lineAlpha);
         renderer.line(minX, minY, maxZ, minX, minY, minZ, r, g, b, lineAlpha);
+    }
+
+    @Override
+    public WorldPhase getWorldPhase() {
+        return WorldPhase.END_MAIN;
     }
 }

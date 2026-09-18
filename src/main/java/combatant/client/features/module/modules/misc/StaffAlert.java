@@ -8,6 +8,8 @@
 package combatant.client.features.module.modules.misc;
 
 import combatant.client.config.values.BooleanValue;
+import combatant.client.config.values.EnumValue;
+import combatant.client.config.values.StringValue;
 import combatant.client.events.EventHandler;
 import combatant.client.events.impl.GameTickEvent;
 import combatant.client.features.module.Module;
@@ -69,10 +71,40 @@ public class StaffAlert extends Module {
             Map.entry("curator", "Curator")
     );
 
+    public enum StaffAction implements EnumValue.IdProvider {
+        ALERT_ONLY("alert_only", "Alert Only"),
+        DISCONNECT("disconnect", "Disconnect"),
+        RUN_COMMAND("run_command", "Run Command");
+
+        private final String id;
+        private final String name;
+
+        StaffAction(String id, String name) {
+            this.id = id;
+            this.name = name;
+        }
+
+        @Override
+        public String id() {
+            return id;
+        }
+
+        @Override
+        public String toString() {
+            return name;
+        }
+    }
+
+    private final EnumValue<StaffAction> action =
+            enumSetting("staffalert_action", "action", StaffAction.ALERT_ONLY, StaffAction.values());
+    private final StringValue actionCommand =
+            text("staffalert_command", "action_command", "/spawn");
     private final BooleanValue chatAlert =
             bool("staffalert_chat", "chat_alert", true);
     private final BooleanValue soundAlert =
             bool("staffalert_sound", "sound_alert", true);
+    private final BooleanValue checkVanish =
+            bool("staffalert_vanish", "detect_vanish", true);
     private final BooleanValue checkStars =
             bool("staffalert_stars", "star_markers", true);
     private final BooleanValue checkFontIcons =
@@ -92,9 +124,10 @@ public class StaffAlert extends Module {
 
     @EventHandler
     private void onGameTick(GameTickEvent event) {
-        if (mc.getConnection() == null || mc.player == null) return;
-        if (mc.player.tickCount % 20 != 0) return;
+        if (mc.getConnection() == null || mc.player == null || mc.level == null) return;
+        if (mc.player.tickCount % 10 != 0) return;
 
+        // 1. Check online player tab list entries
         for (PlayerInfo info : mc.getConnection().getOnlinePlayers()) {
             if (info == null || info.getProfile() == null) continue;
             String name = info.getProfile().name();
@@ -102,12 +135,53 @@ public class StaffAlert extends Module {
 
             StaffResult result = classify(info);
             if (result != null && alertedStaff.add(name.toLowerCase(Locale.ROOT))) {
-                triggerAlert(name, result);
-                if (autoLeave.get()) {
-                    disconnect(name, result.label());
-                    setEnabled(false);
-                    return;
+                handleStaffDetected(name, result);
+                if (shouldHalt()) return;
+            }
+        }
+
+        // 2. Check world entities for vanished or spectator players
+        if (checkVanish.get() || checkSpectators.get()) {
+            for (net.minecraft.world.entity.player.Player other : mc.level.players()) {
+                if (other == null || other == mc.player) continue;
+                String name = other.getGameProfile().name();
+                if (name == null || name.equalsIgnoreCase(mc.player.getGameProfile().name())) continue;
+
+                if (other.isSpectator() && checkSpectators.get()) {
+                    if (alertedStaff.add(name.toLowerCase(Locale.ROOT))) {
+                        handleStaffDetected(name, new StaffResult(name, "Spectator", "World Spectator Entity"));
+                        if (shouldHalt()) return;
+                    }
+                } else if (other.isInvisible() && checkVanish.get()) {
+                    PlayerInfo info = mc.getConnection().getPlayerInfo(other.getUUID());
+                    StaffResult staffResult = info != null ? classify(info) : null;
+                    String badge = staffResult != null ? staffResult.label() : "Vanished";
+                    String reason = staffResult != null ? "Invisible Staff: " + staffResult.reason() : "Invisible Player Near";
+
+                    if (alertedStaff.add(name.toLowerCase(Locale.ROOT))) {
+                        handleStaffDetected(name, new StaffResult(name, badge, reason));
+                        if (shouldHalt()) return;
+                    }
                 }
+            }
+        }
+    }
+
+    private boolean shouldHalt() {
+        return action.get() == StaffAction.DISCONNECT || autoLeave.get();
+    }
+
+    private void handleStaffDetected(String name, StaffResult result) {
+        triggerAlert(name, result);
+
+        if (action.get() == StaffAction.DISCONNECT || autoLeave.get()) {
+            disconnect(name, result.label());
+            setEnabled(false);
+        } else if (action.get() == StaffAction.RUN_COMMAND) {
+            if (mc.player != null && mc.player.connection != null && !actionCommand.get().isBlank()) {
+                String cmd = actionCommand.get().trim();
+                if (cmd.startsWith("/")) cmd = cmd.substring(1);
+                mc.player.connection.sendCommand(cmd);
             }
         }
     }
@@ -129,7 +203,7 @@ public class StaffAlert extends Module {
     private void disconnect(String name, String badge) {
         if (mc.getConnection() != null && mc.getConnection().getConnection() != null) {
             mc.getConnection().getConnection().disconnect(
-                    Component.literal("[StaffAlert] Auto-leave: Staff member detected (" + name + " - " + badge + ")")
+                    Component.literal("[StaffAlert] Auto-action: Staff member detected (" + name + " - " + badge + ")")
             );
         }
     }
@@ -138,9 +212,12 @@ public class StaffAlert extends Module {
         String name = info.getProfile().name();
         boolean isSpectator = checkSpectators.get() && info.getGameMode() == GameType.SPECTATOR;
         if (isSpectator) {
-            return new StaffResult(name, "Spectator", "Spectator Mode");
+            return new StaffResult(name, "Spectator", "Spectator Mode (Gamemode 3)");
         }
 
+        if (checkVanish.get() && info.getGameMode() == GameType.SPECTATOR) {
+            return new StaffResult(name, "Vanished Staff", "Tab Spectator State");
+        }
         Component display = info.getTabListDisplayName();
         PlayerTeam team = info.getTeam();
         Component prefix = team != null ? team.getPlayerPrefix() : null;

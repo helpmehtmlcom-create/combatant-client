@@ -17,6 +17,8 @@ import combatant.client.events.impl.GameTickEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.HudPhase;
+import combatant.client.features.module.WorldPhase;
 import combatant.client.features.module.ModuleSubCategory;
 import combatant.client.features.relations.CategoryService;
 import combatant.client.render.engine.color.RenderColor;
@@ -44,9 +46,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
-import net.minecraft.world.level.levelgen.LegacyRandomSource;
-import net.minecraft.world.level.levelgen.WorldgenRandom;
-import net.minecraft.world.level.levelgen.XoroshiroRandomSource;
+import combatant.client.util.world.WorldgenRng;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -198,6 +198,16 @@ public class NetheriteFinder extends Module {
             }
         }
         return best;
+    }
+
+    @Override
+    public WorldPhase getWorldPhase() {
+        return WorldPhase.AFTER_POST_PROCESS;
+    }
+
+    @Override
+    public HudPhase getHudPhase() {
+        return HudPhase.LAST;
     }
 
     public record TargetInfo(
@@ -440,15 +450,15 @@ public class NetheriteFinder extends Module {
         }
     }
 
-    private WorldgenRandom createWorldgenRandom(long seed) {
+    private WorldgenRng createWorldgenRandom(long seed) {
         if ("Legacy LCG".equalsIgnoreCase(rngAlgorithm.get())) {
-            return new WorldgenRandom(new LegacyRandomSource(seed));
+            return WorldgenRng.legacy(seed);
         }
-        return new WorldgenRandom(new XoroshiroRandomSource(seed));
+        return WorldgenRng.create(seed);
     }
 
     private void mapChunkAncientDebris(int chunkX, int chunkZ, long worldSeed, Map<BlockPos, TargetInfo> targetMap) {
-        WorldgenRandom rng = createWorldgenRandom(worldSeed);
+        WorldgenRng rng = createWorldgenRandom(worldSeed);
         long decorationSeed = rng.setDecorationSeed(worldSeed, chunkX << 4, chunkZ << 4);
 
         // 1. Large Vein (Feature 4, Step 6, size 3, triangular Y: 8..24)

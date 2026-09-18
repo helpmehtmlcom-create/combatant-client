@@ -30,7 +30,8 @@ When a learning is promoted to a skill, add these fields:
 ## [LRN-20260916-001] best_practice
 **Logged**: 2026-09-16T11:45:00Z
 **Priority**: high
-**Status**: resolved
+**Status**: promoted
+**Promoted**: CLAUDE.md
 **Area**: backend
 ### Summary
 Minecraft 26.2 Mojang mappings convention for player inventory and input access.
@@ -51,7 +52,8 @@ Always verify accessors against deobfuscated Minecraft 26.2 JAR via `javap` befo
 ## [LRN-20260916-002] best_practice
 **Logged**: 2026-09-16T12:00:00Z
 **Priority**: medium
-**Status**: resolved
+**Status**: promoted
+**Promoted**: CLAUDE.md
 **Area**: frontend
 ### Summary
 Complete module descriptions in @ModuleInfo eliminate ClickGUI and command confusion.
@@ -106,7 +108,8 @@ Attach `.description(...)` to all multi-mode or complex numeric settings in game
 ## [LRN-20260916-005] best_practice
 **Logged**: 2026-09-16T13:40:00Z
 **Priority**: critical
-**Status**: resolved
+**Status**: promoted
+**Promoted**: CLAUDE.md
 **Area**: backend
 ### Summary
 Thread-safe state handling for Netty packet event listeners.
@@ -124,7 +127,8 @@ Audit all `PacketEvent` listeners to ensure any collections modified from incomi
 ## [LRN-20260916-006] best_practice
 **Logged**: 2026-09-16T13:45:00Z
 **Priority**: high
-**Status**: resolved
+**Status**: promoted
+**Promoted**: CLAUDE.md
 **Area**: backend
 ### Summary
 NaN and zero-magnitude vector defense in rotation math.
@@ -137,3 +141,34 @@ Use `RotationUtil.calculateRotations` and `Rotation.fromRotationVec` with builti
 - Related Files: src/main/java/combatant/client/util/aiming/RotationUtil.java, src/main/java/combatant/client/util/aiming/data/Rotation.java
 - Tags: math, rotations, nan_safety, aiming
 
+
+---
+
+## [LRN-20260918-001] best_practice
+**Logged**: 2026-09-18T17:30:00Z
+**Priority**: high
+**Status**: promoted
+**Promoted**: CLAUDE.md
+**Area**: backend
+
+### Summary
+Integer clamping and identity transforms for RHI fullscreen draw passes in SodiumGlBackend.
+
+### Details
+In `SodiumGlBackend.drawFullscreen(FullscreenDrawCommand command)`:
+1. `command.colorAttachment` dimensions must be retrieved with explicit mip level (`getWidth(0)`, `getHeight(0)`) and clamped with `Math.max(1, ...)`.
+2. Viewport payload in `MeshUniforms.update(...)` and `RenderPass.RenderArea(0, 0, width, height)` requires integer dimensions (`int width`, `int height`). Passing raw floats or zero causes viewport distortion or invalid render pass bounds.
+3. Persistent fullscreen quads span `[-1, +1]` in normalized device / clip coordinates; vertex shader uniforms must bind identity projection and model-view matrices rather than world-space matrices to avoid shrinking or offsetting fullscreen post/debug presentation passes.
+
+### Suggested Action
+Always verify fullscreen RHI passes use identity matrices and integer-clamped attachment dimensions for render areas and uniforms.
+
+### Metadata
+- Source: commit_audit
+- Related Files: src/main/java/combatant/client/render/engine/rhi/backend/SodiumGlBackend.java
+- Tags: rendering, rhi, opengl, sodium, shaders
+- See Also: ERR-20260916-001
+- Pattern-Key: harden.rhi_fullscreen_viewport
+- Recurrence-Count: 1
+- First-Seen: 2026-09-18
+- Last-Seen: 2026-09-18

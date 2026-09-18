@@ -7,8 +7,11 @@
 
 package combatant.client.features.module.modules.player;
 
+import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.NumberValue;
 import combatant.client.config.values.StringValue;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.Locale;
 import combatant.client.events.EventHandler;
 import combatant.client.events.impl.GameTickEvent;
 import combatant.client.features.module.Module;
@@ -39,6 +42,12 @@ public class AutoDeliver extends Module {
             text("deliver_target_item", "target_item", "diamond");
     private final NumberValue<Integer> delayTicks =
             num("deliver_delay", "delay_ticks", 3, 1, 40);
+    private final NumberValue<Integer> maxDelayTicks =
+            num("deliver_max_delay", "max_delay_ticks", 7, 1, 60);
+    private final BooleanValue randomizeDelay =
+            bool("deliver_randomize_delay", "randomize_delay", true);
+    private final BooleanValue autoClose =
+            bool("deliver_auto_close", "auto_close", false);
 
     private int timer = 0;
 
@@ -60,12 +69,13 @@ public class AutoDeliver extends Module {
         if (menu == null || menu == mc.player.inventoryMenu) return;
 
         if (ClientScreen.current() instanceof AbstractContainerScreen<?> containerScreen) {
-            String title = containerScreen.getTitle().getString().toLowerCase();
+            String title = containerScreen.getTitle().getString().toLowerCase(Locale.ROOT);
             if (!title.contains("deliver") && !title.contains("quest") && !title.contains("order")) {
                 return;
             }
 
-            String targetFilter = targetItem.get().trim().toLowerCase();
+            String targetFilter = targetItem.get().trim().toLowerCase(Locale.ROOT);
+            boolean deliveredAny = false;
 
             // Find matching item in player inventory slots to shift-click into delivery container
             for (Slot slot : menu.slots) {
@@ -74,14 +84,23 @@ public class AutoDeliver extends Module {
                 ItemStack stack = slot.getItem();
                 if (stack.isEmpty()) continue;
 
-                String hover = stack.getHoverName().getString().toLowerCase();
-                String id = stack.getItem().toString().toLowerCase();
+                String hover = stack.getHoverName().getString().toLowerCase(Locale.ROOT);
+                String id = stack.getItem().toString().toLowerCase(Locale.ROOT);
 
                 if (targetFilter.isEmpty() || hover.contains(targetFilter) || id.contains(targetFilter)) {
+                    deliveredAny = true;
                     mc.gameMode.handleContainerInput(menu.containerId, slot.index, 0, ContainerInput.QUICK_MOVE, mc.player);
-                    timer = delayTicks.get();
+                    int delay = randomizeDelay.get()
+                            ? ThreadLocalRandom.current().nextInt(delayTicks.get(), Math.max(delayTicks.get(), maxDelayTicks.get()) + 1)
+                            : delayTicks.get();
+                    timer = Math.max(1, delay);
                     return;
                 }
+            }
+
+            if (!deliveredAny && autoClose.get()) {
+                mc.player.closeContainer();
+                timer = 10;
             }
         }
     }

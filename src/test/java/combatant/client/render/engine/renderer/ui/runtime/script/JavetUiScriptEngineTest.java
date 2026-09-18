@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 final class JavetUiScriptEngineTest {
     @Test
     void normalizesLongPropsToJavaScriptNumbersRecursively() {
-        Object normalized = JavetUiScriptEngine.plainValue(Map.of(
+        Object normalized = JavetUiEngine.plainValue(Map.of(
                 "count", 37L,
                 "items", List.of(Map.of("count", 64L)),
                 "large", (long) Integer.MAX_VALUE + 1L

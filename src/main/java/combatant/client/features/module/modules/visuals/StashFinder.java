@@ -6,6 +6,7 @@
  */
 
 package combatant.client.features.module.modules.visuals;
+import combatant.client.features.module.WorldPhase;
 
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.NumberValue;
@@ -411,5 +412,10 @@ public class StashFinder extends Module {
                 renderer.line(camPos.x, camPos.y, camPos.z, center.x, center.y, center.z, r, g, b, 190);
             }
         }
+    }
+
+    @Override
+    public WorldPhase getWorldPhase() {
+        return WorldPhase.END_MAIN;
     }
 }

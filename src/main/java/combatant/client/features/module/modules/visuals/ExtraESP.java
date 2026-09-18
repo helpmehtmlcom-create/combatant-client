@@ -6,6 +6,7 @@
  */
 
 package combatant.client.features.module.modules.visuals;
+import combatant.client.features.module.WorldPhase;
 
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.ModeValue;
@@ -322,5 +323,10 @@ public class ExtraESP extends Module {
                 renderer.line(camPos.x, camPos.y, camPos.z, center.x, center.y, center.z, r, g, b, 180);
             }
         }
+    }
+
+    @Override
+    public WorldPhase getWorldPhase() {
+        return WorldPhase.END_MAIN;
     }
 }

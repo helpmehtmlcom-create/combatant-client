@@ -20,9 +20,16 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.CollisionContext;
 import combatant.client.util.aiming.data.Rotation;
 import combatant.client.util.entity.simulation.MountedEntityPrediction;
 import combatant.client.util.player.NetworkStatsUtil;
@@ -39,6 +46,21 @@ public enum ProjectilePredictionUtil {
     public static final double PEARL_GRAVITY = 0.03;
     public static final double DEFAULT_DRAG = 0.99;
 
+    public static final double WIND_CHARGE_VELOCITY = 1.5;
+    public static final double WIND_CHARGE_GRAVITY = 0.0;
+    public static final double WIND_CHARGE_DRAG = 1.0;
+
+    public static final double TRIDENT_VELOCITY = 2.5;
+    public static final double TRIDENT_GRAVITY = 0.05;
+    public static final double TRIDENT_DRAG = 0.99;
+
+    public static final double POTION_VELOCITY = 0.5;
+    public static final double POTION_GRAVITY = 0.05;
+    public static final double POTION_DRAG = 0.99;
+
+    public static final double SNOWBALL_VELOCITY = 1.5;
+    public static final double SNOWBALL_GRAVITY = 0.03;
+    public static final double SNOWBALL_DRAG = 0.99;
     /**
      * Calculates initial bow velocity based on pull ticks: Math.min(ticks / 20.0f, 1.0f) * 3.0f.
      */
@@ -106,6 +128,136 @@ public enum ProjectilePredictionUtil {
         double vY = -Math.sin(pitchRad) * velocity;
         double vZ = Math.cos(yawRad) * Math.cos(pitchRad) * velocity;
         return predictTrajectory(eyePos, new Vec3(vX, vY, vZ), PEARL_GRAVITY, DEFAULT_DRAG, maxTicks);
+    }
+
+    /**
+     * Predicts wind charge trajectory from eye position and rotation angle.
+     */
+    public static List<Vec3> predictWindChargeTrajectory(Vec3 eyePos, Rotation rotation, int maxTicks) {
+        if (eyePos == null || rotation == null || maxTicks <= 0) return List.of();
+        double yawRad = Math.toRadians(rotation.yaw());
+        double pitchRad = Math.toRadians(rotation.pitch());
+        double vX = -Math.sin(yawRad) * Math.cos(pitchRad) * WIND_CHARGE_VELOCITY;
+        double vY = -Math.sin(pitchRad) * WIND_CHARGE_VELOCITY;
+        double vZ = Math.cos(yawRad) * Math.cos(pitchRad) * WIND_CHARGE_VELOCITY;
+        return predictTrajectory(eyePos, new Vec3(vX, vY, vZ), WIND_CHARGE_GRAVITY, WIND_CHARGE_DRAG, maxTicks);
+    }
+
+    /**
+     * Predicts trident trajectory from eye position and rotation angle.
+     */
+    public static List<Vec3> predictTridentTrajectory(Vec3 eyePos, Rotation rotation, int maxTicks) {
+        if (eyePos == null || rotation == null || maxTicks <= 0) return List.of();
+        double yawRad = Math.toRadians(rotation.yaw());
+        double pitchRad = Math.toRadians(rotation.pitch());
+        double vX = -Math.sin(yawRad) * Math.cos(pitchRad) * TRIDENT_VELOCITY;
+        double vY = -Math.sin(pitchRad) * TRIDENT_VELOCITY;
+        double vZ = Math.cos(yawRad) * Math.cos(pitchRad) * TRIDENT_VELOCITY;
+        return predictTrajectory(eyePos, new Vec3(vX, vY, vZ), TRIDENT_GRAVITY, TRIDENT_DRAG, maxTicks);
+    }
+
+    /**
+     * Predicts splash/lingering potion trajectory from eye position and rotation angle.
+     */
+    public static List<Vec3> predictPotionTrajectory(Vec3 eyePos, Rotation rotation, int maxTicks) {
+        if (eyePos == null || rotation == null || maxTicks <= 0) return List.of();
+        double yawRad = Math.toRadians(rotation.yaw());
+        // Vanilla ThrowablePotionItem throws with a -20.0 degree pitch adjustment
+        double pitchRad = Math.toRadians(rotation.pitch() - 20.0f);
+        double vX = -Math.sin(yawRad) * Math.cos(pitchRad) * POTION_VELOCITY;
+        double vY = -Math.sin(pitchRad) * POTION_VELOCITY;
+        double vZ = Math.cos(yawRad) * Math.cos(pitchRad) * POTION_VELOCITY;
+        return predictTrajectory(eyePos, new Vec3(vX, vY, vZ), POTION_GRAVITY, POTION_DRAG, maxTicks);
+    }
+
+    /**
+     * Predicts snowball trajectory from eye position and rotation angle.
+     */
+    public static List<Vec3> predictSnowballTrajectory(Vec3 eyePos, Rotation rotation, int maxTicks) {
+        if (eyePos == null || rotation == null || maxTicks <= 0) return List.of();
+        double yawRad = Math.toRadians(rotation.yaw());
+        double pitchRad = Math.toRadians(rotation.pitch());
+        double vX = -Math.sin(yawRad) * Math.cos(pitchRad) * SNOWBALL_VELOCITY;
+        double vY = -Math.sin(pitchRad) * SNOWBALL_VELOCITY;
+        double vZ = Math.cos(yawRad) * Math.cos(pitchRad) * SNOWBALL_VELOCITY;
+        return predictTrajectory(eyePos, new Vec3(vX, vY, vZ), SNOWBALL_GRAVITY, SNOWBALL_DRAG, maxTicks);
+    }
+
+    /**
+     * Performs continuous collision detection (CCD) step-by-step with level.clip
+     * and bounding box checks for entities matching filter. Returns first hit result or MISS.
+     */
+    public static HitResult predictImpact(Level level,
+                                          Vec3 startPos,
+                                          Vec3 initialVelocity,
+                                          double gravity,
+                                          double drag,
+                                          int maxTicks,
+                                          Predicate<Entity> filter) {
+        if (level == null || startPos == null || initialVelocity == null || maxTicks <= 0) {
+            Vec3 fallback = startPos != null ? startPos : Vec3.ZERO;
+            return BlockHitResult.miss(fallback, Direction.UP, BlockPos.containing(fallback));
+        }
+
+        Vec3 currentPos = startPos;
+        Vec3 vel = initialVelocity;
+
+        for (int i = 0; i < maxTicks; i++) {
+            Vec3 nextPos = currentPos.add(vel);
+
+            HitResult blockHit = level.clip(new ClipContext(
+                    currentPos,
+                    nextPos,
+                    ClipContext.Block.COLLIDER,
+                    ClipContext.Fluid.NONE,
+                    CollisionContext.empty()
+            ));
+
+            Vec3 rayEnd = (blockHit != null && blockHit.getType() != HitResult.Type.MISS)
+                    ? blockHit.getLocation()
+                    : nextPos;
+
+            AABB stepBox = new AABB(currentPos, rayEnd).inflate(1.0);
+            List<Entity> candidateEntities = level.getEntities((Entity) null, stepBox, filter != null ? filter : e -> true);
+
+            Entity closestEntity = null;
+            Vec3 closestEntityHitPos = null;
+            double closestDistSq = Double.MAX_VALUE;
+
+            for (Entity entity : candidateEntities) {
+                if (filter != null && !filter.test(entity)) {
+                    continue;
+                }
+                AABB entityBox = entity.getBoundingBox().inflate(0.3);
+                if (i == 0 && entityBox.contains(startPos)) {
+                    // Avoid self-collision on launch tick
+                    continue;
+                }
+                var clipHit = entityBox.clip(currentPos, rayEnd);
+                if (clipHit.isPresent()) {
+                    Vec3 hitPoint = clipHit.get();
+                    double distSq = currentPos.distanceToSqr(hitPoint);
+                    if (distSq < closestDistSq) {
+                        closestDistSq = distSq;
+                        closestEntityHitPos = hitPoint;
+                        closestEntity = entity;
+                    }
+                }
+            }
+
+            if (closestEntity != null) {
+                return new EntityHitResult(closestEntity, closestEntityHitPos);
+            }
+
+            if (blockHit != null && blockHit.getType() != HitResult.Type.MISS) {
+                return blockHit;
+            }
+
+            currentPos = nextPos;
+            vel = vel.scale(drag).subtract(0.0, gravity, 0.0);
+        }
+
+        return BlockHitResult.miss(currentPos, Direction.UP, BlockPos.containing(currentPos));
     }
 
     /**

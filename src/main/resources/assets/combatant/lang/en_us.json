@@ -4301,5 +4301,17 @@
   "module.weathernotifier.description": "Alerts when rain or thunderstorm begins on DonutSMP for trident riptide escapes.",
   "module.armortrimhider.description": "Hides or randomizes armor trims on player models to boost FPS and reduce visual clutter in crowded PvP.",
   "module.nameprotect.description": "Anonymizes your username and other players in chat, scoreboard, and tab list for streaming.",
-  "module.customglint.description": "Recolors or restyles enchantment glint with custom colors and rainbow effects."
+  "module.customglint.description": "Recolors or restyles enchantment glint with custom colors and rainbow effects.",
+  "module.autotrident.description": "Automatically uses Riptide tridents with silent rotation and height maintenance for infinite flight on Grim and DonutSMP.",
+  "setting.autotrident.mode": "Mode",
+  "setting.autotrident.mode.option.maintain_height": "Maintain Height",
+  "setting.autotrident.mode.option.forward": "Boost Forward",
+  "setting.autotrident.mode.option.upward": "Ascend",
+  "setting.autotrident.target_height": "Target Height",
+  "setting.autotrident.silent_rotation": "Silent Rotation",
+  "setting.autotrident.grim_mode": "Grim Mode",
+  "setting.autotrident.weather_check": "Weather Check",
+  "setting.autotrident.auto_swap": "Auto Swap",
+  "setting.autotrident.min_charge_ticks": "Min Charge Ticks",
+  "setting.autotrident.cooldown_ticks": "Cooldown Ticks"
 }

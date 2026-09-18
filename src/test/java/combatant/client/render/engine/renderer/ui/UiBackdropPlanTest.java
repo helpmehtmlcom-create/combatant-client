@@ -8,6 +8,7 @@
 package combatant.client.render.engine.renderer.ui;
 
 import combatant.client.render.engine.command.UiEffectRegionCommand;
+import combatant.client.render.engine.command.UiSemanticCommandBuffer;
 import combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest;
 import combatant.client.render.engine.renderer.ui.draw.UiBlurQuality;
 import combatant.client.render.engine.renderer.ui.draw.UiEffectSpec;
@@ -21,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 final class UiBackdropPlanTest {
     @Test
     void adjacentCompatibleRequestsShareOneGroupAndUnionBounds() {
-        UiCommandBuffer commands = new UiCommandBuffer();
+        UiSemanticCommandBuffer commands = new UiSemanticCommandBuffer();
         UiBackdropRequest first = UiBackdropRequest.capturedSceneGlass(
                 UiRect.of(10, 20, 30, 40), UiBlurQuality.HIGH, 1.15f);
         UiBackdropRequest second = first.withCaptureBounds(UiRect.of(35, 15, 20, 15));
@@ -38,7 +39,7 @@ final class UiBackdropPlanTest {
 
     @Test
     void underlayPolicySeparatesOtherwiseCompatibleRequests() {
-        UiCommandBuffer commands = new UiCommandBuffer();
+        UiSemanticCommandBuffer commands = new UiSemanticCommandBuffer();
         UiBackdropRequest sceneOnly = UiBackdropRequest.capturedSceneGlass(
                 UiRect.of(0, 0, 20, 20), UiBlurQuality.HIGH, 1.15f);
         UiBackdropRequest passThrough = sceneOnly.withUiUnderlay(

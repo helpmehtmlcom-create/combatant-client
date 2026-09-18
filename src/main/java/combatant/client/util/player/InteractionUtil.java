@@ -16,12 +16,15 @@ import net.minecraft.client.multiplayer.prediction.BlockStatePredictionHandler;
 import net.minecraft.client.multiplayer.prediction.PredictiveAction;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -140,5 +143,65 @@ public enum InteractionUtil {
 
     public static HitResult getHitResult(Player player, boolean strictAntiCheat) {
         return RaycastUtil.getHitResult(player, strictAntiCheat);
+    }
+
+    public static boolean isInReach(Player player, Vec3 target, double maxReach) {
+        if (player == null || target == null || maxReach < 0.0) {
+            return false;
+        }
+        return getEyesPos(player).distanceToSqr(target) <= maxReach * maxReach;
+    }
+
+    public static double getStrictInteractReach(Player player) {
+        if (player == null) {
+            return STRICT_ANTI_CHEAT_REACH;
+        }
+        try {
+            if (player.getAttributes().hasAttribute(Attributes.BLOCK_INTERACTION_RANGE)) {
+                double range = player.getAttributeValue(Attributes.BLOCK_INTERACTION_RANGE);
+                return Math.min(range, STRICT_ANTI_CHEAT_REACH);
+            }
+        } catch (Throwable ignored) {
+        }
+        return STRICT_ANTI_CHEAT_REACH;
+    }
+
+    public static boolean canInteractWithBlock(Player player, BlockPos pos, Direction side) {
+        if (player == null || pos == null || player.level() == null) {
+            return false;
+        }
+
+        double reach = getStrictInteractReach(player);
+        Vec3 eyes = getEyesPos(player);
+
+        Vec3 targetVec;
+        if (side != null) {
+            Vec3 normal = Vec3.atLowerCornerOf(side.getUnitVec3i());
+            targetVec = Vec3.atCenterOf(pos).add(normal.scale(0.5));
+
+            // Face orientation: player eyes must be in front of the face
+            Vec3 toEyes = eyes.subtract(targetVec);
+            if (toEyes.dot(normal) <= 0.0) {
+                return false;
+            }
+        } else {
+            targetVec = Vec3.atCenterOf(pos);
+        }
+
+        // Reach verification
+        if (!isInReach(player, targetVec, reach)) {
+            return false;
+        }
+
+        // Sightline verification
+        BlockHitResult ray = player.level().clip(new ClipContext(
+                eyes,
+                targetVec,
+                ClipContext.Block.COLLIDER,
+                ClipContext.Fluid.NONE,
+                player
+        ));
+
+        return ray == null || ray.getType() == HitResult.Type.MISS || pos.equals(ray.getBlockPos());
     }
 }

@@ -6,6 +6,8 @@
  */
 
 package combatant.client.features.module.modules.visuals;
+import combatant.client.features.module.WorldPhase;
+import combatant.client.features.module.HudPhase;
 
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.NumberValue;
@@ -225,5 +227,15 @@ public class DirectionFinder extends Module {
         String distBadge = String.format("%.0fm", calculatedDistance);
         float badgeW = (float) textRenderer.getWidth(distBadge);
         textRenderer.render(distBadge, (float) (ax - (badgeW / 2.0)), (float) (ay + 6.0), new RenderColor(0xFFFFFFFF), true);
+    }
+
+    @Override
+    public WorldPhase getWorldPhase() {
+        return WorldPhase.END_MAIN;
+    }
+
+    @Override
+    public HudPhase getHudPhase() {
+        return HudPhase.LAST;
     }
 }

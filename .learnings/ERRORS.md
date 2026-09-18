@@ -22,7 +22,8 @@ Entry format: see the self-improvement skill's "Error Entry" section. IDs use `E
 ## [ERR-20260916-001] GlTextureBlitter mipLevel on GpuTexture in MC 26.2
 **Logged**: 2026-09-16T10:30:00Z
 **Priority**: critical
-**Status**: resolved
+**Status**: promoted
+**Promoted**: CLAUDE.md
 **Area**: backend
 ### Summary
 `cannot find symbol: method getWidth()` on `GpuTexture` during compileJava.
@@ -50,7 +51,8 @@ Pass `srcMip` / `dstMip` or `0` to `source.getWidth(srcMip)` and `destination.ge
 ## [ERR-20260916-002] ClientCommonPacketListenerImplMixin infinite re-entrancy
 **Logged**: 2026-09-16T10:45:00Z
 **Priority**: critical
-**Status**: resolved
+**Status**: promoted
+**Promoted**: CLAUDE.md
 **Area**: backend
 ### Summary
 Recursive packet re-entry leading to StackOverflowError when Flight module replaces ServerboundMovePlayerPacket.
@@ -75,7 +77,8 @@ Add a `@Unique private boolean combatant$replacingMovePacket` recursion guard wi
 ## [ERR-20260916-003] ClientInput keyPresses accessor in MC 26.2
 **Logged**: 2026-09-16T11:00:00Z
 **Priority**: high
-**Status**: resolved
+**Status**: promoted
+**Promoted**: CLAUDE.md
 **Area**: backend
 ### Summary
 Compilation error calling `player.input.forward()` directly on `ClientInput`.

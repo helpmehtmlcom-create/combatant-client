@@ -17,14 +17,34 @@ import java.util.Locale;
 public enum ModuleSubCategory {
     ALL("All"),
 
-    // Combat tabs
+    // Shared & Combat tabs
     OFFENSE("Offence"),
     DEFENSE("Defence"),
     LEGIT("Legit"),
+    UTILITY("Utility"),
 
-    // Visuals & Utility tabs
-    NORMAL("Normal"),
-    DONUTSMP("DonutSMP");
+    // Movement tabs
+    LOCOMOTION("Locomotion"),
+    FLIGHT("Flight"),
+    EXPLOITS("Exploits"),
+
+    // Player tabs
+    AUTOMATION("Automation"),
+    INTERACTION("Interact"),
+
+    // Visuals tabs
+    ESP("ESP"),
+    WORLD("World"),
+    EFFECTS("Effects"),
+
+    // Misc tabs
+    INFO("Info"),
+
+    // DonutSMP tab (shared across Player, Visuals, Misc)
+    DONUTSMP("DonutSMP"),
+
+    // Fallback for backwards compatibility
+    NORMAL("Normal");
 
     private final String title;
 
@@ -42,97 +62,174 @@ public enum ModuleSubCategory {
     public static List<ModuleSubCategory> getSubCategoriesFor(ModuleCategory category) {
         if (category == null) return List.of(ALL);
         return switch (category) {
-            case COMBAT -> List.of(OFFENSE, DEFENSE, LEGIT);
-            case VISUALS -> List.of(NORMAL, DONUTSMP);
-            case PLAYER -> List.of(NORMAL, DONUTSMP);
-            case MISC -> List.of(NORMAL, DONUTSMP);
-            case MOVEMENT -> List.of(NORMAL, LEGIT);
+            case COMBAT -> List.of(OFFENSE, DEFENSE, LEGIT, UTILITY);
+            case MOVEMENT -> List.of(LOCOMOTION, FLIGHT, LEGIT, EXPLOITS);
+            case PLAYER -> List.of(AUTOMATION, INTERACTION, DONUTSMP, EXPLOITS);
+            case VISUALS -> List.of(ESP, WORLD, EFFECTS, DONUTSMP);
+            case MISC -> List.of(UTILITY, INFO, DONUTSMP);
         };
     }
 
     /**
      * Resolves the effective sub-category of a module.
-     * If explicitly declared, that is returned; otherwise, infers the sub-category
-     * intelligently based on module name, category, and purpose.
+     * If explicitly declared, that is returned (unless ALL or legacy NORMAL);
+     * otherwise, infers the sub-category intelligently based on module name, category, and purpose.
      */
     public static ModuleSubCategory resolve(Module module) {
-        if (module == null) return NORMAL;
+        if (module == null) return UTILITY;
         ModuleSubCategory declared = module.getDeclaredSubCategory();
-        if (declared != null && declared != ALL) {
+        if (declared != null && declared != ALL && declared != NORMAL) {
             return declared;
         }
 
         ModuleCategory cat = module.getCategory();
-        if (cat == null) return NORMAL;
+        if (cat == null) return UTILITY;
 
         String id = module.name() != null ? module.name().toLowerCase(Locale.ROOT) : "";
 
         return switch (cat) {
             case COMBAT -> resolveCombat(id);
-            case VISUALS -> resolveVisuals(id);
-            case PLAYER -> resolvePlayer(id);
-            case MISC -> resolveMisc(id);
             case MOVEMENT -> resolveMovement(id);
+            case PLAYER -> resolvePlayer(id);
+            case VISUALS -> resolveVisuals(id);
+            case MISC -> resolveMisc(id);
         };
     }
 
     private static ModuleSubCategory resolveCombat(String id) {
         // Legit combat
-        if (id.contains("trigger") || id.contains("aimassist") || id.contains("jumpreset")
-                || id.contains("reach") || id.contains("clicker") || id.contains("spearassist")
-                || id.contains("hitbox")) {
+        if (id.contains("aimassist") || id.contains("jumpreset") || id.contains("hitbox")
+                || id.contains("pvpcooldown") || id.contains("trigger") || id.contains("clicker")) {
             return LEGIT;
         }
+
+        // Combat Utility
+        if (id.contains("tpssync") || id.contains("backtrack") || id.contains("projectilepunch")
+                || id.contains("ktleave") || id.contains("elytratarget") || id.contains("attributeswap")) {
+            return UTILITY;
+        }
+
         // Defensive combat
         if (id.contains("surround") || id.contains("blocker") || id.contains("holefill")
                 || id.contains("antibed") || id.contains("anticev") || id.contains("selftrap")
-                || id.contains("burrow") || id.contains("shield") || id.contains("trap")
-                || id.contains("rubberhand") || id.contains("pvpcooldown") || id.contains("tpssync")
-                || id.contains("antitotem")) {
+                || id.contains("burrow") || id.contains("antitrap") || id.contains("autoshield")
+                || id.contains("doublehand") || id.contains("rubberhand") || id.contains("autoweb")
+                || id.contains("shield") || id.contains("trap") || id.contains("antitotem")) {
             return DEFENSE;
         }
-        // Offensive combat (default)
+
+        // Offensive combat (default): AutoCrystal, KillAura, AutoAttack, Criticals, Reach, MaceKill, SpearAssist,
+        // BowBomb, BowSpam, AutoBow, AutoMine, AutoCity, AutoAnvil, AutoBed, AutoAnchor, SpearSwap, MaceBomber, MaceSwap, ShieldBreaker, etc.
         return OFFENSE;
     }
 
-    private static ModuleSubCategory resolveVisuals(String id) {
-        if (id.contains("donut") || id.contains("chunkradar") || id.contains("shulkerviewer")
-                || id.contains("stashfinder") || id.contains("basefinder") || id.contains("spawneresp")
-                || id.contains("spawnernametag") || id.contains("regionmap") || id.contains("chunkfinder")
-                || id.contains("netherite") || id.contains("debris") || id.contains("direction")
-                || id.contains("bedrock") || id.contains("cluster") || id.contains("lightfinder")
-                || id.contains("beehive") || id.contains("spawnerbeacon") || id.contains("extraesp")
-                || id.contains("holeesp")) {
-            return DONUTSMP;
+    private static ModuleSubCategory resolveMovement(String id) {
+        // Legit movement
+        if (id.contains("safewalk") || id.contains("parkour") || id.contains("noslow")
+                || id.contains("velocity") || id.contains("nopush") || id.contains("jesus")
+                || id.contains("nofall") || id.contains("inventorymove") || id.contains("fastswim")) {
+            return LEGIT;
         }
-        return NORMAL;
+
+        // Flight & vertical/aerial movement
+        if (id.contains("elytrafly") || id.contains("elytrahelper") || id.contains("anchorfly")
+                || id.contains("packetfly") || id.contains("autododge") || id.contains("superfirework")
+                || id.contains("autotrident") || id.contains("trident") || id.contains("windjump")
+                || id.contains("airjump") || id.contains("boatfly") || id.equals("flight")
+                || id.endsWith("fly")) {
+            return FLIGHT;
+        }
+
+        // Movement Exploits / Utility
+        if (id.contains("phase") || id.contains("antivoid") || id.contains("holesnap")
+                || id.contains("timer") || id.contains("freeze") || id.contains("entitycontrol")
+                || id.contains("nostun") || id.contains("autohighway") || id.contains("autotunnel")
+                || id.contains("portalchat")) {
+            return EXPLOITS;
+        }
+
+        // Locomotion (default): Speed, Strafe, TargetStrafe, Sprint, Step, ReverseStep, FastFall, AutoWalk
+        return LOCOMOTION;
     }
 
     private static ModuleSubCategory resolvePlayer(String id) {
-        if (id.contains("autosell") || id.contains("storagestealer") || id.contains("spawnerdrop")
-                || id.contains("echestfarmer") || id.contains("shitdropper") || id.contains("spawnerprotect")
-                || id.contains("gamblerigger") || id.contains("fakepay") || id.contains("autobasedig")
-                || id.contains("autoconfirm") || id.contains("ahsniper") || id.contains("silenthome")
-                || id.contains("rtp") || id.contains("boneorder") || id.contains("deliver")
-                || id.contains("meteorantiban") || id.contains("playerdetect") || id.contains("panicsell")) {
+        // DonutSMP
+        if (id.contains("ahsniper") || id.contains("autobasedig") || id.contains("boneorder")
+                || id.contains("autoconfirm") || id.contains("deliver") || id.contains("autosell")
+                || id.contains("autotpa") || id.contains("fakepay") || id.contains("gamblerigger")
+                || id.contains("meteorantiban") || id.contains("panicsell") || id.contains("playerdetect")
+                || id.contains("rtp") || id.contains("silenthome") || id.contains("spawnerdrop")
+                || id.contains("spawnerprotect") || id.contains("shitdropper")) {
             return DONUTSMP;
         }
-        return NORMAL;
+
+        // Exploits
+        if (id.contains("blink") || id.contains("fakelag") || id.contains("chorusexploit")
+                || id.contains("portalgodmode") || id.contains("autolog") || id.contains("antihunger")) {
+            return EXPLOITS;
+        }
+
+        // Automation
+        if (id.contains("autoeat") || id.contains("autotool") || id.contains("autoarmor")
+                || id.contains("automend") || id.contains("autoreplenish") || id.contains("autokit")
+                || id.contains("inventorysorter") || id.contains("cheststealer") || id.contains("echestfarmer")
+                || id.contains("storagestealer")) {
+            return AUTOMATION;
+        }
+
+        // Interaction (default): Scaffold, AirPlace, FastPlace, SpeedMine, ClickPearl, Offhand, MultiTask,
+        // LiquidInteract, NoDelay, NoInteract, XCarry
+        return INTERACTION;
+    }
+
+    private static ModuleSubCategory resolveVisuals(String id) {
+        // DonutSMP Visuals
+        if (id.contains("bedrockhole") || id.contains("beehive") || id.contains("chunkfinder")
+                || id.contains("chunkradar") || id.contains("directionfinder") || id.contains("extraesp")
+                || id.contains("lightfinder") || id.contains("netherite") || id.contains("regionmap")
+                || id.contains("shulkerviewer") || id.contains("spawnerbeacon") || id.contains("spawnernametag")
+                || id.contains("stashfinder") || id.contains("armortrimhider")) {
+            return DONUTSMP;
+        }
+
+        // Effects
+        if (id.contains("motionblur") || id.contains("postfx") || id.contains("damagetint")
+                || id.contains("hiteffect") || id.contains("killeffect") || id.contains("jumpcircles")
+                || id.contains("trails") || id.contains("totemfx") || id.contains("customglint")) {
+            return EFFECTS;
+        }
+
+        // World
+        if (id.contains("fullbright") || id.contains("freecam") || id.contains("zoom")
+                || id.contains("fovcontrol") || id.contains("cameraclip") || id.contains("aspectratio")
+                || id.contains("viewmodel") || id.contains("blockhighlight") || id.contains("newchunks")
+                || id.contains("worldparticles") || id.contains("worldtweaks") || id.contains("reimaginedvisual")
+                || id.contains("seeinvisibles") || id.contains("crosshair") || id.contains("choruspredict")
+                || id.contains("predictions") || id.contains("norender") || id.contains("tazikhat")) {
+            return WORLD;
+        }
+
+        // ESP (default): ESP, BlockESP, DropESP, PortalESP, StorageESP, HoleESP, ClusterESP, BedwarsESP, DonutESP,
+        // Tracers, NameTags, Chams, LogoutSpots, TargetESP, SoundESP
+        return ESP;
     }
 
     private static ModuleSubCategory resolveMisc(String id) {
-        if (id.contains("staffalert") || id.contains("stashfinder") || id.contains("panic")
-                || id.contains("fakeroles") || id.contains("fakestats") || id.contains("coordsnapper")
-                || id.contains("staffdetector") || id.contains("stafftracker") || id.contains("reloadchunk")) {
+        // DonutSMP Misc
+        if (id.contains("coordsnapper") || id.contains("fakeroles") || id.contains("fakestats")
+                || id.contains("reloadchunk") || id.contains("staffalert") || id.contains("weathernotifier")
+                || id.contains("staffdetector") || id.contains("stafftracker")) {
             return DONUTSMP;
         }
-        return NORMAL;
-    }
 
-    private static ModuleSubCategory resolveMovement(String id) {
-        if (id.contains("safewalk") || id.contains("parkour") || id.contains("reversestep")) {
-            return LEGIT;
+        // Info
+        if (id.contains("popcounter") || id.contains("hitsounds") || id.contains("visualrange")
+                || id.contains("autoez")) {
+            return INFO;
         }
-        return NORMAL;
+
+        // Utility (default): BetterMinecraft, ClickGui, Panic, MessageFilter, NoSound, DefineTarget,
+        // FakePlayer, AutoReconnect, AutoRespawn, NameProtect
+        return UTILITY;
     }
 }

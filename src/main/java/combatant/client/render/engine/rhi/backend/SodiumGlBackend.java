@@ -560,7 +560,7 @@ public final class SodiumGlBackend implements CombatantRhi {
         if (width <= 0 || height <= 0) {
             throw new IllegalArgumentException("Render pass requires at least one non-empty attachment: " + label);
         }
-        descriptor.withRenderArea(new RenderPass.RenderArea(0, 0, width, height));
+        descriptor.withRenderArea(new RenderPass.RenderArea(0, 0, Math.max(1, width), Math.max(1, height)));
         return encoder.createRenderPass(descriptor);
     }
 

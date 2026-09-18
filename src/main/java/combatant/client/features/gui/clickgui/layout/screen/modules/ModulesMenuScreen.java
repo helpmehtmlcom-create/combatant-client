@@ -505,9 +505,13 @@ public final class ModulesMenuScreen {
             }
 
             int textColor = active ? withAlpha(0xFFFFFFFF, alpha) : (hovered ? withAlpha(ModulesMenuStyle.text(), alpha) : withAlpha(ModulesMenuStyle.textMuted(), alpha));
-            float fontSize = count >= 3 ? 6.5f * scale : 7.0f * scale;
-            float fontY = tabsY + middle(textHeight(semibold, fontSize), tabsH) + 0.5f * scale;
+            float fontSize = count >= 4 ? 5.8f * scale : (count >= 3 ? 6.4f * scale : 7.0f * scale);
             float tw = ClickGuiRenderer.textWidth(semibold, sub.title(), fontSize);
+            if (tw > tabW - 2.0f * scale && count >= 4) {
+                fontSize = 5.2f * scale;
+                tw = ClickGuiRenderer.textWidth(semibold, sub.title(), fontSize);
+            }
+            float fontY = tabsY + middle(textHeight(semibold, fontSize), tabsH) + 0.5f * scale;
             ClickGuiRenderer.drawText(semibold, sub.title(), tx + (tabW - tw) * 0.5f, fontY, fontSize, textColor, false);
         }
 

@@ -6,6 +6,7 @@
  */
 
 package combatant.client.features.module.modules.visuals;
+import combatant.client.features.module.WorldPhase;
 
 import combatant.client.config.values.NumberValue;
 import combatant.client.config.values.RGBAColorValue;
@@ -176,4 +177,9 @@ public final class PortalESP extends Module {
     }
 
     private record PortalEntry(AABB box, int argb) {}
+
+    @Override
+    public WorldPhase getWorldPhase() {
+        return WorldPhase.END_MAIN;
+    }
 }

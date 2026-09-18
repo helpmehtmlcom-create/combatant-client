@@ -22,8 +22,12 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Input;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
+import combatant.client.util.aiming.data.Rotation;
 
 /**
  * Small rotation helpers (yaw/pitch).
@@ -38,6 +42,95 @@ public enum RotationUtil {
         double sens = mc.options.sensitivity().get();
         double f = sens * 0.6 + 0.2;
         return f * f * f * 8.0 * 0.15;
+    }
+
+    /**
+     * Converts the angular difference between current and target angles to discrete mouse delta ticks
+     * quantized by sensitivity GCD.
+     */
+    public static int angleToMouseDelta(float currentAngle, float targetAngle) {
+        double gcd = gcd();
+        if (gcd <= 0.0) return 0;
+        float diff = angleDifference(targetAngle, currentAngle);
+        return (int) Math.round(diff / gcd);
+    }
+
+    /**
+     * Converts discrete mouse delta ticks into angular delta in degrees using sensitivity GCD.
+     */
+    public static float mouseDeltaToAngle(int delta) {
+        return (float) (delta * gcd());
+    }
+
+    /**
+     * Computes spherical angular distance in degrees between two rotation pairs (yaw1, pitch1) and (yaw2, pitch2).
+     */
+    public static float getAngleDifference(float yaw1, float pitch1, float yaw2, float pitch2) {
+        Vec3 v1 = getRotationVector(pitch1, yaw1);
+        Vec3 v2 = getRotationVector(pitch2, yaw2);
+        double dot = Mth.clamp(v1.dot(v2), -1.0, 1.0);
+        return (float) Math.toDegrees(Math.acos(dot));
+    }
+
+    /**
+     * Computes spherical angular distance in degrees between two {@link Rotation} instances.
+     */
+    public static float getAngleDifference(Rotation from, Rotation to) {
+        if (from == null || to == null) return 0.0f;
+        return getAngleDifference(from.yaw(), from.pitch(), to.yaw(), to.pitch());
+    }
+
+    /**
+     * Scans multiple key points on target's AABB (eyes, head, chest, center, feet)
+     * to find the point with line of sight or closest unobstructed trajectory from eyePos.
+     */
+    public static Vec3 getBestTargetPoint(Vec3 eyePos, Entity target) {
+        if (target == null) return null;
+        if (eyePos == null) return target.position().add(0.0, target.getBbHeight() * 0.5, 0.0);
+
+        AABB bb = target.getBoundingBox();
+        Vec3 eyes = target.getEyePosition();
+        Vec3 head = new Vec3(target.getX(), bb.maxY - 0.1, target.getZ());
+        Vec3 chest = new Vec3(target.getX(), bb.minY + (bb.maxY - bb.minY) * 0.75, target.getZ());
+        Vec3 center = new Vec3(target.getX(), bb.minY + (bb.maxY - bb.minY) * 0.5, target.getZ());
+        Vec3 feet = new Vec3(target.getX(), bb.minY + 0.15, target.getZ());
+
+        Vec3[] points = { eyes, head, chest, center, feet };
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.level == null) {
+            return eyes;
+        }
+
+        Vec3 bestVisible = null;
+        double minVisibleDistSq = Double.MAX_VALUE;
+        Vec3 closestFallback = null;
+        double minFallbackDistSq = Double.MAX_VALUE;
+
+        for (Vec3 point : points) {
+            HitResult hit = mc.level.clip(new ClipContext(
+                    eyePos,
+                    point,
+                    ClipContext.Block.COLLIDER,
+                    ClipContext.Fluid.NONE,
+                    mc.player
+            ));
+
+            double distSq = eyePos.distanceToSqr(point);
+            if (distSq < minFallbackDistSq) {
+                minFallbackDistSq = distSq;
+                closestFallback = point;
+            }
+
+            if (hit == null || hit.getType() == HitResult.Type.MISS) {
+                if (distSq < minVisibleDistSq) {
+                    minVisibleDistSq = distSq;
+                    bestVisible = point;
+                }
+            }
+        }
+
+        return bestVisible != null ? bestVisible : (closestFallback != null ? closestFallback : eyes);
     }
 
     /**
