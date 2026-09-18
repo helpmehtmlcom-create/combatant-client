@@ -23,16 +23,12 @@ import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.text.TextRenderer;
+import combatant.client.render.helpers.ScreenProjection;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.component.DataComponents;
-import net.minecraft.network.chat.ClickEvent;
-import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.HoverEvent;
-import net.minecraft.sounds.SoundEvent;
-import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.decoration.ArmorStand;
@@ -43,18 +39,17 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.ItemContainerContents;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.levelgen.LegacyRandomSource;
+import net.minecraft.world.level.levelgen.WorldgenRandom;
+import net.minecraft.world.level.levelgen.XoroshiroRandomSource;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
@@ -62,16 +57,12 @@ import java.util.function.Predicate;
 @ModuleInfo(
         id = "netheritefinder",
         displayName = "Netherite Finder",
-        description = "Scans loaded chunks and entities for Ancient Debris, Netherite blocks, gear, and Shulker stashes.",
+        description = "Predicts Ancient Debris veins via world seed, scans loaded chunks/entities, and detects explosion craters.",
         category = ModuleCategory.VISUALS,
         subCategory = ModuleSubCategory.DONUTSMP,
         aliases = {"ancientdebrisfinder", "debrisfinder", "netheriteradar", "debrisradar"}
 )
 public class NetheriteFinder extends Module {
-
-    private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(4))
-            .build();
 
     private static final Predicate<BlockState> NETHERITE_OR_DEBRIS_PREDICATE =
             state -> state.is(Blocks.ANCIENT_DEBRIS) || state.is(Blocks.NETHERITE_BLOCK);
@@ -95,6 +86,32 @@ public class NetheriteFinder extends Module {
 
     private final Minecraft mc = Minecraft.getInstance();
 
+    // --- DonutSMP Seed & Vicinity Explosion Predictor ---
+    private final BooleanValue seedPredictor =
+            bool("netherite_seed_predictor", "seed_predictor", true);
+    private final ModeValue seedPreset =
+            modeSetting("netherite_seed_preset", "seed_preset", "DonutSMP #1", "DonutSMP #1", "DonutSMP #2", "Custom");
+    private final StringValue netherSeed =
+            text("netherite_nether_seed", "nether_seed", "-2803778941596086821");
+    private final ModeValue rngAlgorithm =
+            modeSetting("netherite_rng", "rng_type", "Xoroshiro (Modern)", "Xoroshiro (Modern)", "Legacy LCG");
+    private final NumberValue<Integer> seedChunkRadius =
+            num("netherite_seed_chunk_radius", "seed_radius", 6, 1, 16);
+    private final BooleanValue netherOnly =
+            bool("netherite_nether_only", "nether_only", false);
+
+    private final BooleanValue hideBlownUp =
+            bool("netherite_hide_blown_up", "hide_blown_up", true);
+    private final BooleanValue checkVicinityExplosion =
+            bool("netherite_check_explosion", "check_vicinity", true);
+    private final NumberValue<Integer> explosionRadius =
+            num("netherite_explosion_radius", "vicinity_radius", 3, 1, 6);
+    private final NumberValue<Double> explosionAirThreshold =
+            num("netherite_air_threshold", "air_threshold", 35.0, 10.0, 80.0);
+    private final BooleanValue showVicinityBadges =
+            bool("netherite_vicinity_badges", "world_badges", true);
+
+    // --- Loaded Chunks & Live Entities Scanner ---
     private final NumberValue<Double> scanRange =
             num("netherite_range", "range", 96.0, 16.0, 256.0);
     private final BooleanValue scanAncientDebris =
@@ -112,6 +129,7 @@ public class NetheriteFinder extends Module {
     private final BooleanValue scanPlayers =
             bool("detect_player_gear", "players", true);
 
+    // --- Visuals & Colors ---
     private final BooleanValue renderTracers =
             bool("netherite_tracers", "tracers", true);
     private final BooleanValue renderFill =
@@ -121,27 +139,18 @@ public class NetheriteFinder extends Module {
     private final BooleanValue renderHud =
             bool("netherite_hud", "hud_overlay", true);
 
+    private final RGBAColorValue untouchedColor =
+            color("netherite_untouched_color", "#FF00FF66"); // Vibrant Neon Emerald
+    private final RGBAColorValue exposedColor =
+            color("netherite_exposed_color", "#FF00E5FF"); // Cyan / Diamond
+    private final RGBAColorValue blownUpColor =
+            color("netherite_blown_color", "#FF666666"); // Muted Gray
     private final RGBAColorValue debrisColor =
             color("debris_color", "#FFFF9900"); // Golden Amber
     private final RGBAColorValue netheriteBlockColor =
             color("netherite_block_color", "#FF503D32"); // Dark Netherite Slate
     private final RGBAColorValue itemColor =
             color("netherite_item_color", "#FF8E44AD"); // Netherite Purple/Amethyst
-
-    private final BooleanValue soundAlert =
-            bool("netherite_sound_alert", "sound_alert", true);
-    private final ModeValue soundType =
-            modeSetting("netherite_sound_type", "sound_type", "Experience Orb", "Experience Orb", "Chime", "Bell", "Level Up");
-    private final BooleanValue chatAlert =
-            bool("netherite_chat_alert", "chat_alert", true);
-    private final BooleanValue webhook =
-            bool("netherite_webhook", "webhook", false);
-    private final StringValue webhookUrl =
-            text("netherite_webhook_url", "webhook_url", "");
-    private final BooleanValue webhookPing =
-            bool("netherite_webhook_ping", "webhook_ping", false);
-    private final StringValue discordId =
-            text("netherite_discord_id", "discord_id", "");
 
     private final NumberValue<Integer> minY =
             num("netherite_min_y", "min_y", -64, -64, 320);
@@ -150,10 +159,30 @@ public class NetheriteFinder extends Module {
 
     // Discovered targets: position key -> TargetInfo
     private final Map<BlockPos, TargetInfo> discoveredTargets = new ConcurrentHashMap<>();
-    private final Set<BlockPos> notifiedPositions = ConcurrentHashMap.newKeySet();
     private int tickCounter = 0;
+
     public int getTargetCount() {
         return discoveredTargets.size();
+    }
+
+    public int getUntouchedCount() {
+        int count = 0;
+        for (TargetInfo info : discoveredTargets.values()) {
+            if (info.status() == VicinityStatus.UNTOUCHED || info.status() == VicinityStatus.EXPOSED) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public int getBlownUpCount() {
+        int count = 0;
+        for (TargetInfo info : discoveredTargets.values()) {
+            if (info.status() == VicinityStatus.BLOWN_UP) {
+                count++;
+            }
+        }
+        return count;
     }
 
     public TargetInfo getNearestTarget() {
@@ -171,11 +200,43 @@ public class NetheriteFinder extends Module {
         return best;
     }
 
-    public record TargetInfo(BlockPos pos, TargetType type, String label, AABB box) {
+    public record TargetInfo(
+            BlockPos pos,
+            TargetType type,
+            String label,
+            AABB box,
+            VicinityStatus status,
+            int airCount,
+            int totalChecked
+    ) {
+    }
+
+    public enum VicinityStatus {
+        UNTOUCHED("Untouched", 0xFF00FF66),
+        EXPOSED("Exposed", 0xFF00E5FF),
+        BLOWN_UP("Blown Up / Mined", 0xFFFF3333),
+        UNLOADED("Predicted", 0xFFFFAA00);
+
+        private final String label;
+        private final int colorArgb;
+
+        VicinityStatus(String label, int colorArgb) {
+            this.label = label;
+            this.colorArgb = colorArgb;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public int getColorArgb() {
+            return colorArgb;
+        }
     }
 
     public enum TargetType {
         ANCIENT_DEBRIS,
+        SEED_DEBRIS,
         NETHERITE_BLOCK,
         NETHERITE_ITEM
     }
@@ -192,7 +253,6 @@ public class NetheriteFinder extends Module {
 
     private void clear() {
         discoveredTargets.clear();
-        notifiedPositions.clear();
         tickCounter = 0;
     }
 
@@ -215,7 +275,21 @@ public class NetheriteFinder extends Module {
 
         Map<BlockPos, TargetInfo> currentScan = new HashMap<>();
 
-        // 1. Scan chunk sections for blocks
+        // 1. Automatic Seed-based Ancient Debris Mapper (DonutSMP Seeds)
+        if (seedPredictor.get()) {
+            boolean isNether = mc.level.dimension() == Level.NETHER;
+            if (!netherOnly.get() || isNether) {
+                long seed = resolveSeed();
+                int sRad = seedChunkRadius.get();
+                for (int cx = playerChunkX - sRad; cx <= playerChunkX + sRad; cx++) {
+                    for (int cz = playerChunkZ - sRad; cz <= playerChunkZ + sRad; cz++) {
+                        mapChunkAncientDebris(cx, cz, seed, currentScan);
+                    }
+                }
+            }
+        }
+
+        // 2. Scan chunk sections for live physically placed blocks
         if (scanAncientDebris.get() || scanNetheriteBlocks.get()) {
             for (int cx = playerChunkX - chunkRadius; cx <= playerChunkX + chunkRadius; cx++) {
                 for (int cz = playerChunkZ - chunkRadius; cz <= playerChunkZ + chunkRadius; cz++) {
@@ -252,10 +326,10 @@ public class NetheriteFinder extends Module {
                                     BlockState state = section.getBlockState(x, y, z);
                                     if (scanAncientDebris.get() && state.is(Blocks.ANCIENT_DEBRIS)) {
                                         BlockPos pos = new BlockPos(worldX, worldY, worldZ);
-                                        currentScan.put(pos, new TargetInfo(pos, TargetType.ANCIENT_DEBRIS, "Ancient Debris", new AABB(pos)));
+                                        currentScan.put(pos, new TargetInfo(pos, TargetType.ANCIENT_DEBRIS, "Ancient Debris (Live)", new AABB(pos), VicinityStatus.UNTOUCHED, 0, 0));
                                     } else if (scanNetheriteBlocks.get() && state.is(Blocks.NETHERITE_BLOCK)) {
                                         BlockPos pos = new BlockPos(worldX, worldY, worldZ);
-                                        currentScan.put(pos, new TargetInfo(pos, TargetType.NETHERITE_BLOCK, "Netherite Block", new AABB(pos)));
+                                        currentScan.put(pos, new TargetInfo(pos, TargetType.NETHERITE_BLOCK, "Netherite Block", new AABB(pos), VicinityStatus.UNTOUCHED, 0, 0));
                                     }
                                 }
                             }
@@ -265,7 +339,7 @@ public class NetheriteFinder extends Module {
             }
         }
 
-        // 2. Scan entities (ItemFrames, ArmorStands, Dropped Items, Players)
+        // 3. Scan entities (ItemFrames, ArmorStands, Dropped Items, Players)
         for (Entity entity : mc.level.entitiesForRendering()) {
             if (entity == null) continue;
             double distSq = entity.distanceToSqr(playerPos);
@@ -279,10 +353,10 @@ public class NetheriteFinder extends Module {
                 if (!stack.isEmpty()) {
                     if (isNetherite(stack.getItem())) {
                         currentScan.put(ePos, new TargetInfo(ePos, TargetType.NETHERITE_ITEM,
-                                "Item Frame: " + stack.getHoverName().getString(), frame.getBoundingBox()));
+                                "Item Frame: " + stack.getHoverName().getString(), frame.getBoundingBox(), VicinityStatus.EXPOSED, 0, 0));
                     } else if (scanShulkerContents.get() && hasContainedNetherite(stack)) {
                         currentScan.put(ePos, new TargetInfo(ePos, TargetType.NETHERITE_ITEM,
-                                "Item Frame: Shulker Box (Contains Netherite)", frame.getBoundingBox()));
+                                "Item Frame: Shulker Box (Contains Netherite)", frame.getBoundingBox(), VicinityStatus.EXPOSED, 0, 0));
                     }
                 }
             } else if (scanArmorStands.get() && entity instanceof ArmorStand stand) {
@@ -304,17 +378,17 @@ public class NetheriteFinder extends Module {
                 }
                 if (hasNetherite) {
                     currentScan.put(ePos, new TargetInfo(ePos, TargetType.NETHERITE_ITEM,
-                            "Armor Stand: " + armorName, stand.getBoundingBox()));
+                            "Armor Stand: " + armorName, stand.getBoundingBox(), VicinityStatus.EXPOSED, 0, 0));
                 }
             } else if (scanDroppedItems.get() && entity instanceof ItemEntity itemEntity) {
                 ItemStack stack = itemEntity.getItem();
                 if (!stack.isEmpty()) {
                     if (isNetherite(stack.getItem())) {
                         currentScan.put(ePos, new TargetInfo(ePos, TargetType.NETHERITE_ITEM,
-                                "Item: " + stack.getHoverName().getString() + " x" + stack.getCount(), itemEntity.getBoundingBox()));
+                                "Item: " + stack.getHoverName().getString() + " x" + stack.getCount(), itemEntity.getBoundingBox(), VicinityStatus.EXPOSED, 0, 0));
                     } else if (scanShulkerContents.get() && hasContainedNetherite(stack)) {
                         currentScan.put(ePos, new TargetInfo(ePos, TargetType.NETHERITE_ITEM,
-                                "Dropped Shulker Box (Contains Netherite)", itemEntity.getBoundingBox()));
+                                "Dropped Shulker Box (Contains Netherite)", itemEntity.getBoundingBox(), VicinityStatus.EXPOSED, 0, 0));
                     }
                 }
             } else if (scanPlayers.get() && entity instanceof Player player && player != mc.player) {
@@ -329,7 +403,7 @@ public class NetheriteFinder extends Module {
                     }
                     if (hasNetherite) {
                         currentScan.put(ePos, new TargetInfo(ePos, TargetType.NETHERITE_ITEM,
-                                "Player: " + player.getName().getString() + " (Netherite Gear)", player.getBoundingBox()));
+                                "Player: " + player.getName().getString() + " (Netherite Gear)", player.getBoundingBox(), VicinityStatus.EXPOSED, 0, 0));
                     }
                 }
             }
@@ -337,14 +411,6 @@ public class NetheriteFinder extends Module {
 
         discoveredTargets.clear();
         discoveredTargets.putAll(currentScan);
-
-        // Check for new discoveries to alert
-        for (Map.Entry<BlockPos, TargetInfo> entry : currentScan.entrySet()) {
-            BlockPos pos = entry.getKey();
-            if (notifiedPositions.add(pos)) {
-                notifyFound(entry.getValue());
-            }
-        }
     }
 
     private boolean isNetherite(Item item) {
@@ -360,103 +426,126 @@ public class NetheriteFinder extends Module {
         return false;
     }
 
-    private void notifyFound(TargetInfo info) {
-        if (mc.player == null) return;
-        BlockPos pos = info.pos();
-        double dist = Math.sqrt(mc.player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5));
-        String coordsStr = String.format("%d %d %d", pos.getX(), pos.getY(), pos.getZ());
-
-        if (chatAlert.get() && mc.gui != null && mc.gui.hud != null && mc.gui.hud.getChat() != null) {
-            Component coordsComponent = Component.literal(String.format("[%d, %d, %d]", pos.getX(), pos.getY(), pos.getZ()))
-                    .withStyle(style -> style
-                            .withColor(0x55FFFF)
-                            .withUnderlined(true)
-                            .withClickEvent(new ClickEvent.CopyToClipboard(coordsStr))
-                            .withHoverEvent(new HoverEvent.ShowText(Component.literal("§eClick to copy coordinates: §f" + coordsStr))));
-
-            Component msg = Component.literal("§6[NetheriteFinder] §aFound §e" + info.label() + " §aat ")
-                    .append(coordsComponent)
-                    .append(Component.literal(String.format(" §7(§f%.1fm§7 away)", dist)));
-
-            mc.gui.hud.getChat().addClientSystemMessage(msg);
+    private long resolveSeed() {
+        String preset = seedPreset.get();
+        if ("DonutSMP #1".equalsIgnoreCase(preset)) {
+            return -2803778941596086821L;
+        } else if ("DonutSMP #2".equalsIgnoreCase(preset)) {
+            return 6608149111735331168L;
         }
-
-        if (soundAlert.get()) {
-            SoundEvent snd = switch (soundType.get()) {
-                case "Chime" -> SoundEvents.NOTE_BLOCK_CHIME.value();
-                case "Bell" -> SoundEvents.BELL_BLOCK;
-                case "Level Up" -> SoundEvents.PLAYER_LEVELUP;
-                default -> SoundEvents.EXPERIENCE_ORB_PICKUP;
-            };
-            mc.player.playSound(snd, 1.0f, 1.0f);
-        }
-
-        if (webhook.get() && !webhookUrl.get().isBlank()) {
-            sendWebhook(info, dist, coordsStr);
-        }
-    }
-
-    private void sendWebhook(TargetInfo info, double distance, String coords) {
-        String url = webhookUrl.get().trim();
-        if (url.isEmpty()) return;
-
-        int embedColor = switch (info.type()) {
-            case ANCIENT_DEBRIS -> 0xFFA500;
-            case NETHERITE_BLOCK -> 0x503D32;
-            case NETHERITE_ITEM -> 0x8E44AD;
-        };
-
-        String dimension = mc.level != null ? mc.level.dimension().identifier().toString() : "unknown";
-        String playerName = mc.player != null ? mc.player.getName().getString() : "Unknown";
-        String server = mc.getCurrentServer() != null ? mc.getCurrentServer().ip : "Singleplayer";
-
-        String pingPrefix = "";
-        if (webhookPing.get() && !discordId.get().isBlank()) {
-            String id = discordId.get().trim();
-            pingPrefix = id.equalsIgnoreCase("everyone") ? "@everyone " : "<@" + id + "> ";
-        }
-
-        String json = String.format(
-                "{\"content\":%s,\"embeds\":[{" +
-                        "\"title\":\"💎 Netherite / Debris Discovered!\"," +
-                        "\"color\":%d," +
-                        "\"description\":\"Found **%s** at **%s** (%.1fm away)\\n*Combatant Client • DonutSMP Base Hunting*\"," +
-                        "\"fields\":[" +
-                        "{\"name\":\"📍 Coordinates\",\"value\":\"`%s`\",\"inline\":true}," +
-                        "{\"name\":\"📏 Distance\",\"value\":\"`%.1fm`\",\"inline\":true}," +
-                        "{\"name\":\"🌍 Dimension\",\"value\":\"`%s`\",\"inline\":true}," +
-                        "{\"name\":\"👤 Found By\",\"value\":\"`%s`\",\"inline\":true}," +
-                        "{\"name\":\"🖥️ Server\",\"value\":\"`%s`\",\"inline\":true}" +
-                        "]" +
-                        "}]}",
-                pingPrefix.isEmpty() ? "null" : "\"" + escapeJson(pingPrefix.trim()) + "\"",
-                embedColor,
-                escapeJson(info.label()),
-                coords,
-                distance,
-                coords,
-                distance,
-                escapeJson(dimension),
-                escapeJson(playerName),
-                escapeJson(server)
-        );
-
         try {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(json))
-                    .timeout(Duration.ofSeconds(5))
-                    .build();
-
-            HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.discarding());
-        } catch (Throwable ignored) {
+            return Long.parseLong(netherSeed.get().trim());
+        } catch (NumberFormatException e) {
+            return (long) netherSeed.get().trim().hashCode();
         }
     }
 
-    private static String escapeJson(String s) {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+    private WorldgenRandom createWorldgenRandom(long seed) {
+        if ("Legacy LCG".equalsIgnoreCase(rngAlgorithm.get())) {
+            return new WorldgenRandom(new LegacyRandomSource(seed));
+        }
+        return new WorldgenRandom(new XoroshiroRandomSource(seed));
+    }
+
+    private void mapChunkAncientDebris(int chunkX, int chunkZ, long worldSeed, Map<BlockPos, TargetInfo> targetMap) {
+        WorldgenRandom rng = createWorldgenRandom(worldSeed);
+        long decorationSeed = rng.setDecorationSeed(worldSeed, chunkX << 4, chunkZ << 4);
+
+        // 1. Large Vein (Feature 4, Step 6, size 3, triangular Y: 8..24)
+        rng.setFeatureSeed(decorationSeed, 4, 6);
+        int lx = (chunkX << 4) + rng.nextInt(16);
+        int lz = (chunkZ << 4) + rng.nextInt(16);
+        int ly = 8 + rng.nextInt(9) + rng.nextInt(9);
+        int lCount = rng.nextInt(4); // 0 to 3 blocks
+        for (int i = 0; i < lCount; i++) {
+            int radius = Math.min(i, 7);
+            int dx = Math.round((rng.nextFloat() - rng.nextFloat()) * (float) radius);
+            int dy = Math.round((rng.nextFloat() - rng.nextFloat()) * (float) radius);
+            int dz = Math.round((rng.nextFloat() - rng.nextFloat()) * (float) radius);
+            BlockPos pos = new BlockPos(lx + dx, ly + dy, lz + dz);
+            processPredictedDebris(pos, "Ancient Debris (Vein #1)", targetMap);
+        }
+
+        // 2. Small Vein (Feature 5, Step 6, size 2, uniform Y: 8..119)
+        rng.setFeatureSeed(decorationSeed, 5, 6);
+        int sx = (chunkX << 4) + rng.nextInt(16);
+        int sz = (chunkZ << 4) + rng.nextInt(16);
+        int sy = 8 + rng.nextInt(112);
+        int sCount = rng.nextInt(3); // 0 to 2 blocks
+        for (int i = 0; i < sCount; i++) {
+            int radius = Math.min(i, 7);
+            int dx = Math.round((rng.nextFloat() - rng.nextFloat()) * (float) radius);
+            int dy = Math.round((rng.nextFloat() - rng.nextFloat()) * (float) radius);
+            int dz = Math.round((rng.nextFloat() - rng.nextFloat()) * (float) radius);
+            BlockPos pos = new BlockPos(sx + dx, sy + dy, sz + dz);
+            processPredictedDebris(pos, "Ancient Debris (Vein #2)", targetMap);
+        }
+    }
+
+    private void processPredictedDebris(BlockPos pos, String label, Map<BlockPos, TargetInfo> targetMap) {
+        if (targetMap.containsKey(pos)) return;
+        if (pos.getY() < minY.get() || pos.getY() > maxY.get()) return;
+
+        int cx = pos.getX() >> 4;
+        int cz = pos.getZ() >> 4;
+        LevelChunk chunk = mc.level != null ? mc.level.getChunkSource().getChunk(cx, cz, false) : null;
+
+        VicinityStatus status;
+        int airCount = 0;
+        int totalChecked = 0;
+
+        if (chunk == null || chunk.isEmpty()) {
+            status = VicinityStatus.UNLOADED;
+        } else {
+            // Chunk is loaded! Check block and its vicinity
+            BlockState centerState = mc.level.getBlockState(pos);
+            boolean centerDebris = centerState.is(Blocks.ANCIENT_DEBRIS);
+
+            int r = explosionRadius.get();
+            boolean nearbyDebris = centerDebris;
+
+            for (int dx = -r; dx <= r; dx++) {
+                for (int dy = -r; dy <= r; dy++) {
+                    for (int dz = -r; dz <= r; dz++) {
+                        if (dx * dx + dy * dy + dz * dz > r * r) continue;
+                        totalChecked++;
+                        BlockPos checkPos = pos.offset(dx, dy, dz);
+                        BlockState s = mc.level.getBlockState(checkPos);
+                        if (s.isAir() || s.is(Blocks.CAVE_AIR)) {
+                            airCount++;
+                        } else if (s.is(Blocks.FIRE) || s.is(Blocks.SOUL_FIRE) || s.is(Blocks.LAVA)) {
+                            airCount++;
+                        } else if (s.is(Blocks.ANCIENT_DEBRIS)) {
+                            nearbyDebris = true;
+                        }
+                    }
+                }
+            }
+
+            double airRatio = totalChecked > 0 ? (airCount * 100.0 / totalChecked) : 0.0;
+            double threshold = explosionAirThreshold.get();
+
+            if (nearbyDebris) {
+                if (airRatio >= threshold) {
+                    status = VicinityStatus.EXPOSED; // Exposed in blast crater!
+                } else {
+                    status = VicinityStatus.UNTOUCHED; // Intact in solid rock!
+                }
+            } else {
+                if (centerState.isAir() || centerState.is(Blocks.CAVE_AIR) || centerState.is(Blocks.FIRE) || centerState.is(Blocks.LAVA) || airRatio >= threshold) {
+                    status = VicinityStatus.BLOWN_UP; // Blown up / cratered / mined out!
+                } else {
+                    status = VicinityStatus.UNTOUCHED; // Solid virgin netherrack
+                }
+            }
+        }
+
+        if (hideBlownUp.get() && status == VicinityStatus.BLOWN_UP) {
+            return;
+        }
+
+        AABB box = new AABB(pos);
+        targetMap.put(pos, new TargetInfo(pos, TargetType.SEED_DEBRIS, label, box, status, airCount, totalChecked));
     }
 
     @Override
@@ -469,13 +558,13 @@ public class NetheriteFinder extends Module {
             AABB box = info.box();
             if (box == null) continue;
 
-            int colorArgb = resolveColor(info.type());
+            int colorArgb = resolveColor(info);
             int r = (colorArgb >>> 16) & 0xFF;
             int g = (colorArgb >>> 8) & 0xFF;
             int b = colorArgb & 0xFF;
 
             if (renderFill.get()) {
-                int fillA = 45;
+                int fillA = (info.status() == VicinityStatus.BLOWN_UP) ? 25 : 55;
                 renderer.quad(box.minX, box.minY, box.minZ, box.maxX, box.minY, box.minZ, box.maxX, box.minY, box.maxZ, box.minX, box.minY, box.maxZ, r, g, b, fillA);
                 renderer.quad(box.minX, box.maxY, box.minZ, box.minX, box.maxY, box.maxZ, box.maxX, box.maxY, box.maxZ, box.maxX, box.maxY, box.minZ, r, g, b, fillA);
                 renderer.quad(box.minX, box.minY, box.maxZ, box.maxX, box.minY, box.maxZ, box.maxX, box.maxY, box.maxZ, box.minX, box.maxY, box.maxZ, r, g, b, fillA);
@@ -485,7 +574,7 @@ public class NetheriteFinder extends Module {
             }
 
             if (renderOutline.get()) {
-                int lineA = 240;
+                int lineA = (info.status() == VicinityStatus.BLOWN_UP) ? 120 : 240;
                 renderer.line(box.minX, box.minY, box.minZ, box.maxX, box.minY, box.minZ, r, g, b, lineA);
                 renderer.line(box.maxX, box.minY, box.minZ, box.maxX, box.minY, box.maxZ, r, g, b, lineA);
                 renderer.line(box.maxX, box.minY, box.maxZ, box.minX, box.minY, box.maxZ, r, g, b, lineA);
@@ -502,7 +591,7 @@ public class NetheriteFinder extends Module {
                 renderer.line(box.minX, box.minY, box.maxZ, box.minX, box.maxY, box.maxZ, r, g, b, lineA);
             }
 
-            if (renderTracers.get()) {
+            if (renderTracers.get() && (info.status() == VicinityStatus.UNTOUCHED || info.status() == VicinityStatus.EXPOSED)) {
                 Vec3 center = box.getCenter();
                 renderer.line(camPos.x, camPos.y, camPos.z, center.x, center.y, center.z, r, g, b, 200);
             }
@@ -511,41 +600,87 @@ public class NetheriteFinder extends Module {
 
     @Override
     public void onRenderHudEngineForeground(Renderer2D renderer, TextRenderer textRenderer, GuiGraphicsExtractor graphics, float tickDelta) {
-        if (!renderHud.get() || mc.player == null || discoveredTargets.isEmpty()) return;
+        if (mc.player == null || discoveredTargets.isEmpty()) return;
 
-        int count = discoveredTargets.size();
-        TargetInfo nearest = null;
-        double nearestDistSq = Double.MAX_VALUE;
-        Vec3 pPos = mc.player.position();
+        // 1. Floating World-Space Nametags / Billboard Status Badges
+        if (showVicinityBadges.get()) {
+            for (TargetInfo info : discoveredTargets.values()) {
+                BlockPos p = info.pos();
+                double distSq = mc.player.distanceToSqr(p.getX() + 0.5, p.getY() + 0.5, p.getZ() + 0.5);
+                if (distSq > 128.0 * 128.0) continue;
+                double dist = Math.sqrt(distSq);
 
-        for (TargetInfo info : discoveredTargets.values()) {
-            double dSq = info.pos().distToCenterSqr(pPos.x, pPos.y, pPos.z);
-            if (dSq < nearestDistSq) {
-                nearestDistSq = dSq;
-                nearest = info;
+                Vec3 anchor = new Vec3(p.getX() + 0.5, p.getY() + 1.2, p.getZ() + 0.5);
+                Vec3 screen = ScreenProjection.worldToScreen(anchor, tickDelta);
+                if (screen == null) continue;
+
+                String statusTag = switch (info.status()) {
+                    case UNTOUCHED -> "✓ UNTOUCHED";
+                    case EXPOSED -> "⚡ EXPOSED";
+                    case BLOWN_UP -> "✗ BLOWN UP";
+                    case UNLOADED -> "? PREDICTED";
+                };
+                int statusCol = switch (info.status()) {
+                    case UNTOUCHED -> 0xFF00FF66;
+                    case EXPOSED -> 0xFF00E5FF;
+                    case BLOWN_UP -> 0xFFFF3333;
+                    case UNLOADED -> 0xFFFFAA00;
+                };
+
+                String title = String.format("Ancient Debris (%.0fm)", dist);
+                float w1 = (float) textRenderer.getWidth(title);
+                float w2 = (float) textRenderer.getWidth(statusTag);
+                float maxW = Math.max(w1, w2);
+                float badgeX = (float) screen.x - (maxW / 2.0f);
+                float badgeY = (float) screen.y - 18.0f;
+                float pad = 4.0f;
+
+                renderer.roundedRect(badgeX - pad, badgeY - pad, maxW + pad * 2, 20 + pad * 2, 3, 0xCC101218);
+                renderer.roundedRectStroke(badgeX - pad, badgeY - pad, maxW + pad * 2, 20 + pad * 2, 3.0f, 1.0f, statusCol);
+
+                textRenderer.render(title, (int) badgeX, (int) badgeY, new RenderColor(0xFFFFFFFF), true);
+                textRenderer.render(statusTag, (int) badgeX, (int) (badgeY + 10), new RenderColor(statusCol), true);
             }
         }
 
-        String summary = String.format("💎 Netherite Radar: %d targets", count);
-        if (nearest != null) {
-            summary += String.format(" | Nearest: %s (%.0fm)", nearest.label(), Math.sqrt(nearestDistSq));
+        // 2. On-screen summary HUD
+        if (renderHud.get()) {
+            int untouched = getUntouchedCount();
+            int blown = getBlownUpCount();
+            TargetInfo nearest = getNearestTarget();
+
+            String summary = String.format("💎 Netherite: %d untouched", untouched);
+            if (blown > 0) {
+                summary += String.format(" | %d blown up", blown);
+            }
+            if (nearest != null && mc.player != null) {
+                double d = Math.sqrt(mc.player.distanceToSqr(nearest.pos().getX() + 0.5, nearest.pos().getY() + 0.5, nearest.pos().getZ() + 0.5));
+                summary += String.format(" • Nearest: %.0fm", d);
+            }
+
+            int pad = 6;
+            float textW = (float) textRenderer.getWidth(summary);
+            int x = 10;
+            int y = 45;
+
+            renderer.roundedRect(x - pad, y - pad, textW + (pad * 2), 12 + (pad * 2), 4, 0xAA101015);
+            renderer.roundedRectStroke(x - pad, y - pad, textW + (pad * 2), 12 + (pad * 2), 4.0f, 1.0f, 0xFF00FF66);
+
+            textRenderer.render(summary, x, y, new RenderColor(0xFF00FF66), true);
         }
-
-        int pad = 6;
-        float textW = (float) textRenderer.getWidth(summary);
-        int x = 10;
-        int y = 45;
-
-        // Dark rounded backdrop
-        renderer.roundedRect(x - pad, y - pad, textW + (pad * 2), 12 + (pad * 2), 4, 0xAA101015);
-        renderer.roundedRectStroke(x - pad, y - pad, textW + (pad * 2), 12 + (pad * 2), 4.0f, 1.0f, 0xFF8E44AD);
-
-        textRenderer.render(summary, x, y, new RenderColor(0xFFFFD700), true);
     }
 
-    private int resolveColor(TargetType type) {
-        return switch (type) {
-            case ANCIENT_DEBRIS -> debrisColor.getArgb();
+    private int resolveColor(TargetInfo info) {
+        if (info.type() == TargetType.SEED_DEBRIS || info.type() == TargetType.ANCIENT_DEBRIS) {
+            return switch (info.status()) {
+                case UNTOUCHED -> untouchedColor.getArgb();
+                case EXPOSED -> exposedColor.getArgb();
+                case BLOWN_UP -> blownUpColor.getArgb();
+                case UNLOADED -> debrisColor.getArgb();
+            };
+        }
+        return switch (info.type()) {
+            case ANCIENT_DEBRIS, SEED_DEBRIS -> debrisColor.getArgb();
             case NETHERITE_BLOCK -> netheriteBlockColor.getArgb();
             case NETHERITE_ITEM -> itemColor.getArgb();
         };

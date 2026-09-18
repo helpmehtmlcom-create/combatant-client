@@ -173,19 +173,23 @@ public final class DonutIndicator extends DraggableHudElement {
     private List<TelemetryRow> collectRows() {
         List<TelemetryRow> rows = new ArrayList<>();
 
-        // 1. Netherite Finder
+        // 1. Netherite Finder (DonutSMP Seed & Vicinity Mapper)
         NetheriteFinder netherite = Modules.get(NetheriteFinder.class);
         if (netherite != null && netherite.isEnabled()) {
-            int count = netherite.getTargetCount();
-            if (count > 0) {
+            int untouched = netherite.getUntouchedCount();
+            int total = netherite.getTargetCount();
+            if (untouched > 0 || total > 0) {
                 NetheriteFinder.TargetInfo nearest = netherite.getNearestTarget();
                 double dist = nearest != null && mc.player != null
                         ? Math.sqrt(mc.player.distanceToSqr(nearest.pos().getX() + 0.5, nearest.pos().getY() + 0.5, nearest.pos().getZ() + 0.5))
                         : 0;
-                String val = String.format("%d targets (Nearest: %.0fm)", count, dist);
-                rows.add(new TelemetryRow("💎", "Netherite", val, 0xFFFF9900));
+                String val = untouched > 0
+                        ? String.format("%d Untouched (%.0fm)", untouched, dist)
+                        : String.format("%d Targets (%.0fm)", total, dist);
+                int col = untouched > 0 ? 0xFF00FF66 : 0xFFFF9900;
+                rows.add(new TelemetryRow("💎", "Netherite", val, col));
             } else {
-                rows.add(new TelemetryRow("💎", "Netherite", "Scanning chunks...", 0xFFAAAAAA));
+                rows.add(new TelemetryRow("💎", "Netherite", "Mapping seed & chunks...", 0xFFAAAAAA));
             }
         }
 
