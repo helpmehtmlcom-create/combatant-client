@@ -130,6 +130,7 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.environment.sky.prepare", DeferredStage.PRE_LIGHTING)
                 .priority(820)
+                .feature(DeferredFeature.SKY)
                 .write(DeferredResource.SKY_RADIANCE, DeferredResource.SKY_ENVIRONMENT_STATE,
                         DeferredResource.ATMOSPHERE_TRANSMITTANCE,
                         DeferredResource.ATMOSPHERE_MULTI_SCATTERING,
@@ -140,6 +141,7 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
                 .build());
         passes.add(DeferredPassSpec.builder("world.environment.sky.diffuse-sh", DeferredStage.PRE_LIGHTING)
                 .priority(830)
+                .feature(DeferredFeature.SKY)
                 .read(DeferredResource.SKY_RADIANCE, DeferredResource.SKY_ENVIRONMENT_STATE)
                 .write(DeferredResource.SKY_DIFFUSE_SH)
                 .requires(RhiShaderStage.COMPUTE)
@@ -148,6 +150,7 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
                 .build());
         passes.add(DeferredPassSpec.builder("world.environment.sky.specular-prefilter", DeferredStage.PRE_LIGHTING)
                 .priority(840)
+                .feature(DeferredFeature.SKY)
                 .read(DeferredResource.SKY_RADIANCE, DeferredResource.SKY_ENVIRONMENT_STATE)
                 .write(DeferredResource.SKY_SPECULAR_RADIANCE)
                 .requires(RhiShaderStage.COMPUTE)
@@ -156,6 +159,7 @@ final class DeferredSkyEnvironmentSource implements AutoCloseable {
                 .build());
         passes.add(DeferredPassSpec.builder("world.environment.sky.diffuse-resolve", DeferredStage.PRE_LIGHTING)
                 .priority(890)
+                .feature(DeferredFeature.SKY)
                 .read(DeferredResource.SKY_DIFFUSE_SH, DeferredResource.SKY_ENVIRONMENT_STATE,
                         DeferredResource.GBUFFER_GEOMETRY,
                         DeferredResource.RESOLVED_DEPTH, DeferredResource.GBUFFER_DEPTH)

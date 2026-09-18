@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicReference;
 /** User-facing final temporal policy. Filtering details stay inside the temporal consumer. */
 public final class DeferredTemporalConfig {
     private static final AtomicLong GENERATION = new AtomicLong();
-    private static final AtomicReference<Snapshot> CURRENT = new AtomicReference<>(new Snapshot(true));
+    private static final AtomicReference<Snapshot> CURRENT = new AtomicReference<>(new Snapshot(false));
 
     private DeferredTemporalConfig() {
     }

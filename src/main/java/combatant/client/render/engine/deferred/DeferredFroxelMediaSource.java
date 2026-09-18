@@ -579,6 +579,7 @@ final class DeferredFroxelMediaSource implements AutoCloseable {
     private boolean mediumLightingAvailable(DeferredPassContext context) {
         return mediumVolumeAvailable(context)
                 && context.isValid(DeferredResource.CLOUD_SHADOW_MAP)
+                && context.featureEnabled(DeferredFeature.SKY)
                 && context.isValid(DeferredResource.SKY_DIFFUSE_SH);
     }
 

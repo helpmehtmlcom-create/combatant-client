@@ -112,21 +112,21 @@ final class DeferredCloudShadowSource implements AutoCloseable {
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.cloud.shadow-map", DeferredStage.PRE_LIGHTING)
                 .priority(700)
+                .feature(DeferredFeature.CLOUDS)
                 .read(DeferredResource.CLOUD_OCCUPANCY)
                 .write(DeferredResource.CLOUD_SHADOW_MAP)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> DeferredSmokeTestState.global().cloudWorkEnabledForFrame()
-                        && context.primaryView().current() != null
+                .when(context -> context.primaryView().current() != null
                         && context.isValid(DeferredResource.CLOUD_OCCUPANCY))
                 .execute(this::renderShadowMap)
                 .build());
         passes.add(DeferredPassSpec.builder("world.cloud.shadow-resolve", DeferredStage.PRE_LIGHTING)
                 .priority(710)
+                .feature(DeferredFeature.CLOUDS)
                 .read(DeferredResource.CLOUD_SHADOW_MAP, DeferredResource.RESOLVED_DEPTH)
                 .write(DeferredResource.CLOUD_SHADOW_VISIBILITY)
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> DeferredSmokeTestState.global().cloudWorkEnabledForFrame()
-                        && context.primaryView().current() != null
+                .when(context -> context.primaryView().current() != null
                         && context.isValid(DeferredResource.CLOUD_SHADOW_MAP)
                         && context.isValid(DeferredResource.RESOLVED_DEPTH))
                 .execute(this::resolveVisibility)

@@ -145,6 +145,7 @@ final class DeferredSurfaceWeatherSource implements AutoCloseable {
     void install(ArrayList<DeferredPassSpec> passes) {
         passes.add(DeferredPassSpec.builder("world.surface-weather.update", DeferredStage.PRE_LIGHTING)
                 .priority(300)
+                .feature(DeferredFeature.WEATHER)
                 .read(DeferredResource.GBUFFER_GEOMETRY,
                         DeferredResource.GBUFFER_MATERIAL_ID,
                         DeferredResource.GBUFFER_DEPTH,

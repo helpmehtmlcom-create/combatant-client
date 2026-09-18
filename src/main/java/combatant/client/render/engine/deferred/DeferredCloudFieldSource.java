@@ -19,8 +19,6 @@ import combatant.client.render.engine.world.environment.CloudProfileRegistry;
 import combatant.client.render.engine.world.environment.WeatherFieldState;
 import combatant.client.render.engine.world.environment.WeatherSample;
 import combatant.client.render.engine.world.environment.WeatherState;
-import net.minecraft.client.CloudStatus;
-import net.minecraft.client.Minecraft;
 
 /** Shared GPU-side cloud/weather contract consumed by radiance, shadows and media. */
 final class DeferredCloudFieldSource implements AutoCloseable {
@@ -64,10 +62,10 @@ final class DeferredCloudFieldSource implements AutoCloseable {
         int weatherCount = validCount(field, config.maxWeatherSamples());
         int macroWeatherCount = validCount(macroField, config.maxMacroWeatherSamples());
         boolean weatherAvailable = weather.valid() && weatherCount > 0 && macroWeatherCount > 0;
-        boolean active = config.enabled()
+        boolean active = context.featureEnabled(DeferredFeature.CLOUDS)
+                && config.enabled()
                 && profile.valid()
-                && weatherAvailable
-                && cloudsEnabledByGame();
+                && weatherAvailable;
         int domainCount = active ? Math.min(profile.domains().size(), config.maxDomains()) : 0;
 
         uploadWeather(weatherData, field, weatherCount);
@@ -201,11 +199,6 @@ final class DeferredCloudFieldSource implements AutoCloseable {
     public void close() {
         closeOwned();
         owner = null;
-    }
-
-    private static boolean cloudsEnabledByGame() {
-        Minecraft minecraft = Minecraft.getInstance();
-        return minecraft != null && minecraft.options != null && minecraft.options.getCloudStatus() != CloudStatus.OFF;
     }
 
     private static void close(AutoCloseable value) {

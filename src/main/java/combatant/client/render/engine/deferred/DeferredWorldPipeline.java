@@ -72,6 +72,7 @@ public final class DeferredWorldPipeline {
     private long targetFrameId = Long.MIN_VALUE;
     private DeferredRuntimeConfig.Snapshot frameSettings = DeferredRuntimeConfig.current();
     private long frameSettingsGeneration = DeferredRuntimeConfig.generation();
+    private long environmentSettingsGeneration = DeferredEnvironmentFeatureConfig.generation();
     private long temporalPolicyGeneration = Long.MIN_VALUE;
     private long temporalScaleSignature = Long.MIN_VALUE;
     private int temporalWidth = -1;
@@ -668,6 +669,11 @@ public final class DeferredWorldPipeline {
         }
         frameSettings = DeferredRuntimeConfig.current();
         frameSettingsGeneration = DeferredRuntimeConfig.generation();
+        long currentEnvironmentGeneration = DeferredEnvironmentFeatureConfig.generation();
+        if (environmentSettingsGeneration != currentEnvironmentGeneration) {
+            primaryView.invalidateHistory(frameId, DeferredHistoryResetReason.POLICY_CHANGE);
+            environmentSettingsGeneration = currentEnvironmentGeneration;
+        }
         worldRenderState = worldStateSource.capture(Minecraft.getInstance().level, primaryView.current());
         long scaleSignature = temporalResolutionPolicySignature(frameSettings);
         if (temporalScaleSignature != Long.MIN_VALUE && temporalScaleSignature != scaleSignature) {

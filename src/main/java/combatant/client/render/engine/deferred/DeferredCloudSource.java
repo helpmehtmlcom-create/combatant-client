@@ -121,11 +121,11 @@ final class DeferredCloudSource implements AutoCloseable {
     private void installGroup(ArrayList<DeferredPassSpec> passes, GroupOutputs group, int priority) {
         passes.add(DeferredPassSpec.builder("world.cloud.render." + group.name(), DeferredStage.SKY_COMPOSITE)
                 .priority(priority)
+                .feature(DeferredFeature.CLOUDS)
                 .read(DeferredResource.RESOLVED_DEPTH, DeferredResource.SKY_DIFFUSE_SH, DeferredResource.CLOUD_OCCUPANCY)
                 .write(group.radiance(), group.depth(), group.reprojection())
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> DeferredSmokeTestState.global().cloudWorkEnabledForFrame()
-                        && context.primaryView().current() != null
+                .when(context -> context.primaryView().current() != null
                         && context.isValid(DeferredResource.RESOLVED_DEPTH)
                         && context.isValid(DeferredResource.SKY_DIFFUSE_SH)
                         && context.isValid(DeferredResource.CLOUD_OCCUPANCY))

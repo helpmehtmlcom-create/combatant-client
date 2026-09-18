@@ -108,12 +108,12 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
     private void installGroup(ArrayList<DeferredPassSpec> passes, TemporalGroup group, int resolvePriority, int historyPriority) {
         passes.add(DeferredPassSpec.builder("world.cloud.temporal." + group.name(), DeferredStage.SKY_COMPOSITE)
                 .priority(resolvePriority)
+                .feature(DeferredFeature.CLOUDS)
                 .read(group.rawRadiance(), group.rawDepth(), group.reprojection(),
                         group.historyRadiance(), group.historyDepth(), group.historyConfidence())
                 .write(group.temporalRadiance(), group.temporalDepth(), group.temporalConfidence())
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> DeferredSmokeTestState.global().cloudWorkEnabledForFrame()
-                        && context.isValid(group.rawRadiance())
+                .when(context -> context.isValid(group.rawRadiance())
                         && context.isValid(group.rawDepth())
                         && context.isValid(group.reprojection())
                         && context.primaryView().current() != null)
@@ -121,11 +121,11 @@ final class DeferredCloudTemporalSource implements AutoCloseable {
                 .build());
         passes.add(DeferredPassSpec.builder("world.cloud.history." + group.name(), DeferredStage.SKY_COMPOSITE)
                 .priority(historyPriority)
+                .feature(DeferredFeature.CLOUDS)
                 .read(group.temporalRadiance(), group.temporalDepth(), group.temporalConfidence(), group.reprojection())
                 .write(group.historyRadiance(), group.historyDepth(), group.historyConfidence())
                 .requires(RhiShaderStage.COMPUTE)
-                .when(context -> DeferredSmokeTestState.global().cloudWorkEnabledForFrame()
-                        && context.isValid(group.temporalRadiance())
+                .when(context -> context.isValid(group.temporalRadiance())
                         && context.isValid(group.temporalDepth())
                         && context.isValid(group.temporalConfidence())
                         && context.isValid(group.reprojection()))

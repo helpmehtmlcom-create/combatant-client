@@ -40,6 +40,7 @@ import java.util.List;
 final class DeferredAtmosphereCompositeSource implements AutoCloseable {
     private static final int LOCAL_SIZE = 8;
     private static final Identifier SHADER = id("deferred/atmosphere_cloud_composite");
+    private static final Identifier CLOUD_ONLY_SHADER = id("deferred/cloud_only_composite");
     private static final Identifier BYPASS_SHADER = id("deferred/bloom_copy");
 
     private static final Std430StructLayout DATA_LAYOUT = Std430StructLayout.builder()
@@ -67,6 +68,24 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
             new ShaderResourceSlot(13, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY)
     ));
 
+    private static final Std430StructLayout CLOUD_ONLY_DATA_LAYOUT = Std430StructLayout.builder()
+            .member("inverseProjection", Std430Type.MAT4)
+            .member("policy", Std430Type.VEC4)
+            .build();
+
+    private static final ShaderResourceLayout CLOUD_ONLY_LAYOUT = new ShaderResourceLayout(List.of(
+            new ShaderResourceSlot(0, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(1, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(2, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(3, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(4, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(5, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(6, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(7, ShaderResourceKind.SAMPLED_TEXTURE, StorageAccess.READ_ONLY),
+            new ShaderResourceSlot(8, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY),
+            new ShaderResourceSlot(9, ShaderResourceKind.STORAGE_BUFFER, StorageAccess.READ_ONLY)
+    ));
+
     private static final ShaderResourceLayout BYPASS_LAYOUT = new ShaderResourceLayout(List.of(
             new ShaderResourceSlot(0, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.READ_ONLY),
             new ShaderResourceSlot(1, ShaderResourceKind.STORAGE_IMAGE, StorageAccess.WRITE_ONLY)
@@ -75,8 +94,10 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
     private final DeferredFroxelMediaSource froxelMedia;
     private CombatantRhi owner;
     private RhiComputePipeline pipeline;
+    private RhiComputePipeline cloudOnlyPipeline;
     private RhiComputePipeline bypassPipeline;
     private RhiStorageBuffer data;
+    private RhiStorageBuffer cloudOnlyData;
 
     DeferredAtmosphereCompositeSource(DeferredFroxelMediaSource froxelMedia) {
         if (froxelMedia == null) throw new IllegalArgumentException("froxelMedia");
@@ -91,8 +112,26 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.isValid(DeferredResource.SKY_COMPOSITED_RADIANCE)
                         && (!context.featureEnabled(DeferredFeature.PARTICIPATING_MEDIA)
-                        || !mediaInputsValid(context)))
+                        || !mediaInputsValid(context))
+                        && (!context.featureEnabled(DeferredFeature.CLOUDS) || cloudLayerMask(context) == 0))
                 .execute(this::bypass)
+                .build());
+        passes.add(DeferredPassSpec.builder("world.environment.cloud-only.composite", DeferredStage.VOLUMETRIC_MEDIA_COMPOSITE)
+                .priority(-50)
+                .feature(DeferredFeature.CLOUDS)
+                .read(DeferredResource.SKY_COMPOSITED_RADIANCE, DeferredResource.RESOLVED_DEPTH)
+                .optionalRead(DeferredResource.CLOUD_TEMPORAL_RADIANCE, DeferredResource.CLOUD_TEMPORAL_DEPTH,
+                        DeferredResource.CLOUD_HIGH_TEMPORAL_RADIANCE, DeferredResource.CLOUD_HIGH_TEMPORAL_DEPTH,
+                        DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_RADIANCE, DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_DEPTH)
+                .write(DeferredResource.SCENE_RADIANCE)
+                .requires(RhiShaderStage.COMPUTE)
+                .when(context -> context.primaryView().current() != null
+                        && context.isValid(DeferredResource.SKY_COMPOSITED_RADIANCE)
+                        && context.isValid(DeferredResource.RESOLVED_DEPTH)
+                        && (!context.featureEnabled(DeferredFeature.PARTICIPATING_MEDIA)
+                        || !mediaInputsValid(context))
+                        && cloudLayerMask(context) != 0)
+                .execute(this::compositeCloudsWithoutMedia)
                 .build());
         passes.add(DeferredPassSpec.builder("world.environment.media.composite", DeferredStage.VOLUMETRIC_MEDIA_COMPOSITE)
                 .feature(DeferredFeature.PARTICIPATING_MEDIA)
@@ -115,8 +154,10 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
     void prepare(CombatantRhi rhi) {
         ensureOwner(rhi);
         pipeline();
+        cloudOnlyPipeline();
         bypassPipeline();
         data();
+        cloudOnlyData();
     }
 
     void release(CombatantRhi currentOwner) {
@@ -137,6 +178,54 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
                         new StorageImageBinding(0, source, StorageAccess.READ_ONLY),
                         new StorageImageBinding(1, output, StorageAccess.WRITE_ONLY)
                 )
+        ));
+    }
+
+    private void compositeCloudsWithoutMedia(DeferredPassContext context) {
+        ensureOwner(context.rhi());
+        DeferredPrimaryViewSource.FrameView view = context.primaryView().current();
+        if (view == null) return;
+
+        GpuTextureView base = requireTexture(context, DeferredResource.SKY_COMPOSITED_RADIANCE);
+        GpuTextureView depth = requireTexture(context, DeferredResource.RESOLVED_DEPTH);
+        int cloudMask = cloudLayerMask(context);
+        GpuTextureView cloudRadiance = (cloudMask & 1) != 0
+                ? requireTexture(context, DeferredResource.CLOUD_TEMPORAL_RADIANCE) : base;
+        GpuTextureView cloudDepth = (cloudMask & 1) != 0
+                ? requireTexture(context, DeferredResource.CLOUD_TEMPORAL_DEPTH) : depth;
+        GpuTextureView highCloudRadiance = (cloudMask & 2) != 0
+                ? requireTexture(context, DeferredResource.CLOUD_HIGH_TEMPORAL_RADIANCE) : base;
+        GpuTextureView highCloudDepth = (cloudMask & 2) != 0
+                ? requireTexture(context, DeferredResource.CLOUD_HIGH_TEMPORAL_DEPTH) : depth;
+        GpuTextureView convectiveCloudRadiance = (cloudMask & 4) != 0
+                ? requireTexture(context, DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_RADIANCE) : base;
+        GpuTextureView convectiveCloudDepth = (cloudMask & 4) != 0
+                ? requireTexture(context, DeferredResource.CLOUD_CONVECTIVE_TEMPORAL_DEPTH) : depth;
+        RhiStorageImage output = requireImage(context, DeferredResource.SCENE_RADIANCE);
+
+        Std430Writer writer = new Std430Writer(CLOUD_ONLY_DATA_LAYOUT, 1)
+                .putMat4(0, "inverseProjection", view.inverseProjection())
+                .putVec4(0, "policy", zeroToOneDepth(context) ? 1.0f : 0.0f, cloudMask, 0.0f, 0.0f);
+        RhiStorageBuffer buffer = cloudOnlyData();
+        buffer.upload(writer.buffer(), 0L);
+
+        GpuSampler linear = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
+        GpuSampler nearest = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
+        context.advancedShaders().dispatch(new ComputeDispatchCommand(
+                "Combatant cloud-only composite", cloudOnlyPipeline(),
+                groups(output.descriptor().width()), groups(output.descriptor().height()), 1,
+                List.of(new StorageBinding(9, buffer, 0L, writer.byteSize(), StorageAccess.READ_ONLY)),
+                List.of(
+                        new SampledTextureBinding(0, base, linear),
+                        new SampledTextureBinding(1, depth, nearest),
+                        new SampledTextureBinding(2, cloudRadiance, linear),
+                        new SampledTextureBinding(3, cloudDepth, nearest),
+                        new SampledTextureBinding(4, highCloudRadiance, linear),
+                        new SampledTextureBinding(5, highCloudDepth, nearest),
+                        new SampledTextureBinding(6, convectiveCloudRadiance, linear),
+                        new SampledTextureBinding(7, convectiveCloudDepth, nearest)
+                ),
+                List.of(new StorageImageBinding(8, output, StorageAccess.WRITE_ONLY))
         ));
     }
 
@@ -213,6 +302,13 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
         owner = rhi;
     }
 
+    private RhiComputePipeline cloudOnlyPipeline() {
+        if (owner == null) throw new IllegalStateException("Atmosphere composite source has no RHI owner");
+        if (cloudOnlyPipeline == null) cloudOnlyPipeline = owner.advancedShaders().createComputePipeline(
+                new ComputePipelineDescriptor("combatant-cloud-only-composite", CLOUD_ONLY_SHADER, CLOUD_ONLY_LAYOUT));
+        return cloudOnlyPipeline;
+    }
+
     private RhiComputePipeline bypassPipeline() {
         if (owner == null) throw new IllegalStateException("Atmosphere composite source has no RHI owner");
         if (bypassPipeline == null) bypassPipeline = owner.advancedShaders().createComputePipeline(
@@ -227,6 +323,13 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
         return pipeline;
     }
 
+    private RhiStorageBuffer cloudOnlyData() {
+        if (cloudOnlyData == null) cloudOnlyData = owner.advancedShaders().createStorageBuffer(new StorageBufferDescriptor(
+                "combatant-cloud-only-composite-data", CLOUD_ONLY_DATA_LAYOUT, 1, StorageAccess.READ_ONLY, false
+        ));
+        return cloudOnlyData;
+    }
+
     private RhiStorageBuffer data() {
         if (data == null) data = owner.advancedShaders().createStorageBuffer(new StorageBufferDescriptor(
                 "combatant-atmosphere-cloud-composite-data", DATA_LAYOUT, 1, StorageAccess.READ_ONLY, false
@@ -236,8 +339,10 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
 
     private void closeOwned() {
         close(pipeline); pipeline = null;
+        close(cloudOnlyPipeline); cloudOnlyPipeline = null;
         close(bypassPipeline); bypassPipeline = null;
         close(data); data = null;
+        close(cloudOnlyData); cloudOnlyData = null;
     }
 
     @Override
@@ -247,7 +352,9 @@ final class DeferredAtmosphereCompositeSource implements AutoCloseable {
     }
 
     private static boolean mediaInputsValid(DeferredPassContext context) {
-        return context.isValid(DeferredResource.RESOLVED_DEPTH)
+        // Aerial resources are persistent. Do not consume a previous sky frame after SKY is disabled.
+        return context.featureEnabled(DeferredFeature.SKY)
+                && context.isValid(DeferredResource.RESOLVED_DEPTH)
                 && context.isValid(DeferredResource.AERIAL_PERSPECTIVE)
                 && context.isValid(DeferredResource.AERIAL_TRANSMITTANCE)
                 && context.isValid(DeferredResource.FROXEL_MEDIA_INTEGRATED_RADIANCE)

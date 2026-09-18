@@ -220,7 +220,8 @@ final class DeferredOpaqueCompositeSource implements AutoCloseable {
                 ? requireTexture(context, DeferredResource.REFLECTION_COLOR) : base;
         GpuTextureView confidence = hasReflection
                 ? requireTexture(context, DeferredResource.REFLECTION_CONFIDENCE) : surface;
-        boolean hasSkyResources = context.isValid(DeferredResource.SKY_SPECULAR_RADIANCE)
+        boolean hasSkyResources = context.featureEnabled(DeferredFeature.SKY)
+                && context.isValid(DeferredResource.SKY_SPECULAR_RADIANCE)
                 && context.isValid(DeferredResource.SKY_ENVIRONMENT_STATE)
                 && context.resources().texture(DeferredResource.SKY_SPECULAR_RADIANCE) != null
                 && context.resources().buffer(DeferredResource.SKY_ENVIRONMENT_STATE) != null;

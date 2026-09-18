@@ -826,7 +826,8 @@ final class DeferredPatchSurfaceSource implements AutoCloseable {
                 && context.resources().texture(DeferredResource.WATER_REFLECTION_COLOR) != null
                 && context.resources().texture(DeferredResource.WATER_REFLECTION_CONFIDENCE) != null;
         boolean hasCascade = hasReflectionCascade(context);
-        boolean hasSky = context.isValid(DeferredResource.SKY_SPECULAR_RADIANCE)
+        boolean hasSky = context.featureEnabled(DeferredFeature.SKY)
+                && context.isValid(DeferredResource.SKY_SPECULAR_RADIANCE)
                 && context.resources().texture(DeferredResource.SKY_SPECULAR_RADIANCE) != null;
         int skyMipCount = 1;
         RhiStorageImage skyImage = context.resources().storageImage(DeferredResource.SKY_SPECULAR_RADIANCE);

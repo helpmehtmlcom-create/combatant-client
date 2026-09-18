@@ -90,10 +90,11 @@ final class DeferredSkyCompositeSource implements AutoCloseable {
                 .write(DeferredResource.SKY_COMPOSITED_RADIANCE)
                 .requires(RhiShaderStage.COMPUTE)
                 .when(context -> context.isValid(DeferredResource.OPAQUE_REFLECTED_RADIANCE)
-                        && !skyInputsValid(context))
+                        && (!context.featureEnabled(DeferredFeature.SKY) || !skyInputsValid(context)))
                 .execute(this::bypass)
                 .build());
         passes.add(DeferredPassSpec.builder("world.environment.sky.composite", DeferredStage.SKY_COMPOSITE)
+                .feature(DeferredFeature.SKY)
                 .read(DeferredResource.OPAQUE_REFLECTED_RADIANCE, DeferredResource.RESOLVED_DEPTH,
                         DeferredResource.SKY_RADIANCE, DeferredResource.SKY_ENVIRONMENT_STATE,
                         DeferredResource.ATMOSPHERE_TRANSMITTANCE)

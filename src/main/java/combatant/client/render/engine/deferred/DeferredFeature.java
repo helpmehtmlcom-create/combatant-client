@@ -55,7 +55,9 @@ public enum DeferredFeature {
             case PARTICIPATING_MEDIA -> settings.participatingMediaEnabled() && DeferredFroxelConfig.current().enabled();
             case DEPTH_OF_FIELD -> DeferredCameraPostConfig.current().depthOfFieldEnabled();
             case MOTION_BLUR -> DeferredCameraPostConfig.current().motionBlurEnabled();
-            case CLOUDS, SKY, WEATHER -> true;
+            case CLOUDS -> DeferredEnvironmentFeatureConfig.current().cloudsEnabled();
+            case SKY -> DeferredEnvironmentFeatureConfig.current().skyEnabled();
+            case WEATHER -> DeferredEnvironmentFeatureConfig.current().weatherEnabled();
         };
     }
 
