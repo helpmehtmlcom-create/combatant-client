@@ -11,6 +11,6 @@ public enum UiScriptEngineProvider {
     ;
 
     public static UiScriptEngine javet() {
-        return new JavetUiScriptEngine();
+        return new JavetUiEngine();
     }
 }

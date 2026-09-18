@@ -17,9 +17,10 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * High-level normalized UI command stream.
+ * Semantic UI command stream used for normalized metadata, telemetry, clip snapshots and
+ * backdrop planning. Executable rendering work is owned separately by UiPassCompiler.
  */
-public final class UiCommandBuffer {
+public final class UiSemanticCommandBuffer {
     private final List<UiCommand> commands = new ArrayList<>();
     private final List<UiRecordedCommand> entries = new ArrayList<>();
     private final UiCommandStats stats = new UiCommandStats();

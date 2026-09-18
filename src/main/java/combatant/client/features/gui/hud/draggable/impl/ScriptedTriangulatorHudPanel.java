@@ -86,8 +86,6 @@ final class ScriptedTriangulatorHudPanel {
                 module,
                 "triangulator",
                 panel.treeSignature(),
-                panel.dataSignature(),
-                panel.layoutSignature(),
                 panel.width,
                 panel.height,
                 fallback,
@@ -352,47 +350,6 @@ final class ScriptedTriangulatorHudPanel {
                 h = CachedUiScriptRuntime.mix(h, string(row.get("value")).length());
                 h = CachedUiScriptRuntime.mix(h, Math.round(floatValue(row.get("alpha")) * 100.0f));
             }
-            return h;
-        }
-
-        long dataSignature() {
-            long h = 0xcbf29ce484222325L;
-            h = mixPalette(h);
-            h = CachedUiScriptRuntime.mix(h, activeCount);
-            h = CachedUiScriptRuntime.mix(h, strokeEnabled);
-            h = CachedUiScriptRuntime.mix(h, strokeAlpha);
-            h = CachedUiScriptRuntime.mix(h, strokeGradient);
-            h = CachedUiScriptRuntime.mix(h, strokeStartColor);
-            h = CachedUiScriptRuntime.mix(h, strokeEndColor);
-            h = CachedUiScriptRuntime.mix(h, headerIcon);
-            h = CachedUiScriptRuntime.mix(h, headerIconColor);
-            h = CachedUiScriptRuntime.mix(h, headerIconGradientStart);
-            h = CachedUiScriptRuntime.mix(h, headerIconGradientEnd);
-            h = CachedUiScriptRuntime.mix(h, clearIconColor);
-            h = CachedUiScriptRuntime.mix(h, copyIconColor);
-            h = CachedUiScriptRuntime.mix(h, statusText);
-            h = CachedUiScriptRuntime.mix(h, primaryLine);
-            h = CachedUiScriptRuntime.mix(h, secondaryLine);
-            h = CachedUiScriptRuntime.mix(h, confidenceText);
-            h = CachedUiScriptRuntime.mix(h, statusColor);
-            for (LinkedHashMap<String, Object> row : rows) {
-                h = CachedUiScriptRuntime.mix(h, string(row.get("key")));
-                h = CachedUiScriptRuntime.mix(h, string(row.get("label")));
-                h = CachedUiScriptRuntime.mix(h, string(row.get("value")));
-                h = CachedUiScriptRuntime.mix(h, string(row.get("labelColor")));
-                h = CachedUiScriptRuntime.mix(h, string(row.get("valueColor")));
-                h = CachedUiScriptRuntime.mix(h, string(row.get("markerColor")));
-                h = CachedUiScriptRuntime.mix(h, string(row.get("dividerColor")));
-            }
-            return h;
-        }
-
-        long layoutSignature() {
-            long h = 0xcbf29ce484222325L;
-            h = CachedUiScriptRuntime.mix(h, x);
-            h = CachedUiScriptRuntime.mix(h, y);
-            h = CachedUiScriptRuntime.mix(h, width);
-            h = CachedUiScriptRuntime.mix(h, height);
             return h;
         }
 

@@ -244,8 +244,6 @@ final class ScriptedListHudPanel {
                 module,
                 panel.variant.id,
                 panel.treeSignature(),
-                panel.dataSignature(),
-                panel.layoutSignature(),
                 panel.width,
                 panel.height,
                 fallback,
@@ -496,50 +494,6 @@ final class ScriptedListHudPanel {
                     h = CachedUiScriptRuntime.mix(h, floatValue(part.get("x")));
                 }
             }
-            return h;
-        }
-
-        long dataSignature() {
-            long h = 0xcbf29ce484222325L;
-            h = CachedUiScriptRuntime.mix(h, activeCount);
-            h = CachedUiScriptRuntime.mix(h, headerIconColor);
-            h = CachedUiScriptRuntime.mix(h, headerIconGradientStart);
-            h = CachedUiScriptRuntime.mix(h, headerIconGradientEnd);
-            for (LinkedHashMap<String, Object> row : rows) {
-                h = CachedUiScriptRuntime.mix(h, string(row.get("key")));
-                h = CachedUiScriptRuntime.mix(h, string(row.get("icon")));
-                h = CachedUiScriptRuntime.mix(h, string(row.get("iconTint")));
-                h = CachedUiScriptRuntime.mix(h, string(row.get("rightText")));
-                h = CachedUiScriptRuntime.mix(h, string(row.get("rightColor")));
-                h = CachedUiScriptRuntime.mix(h, string(row.get("dividerColor")));
-                if ("time-pill".equals(string(row.get("rightMode")))) {
-                    h = CachedUiScriptRuntime.mix(h, floatValue(row.get("timeArcStart")));
-                    h = CachedUiScriptRuntime.mix(h, floatValue(row.get("timeArcEnd")));
-                    h = CachedUiScriptRuntime.mix(h, string(row.get("timeFillStart")));
-                    h = CachedUiScriptRuntime.mix(h, string(row.get("timeFillEnd")));
-                    h = CachedUiScriptRuntime.mix(h, string(row.get("timeStrokeStart")));
-                    h = CachedUiScriptRuntime.mix(h, string(row.get("timeStrokeEnd")));
-                    h = CachedUiScriptRuntime.mix(h, string(row.get("timeArcBase")));
-                    h = CachedUiScriptRuntime.mix(h, string(row.get("timeArcStartColor")));
-                    h = CachedUiScriptRuntime.mix(h, string(row.get("timeArcEndColor")));
-                }
-                Object partsValue = row.get("nameParts");
-                Object[] parts = partsValue instanceof Object[] arr ? arr : new Object[0];
-                for (Object partValue : parts) {
-                    if (!(partValue instanceof Map<?, ?> part)) continue;
-                    h = CachedUiScriptRuntime.mix(h, string(part.get("text")));
-                    h = CachedUiScriptRuntime.mix(h, string(part.get("color")));
-                }
-            }
-            return h;
-        }
-
-        long layoutSignature() {
-            long h = 0xcbf29ce484222325L;
-            h = CachedUiScriptRuntime.mix(h, x);
-            h = CachedUiScriptRuntime.mix(h, y);
-            h = CachedUiScriptRuntime.mix(h, width);
-            h = CachedUiScriptRuntime.mix(h, height);
             return h;
         }
 

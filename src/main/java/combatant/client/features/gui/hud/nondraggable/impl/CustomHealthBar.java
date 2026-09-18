@@ -340,8 +340,6 @@ private static final float HEALTH_BAR_WIDTH = 81f;
                 loaded,
                 "custom_health_bar",
                 signature,
-                signature,
-                signature,
                 width,
                 height,
                 TextRenderer.get(),

@@ -526,7 +526,7 @@ export type CompactHudStatProps = {
   digitOffset: number;
 };
 
-/** Factory available to JS/TS authors and mirrored inside the embedded UI script runtime. */
+/** Factory available to JS/TS authors; the runtime loads this API from the canonical ui.js resource. */
 export interface UiFactory {
   node(type: UiNodeType, init?: NodeInit): UiNode;
   root(init?: NodeInit): UiNode;

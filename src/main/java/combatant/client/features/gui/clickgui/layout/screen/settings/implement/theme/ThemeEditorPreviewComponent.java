@@ -104,17 +104,11 @@ private static final float DESIGN_W = 320f;
 
         Map<String, Object> props = previewTemplateProps(entry, panelW, panelH, unit, alpha);
         long treeSignature = CachedUiScriptRuntime.signature(props);
-        long layoutSignature = CachedUiScriptRuntime.mix(
-                CachedUiScriptRuntime.mix(CachedUiScriptRuntime.mix(23L, panelX), panelY),
-                CachedUiScriptRuntime.mix(CachedUiScriptRuntime.mix(37L, panelW), panelH)
-        );
-
         UiRuntime runtime = previewRuntime.updatePersistent(
                 previewModuleHandle,
                 module,
                 "theme-preview",
                 treeSignature,
-                layoutSignature,
                 panelW,
                 panelH,
                 ClickGuiRenderer.getInterRegular(),

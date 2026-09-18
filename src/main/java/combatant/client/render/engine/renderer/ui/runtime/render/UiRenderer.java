@@ -23,7 +23,7 @@ import combatant.client.render.engine.text.TextEffectSpec;
 
 public final class UiRenderer {
     private final UiTextRenderer textRenderer;
-    private final UiClipStack clipStack = new UiClipStack();
+    private final UiRuntimeScissorStack clipStack = new UiRuntimeScissorStack();
     private final UiAssetResolver assetResolver;
     private final UiImageRendererBridge imageRenderer = new UiImageRendererBridge();
     private final UiItemRendererBridge itemRenderer = new UiItemRendererBridge();

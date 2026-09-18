@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-final class JavetUiScriptEngine implements UiScriptEngine {
+final class JavetUiEngine implements UiScriptEngine {
     private static final String BOOTSTRAP_SOURCE = """
             globalThis.global = globalThis;
             globalThis.console = globalThis.console || {
@@ -92,7 +92,9 @@ final class JavetUiScriptEngine implements UiScriptEngine {
         runtime.setMemorySaverModeEnabled(false);
         runtime.setBatterySaverModeEnabled(false);
         runtime.getExecutor(BOOTSTRAP_SOURCE).executeVoid();
-        runtime.getExecutor("globalThis.ui = " + UiScriptRuntimeSource.UI_FACTORY + ";").executeVoid();
+        runtime.getExecutor(UiScriptHostApiSource.executableSource())
+                .setResourceName("combatant:ui/api/ui.js")
+                .executeVoid();
         runtime.getExecutor(executableSource(module)).setResourceName(module.getId().toString()).executeVoid();
         runtime.getExecutor(RESOLVE_RENDER_SOURCE).executeVoid();
         loadedModule = module;

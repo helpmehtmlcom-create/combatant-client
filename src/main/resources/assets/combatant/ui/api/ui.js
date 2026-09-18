@@ -63,6 +63,30 @@ export const ui = {
   abs(x = 0, y = 0, w = 0, h = 0, extra = "") {
     return ui.cls("absolute", `x-${ui.fmt(x)}`, `y-${ui.fmt(y)}`, `w-${ui.fmt(w)}`, `h-${ui.fmt(h)}`, extra);
   },
+  prop(value, key, fallback = undefined) {
+    if (value === null || value === undefined) return fallback;
+    try {
+      const direct = value[key];
+      if (direct !== undefined && direct !== null) return direct;
+    } catch (_) {
+    }
+    try {
+      if (typeof value.get === "function") {
+        const resolved = value.get(key);
+        if (resolved !== undefined && resolved !== null) return resolved;
+      }
+    } catch (_) {
+    }
+    return fallback;
+  },
+  arr(value) {
+    if (value === null || value === undefined) return [];
+    try {
+      return Array.from(value);
+    } catch (_) {
+      return [];
+    }
+  },
   roundedRect({ key, x = 0, y = 0, w = 0, h = 0, radius = 0, r, fill, stroke, strokeWidth = 0, class: extra = "", ...rest } = {}) {
     return ui.shape({
       key,
@@ -259,6 +283,9 @@ export const ui = {
     });
   },
   color: {
+    get(value, key, fallback = "#00000000") {
+      return ui.str(ui.prop(value, key, fallback), fallback);
+    },
     alpha(hex, alpha = 1, fallback = "#00000000") {
       const src = ui.str(hex, fallback);
       if (!src.startsWith("#") || src.length !== 9) return src;

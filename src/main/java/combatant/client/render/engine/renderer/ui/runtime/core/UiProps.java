@@ -8,6 +8,7 @@
 package combatant.client.render.engine.renderer.ui.runtime.core;
 
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
+import combatant.client.render.engine.renderer.ui.runtime.debug.UiRuntimeValidation;
 
 import java.util.Map;
 import java.util.Objects;
@@ -71,7 +72,9 @@ public final class UiProps {
      */
     public String string(String key, String fallback) {
         Object value = values.get(key);
-        return value instanceof String s ? s : fallback;
+        if (value instanceof String s) return s;
+        validateType(key, value, "String");
+        return fallback;
     }
 
     /**
@@ -79,7 +82,9 @@ public final class UiProps {
      */
     public boolean bool(String key, boolean fallback) {
         Object value = values.get(key);
-        return value instanceof Boolean b ? b : fallback;
+        if (value instanceof Boolean b) return b;
+        validateType(key, value, "Boolean");
+        return fallback;
     }
 
     /**
@@ -92,9 +97,23 @@ public final class UiProps {
             try {
                 return Float.parseFloat(s);
             } catch (NumberFormatException ignored) {
+                if (UiRuntimeValidation.enabled()) {
+                    throw UiRuntimeValidation.invalid(
+                            "UI prop '" + key + "' must be numeric; value '" + s + "' cannot be parsed."
+                    );
+                }
             }
+            return fallback;
         }
+        validateType(key, value, "Number or numeric String");
         return fallback;
+    }
+
+    private void validateType(String key, Object value, String expected) {
+        if (!UiRuntimeValidation.enabled() || value == null || !values.containsKey(key)) return;
+        throw UiRuntimeValidation.invalid(
+                "UI prop '" + key + "' must be " + expected + ", got " + value.getClass().getSimpleName() + "."
+        );
     }
 
     /**

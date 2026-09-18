@@ -7,7 +7,6 @@
 
 package combatant.client.render.engine.renderer.ui;
 
-import combatant.client.render.engine.command.UiCommandBuffer;
 import combatant.client.render.engine.command.UiEffectRegionCommand;
 import combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest;
 import combatant.client.render.engine.renderer.ui.draw.UiBlurQuality;

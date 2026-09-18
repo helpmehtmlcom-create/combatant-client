@@ -72,8 +72,6 @@ final class ScriptedStatisticsHudPanel {
                 module,
                 "statistics",
                 panel.treeSignature(),
-                panel.dataSignature(),
-                panel.layoutSignature(),
                 panel.width,
                 panel.height,
                 fallback,
@@ -231,35 +229,6 @@ final class ScriptedStatisticsHudPanel {
                 h = CachedUiScriptRuntime.mix(h, floatValue(row.get("animation")));
             }
             h = mixPalette(h);
-            return h;
-        }
-
-        long dataSignature() {
-            long h = 0xcbf29ce484222325L;
-            h = CachedUiScriptRuntime.mix(h, playTime);
-            h = CachedUiScriptRuntime.mix(h, averageSpeed);
-            h = CachedUiScriptRuntime.mix(h, arcEndAngle);
-            h = CachedUiScriptRuntime.mix(h, arcHashTime);
-            h = CachedUiScriptRuntime.mix(h, headerIconColor);
-            h = CachedUiScriptRuntime.mix(h, headerIconGradientStart);
-            h = CachedUiScriptRuntime.mix(h, headerIconGradientEnd);
-            for (Map<String, Object> row : rows) {
-                h = CachedUiScriptRuntime.mix(h, string(row.get("value")));
-                h = CachedUiScriptRuntime.mix(h, string(row.get("valueColor")));
-            }
-            for (Map<String, Object> point : graphPoints) {
-                h = CachedUiScriptRuntime.mix(h, floatValue(point.get("x")));
-                h = CachedUiScriptRuntime.mix(h, floatValue(point.get("y")));
-            }
-            return h;
-        }
-
-        long layoutSignature() {
-            long h = 0xcbf29ce484222325L;
-            h = CachedUiScriptRuntime.mix(h, x);
-            h = CachedUiScriptRuntime.mix(h, y);
-            h = CachedUiScriptRuntime.mix(h, width);
-            h = CachedUiScriptRuntime.mix(h, height);
             return h;
         }
 

@@ -8,7 +8,7 @@
 package combatant.client.render.engine.renderer.ui;
 
 import combatant.client.render.engine.command.UiCommand;
-import combatant.client.render.engine.command.UiCommandBuffer;
+import combatant.client.render.engine.command.UiSemanticCommandBuffer;
 import combatant.client.render.engine.command.UiStatsSnapshot;
 import combatant.client.render.engine.core.RenderFrameContext;
 import combatant.client.render.engine.rhi.CombatantRhi;
@@ -21,26 +21,26 @@ import combatant.client.render.helpers.ScissorFunction;
  * {@link OrderedUiBatcher} remains an internal geometry/batching lowering component during migration.
  */
 public final class UiRendererSubsystem {
-    private final UiCommandBuffer commands = new UiCommandBuffer();
+    private final UiSemanticCommandBuffer semanticCommands = new UiSemanticCommandBuffer();
     private final UiPassCompiler compiler = new UiPassCompiler();
     private final UiPassExecutor executor = new UiPassExecutor();
     private UiBatchPlan lastPlan = UiBatchPlan.EMPTY;
     private boolean executing;
 
-    public UiCommandBuffer commands() {
-        return commands;
+    public UiSemanticCommandBuffer semanticCommands() {
+        return semanticCommands;
     }
 
     public void beginFrame(RenderFrameContext context) {
-        commands.beginFrame(context);
+        semanticCommands.beginFrame(context);
     }
 
     public void record(UiCommand command) {
-        commands.add(command, ScissorFunction.currentSnapshot(), ClipFunction.currentSnapshot());
+        semanticCommands.add(command, ScissorFunction.currentSnapshot(), ClipFunction.currentSnapshot());
     }
 
     public boolean hasPendingCommands() {
-        return commands.size() > 0 || compiler.hasPendingWork();
+        return semanticCommands.size() > 0 || compiler.hasPendingWork();
     }
 
     public void submitOrdered(OrderedUiBatcher batcher, boolean finish) {
@@ -53,21 +53,21 @@ public final class UiRendererSubsystem {
     }
 
     public void flush(RenderFrameContext context, CombatantRhi rhi) {
-        commands.beginFrame(context);
+        semanticCommands.beginFrame(context);
         if (executing) return;
-        if (commands.size() == 0 && !compiler.hasPendingWork()) return;
+        if (semanticCommands.size() == 0 && !compiler.hasPendingWork()) return;
 
         executing = true;
         try {
-            while (commands.size() > 0 || compiler.hasPendingWork()) {
-                UiBatchPlan compiled = compiler.compile(commands);
+            while (semanticCommands.size() > 0 || compiler.hasPendingWork()) {
+                UiBatchPlan compiled = compiler.compile(semanticCommands);
 
                 // Clear before execution so re-entrant semantic recording belongs to the next plan.
                 // The compiler likewise drains its work queue before returning this plan.
-                commands.clear();
+                semanticCommands.clear();
 
                 UiBatchPlan executed = executor.execute(compiled, context, rhi);
-                commands.stats().addExecutionStats(
+                semanticCommands.stats().addExecutionStats(
                         executed.rhiDrawCommandCount(),
                         executed.backendDrawCallCount()
                 );
@@ -83,6 +83,6 @@ public final class UiRendererSubsystem {
     }
 
     public UiStatsSnapshot statsSnapshot() {
-        return commands.statsSnapshot();
+        return semanticCommands.statsSnapshot();
     }
 }

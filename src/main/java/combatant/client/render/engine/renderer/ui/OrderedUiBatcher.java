@@ -51,6 +51,17 @@ import java.util.ArrayList;
 import java.util.List;
 
 
+/**
+ * Internal ordered recorder/lowering buffer behind {@code Renderer2D}.
+ *
+ * <p>{@link #order} is the executable ordering source consumed by {@link UiPassCompiler}. It is
+ * intentionally separate from {@code UiSemanticCommandBuffer}: semantic commands describe UI work
+ * for diagnostics/planning, while this batcher owns the concrete draw/item/text sequence that must
+ * preserve submission order.</p>
+ *
+ * <p>Do not submit this type directly from feature/runtime code; use {@code Renderer2D} so deferred
+ * scheduling, clip/scissor capture, and pass compilation remain coherent.</p>
+ */
 public final class OrderedUiBatcher {
     private static final OrderedUiBatcher LIQUID_GLASS_PREWARMER = new OrderedUiBatcher();
     private static final int PREWARM_BATCHES_PER_TYPE = Math.max(1,

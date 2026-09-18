@@ -12,6 +12,7 @@ import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import combatant.client.render.engine.renderer.ui.runtime.action.UiActionRegistry;
 import combatant.client.render.engine.renderer.ui.runtime.asset.UiAssetRegistry;
 import combatant.client.render.engine.renderer.ui.runtime.debug.UiRuntimeDiagnostics;
+import combatant.client.render.engine.renderer.ui.runtime.debug.UiRuntimeValidation;
 import combatant.client.render.engine.renderer.ui.runtime.error.UiErrorPolicy;
 import combatant.client.render.engine.renderer.ui.runtime.input.UiInputDispatcher;
 import combatant.client.render.engine.renderer.ui.runtime.layout.UiLayoutEngine;
@@ -91,6 +92,7 @@ public final class UiRuntime {
      */
     public void setTree(UiNodeSpec spec) {
         try {
+            UiTreeValidator.validate(spec);
             long styleStart = System.nanoTime();
             UiNodeSpec resolved = resolveStyles(spec);
             diagnostics.counters().setStyleNanos(System.nanoTime() - styleStart);
@@ -103,7 +105,9 @@ public final class UiRuntime {
             diagnostics.counters().setLastError("");
         } catch (RuntimeException e) {
             diagnostics.counters().setLastError(e.getMessage());
-            if (errorPolicy == UiErrorPolicy.THROW) throw e;
+            // Authoring errors must surface at the first bad tree in development. The release
+            // fallback remains KEEP_LAST_SUCCESSFUL so a broken optional UI cannot take down play.
+            if (UiRuntimeValidation.enabled() || errorPolicy == UiErrorPolicy.THROW) throw e;
             if (errorPolicy == UiErrorPolicy.KEEP_LAST_SUCCESSFUL) {
                 this.root = lastSuccessfulRoot;
                 rebuildKeyIndex();
@@ -227,6 +231,7 @@ public final class UiRuntime {
             Map<String, ?> patch = entry.getValue();
             if (key == null || key.isBlank() || patch == null || patch.isEmpty()) continue;
             ObjectArrayList<UiNode> nodes = nodesByKey.get(key);
+            validatePatchTarget(key, nodes, "props");
             if (nodes == null || nodes.isEmpty()) continue;
             for (UiNode node : nodes) {
                 UiProps before = node.props();
@@ -247,6 +252,7 @@ public final class UiRuntime {
             UiBounds bounds = entry.getValue();
             if (key == null || key.isBlank() || bounds == null) continue;
             ObjectArrayList<UiNode> nodes = nodesByKey.get(key);
+            validatePatchTarget(key, nodes, "bounds");
             if (nodes == null || nodes.isEmpty()) continue;
             for (UiNode node : nodes) {
                 node.setBounds(bounds);
@@ -254,6 +260,22 @@ public final class UiRuntime {
             }
         }
         return patched;
+    }
+
+    private static void validatePatchTarget(String key, ObjectArrayList<UiNode> nodes, String patchKind) {
+        if (!UiRuntimeValidation.enabled()) return;
+        if (nodes == null || nodes.isEmpty()) {
+            UiRuntimeValidation.warnOnce(
+                    "missing-patch:" + patchKind + ":" + key,
+                    "UI " + patchKind + " patch targets missing key '" + key + "'."
+            );
+            return;
+        }
+        if (nodes.size() > 1) {
+            throw UiRuntimeValidation.invalid(
+                    "UI " + patchKind + " patch key '" + key + "' is ambiguous: " + nodes.size() + " runtime nodes share it."
+            );
+        }
     }
 
     private void rebuildKeyIndex() {

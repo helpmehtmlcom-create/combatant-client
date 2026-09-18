@@ -528,18 +528,11 @@ private static final float DROPDOWN_PANEL_W = 115.0f;
         boolean onlyHover = hudContext && inside(mouseX, mouseY, pillX + segmentW, pillY, segmentW, pillH);
         Map<String, Object> props = panelTemplateProps(scale, alpha, enabledHover, onlyHover, palette);
         long treeSignature = CachedUiScriptRuntime.signature(props);
-        long layoutSignature = 0xcbf29ce484222325L;
-        layoutSignature = CachedUiScriptRuntime.mix(layoutSignature, panelX);
-        layoutSignature = CachedUiScriptRuntime.mix(layoutSignature, panelY);
-        layoutSignature = CachedUiScriptRuntime.mix(layoutSignature, panelW);
-        layoutSignature = CachedUiScriptRuntime.mix(layoutSignature, panelH);
-
         UiRuntime runtime = panelRuntime.updatePersistent(
                 panelModuleHandle,
                 module,
                 "settings-panel",
                 treeSignature,
-                layoutSignature,
                 panelW,
                 panelH,
                 ClickGuiRenderer.getInterRegular(),
