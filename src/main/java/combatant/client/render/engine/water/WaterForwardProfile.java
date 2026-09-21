@@ -6,8 +6,8 @@
 package combatant.client.render.engine.water;
 
 /**
- * Neutral technological profile for the forward-water contract. Values are deliberately generic;
- * artistic wave/color/foam/caustic policy belongs to later dimension/material profiles.
+ * Temporary full-replacement water profile. This keeps the current reference-style surface
+ * parameters centralized while the later dimension/material water policy remains free to replace it.
  */
 public record WaterForwardProfile(
         float displacementAmplitudeFactor,
@@ -24,13 +24,17 @@ public record WaterForwardProfile(
         float scatteringR,
         float scatteringG,
         float scatteringB,
-        float refractionProbeDistance
+        float refractionIntensity
 ) {
     public static final WaterForwardProfile FOUNDATION = new WaterForwardProfile(
-            0.08f, 1.0f, 1.0f,
-            0.0f, 1.0f, 0.0f,
-            0.0f, 0.0f,
+            // Small geometry displacement keeps the native tessellation path meaningful without
+            // turning every water block into a high-amplification patch.
+            0.018f, 0.30f, 0.37f,
             0.0f, 0.0f, 0.0f,
+            0.0f, 0.0f,
+            // Near-neutral base extinction. Biome metadata changes the spectral coefficients in
+            // the shader; it is never multiplied directly into the final scene color.
+            0.055f, 0.045f, 0.040f,
             0.0f, 0.0f, 0.0f,
             1.0f
     );

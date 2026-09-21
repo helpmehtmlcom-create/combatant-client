@@ -117,7 +117,7 @@ enum UnifiedSettingRenderer {
         BooleanSetting.UiState ui = setting.ui();
         if (!UnifiedSettingsSkin.inside(mx, my, ui.lastX, ui.lastY, ui.lastW, ui.lastH)) return;
         setting.set(!setting.get());
-        GuiSound.TOGGLE.feedback();
+        GuiSound.booleanFeedback(setting.get());
         if (setting.getParent() != null) setting.getParent().saveConfig();
     }
 
@@ -158,8 +158,8 @@ enum UnifiedSettingRenderer {
         UnifiedSettingsSkin.syncTheme();
         SliderSetting.UiState ui = setting.ui();
         NumberValue<N> value = setting.value();
-        double min = value.getMin().doubleValue();
-        double max = value.getMax().doubleValue();
+        double min = setting.sliderMin();
+        double max = setting.sliderMax();
         double val = value.get().doubleValue();
 
         ui.lastX = x;
@@ -309,7 +309,7 @@ enum UnifiedSettingRenderer {
         float trackH = m(2.4f, 1.2f);
         if (!UnifiedSettingsSkin.inside(mx, my, trackX, trackY - m(6f, 2f), trackW, trackH + m(12f, 4f))) return;
         ui.dragging = true;
-        setSliderValueFromMouse(setting, (float) mx, trackX, trackW, setting.value().getMin().doubleValue(), setting.value().getMax().doubleValue());
+        setSliderValueFromMouse(setting, (float) mx, trackX, trackW, setting.sliderMin(), setting.sliderMax());
     }
 
     static <N extends Number> void mouseReleased(SliderSetting<N> setting, double mx, double my, int button) {
@@ -745,7 +745,7 @@ enum UnifiedSettingRenderer {
             if (!UnifiedSettingsSkin.inside(mx, my, ox - m(2f, 2f), oy - m(1f, 1f), opt.w() + m(4f, 4f), m(16f, 8f)))
                 continue;
             setting.value().set(opt.getId(), !setting.value().get(opt.getId()));
-            GuiSound.TOGGLE.feedback();
+            GuiSound.booleanFeedback(setting.value().get(opt.getId()));
             if (setting.getParent() != null) setting.getParent().saveConfig();
             return;
         }
@@ -1759,7 +1759,7 @@ enum UnifiedSettingRenderer {
         if (UnifiedSettingsSkin.inside(mx, my, ui.sliderX, ui.sliderY, ui.sliderW, ui.sliderH)) {
             ui.showRgbBars = !ui.showRgbBars;
             clearColorFocus(ui);
-            GuiSound.TOGGLE.feedback();
+            GuiSound.BUTTON.feedback(0.50);
             return;
         }
         if (UnifiedSettingsSkin.inside(mx, my, ui.rnbX, ui.rnbY, ui.rnbW, ui.rnbH)) {
@@ -2328,7 +2328,7 @@ enum UnifiedSettingRenderer {
         }
         if (button == 0 && UnifiedSettingsSkin.inside(mx, my, ui.presetToggleX, rowY, ui.presetToggleW, ui.presetToggleH)) {
             ui.presetsExpanded = !ui.presetsExpanded;
-            GuiSound.TOGGLE.feedback();
+            GuiSound.BUTTON.feedback(0.50);
             return true;
         }
         if (button == 0 && UnifiedSettingsSkin.inside(mx, my, ui.savePresetX, rowY, ui.savePresetW, ui.savePresetH)) {

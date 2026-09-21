@@ -7,6 +7,7 @@
 
 package combatant.client.render.engine.renderer.ui.runtime.style;
 
+import combatant.client.render.engine.renderer.ui.runtime.core.UiAuthoringContract;
 import combatant.client.render.engine.renderer.ui.runtime.debug.UiRuntimeValidation;
 import combatant.client.render.engine.renderer.ui.runtime.render.UiBlendSpec;
 import combatant.client.render.engine.text.FontInfo;
@@ -27,23 +28,7 @@ import java.util.Set;
 public final class UiInlineStyle {
     public static final UiInlineStyle EMPTY = new UiInlineStyle(Map.of());
 
-    private static final Set<String> KNOWN_KEYS = Set.of(
-            "width", "height", "minwidth", "minheight", "maxwidth", "maxheight",
-            "padding", "paddingx", "paddinghorizontal", "paddingy", "paddingvertical",
-            "paddingleft", "paddingtop", "paddingright", "paddingbottom",
-            "margin", "marginx", "marginhorizontal", "marginy", "marginvertical",
-            "marginleft", "margintop", "marginright", "marginbottom",
-            "gap", "grow", "flexgrow", "display", "flexdirection",
-            "position", "absolute", "left", "top", "right", "bottom", "x", "y",
-            "align", "alignitems", "justify", "justifycontent", "overflow",
-            "radius", "borderradius",
-            "background", "backgroundcolor", "bordercolor", "strokecolor", "borderwidth", "strokewidth",
-            "shadow", "boxshadow", "shadowcolor", "shadowblur", "shadowinneralpha",
-            "blur", "blurquality", "blurbrightness", "bluralpha", "liquidglass", "clip", "marquee",
-            "color", "textcolor", "fontfamily", "fontweight", "fontstyle", "fontscale", "textscale",
-            "textshadow", "texteffect", "texteffectspeed", "textbackend", "maxtextwidth", "ellipsis",
-            "textalign", "cursor", "blend", "opacity"
-    );
+    private static final Set<String> KNOWN_KEYS = UiAuthoringContract.normalizedStyleKeys();
 
     private final Map<String, Object> values;
 
@@ -55,7 +40,14 @@ public final class UiInlineStyle {
         LinkedHashMap<String, Object> normalized = new LinkedHashMap<>(source.size());
         for (Map.Entry<String, ?> entry : source.entrySet()) {
             if (entry.getKey() == null) continue;
-            normalized.put(normalizeKey(entry.getKey()), entry.getValue());
+            Object value = entry.getValue();
+            if (value instanceof String text && !UiAuthoringContract.acceptsStyleValue(entry.getKey(), text)) {
+                invalid(
+                        "UI inline style '" + entry.getKey() + "' has unknown value '" + text
+                                + "'. Expected one of " + UiAuthoringContract.acceptedStyleValues(entry.getKey()) + "."
+                );
+            }
+            normalized.put(normalizeKey(entry.getKey()), value);
         }
         this.values = normalized.isEmpty() ? Map.of() : Collections.unmodifiableMap(normalized);
         validateKnownKeys();
@@ -93,6 +85,8 @@ public final class UiInlineStyle {
         applyNumber(builder::gap, "gap");
         Float grow = firstNumber("flexgrow", "grow");
         if (grow != null) builder.grow(grow);
+        Float shrink = firstNumber("flexshrink", "shrink");
+        if (shrink != null) builder.shrink(shrink);
 
         String display = text("display");
         if (display != null) {
@@ -178,8 +172,13 @@ public final class UiInlineStyle {
         Integer textColor = firstColor("color", "textcolor");
         if (textColor != null) builder.textColor(textColor);
         applyFont(builder, resolvedBase);
+        // Legacy multiplicative scale is accepted, but authored fontSize wins when both are present.
         Float textScale = firstNumber("fontscale", "textscale");
         if (textScale != null) builder.textScale(textScale);
+        Float fontSize = number("fontsize");
+        if (fontSize != null) builder.fontSize(fontSize);
+        Float lineHeight = number("lineheight");
+        if (lineHeight != null) builder.lineHeight(lineHeight);
         Boolean textShadow = bool("textshadow");
         if (textShadow != null) builder.textShadow(textShadow);
         String textEffect = text("texteffect");
@@ -196,6 +195,35 @@ public final class UiInlineStyle {
         if (maxTextWidth != null) builder.maxTextWidth(maxTextWidth);
         Boolean ellipsis = bool("ellipsis");
         if (ellipsis != null) builder.ellipsis(ellipsis);
+        String whiteSpace = text("whitespace");
+        if (whiteSpace != null) {
+            String normalized = whiteSpace.trim().toLowerCase(Locale.ROOT);
+            if (normalized.equals("nowrap") || normalized.equals("normal") || normalized.equals("pre-wrap")) {
+                builder.whiteSpace(normalized);
+            } else {
+                invalid("UI inline style 'whiteSpace' must be nowrap, normal, or pre-wrap; got '" + whiteSpace + "'.");
+            }
+        }
+        String overflowWrap = text("overflowwrap");
+        if (overflowWrap != null) {
+            String normalized = overflowWrap.trim().toLowerCase(Locale.ROOT);
+            if (normalized.equals("normal") || normalized.equals("break-word") || normalized.equals("anywhere")) {
+                builder.overflowWrap(normalized);
+            } else {
+                invalid("UI inline style 'overflowWrap' must be normal, break-word, or anywhere; got '" + overflowWrap + "'.");
+            }
+        }
+        Integer maxLines = integer("maxlines");
+        if (maxLines != null) builder.maxLines(maxLines);
+        String textOverflow = text("textoverflow");
+        if (textOverflow != null) {
+            String normalized = textOverflow.trim().toLowerCase(Locale.ROOT);
+            if (normalized.equals("clip") || normalized.equals("ellipsis")) {
+                builder.textOverflow(normalized);
+            } else {
+                invalid("UI inline style 'textOverflow' must be clip or ellipsis; got '" + textOverflow + "'.");
+            }
+        }
         String textAlign = text("textalign");
         if (textAlign != null) builder.textAlign(textAlign);
         String cursor = text("cursor");

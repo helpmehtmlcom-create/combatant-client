@@ -7,6 +7,7 @@
 
 package combatant.client.render.engine.renderer.ui.runtime.script;
 
+import combatant.client.render.engine.renderer.ui.runtime.core.UiAuthoringContract;
 import combatant.client.render.engine.renderer.ui.runtime.core.UiNodeSpec;
 import combatant.client.render.engine.renderer.ui.runtime.core.UiNodeType;
 import combatant.client.render.engine.renderer.ui.runtime.core.UiProps;
@@ -19,20 +20,31 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 public final class UiScriptObjectConverter {
-    private static final List<String> RESERVED_NODE_KEYS = List.of(
-            "type", "key", "class", "className", "style", "props", "events", "meta", "children",
-            "width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight", "grow", "display", "flexDirection", "absolute",
-            "x", "y", "align", "justify", "overflow", "textAlign", "maxTextWidth", "ellipsis", "marquee",
-            "onClick", "onChange", "onInput", "onScroll"
-    );
+    private static final Set<String> RESERVED_NODE_KEYS = UiAuthoringContract.reservedNodeKeys();
 
     public UiNodeSpec convert(Object value) {
-        if (!(value instanceof Map<?, ?> map)) {
-            throw new IllegalArgumentException("UI script render must return an object.");
+        if (value instanceof Map<?, ?> map) {
+            return node(map);
         }
-        return node(map);
+        if (value instanceof Iterable<?> iterable) {
+            List<UiNodeSpec> children = new ArrayList<>();
+            appendChildren(iterable, children, "root");
+            return new UiNodeSpec(
+                    "root",
+                    UiNodeType.ROOT,
+                    UiProps.EMPTY,
+                    UiStyle.DEFAULT,
+                    "",
+                    UiInlineStyle.EMPTY,
+                    Map.of(),
+                    Map.of(),
+                    children
+            );
+        }
+        throw new IllegalArgumentException("UI script render must return a node object or fragment/iterable of nodes.");
     }
 
     private UiNodeSpec node(Map<?, ?> map) {
@@ -84,6 +96,14 @@ public final class UiScriptObjectConverter {
             out.add(node(childMap));
             return;
         }
+        if (value instanceof String text) {
+            out.add(UiNodeSpec.text("", text, UiStyle.DEFAULT));
+            return;
+        }
+        if (value instanceof Number number) {
+            out.add(UiNodeSpec.text("", String.valueOf(number), UiStyle.DEFAULT));
+            return;
+        }
         if (value instanceof Iterable<?> iterable) {
             int index = 0;
             for (Object child : iterable) {
@@ -102,10 +122,9 @@ public final class UiScriptObjectConverter {
 
     private static Map<String, String> events(Map<?, ?> node) {
         Map<String, String> events = eventMap(node.get("events"));
-        directEvent(node, events, "onClick", "click");
-        directEvent(node, events, "onChange", "change");
-        directEvent(node, events, "onInput", "input");
-        directEvent(node, events, "onScroll", "scroll");
+        for (Map.Entry<String, String> alias : UiAuthoringContract.eventAliases().entrySet()) {
+            directEvent(node, events, alias.getKey(), alias.getValue());
+        }
         return events.isEmpty() ? Map.of() : events;
     }
 
@@ -152,43 +171,25 @@ public final class UiScriptObjectConverter {
 
     private static Map<String, Object> inlineStyle(Map<?, ?> node, UiNodeType type) {
         Map<String, Object> style = new LinkedHashMap<>();
-        promote(node, style, "width", "width");
-        promote(node, style, "height", "height");
-        promote(node, style, "minWidth", "minWidth");
-        promote(node, style, "minHeight", "minHeight");
-        promote(node, style, "maxWidth", "maxWidth");
-        promote(node, style, "maxHeight", "maxHeight");
-        promote(node, style, "grow", "grow");
-        promote(node, style, "display", "display");
-        promote(node, style, "flexDirection", "flexDirection");
-        promote(node, style, "absolute", "absolute");
-        promote(node, style, "x", "x");
-        promote(node, style, "y", "y");
-        promote(node, style, "justify", "justify");
-        promote(node, style, "overflow", "overflow");
-        promote(node, style, "textAlign", "textAlign");
-        promote(node, style, "maxTextWidth", "maxTextWidth");
-        promote(node, style, "ellipsis", "ellipsis");
-        promote(node, style, "marquee", "marquee");
+        for (Map.Entry<String, String> promotion : UiAuthoringContract.promotedStyles().entrySet()) {
+            String sourceKey = promotion.getKey();
+            if (!node.containsKey(sourceKey)) continue;
 
-        if (node.containsKey("align")) {
-            Object align = node.get("align");
-            if (type == UiNodeType.TEXT && align instanceof String text
+            Object value = node.get(sourceKey);
+            if ("align".equals(sourceKey)
+                    && type == UiNodeType.TEXT
+                    && value instanceof String text
                     && ("left".equalsIgnoreCase(text) || "right".equalsIgnoreCase(text)
                     || "center".equalsIgnoreCase(text) || "end".equalsIgnoreCase(text))) {
-                style.put("textAlign", align);
-            } else {
-                style.put("align", align);
+                style.put("textAlign", value);
+                continue;
             }
+            style.put(promotion.getValue(), value);
         }
 
         // Explicit style is last, matching browser/CSS precedence over convenience aliases.
         style.putAll(mapObject(node.get("style")));
         return style;
-    }
-
-    private static void promote(Map<?, ?> source, Map<String, Object> target, String sourceKey, String styleKey) {
-        if (source.containsKey(sourceKey)) target.put(styleKey, source.get(sourceKey));
     }
 
     private static Map<String, Object> mapObject(Object value) {
@@ -203,15 +204,13 @@ public final class UiScriptObjectConverter {
     }
 
     private static UiNodeType nodeType(String raw) {
-        String normalized = raw == null ? "panel" : raw.trim().replace('-', '_').toUpperCase(Locale.ROOT);
-        try {
-            return UiNodeType.valueOf(normalized);
-        } catch (IllegalArgumentException ignored) {
-            if (UiRuntimeValidation.enabled()) {
-                throw UiRuntimeValidation.invalid("Unknown UI node type '" + raw + "'.");
-            }
-            return UiNodeType.PANEL;
+        String canonical = UiAuthoringContract.canonicalNodeType(raw);
+        if (!UiAuthoringContract.isKnownNodeType(canonical)) {
+            throw UiRuntimeValidation.invalid(
+                    "Unknown UI node type '" + raw + "'. Known types: " + UiAuthoringContract.nodeTypes()
+            );
         }
+        return UiNodeType.valueOf(canonical.toUpperCase(Locale.ROOT));
     }
 
     private static void validateFieldShape(Map<?, ?> map, String field, Class<?> expectedType) {

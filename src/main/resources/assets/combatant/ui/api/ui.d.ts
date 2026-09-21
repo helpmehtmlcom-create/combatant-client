@@ -6,17 +6,28 @@
  */
 
 /** Node kinds understood by the runtime layout/render/input layers. */
+/** Runtime authoring contract loaded from ui.contract.json. Useful for tooling/diagnostics. */
+export type UiAuthoringContract = {
+  readonly version: number;
+  readonly nodeTypes: readonly UiNodeType[];
+  readonly styleKeys: readonly (keyof UiInlineStyle)[];
+  /** Legacy/alternate authoring keys normalized to one canonical style key by ui.js. */
+  readonly styleAliases: Readonly<Record<string, keyof UiInlineStyle>>;
+};
+
 export type UiNodeType =
   | "root"
   | "panel"
   | "row"
   | "column"
   | "stack"
+  | "vector"
   | "text"
   | "image"
   | "svg"
   | "shape"
   | "connector"
+  | "path"
   | "item"
   | "button"
   | "scroll"
@@ -70,8 +81,10 @@ export type UiInlineStyle = {
 
   padding?: number;
   paddingX?: number;
+  /** @deprecated Prefer paddingX. */
   paddingHorizontal?: number;
   paddingY?: number;
+  /** @deprecated Prefer paddingY. */
   paddingVertical?: number;
   paddingLeft?: number;
   paddingTop?: number;
@@ -80,8 +93,10 @@ export type UiInlineStyle = {
 
   margin?: number;
   marginX?: number;
+  /** @deprecated Prefer marginX. */
   marginHorizontal?: number;
   marginY?: number;
+  /** @deprecated Prefer marginY. */
   marginVertical?: number;
   marginLeft?: number;
   marginTop?: number;
@@ -89,36 +104,51 @@ export type UiInlineStyle = {
   marginBottom?: number;
 
   gap?: number;
+  /** @deprecated Prefer flexGrow. */
   grow?: number;
   flexGrow?: number;
+  /** Explicit main-axis shrink weight. Default 0 preserves legacy fixed-size behavior. */
+  /** @deprecated Prefer flexShrink. */
+  shrink?: number;
+  flexShrink?: number;
   /** Browser-like container flow. display:flex defaults to row; block maps to vertical flow. */
   display?: "flex" | "block";
   flexDirection?: "row" | "column";
 
   position?: "absolute" | "relative" | "static" | "flow";
+  /** @deprecated Prefer position: "absolute" or "relative". */
   absolute?: boolean;
   left?: number;
   top?: number;
   right?: number;
   bottom?: number;
+  /** @deprecated Prefer left. */
   x?: number;
+  /** @deprecated Prefer top. */
   y?: number;
 
+  /** @deprecated Prefer alignItems. */
   align?: UiAlign;
   alignItems?: UiAlign;
+  /** @deprecated Prefer justifyContent. */
   justify?: UiJustify;
   justifyContent?: UiJustify;
   overflow?: UiOverflow;
 
+  /** @deprecated Prefer borderRadius for ordinary layout boxes. */
   radius?: number;
   borderRadius?: number;
+  /** @deprecated Prefer backgroundColor. */
   background?: string | number;
   backgroundColor?: string | number;
   borderColor?: string | number;
+  /** @deprecated Prefer borderColor. */
   strokeColor?: string | number;
   borderWidth?: number;
+  /** @deprecated Prefer borderWidth. */
   strokeWidth?: number;
 
+  /** @deprecated Prefer boxShadow. */
   shadow?: false | { color?: string | number; blur?: number; innerAlpha?: number };
   boxShadow?: false | { color?: string | number; blur?: number; innerAlpha?: number };
   shadowColor?: string | number;
@@ -134,11 +164,18 @@ export type UiInlineStyle = {
   marquee?: boolean;
 
   color?: string | number;
+  /** @deprecated Prefer color. */
   textColor?: string | number;
   fontFamily?: string;
   fontWeight?: number | "normal" | "bold" | "semibold" | string;
   fontStyle?: "normal" | "italic";
+  /** Preferred authored font size in logical UI units. 18 equals backend scale 1.0. */
+  fontSize?: number;
+  /** Optional line-box height in logical UI units. */
+  lineHeight?: number;
+  /** @deprecated Legacy multiplicative backend scale. Prefer fontSize. */
   fontScale?: number;
+  /** @deprecated Legacy multiplicative backend scale. Prefer fontSize. */
   textScale?: number;
   textShadow?: boolean;
   textEffect?: string;
@@ -146,6 +183,14 @@ export type UiInlineStyle = {
   textBackend?: string;
   maxTextWidth?: number;
   ellipsis?: boolean;
+  /** Text wrapping mode. nowrap preserves legacy single-line behavior; pre-wrap preserves authored spaces and line breaks. */
+  whiteSpace?: "nowrap" | "normal" | "pre-wrap";
+  /** Long-token wrapping policy used when whiteSpace allows wrapping. */
+  overflowWrap?: "normal" | "break-word" | "anywhere";
+  /** Maximum rendered line count. 0/undefined means unlimited. */
+  maxLines?: number;
+  /** Overflow handling for constrained text. */
+  textOverflow?: "clip" | "ellipsis";
   textAlign?: "left" | "center" | "right" | "end" | string;
   cursor?: string;
   blend?: string;
@@ -155,9 +200,9 @@ export type UiInlineStyle = {
 
 /** Layout fields that can be placed inline on node init objects. */
 export type UiLayoutProps = {
-  /** Explicit width in UI pixels. */
+  /** Explicit width in logical UI units. */
   width?: number;
-  /** Explicit height in UI pixels. */
+  /** Explicit height in logical UI units. */
   height?: number;
   /** Minimum resolved width. */
   minWidth?: number;
@@ -167,21 +212,56 @@ export type UiLayoutProps = {
   maxWidth?: number;
   /** Maximum resolved height. */
   maxHeight?: number;
-  /** Main-axis grow weight inside row/column layout. */
+  /** @deprecated Prefer style.flexGrow (or flexGrow while using legacy promoted props). */
   grow?: number;
+  /** Main-axis grow weight inside row/column layout. */
+  flexGrow?: number;
+  /** @deprecated Prefer style.flexShrink (or flexShrink while using legacy promoted props). */
+  shrink?: number;
+  /** Explicit main-axis shrink weight. */
+  flexShrink?: number;
   /** Browser-style flow aliases promoted into inline style. */
   display?: "flex" | "block";
   flexDirection?: "row" | "column";
+  /** Spacing fields use canonical logical UI units and are scaled once at paint time. */
+  padding?: number;
+  paddingX?: number;
+  paddingHorizontal?: number;
+  paddingY?: number;
+  paddingVertical?: number;
+  paddingLeft?: number;
+  paddingTop?: number;
+  paddingRight?: number;
+  paddingBottom?: number;
+  margin?: number;
+  marginX?: number;
+  marginHorizontal?: number;
+  marginY?: number;
+  marginVertical?: number;
+  marginLeft?: number;
+  marginTop?: number;
+  marginRight?: number;
+  marginBottom?: number;
+  gap?: number;
+  /** Browser-style position. Canonical values are absolute or relative; static/flow remain legacy aliases. */
+  position?: "absolute" | "relative" | "static" | "flow";
   /** Removes the node from normal parent flow and uses x/y offsets. */
   absolute?: boolean;
-  /** Absolute x offset inside parent content area. */
+  /** @deprecated Legacy absolute x alias. Prefer left. */
   x?: number;
-  /** Absolute y offset inside parent content area. */
+  /** @deprecated Legacy absolute y alias. Prefer top. */
   y?: number;
+  /** Canonical inset aliases. left/top override x/y when both are supplied. */
+  left?: number;
+  top?: number;
+  right?: number;
+  bottom?: number;
   /** Parent-controlled cross-axis alignment. left/right/top/bottom are web-style aliases. */
   align?: UiAlign | "left" | "right" | "top" | "bottom";
+  alignItems?: UiAlign | "left" | "right" | "top" | "bottom";
   /** Parent-controlled main-axis placement. */
   justify?: UiJustify;
+  justifyContent?: UiJustify | "left" | "right" | "top" | "bottom" | "space-between";
   /** Overflow and scroll behavior. */
   overflow?: UiOverflow;
 };
@@ -227,12 +307,52 @@ export type UiNode = {
   children?: UiNode[];
 } & UiLayoutProps;
 
+
+export type UiViewBox =
+  | string
+  | readonly [number, number, number, number]
+  | { x?: number; y?: number; minX?: number; minY?: number; width: number; height: number };
+
+/** Shared SVG/data coordinate container. Child vector primitives resolve against this viewBox. */
+export type UiVectorNode = UiNode & {
+  type: "vector";
+  viewBox?: UiViewBox;
+  viewBoxX?: number;
+  viewBoxY?: number;
+  viewBoxWidth?: number;
+  viewBoxHeight?: number;
+  /** SVG-like y-down by default; "up"/"cartesian" makes positive y point upward for charts. */
+  yAxis?: "down" | "up" | "cartesian" | "math";
+  coordinateSystem?: "down" | "up" | "cartesian" | "math";
+  /** ViewBox fit mode. "meet" fits uniformly, "slice" covers uniformly, "none" stretches X/Y independently. */
+  preserveAspectRatio?: string;
+  viewBoxAlign?: string;
+};
+
 /** Text node shape. */
 export type UiTextNode = Omit<UiNode, "align"> & {
   type: "text";
   /** Text content. */
   text?: string;
-  /** Maximum rendered text width in UI pixels. Layout maxWidth remains available through style/maxWidth. */
+  /** ViewBox-space text position inside ui.vector/ui.plot. Explicit by design: top-level x/y remain legacy layout aliases. */
+  vectorX?: number;
+  vectorY?: number;
+  /** Horizontal anchor for vector-positioned text. */
+  textAnchor?: "start" | "middle" | "center" | "end" | "right";
+  /** Vertical anchor for vector-positioned text. */
+  verticalAnchor?: "top" | "middle" | "center" | "bottom" | "end";
+  coordinateSpace?: "viewBox" | "local" | "bounds";
+  /** Convenience alias promoted into style.fontSize. Uses logical UI units. */
+  fontSize?: number;
+  /** Convenience alias promoted into style.lineHeight. */
+  lineHeight?: number;
+  /** Convenience alias promoted into style.fontFamily. */
+  fontFamily?: string;
+  /** Convenience alias promoted into style.fontWeight. */
+  fontWeight?: UiInlineStyle["fontWeight"];
+  /** Convenience alias promoted into style.fontStyle. */
+  fontStyle?: UiInlineStyle["fontStyle"];
+  /** Maximum rendered text width in logical UI units. Layout maxWidth remains available through style/maxWidth. */
   maxTextWidth?: number;
   /** Legacy text-alignment alias accepted by normalize(). */
   align?: "left" | "center" | "right" | "end";
@@ -240,6 +360,10 @@ export type UiTextNode = Omit<UiNode, "align"> & {
   textAlign?: "left" | "center" | "right" | "end";
   /** Enables text shortening when maxTextWidth is set. */
   ellipsis?: boolean;
+  whiteSpace?: UiInlineStyle["whiteSpace"];
+  overflowWrap?: UiInlineStyle["overflowWrap"];
+  maxLines?: number;
+  textOverflow?: UiInlineStyle["textOverflow"];
   /** Enables clipping mode for scrolling/fading text behavior. */
   marquee?: boolean;
   /** Color of the compact phosphor bloom rendered behind the sharp glyphs. */
@@ -374,9 +498,15 @@ export type UiShapeNode = UiNode & {
     | "compound-sdf"
     | "compound_sdf"
     | "chamfered";
-  /** Local center x for circle and arc shapes. Defaults to half node width. */
+  /** Optional viewBox-space rectangle geometry when this shape is inside ui.vector/ui.plot. */
+  vectorX?: number;
+  vectorY?: number;
+  vectorWidth?: number;
+  vectorHeight?: number;
+  coordinateSpace?: "viewBox" | "local" | "bounds";
+  /** Local center x for circle and arc shapes. Inside a vector container this is a viewBox coordinate. */
   cx?: number;
-  /** Local center y for circle and arc shapes. Defaults to half node height. */
+  /** Local center y for circle and arc shapes. Inside a vector container this is a viewBox coordinate. */
   cy?: number;
   /** Radius for rounded rectangles, circles, and arcs. */
   radius?: number;
@@ -441,6 +571,7 @@ export type UiShapeNode = UiNode & {
   bevel?: number;
   notchWidth?: number;
   notchDepth?: number;
+  /** Primary shape fill color. */
   fill?: string | number;
   stroke?: string | number;
   strokeWidth?: number;
@@ -559,13 +690,82 @@ export type UiConnectorNode = UiNode & {
   closed?: boolean;
 };
 
-/** Authoring-side child input. normalize() flattens nested iterables and drops booleans/null/undefined. */
-export type UiChildInput = UiNode | readonly UiChildInput[] | Iterable<UiChildInput> | boolean | null | undefined;
+/** Generic vector path/series primitive. Inside ui.vector/ui.plot, coordinates resolve in the shared viewBox. */
+export type UiPathNode = UiNode & {
+  type: "path";
+  /** Explicit local points. Flat [x,y,...] and object point arrays are both accepted. */
+  points?: Array<{ x: number; y: number }> | number[];
+  /** Numeric series mapped across this node's bounds. Useful for charts/sparklines. */
+  values?: Array<number | { x?: number; value?: number; y?: number }>;
+  /** Data-space alias for values. Points with x use a proportional x-axis instead of equal slots. */
+  data?: Array<number | { x?: number; value?: number; y?: number }>;
+  /** Treat explicit points as normalized 0..1 coordinates inside node bounds. This opts out of parent viewBox coordinates. */
+  normalized?: boolean;
+  /** Force path coordinates back to local node bounds even inside a vector container. */
+  coordinateSpace?: "viewBox" | "local" | "bounds";
+  curve?: "linear" | "spline" | "smooth";
+  closed?: boolean;
+  /** Backward-compatible y-domain aliases. Omitted bounds are inferred from observed data. */
+  domainMin?: number;
+  domainMax?: number;
+  /** Explicit data-space domains for irregular line/area charts. */
+  xDomainMin?: number;
+  xDomainMax?: number;
+  yDomainMin?: number;
+  yDomainMax?: number;
+  /** Virtual x slots. If larger than values.length, the series is right-aligned. */
+  historySlots?: number;
+  clampValues?: boolean;
+  /** Enables area-to-baseline fill. */
+  area?: boolean;
+  /** Local-pixel baseline override. */
+  baseline?: number;
+  /** Data-space baseline; defaults to zero and clamps to the visible y-domain when clampValues is enabled. */
+  baselineValue?: number;
+  fill?: string | number;
+  fillStartColor?: string | number;
+  fillEndColor?: string | number;
+  fillBottomColor?: string | number;
+  fillBottomStartColor?: string | number;
+  fillBottomEndColor?: string | number;
+  stroke?: string | number;
+  strokeStartColor?: string | number;
+  strokeEndColor?: string | number;
+  strokeWidth?: number;
+  glow?: string | number;
+  glowStartColor?: string | number;
+  glowEndColor?: string | number;
+  glowWidth?: number;
+  strokeLinecap?: "butt" | "round" | "square";
+  strokeLinejoin?: "miter" | "round" | "bevel";
+};
+
+/**
+ * Authoring-side child input. Nested iterables are flattened, booleans/null/undefined are dropped,
+ * and string/number children become ordinary text nodes.
+ */
+export type UiChildInput = UiNode | string | number | readonly UiChildInput[] | Iterable<UiChildInput> | boolean | null | undefined;
+
+/** Fragment token accepted by ui.h/ui.createElement. */
+export type UiFragment = Readonly<{ __combatantUiFragment: true }>;
+/** Lightweight function component. Components return the same declarative nodes as render(ctx). */
+export type UiComponent<P = Record<string, unknown>> = (props: P & { children?: UiNode[] }) => UiChildInput;
+export type UiElementType<P = Record<string, unknown>> = UiNodeType | UiComponent<P> | UiFragment;
+/** Root render output. A fragment/iterable is wrapped by the runtime in a transparent ROOT node. */
+export type UiRenderOutput = UiNode | readonly UiChildInput[] | (Iterable<UiChildInput> & object);
 
 export type NodeInit = Omit<UiNode, "type" | "children"> & { children?: UiChildInput };
 export type TextInit = (Omit<UiTextNode, "type" | "children"> & { children?: UiChildInput }) | string;
 export type ImageInit = (Omit<UiImageNode, "type" | "children"> & { children?: UiChildInput }) | string;
 export type ShapeInit = Omit<UiShapeNode, "type" | "children"> & { children?: UiChildInput };
+export type VectorInit = Omit<UiVectorNode, "type" | "children"> & { children?: UiChildInput };
+export type PlotInit = Omit<VectorInit, "viewBox" | "yAxis" | "coordinateSystem"> & {
+  viewBox?: UiViewBox;
+  xDomain?: readonly [number, number];
+  yDomain?: readonly [number, number];
+};
+export type PathInit = Omit<UiPathNode, "type" | "children"> & { children?: UiChildInput };
+export type LineInit = PathInit & { x1?: number; y1?: number; x2?: number; y2?: number };
 
 /** Host snapshot used by compact HUD stat widgets before Java rendering is replaced. */
 export type CompactHudStatProps = {
@@ -595,7 +795,7 @@ export type CompactHudStatProps = {
   iconY: number;
   iconW: number;
   iconH: number;
-  iconScale: number;
+  iconFontSize: number;
   iconColor: string;
   dividerVisible: boolean;
   dividerX: number;
@@ -606,7 +806,7 @@ export type CompactHudStatProps = {
   valueVisible: boolean;
   valueText: string;
   valueFont: string;
-  valueScale: number;
+  valueFontSize: number;
   valueX: number;
   valueY: number;
   valueW: number;
@@ -614,7 +814,7 @@ export type CompactHudStatProps = {
   unitVisible: boolean;
   unitText: string;
   unitFont: string;
-  unitScale: number;
+  unitFontSize: number;
   unitX: number;
   unitY: number;
   unitW: number;
@@ -622,7 +822,7 @@ export type CompactHudStatProps = {
   extraVisible: boolean;
   extraText: string;
   extraFont: string;
-  extraScale: number;
+  extraFontSize: number;
   extraX: number;
   extraY: number;
   extraW: number;
@@ -638,20 +838,43 @@ export type CompactHudStatProps = {
 
 /** Factory available to JS/TS authors; the runtime loads this API from the canonical ui.js resource. */
 export interface UiFactory {
-  node(type: UiNodeType, init?: NodeInit): UiNode;
-  root(init?: NodeInit): UiNode;
-  panel(init?: NodeInit): UiNode;
-  row(init?: NodeInit): UiNode;
-  column(init?: NodeInit): UiNode;
-  stack(init?: NodeInit): UiNode;
-  text(init: TextInit): UiTextNode;
+  /** Canonical runtime contract; mirrors ui.contract.json. */
+  readonly contract: UiAuthoringContract;
+  /** React-like element construction without a second runtime: everything normalizes to UiNode. */
+  h<P = Record<string, unknown>>(type: UiElementType<P>, init?: P | null, ...children: UiChildInput[]): UiChildInput;
+  createElement<P = Record<string, unknown>>(type: UiElementType<P>, init?: P | null, ...children: UiChildInput[]): UiChildInput;
+  /** Fragment token for ui.h/ui.createElement. */
+  readonly Fragment: UiFragment;
+  /** Flattens children and returns a fragment array. */
+  fragment(...children: UiChildInput[]): UiNode[];
+  /** Returns child when condition is truthy, otherwise null. */
+  when(condition: unknown, child: UiChildInput): UiChildInput;
+  node(type: UiNodeType, init?: NodeInit, ...children: UiChildInput[]): UiNode;
+  root(init?: NodeInit, ...children: UiChildInput[]): UiNode;
+  panel(init?: NodeInit, ...children: UiChildInput[]): UiNode;
+  row(init?: NodeInit, ...children: UiChildInput[]): UiNode;
+  column(init?: NodeInit, ...children: UiChildInput[]): UiNode;
+  stack(init?: NodeInit, ...children: UiChildInput[]): UiNode;
+  vector(init?: VectorInit, ...children: UiChildInput[]): UiVectorNode;
+  plot(init?: PlotInit, ...children: UiChildInput[]): UiVectorNode;
+  /** Text can be authored as ui.text("hello") or ui.text({ style: ... }, "hello"). */
+  text(init?: TextInit | number, ...children: Array<string | number | boolean | null | undefined>): UiTextNode;
   image(init: ImageInit): UiImageNode;
   svg(init: ImageInit): UiImageNode;
   shape(init?: ShapeInit): UiShapeNode;
   box(init?: ShapeInit): UiShapeNode;
+  /** ViewBox/data-space rectangle. x/y/width/height are geometry, never layout; use style.left/top for layout. */
+  rect(init?: ShapeInit): UiShapeNode;
+  circle(init?: ShapeInit): UiShapeNode;
+  /** Chart/scatter point. x/y are viewBox coordinates inside ui.vector/ui.plot; radius is a logical UI size. */
+  point(init?: ShapeInit & { x?: number; y?: number; r?: number; radius?: number }): UiShapeNode;
+  /** ViewBox/data-space rectangle helper for bars and ranges. */
+  bar(init?: ShapeInit & { x?: number; y?: number; w?: number; h?: number; width?: number; height?: number }): UiShapeNode;
+  /** ViewBox/data-space rounded rectangle. x/y/width/height are geometry, never layout. */
   rounded(init?: ShapeInit & { radius?: number; r?: number }): UiShapeNode;
   chamfered(init?: ShapeInit & { cut?: number; chamfer?: number }): UiShapeNode;
   squircle(init?: ShapeInit & { x?: number; y?: number; w?: number; h?: number; profile?: "soft" | "standard" | "tight"; power?: number; exponent?: number }): UiShapeNode;
+  /** Absolute-layout rounded surface helper. x/y/w/h are logical UI layout coordinates; prefer style for new reusable components. */
   roundedRect(init?: ShapeInit & { x?: number; y?: number; w?: number; h?: number; radius?: number; r?: number }): UiShapeNode;
   roundedGradient(init?: ShapeInit & { x?: number; y?: number; w?: number; h?: number; radius?: number; r?: number }): UiShapeNode;
   roundedGradientQuad(init?: ShapeInit & { x?: number; y?: number; w?: number; h?: number; radius?: number; r?: number }): UiShapeNode;
@@ -673,10 +896,13 @@ export interface UiFactory {
   style(...parts: Array<UiInlineStyle | false | null | undefined>): UiInlineStyle;
   children(...parts: UiChildInput[]): UiNode[];
   absolute(x?: number, y?: number, w?: number, h?: number, extra?: UiInlineStyle): UiInlineStyle;
+  /** Absolute inset helper using canonical left/top/right/bottom style names. */
+  inset(init?: { left?: number; top?: number; right?: number; bottom?: number; width?: number; height?: number } & UiInlineStyle): UiInlineStyle;
+  /** @deprecated Utility-class positioning is legacy-only. Prefer style: ui.absolute(...). */
   abs(x?: number, y?: number, w?: number, h?: number, extra?: string): string;
-  /** Safe property lookup supporting plain objects and host map-like values. */
+  /** @deprecated ctx.props is deep-converted to plain JS objects; use ordinary property access. */
   prop<T = unknown>(value: unknown, key: string, fallback?: T): T | unknown;
-  /** Converts arrays/iterables/host collections to a plain JS array, or [] on failure. */
+  /** @deprecated ctx.props collections are deep-converted to plain JS arrays. */
   arr<T = unknown>(value: unknown): T[];
   color: {
     /** Reads a string color from a plain object or host map-like value. */
@@ -685,15 +911,20 @@ export interface UiFactory {
     opacity(hex: string, fallback?: number): number;
   };
   connector(init?: Omit<UiConnectorNode, "type">): UiConnectorNode;
+  path(init?: PathInit): UiPathNode;
+  line(init?: LineInit): UiPathNode;
+  polyline(init?: PathInit): UiPathNode;
+  spline(init?: PathInit): UiPathNode;
+  area(init?: PathInit): UiPathNode;
   item(init?: NodeInit & { /** Multiplies Renderer2D item alpha for this node. */ alpha?: number }): UiNode;
-  button(init?: NodeInit): UiNode;
-  scroll(init?: NodeInit): UiNode;
+  button(init?: NodeInit, ...children: UiChildInput[]): UiNode;
+  scroll(init?: NodeInit, ...children: UiChildInput[]): UiNode;
   spacer(init?: NodeInit): UiNode;
-  inputText(init?: NodeInit): UiNode;
-  checkbox(init?: NodeInit): UiNode;
-  slider(init?: NodeInit): UiNode;
+  inputText(init?: NodeInit, ...children: UiChildInput[]): UiNode;
+  checkbox(init?: NodeInit, ...children: UiChildInput[]): UiNode;
+  slider(init?: NodeInit, ...children: UiChildInput[]): UiNode;
   divider(init?: NodeInit): UiNode;
-  canvas(init?: NodeInit): UiNode;
+  canvas(init?: NodeInit, ...children: UiChildInput[]): UiNode;
   corner: {
     square(): UiCornerSpec;
     rounded(radius?: number, radiusY?: number): UiCornerSpec;
@@ -719,11 +950,11 @@ export type UiRenderContext = {
   time: number;
   /** Delta time in seconds. */
   delta: number;
-  /** Host surface width in UI pixels. */
+  /** Host surface width in logical UI units. */
   width: number;
-  /** Host surface height in UI pixels. */
+  /** Host surface height in logical UI units. */
   height: number;
-  /** Host-provided snapshot props. */
+  /** Host-provided snapshot props, recursively converted to ordinary JS objects/arrays. */
   props: Record<string, unknown>;
 };
 
@@ -731,6 +962,6 @@ export type UiRenderContext = {
 export type UiComponentModule = {
   /** Optional metadata for tooling. */
   meta?: Record<string, unknown>;
-  /** Produces a root UI node object. */
-  render(ctx: UiRenderContext): UiNode;
+  /** Produces one root node or a fragment/iterable of nodes. */
+  render(ctx: UiRenderContext): UiRenderOutput;
 };

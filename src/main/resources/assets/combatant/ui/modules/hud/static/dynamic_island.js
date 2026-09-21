@@ -12,85 +12,37 @@ const abs = ui.abs;
 const colorAlpha = ui.color.alpha;
 const PROGRESS_DOTS = 32;
 
-function displayCorners(expanded) {
-  const round = ui.corner.rounded(2.4);
-  const cut = ui.corner.chamfered(expanded ? 4.5 : 3.0);
-  return ui.corner.mixed(round, round, cut, cut);
-}
-
-function displayEdges() {
-  return {
-    top: ui.edge.straight(),
-    right: ui.edge.inset(0.35),
-    bottom: ui.edge.inset(0.35),
-    left: ui.edge.inset(0.35),
-  };
-}
-
 function displayShell(p) {
   const x = num(p.mainX, 0);
   const w = num(p.mainWidth, num(p.width, 126));
   const h = num(p.height, 35);
   const cut = num(p.bezelCut, 4.5);
   const alpha = num(p.alpha, 1);
-  const inset = 2.25;
   const nodes = [
+    // Keep the shell on one analytic chamfer primitive. The same `chamfer` value drives
+    // both the backdrop-blur mask and the painted surface, so the two silhouettes cannot drift.
     ui.shape({
-      key: "shell:shadow",
-      shape: "rounded-shadow",
-      class: abs(x, 0, w, h),
-      radius: 3,
-      softness: 7,
-      spread: 10,
-      color: colorAlpha(p.shadow, alpha),
-      fill: colorAlpha(p.shadow, alpha),
-    }),
-    ui.shape({
-      key: "shell:bezel",
+      key: "shell:surface",
       shape: "primitive",
       preset: "chamfered",
       class: abs(x, 0, w, h),
       chamfer: cut,
-      fill: colorAlpha(p.bezelTint, alpha),
-      stroke: colorAlpha(p.bezelEdge, alpha),
-      strokeWidth: 1,
-      liquidGlass: true,
-      glassTint: colorAlpha(p.bezelTint, alpha),
-      glassAlpha: 0.62,
-      blurAlpha: (p.blur === true ? num(p.blurAlpha, 0.45) : 0.14) * alpha,
-      glassPreset: "hud-small",
-      glassInnerGlow: 0.014,
-      glassInnerGlowSize: 3.5,
-    }),
-    ui.shape({
-      key: "shell:display",
-      shape: "box",
-      class: abs(x + inset, inset, Math.max(1, w - inset * 2), Math.max(1, h - inset * 2)),
-      corners: displayCorners(num(p.expand, 0) > 0.5),
-      edges: displayEdges(),
-      cut: num(p.expand, 0) > 0.5 ? 4.5 : 3.0,
-      blur: true,
+      blur: p.blur === true,
       blurQuality: 8,
-      blurBrightness: 1.06,
-      blurAlpha: (p.blur === true ? Math.max(0.42, num(p.blurAlpha, 0.45)) : 0.22) * alpha,
+      blurBrightness: 1.0,
+      blurAlpha: (p.blur === true ? num(p.blurAlpha, 0.45) : 0) * alpha,
       fill: colorAlpha(p.displayBg, alpha),
-      stroke: colorAlpha(p.displayEdge, alpha),
-      strokeWidth: 0.8,
-    }),
-    ui.shape({
-      key: "shell:highlight",
-      shape: "rect",
-      class: abs(x + cut + 4, 1.1, Math.max(1, w - (cut + 4) * 2), 0.65),
-      fill: colorAlpha(p.bezelEdge, 0.64 * alpha),
+      startColor: colorAlpha(p.displayBgStart || p.displayBg, alpha),
+      endColor: colorAlpha(p.displayBgEnd || p.displayBg, alpha),
+      angle: num(p.displayBgAngle, 90),
     }),
     ui.shape({
       key: "shell:interaction",
-      shape: "box",
-      class: abs(x + inset, inset, Math.max(1, w - inset * 2), Math.max(1, h - inset * 2)),
-      corners: displayCorners(num(p.expand, 0) > 0.5),
-      edges: displayEdges(),
+      shape: "primitive",
+      preset: "chamfered",
+      class: abs(x, 0, w, h),
+      chamfer: cut,
       fill: colorAlpha(p.phosphor, (0.025 * num(p.bodyHover, 0) + 0.045 * num(p.bodyPress, 0)) * alpha),
-      strokeWidth: 0,
     }),
   ];
   return nodes;
@@ -123,8 +75,6 @@ function artwork(p, key, x, y, size, alpha) {
     class: abs(x, y, size, size),
     corners: ui.corner.all(ui.corner.chamfered(2)),
     fill: colorAlpha(p.phosphorDim, 0.72 * alpha),
-    stroke: colorAlpha(p.displayEdge, alpha),
-    strokeWidth: 0.8,
   });
 }
 
@@ -151,7 +101,7 @@ function telemetryMode(p, isPvp) {
     phosphorText(p, {
       key: isPvp ? "pvp:timer" : "time",
       text: value,
-      class: cls(abs(x + 7, 7.5, Math.max(1, w - 14), 20), "font-MatrixSansPrint-0.94 text-align-center"),
+      class: cls(abs(x + 7, 7.5, Math.max(1, w - 14), 20), "font-MatrixSansPrint font-size-16.92 text-align-center"),
     }, 1, isPvp ? 0.30 : 0.24, 2.0),
   ];
 }
@@ -184,8 +134,6 @@ function clickGuiTabs(p) {
       startColor: colorAlpha(categoryColor, (active ? 0.24 : (hovered ? 0.10 : 0)) * alpha),
       endColor: colorAlpha(p.phosphorDim, (active ? 0.10 : (hovered ? 0.035 : 0)) * alpha),
       angle: 0,
-      stroke: colorAlpha(categoryColor, (active ? 0.34 : (hovered ? 0.13 : 0)) * alpha),
-      strokeWidth: 0.7,
     }));
     nodes.push(ui.text({
       key: `clickgui:tab:${index}`,
@@ -195,7 +143,7 @@ function clickGuiTabs(p) {
       textGlowWidth: active || hovered ? 1.7 : 0,
       textGlowStrength: active ? 0.24 : (hovered ? 0.14 : 0),
       interactive: false,
-      class: cls(abs(tabX, (height - 17) * 0.5 - 1, tabW, 17), "font-OnestMedium-0.80 text-align-center"),
+      class: cls(abs(tabX, (height - 17) * 0.5 - 1, tabW, 17), "font-OnestMedium font-size-14.4 text-align-center"),
     }));
     nodes.push(ui.shape({
       key: `clickgui:underline:${index}`,
@@ -220,9 +168,9 @@ function musicCompact(ctx, p) {
     phosphorText(p, {
       key: "music:clock:compact",
       text: p.time || "00:00",
-      class: cls(abs(x + 9, 10.3, 40, 14), "font-MatrixSansPrint-0.72 text-align-center"),
+      class: cls(abs(x + 9, 10.3, 40, 14), "font-MatrixSansPrint font-size-12.96 text-align-center"),
     }, alpha, 0.20, 1.7),
-    ui.shape({ key: "music:divider", shape: "rect", class: abs(x + 52, 8, 0.75, 19), fill: colorAlpha(p.displayEdge, alpha) }),
+    ui.shape({ key: "music:divider", shape: "rect", class: abs(x + 52, 8, 0.75, 19), fill: colorAlpha(p.phosphorDim, 0.46 * alpha) }),
     artwork(p, "artwork:compact", x + 58, 8.5, 18, alpha),
     ui.clippedText({
       key: "music:title:compact",
@@ -231,7 +179,7 @@ function musicCompact(ctx, p) {
       y: 8.7,
       w: titleW,
       h: 18,
-      textClass: cls("font-OnestMedium-0.82", `text-${colorAlpha(p.textPrimary, alpha)}`),
+      textClass: cls("font-OnestMedium font-size-14.76", `text-${colorAlpha(p.textPrimary, alpha)}`),
       measuredWidth: p.titleWidthCompact,
       scrollTime: p.titleScrollTime,
       fade: true,
@@ -243,7 +191,7 @@ function musicCompact(ctx, p) {
     nodes.push(phosphorText(p, {
       key: "music:pvp:compact",
       text: p.pvpTelemetry || "PVP 00",
-      class: cls(abs(x + w - 55, 10.5, 48, 14), "font-MatrixSansPrint-0.62 text-align-right"),
+      class: cls(abs(x + w - 55, 10.5, 48, 14), "font-MatrixSansPrint font-size-11.16 text-align-right"),
     }, alpha, 0.28, 1.8));
   } else {
     nodes.push(...waveBars(ctx, p, x + w - 19, 17.5, alpha));
@@ -273,7 +221,7 @@ function control(p, key, icon, x, y, hover, tint, active) {
       textGlowColor: colorAlpha(p.phosphor, alpha),
       textGlowWidth: 1.5 + glow * 0.7,
       textGlowStrength: (0.12 + glow * 0.24) * alpha,
-      class: cls(abs(x, y + 4, size, size - 4), "font-mediaplayer-1.22 text-align-center"),
+      class: cls(abs(x, y + 4, size, size - 4), "font-mediaplayer font-size-21.96 text-align-center"),
     }),
     ui.shape({
       key: `${key}:active`,
@@ -350,30 +298,29 @@ function musicExpanded(p) {
     phosphorText(p, {
       key: "music:label:expanded",
       text: "NOW PLAYING",
-      class: cls(abs(x + 13, 7, 90, 12), "font-MatrixSansPrint-0.54"),
+      class: cls(abs(x + 13, 7, 90, 12), "font-MatrixSansPrint font-size-9.72"),
     }, alpha, 0.14, 1.5),
     phosphorText(p, {
       key: "music:elapsed:header",
       text: p.elapsed || "0:00",
-      class: cls(abs(x + w - 61, 7, 48, 12), "font-MatrixSansPrint-0.62 text-align-right"),
+      class: cls(abs(x + w - 61, 7, 48, 12), "font-MatrixSansPrint font-size-11.16 text-align-right"),
     }, alpha, 0.20, 1.7),
     ui.shape({
       key: "artwork:expanded:frame", shape: "box", class: abs(x + 12, 23, 30, 30),
       corners: ui.corner.all(ui.corner.chamfered(2.5)), fill: colorAlpha(p.phosphorDim, 0.16 * alpha),
-      stroke: colorAlpha(p.displayEdge, alpha), strokeWidth: 0.8,
     }),
     artwork(p, "artwork:expanded", x + 14, 25, 26, alpha),
     ui.clippedText({
       key: "music:title:expanded", text: p.title || "", x: x + 50, y: 22.5,
       w: Math.max(0, w - 63), h: 16,
-      textClass: cls("font-OnestMedium-0.86", `text-${colorAlpha(p.textPrimary, alpha)}`),
+      textClass: cls("font-OnestMedium font-size-15.48", `text-${colorAlpha(p.textPrimary, alpha)}`),
       measuredWidth: p.titleWidthExpanded, scrollTime: p.titleScrollTime, fade: true,
       color: colorAlpha(p.textPrimary, alpha),
     }),
     ui.clippedText({
       key: "music:artist:expanded", text: p.artist || "", x: x + 50, y: 38,
       w: Math.max(0, w - 63), h: 14,
-      textClass: cls("font-Onest-0.70", `text-${colorAlpha(p.textSecondary, alpha)}`),
+      textClass: cls("font-Onest font-size-12.6", `text-${colorAlpha(p.textSecondary, alpha)}`),
       measuredWidth: p.artistWidthExpanded, scrollTime: p.titleScrollTime,
       scrollDelay: 1.4, scrollSpeed: 14, fade: true,
       color: colorAlpha(p.textSecondary, alpha),
@@ -381,11 +328,11 @@ function musicExpanded(p) {
     ...progressDots(p, x, w, alpha),
     phosphorText(p, {
       key: "music:elapsed:expanded", text: p.elapsed || "0:00",
-      class: cls(abs(x + 13, 63, 44, 12), "font-MatrixSansPrint-0.58"),
+      class: cls(abs(x + 13, 63, 44, 12), "font-MatrixSansPrint font-size-10.44"),
     }, alpha, 0.14, 1.5),
     phosphorText(p, {
       key: "music:total:expanded", text: p.total || "0:00",
-      class: cls(abs(x + w - 57, 63, 44, 12), "font-MatrixSansPrint-0.58 text-align-right"),
+      class: cls(abs(x + w - 57, 63, 44, 12), "font-MatrixSansPrint font-size-10.44 text-align-right"),
     }, alpha, 0.14, 1.5),
     ...control(p, "music:prev", p.iconPrev, p.prevX, p.prevY, num(p.prevHover, 0), p.textPrimary, false),
     ...control(p, "music:play", p.iconPlay, p.playX, p.playY, num(p.playHover, 0), p.phosphor, true),
