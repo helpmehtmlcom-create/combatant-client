@@ -26,7 +26,7 @@ public final class SodiumSectionVisibilityProvider implements VisibilityProvider
 
     @Override
     public boolean isBoxVisible(AABB box) {
-        return bridge.isSectionBoxVisible(box, VisibilityQuery.worldOverlay(box));
+        return bridge.isSectionBoxVisible(box, null);
     }
 
     @Override

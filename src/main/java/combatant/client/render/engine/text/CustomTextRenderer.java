@@ -13,8 +13,12 @@
 
 package combatant.client.render.engine.text;
 
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+
 import combatant.client.render.engine.core.ViewportContext;
 import combatant.client.render.engine.renderer.RenderWarpStack;
+import combatant.client.render.engine.renderer.ui.blend.UiBackdropBlendSpec;
+import combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest;
 import combatant.client.render.engine.text.backend.TextPlacementMode;
 import org.lwjgl.system.MemoryUtil;
 import combatant.client.render.engine.color.RenderColor;
@@ -279,6 +283,19 @@ public class CustomTextRenderer implements TextRenderer {
                                                  double boundsY,
                                                  double boundsWidth,
                                                  double boundsHeight) {
+        return renderLiquidGlassQuadGradient(text, x, y, gradient, boundsX, boundsY, boundsWidth, boundsHeight, null);
+    }
+
+    @Override
+    public double renderLiquidGlassQuadGradient(String text,
+                                                 double x,
+                                                 double y,
+                                                 Font.GlyphQuadGradient gradient,
+                                                 double boundsX,
+                                                 double boundsY,
+                                                 double boundsWidth,
+                                                 double boundsHeight,
+                                                 RenderPipeline pipelineOverride) {
         if (text == null || text.isEmpty() || gradient == null) return x;
         boolean wasBuilding = building;
         if (!wasBuilding) begin();
@@ -296,12 +313,54 @@ public class CustomTextRenderer implements TextRenderer {
                     "Combatant UI Liquid Glass Text",
                     font,
                     liquidGlassMesh,
-                    CombatantRenderPipelines.UI_TEXT_MSDF_GLASS_FAST,
+                    pipelineOverride != null ? pipelineOverride : CombatantRenderPipelines.UI_TEXT_MSDF_GLASS_FAST,
                     TextPlacementMode.UI,
                     boundsX,
                     boundsY,
                     boundsWidth,
                     boundsHeight
+            );
+            return width;
+        } finally {
+            if (!wasBuilding) end();
+        }
+    }
+
+    @Override
+    public double renderLiquidGlassBlendQuadGradient(String text,
+                                                      double x,
+                                                      double y,
+                                                      Font.GlyphQuadGradient gradient,
+                                                      double boundsX,
+                                                      double boundsY,
+                                                      double boundsWidth,
+                                                      double boundsHeight,
+                                                      UiBackdropBlendSpec blend,
+                                                      UiBackdropRequest backdrop) {
+        if (text == null || text.isEmpty() || gradient == null) return x;
+        boolean wasBuilding = building;
+        if (!wasBuilding) begin();
+        try {
+            if (font == null || !font.isMsdf() || RenderWarpStack.active()) {
+                return renderQuadGradient(text, x, y, gradient, false);
+            }
+
+            if (liquidGlassMesh.isBuilding()) liquidGlassMesh.end();
+            liquidGlassMesh.begin();
+            double width = font.renderQuadGradient(liquidGlassMesh, text, x, y, scale / 1.5, gradient);
+            liquidGlassMesh.end();
+
+            TextRenderSystem.submitLiquidGlassBlendGlyphMesh(
+                    "Combatant UI Backdrop Blend Text",
+                    font,
+                    liquidGlassMesh,
+                    TextPlacementMode.UI,
+                    boundsX,
+                    boundsY,
+                    boundsWidth,
+                    boundsHeight,
+                    blend,
+                    backdrop
             );
             return width;
         } finally {

@@ -36,6 +36,11 @@ import combatant.client.render.engine.rhi.backend.vulkan.CombatantVulkanBackend;
 import combatant.client.render.engine.rhi.resource.RenderResourceManager;
 import combatant.client.render.engine.rhi.resource.RenderResourceStatsSnapshot;
 import combatant.client.render.engine.rhi.uniform.CombatantUniformAllocator;
+import combatant.client.render.engine.scene.spatial.SceneSpatialRegistry;
+import combatant.client.render.engine.scene.spatial.SceneSpatialStatsSnapshot;
+import combatant.client.render.engine.scene.visibility.SceneViewContext;
+import combatant.client.render.engine.scene.visibility.SceneVisibilityService;
+import combatant.client.render.engine.scene.visibility.SceneVisibilityStatsSnapshot;
 import combatant.client.render.engine.rhi.uniform.UniformAllocatorStatsSnapshot;
 import combatant.client.render.engine.text.TextCommandStatsSnapshot;
 import combatant.client.render.engine.text.TextRenderSystem;
@@ -62,10 +67,13 @@ public enum CombatantRenderSystem {
     private static final SodiumRenderBridge SODIUM = new SodiumRenderBridge();
     private static final CombatantFrameGraph FRAME_GRAPH = new CombatantFrameGraph();
     private static final CombatantUniformAllocator UNIFORMS = new CombatantUniformAllocator();
+    private static final SceneSpatialRegistry SCENE_SPATIAL = new SceneSpatialRegistry();
+    private static final SceneVisibilityService SCENE_VISIBILITY = new SceneVisibilityService(SCENE_SPATIAL);
 
     private static CombatantRhi rhi;
     private static BackendKind backendKind = BackendKind.UNKNOWN;
     private static RenderFrameContext currentContext;
+    private static SceneViewContext currentSceneView;
     private static long frameId;
     private static boolean initialized;
     private static boolean frameOpen;
@@ -258,6 +266,9 @@ public enum CombatantRenderSystem {
         SodiumFrameContext sodiumFrame;
         if (!frameOpen) {
             frameId++;
+            net.minecraft.client.Minecraft minecraft = net.minecraft.client.Minecraft.getInstance();
+            SCENE_SPATIAL.beginWorld(minecraft != null ? minecraft.level : null);
+            SCENE_VISIBILITY.beginFrame(frameId);
             UiPipelineTelemetry.beginFrame(frameId);
             activeRhi.stats().setDetailedPipelineStats(TracyProfiler.isEnabled());
             activeRhi.beginFrame(frameId);
@@ -288,6 +299,7 @@ public enum CombatantRenderSystem {
                 SODIUM.visibilityProvider(),
                 sodiumFrame
         );
+        currentSceneView = SceneViewContext.primary(ctx, activeRhi.capabilities());
         currentContext = ctx;
         RenderState.applyContext(ctx);
         return ctx;
@@ -371,6 +383,7 @@ public enum CombatantRenderSystem {
             lifecycle = FrameLifecycle.PRESENTED;
         } finally {
             currentContext = null;
+            currentSceneView = null;
             frameOpen = false;
             submissionEnded = false;
             lifecycle = FrameLifecycle.IDLE;
@@ -414,6 +427,38 @@ public enum CombatantRenderSystem {
         return TextRenderSystem.statsSnapshot();
     }
 
+    public static SceneSpatialRegistry sceneSpatialRegistry() {
+        return SCENE_SPATIAL;
+    }
+
+    public static SceneVisibilityService sceneVisibility() {
+        return SCENE_VISIBILITY;
+    }
+
+    public static SceneVisibilityStatsSnapshot sceneVisibilityStatsSnapshot() {
+        return SCENE_VISIBILITY.statsSnapshot();
+    }
+
+    public static SceneSpatialStatsSnapshot sceneSpatialStatsSnapshot() {
+        return SCENE_SPATIAL.statsSnapshot();
+    }
+
+    public static SceneViewContext currentSceneView() {
+        return currentSceneView;
+    }
+
+    /**
+     * Refreshes the stable PRIMARY scene view after CombatantWorldMatrices has been published.
+     * The first beginFrame call intentionally happens before TAA jitter selection so it can supply
+     * the canonical frame id; world-matrix capture follows immediately afterwards.
+     */
+    public static void refreshPrimarySceneView() {
+        RenderFrameContext context = currentContext;
+        CombatantRhi activeRhi = rhi;
+        if (context == null || activeRhi == null) return;
+        currentSceneView = SceneViewContext.primary(context, activeRhi.capabilities());
+    }
+
     public static void shutdown() {
         if (!initialized) return;
         try {
@@ -425,10 +470,12 @@ public enum CombatantRenderSystem {
         } finally {
             initialized = false;
             currentContext = null;
+            currentSceneView = null;
             frameOpen = false;
             submissionEnded = false;
             lifecycle = FrameLifecycle.IDLE;
             rhi = null;
+            SCENE_SPATIAL.clear();
             RenderState.clearContextBackedState();
         }
     }

@@ -32,6 +32,7 @@ import combatant.client.render.engine.renderer.ui.UiDeferredScheduler;
 import combatant.client.render.engine.renderer.ui.UiDirectTexturedRenderer;
 import combatant.client.render.engine.renderer.ui.UiItemSubmission;
 import combatant.client.render.engine.renderer.ui.UiRenderDispatcher;
+import combatant.client.render.engine.renderer.ui.blend.UiBackdropBlendSpec;
 import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.engine.renderer.ui.draw.*;
 import combatant.client.render.engine.svg.SvgMeshBackend;
@@ -130,6 +131,7 @@ public final class Renderer2D {
     private float liquidGlassUiBlurOffsetPx = 0.85f;
     private float liquidGlassUiMix = 1.0f;
     private UiLiquidGlassMaterial liquidGlassMaterial = UiLiquidGlassMaterial.DEFAULT;
+    private UiBackdropBlendSpec backdropBlend = UiBackdropBlendSpec.NORMAL;
     private @Nullable BlurQuality liquidGlassBlurQualityOverride;
     private float liquidGlassBlurOffsetOverridePx = Float.NaN;
 
@@ -184,6 +186,27 @@ public final class Renderer2D {
         } finally {
             liquidGlassMaterial = previous;
         }
+    }
+
+    /**
+     * Applies a reusable destination-aware blend material to blend-capable UI primitives/effects
+     * emitted by {@code draw}. The material contract is intentionally primitive-agnostic: text and
+     * liquid glass consume it today, and future shape/effect shaders can bind the same UIBlend block.
+     */
+    public void withBackdropBlend(UiBackdropBlendSpec blend, Runnable draw) {
+        if (draw == null) return;
+        UiBackdropBlendSpec previous = backdropBlend;
+        backdropBlend = blend != null ? blend : UiBackdropBlendSpec.NORMAL;
+        try {
+            draw.run();
+        } finally {
+            backdropBlend = previous;
+        }
+    }
+
+    /** Compatibility alias for callers that scope the material specifically around liquid glass. */
+    public void withLiquidGlassBackdropBlend(UiBackdropBlendSpec blend, Runnable draw) {
+        withBackdropBlend(blend, draw);
     }
 
     /**
@@ -3169,7 +3192,8 @@ public final class Renderer2D {
         // The effect command needs the capture bounds; the exact implicit mask is evaluated by the
         // liquid-glass batch itself and intentionally stays backend-local.
         effect(UiEffectSpec.liquidGlass(
-                UiShape.rect(x, y, w, h), compound.smoothing(), safe.thicknessPx, safe.distortPx, tintArgb, backdrop));
+                UiShape.rect(x, y, w, h), compound.smoothing(), safe.thicknessPx, safe.distortPx,
+                tintArgb, backdrop, backdropBlend));
 
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) return;
@@ -3218,7 +3242,8 @@ public final class Renderer2D {
 
         boolean auto = beginAutoBatch();
         DrawBatch batch = UI_BATCHER.getOrCreateBlur(UiBatchType.LIQUID_GLASS_LIGHT, src, sampler,
-                DEFAULT_LIQUID_GLASS_BLUR_QUALITY, LIQUID_GLASS_KAWASE_OFFSET_PX, backdrop);
+                DEFAULT_LIQUID_GLASS_BLUR_QUALITY, LIQUID_GLASS_KAWASE_OFFSET_PX, backdrop,
+                backdropBlend);
         if (batch == null) {
             endAutoBatch(auto);
             return;
@@ -3477,7 +3502,7 @@ public final class Renderer2D {
                 bounds, UiBlurQuality.fromRenderer(preparedBlurQuality), preparedBlurOffset,
                 thickness, distortPx, prismStrength);
         effect(UiEffectSpec.liquidGlass(
-                glassShape, primitive.rounding(), thickness, distortPx, tintArgb, backdrop));
+                glassShape, primitive.rounding(), thickness, distortPx, tintArgb, backdrop, backdropBlend));
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) return;
         RenderTarget fb = mc.gameRenderer.mainRenderTarget();
@@ -3498,7 +3523,7 @@ public final class Renderer2D {
                 ? UiBatchType.LIQUID_GLASS
                 : UiBatchType.LIQUID_GLASS_LIGHT;
         DrawBatch batch = UI_BATCHER.getOrCreateBlur(glassBatchType, src, sampler,
-                preparedBlurQuality, preparedBlurOffset, backdrop);
+                preparedBlurQuality, preparedBlurOffset, backdrop, backdropBlend);
         if (batch == null) {
             endAutoBatch(auto);
             return;
@@ -3985,7 +4010,7 @@ public final class Renderer2D {
         UiBackdropRequest backdrop = liquidGlassBackdrop(
                 glassShape.bounds(), UiBlurQuality.fromRenderer(preparedBlurQuality), preparedBlurOffset,
                 softness, distortPx, prismStrength);
-        effect(UiEffectSpec.liquidGlass(glassShape, softness, softness, distortPx, tintArgb, backdrop));
+        effect(UiEffectSpec.liquidGlass(glassShape, softness, softness, distortPx, tintArgb, backdrop, backdropBlend));
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) return;
         RenderTarget fb = mc.gameRenderer.mainRenderTarget();
@@ -4000,7 +4025,7 @@ public final class Renderer2D {
                 ? UiBatchType.LIQUID_GLASS
                 : UiBatchType.LIQUID_GLASS_LIGHT;
         DrawBatch batch = UI_BATCHER.getOrCreateBlur(glassBatchType, src, sampler,
-                preparedBlurQuality, preparedBlurOffset, backdrop);
+                preparedBlurQuality, preparedBlurOffset, backdrop, backdropBlend);
         if (batch == null) {
             endAutoBatch(auto);
             return;
@@ -4948,6 +4973,18 @@ public final class Renderer2D {
                                                      UiRect bounds) {
         return UiRenderDispatcher.enqueueLiquidGlassTextMesh(
                 label, font, sourceMesh, pipeline, placement, bounds);
+    }
+
+    public static boolean enqueueLiquidGlassTextMesh(String label,
+                                                     GlyphFont font,
+                                                     MeshBuilder sourceMesh,
+                                                     RenderPipeline pipeline,
+                                                     TextPlacementMode placement,
+                                                     UiRect bounds,
+                                                     UiBackdropBlendSpec backdropBlend,
+                                                     UiBackdropRequest backdropRequest) {
+        return UiRenderDispatcher.enqueueLiquidGlassTextMesh(
+                label, font, sourceMesh, pipeline, placement, bounds, backdropBlend, backdropRequest);
     }
 
     public static RenderWarpStack.Scope pushWarp(RenderWarp warp) {

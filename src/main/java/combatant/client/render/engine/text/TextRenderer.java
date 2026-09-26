@@ -13,8 +13,12 @@
 
 package combatant.client.render.engine.text;
 
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.renderer.Renderer2D;
+import combatant.client.render.engine.renderer.ui.blend.UiBackdropBlendSpec;
+import combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest;
 import combatant.client.render.engine.svg.SvgInlineText;
 import combatant.client.render.engine.svg.SvgRenderOptions;
 import combatant.client.render.helpers.ScissorFunction;
@@ -184,6 +188,35 @@ public interface TextRenderer {
                                                   double boundsY,
                                                   double boundsWidth,
                                                   double boundsHeight) {
+        return renderLiquidGlassQuadGradient(text, x, y, gradient, boundsX, boundsY, boundsWidth, boundsHeight, null);
+    }
+
+    default double renderLiquidGlassQuadGradient(String text,
+                                                  double x,
+                                                  double y,
+                                                  Font.GlyphQuadGradient gradient,
+                                                  double boundsX,
+                                                  double boundsY,
+                                                  double boundsWidth,
+                                                  double boundsHeight,
+                                                  RenderPipeline pipelineOverride) {
+        return renderQuadGradient(text, x, y, gradient, false);
+    }
+
+    /**
+     * Destination-aware glass text. Blend semantics are supplied as material data and the backdrop
+     * request chooses which immutable color image acts as the destination for the operator.
+     */
+    default double renderLiquidGlassBlendQuadGradient(String text,
+                                                       double x,
+                                                       double y,
+                                                       Font.GlyphQuadGradient gradient,
+                                                       double boundsX,
+                                                       double boundsY,
+                                                       double boundsWidth,
+                                                       double boundsHeight,
+                                                       UiBackdropBlendSpec blend,
+                                                       UiBackdropRequest backdrop) {
         return renderQuadGradient(text, x, y, gradient, false);
     }
 

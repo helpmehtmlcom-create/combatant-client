@@ -15,6 +15,8 @@ import combatant.client.render.iris.IrisCompatibilityFeature;
 import combatant.client.render.iris.IrisCompatibilityProfile;
 import combatant.client.render.iris.IrisRuntime;
 import combatant.client.render.iris.IrisRuntimeSnapshot;
+import combatant.client.render.iris.IrisAaIntegration;
+import combatant.client.config.MainConfig;
 import combatant.client.render.iris.patch.ShaderPatchEngine;
 import combatant.client.runtime.RuntimeGate;
 
@@ -63,6 +65,16 @@ public final class IrisCommand implements ClientCommand {
                 + ", features: " + features);
         CommandOutput.send("Iris manifest capabilities: "
                 + (snapshot.patchFeatures().isEmpty() ? "none" : String.join(", ", snapshot.patchFeatures())));
+        CommandOutput.send("Iris " + IrisAaIntegration.resolve(
+                MainConfig.get().getAntialiasing3dMode()).shortLine());
+        if (!snapshot.patchManifestId().isBlank()) {
+            ShaderPatchEngine.PatchApplicationState application =
+                    ShaderPatchEngine.applicationState(snapshot.patchManifestId());
+            CommandOutput.send("Iris patch application: preflight=" + application.preflightAccepted()
+                    + ", complete=" + application.complete()
+                    + ", targets=" + application.appliedTargets() + "/" + application.expectedTargets()
+                    + ", reason=" + application.reason());
+        }
         List<String> patchDiagnostics = ShaderPatchEngine.diagnostics();
         CommandOutput.send("Iris patch compiler: " + (patchDiagnostics.isEmpty() ? "no session data" : "session data follows"));
         for (String diagnostic : patchDiagnostics) {

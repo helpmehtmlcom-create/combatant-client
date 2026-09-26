@@ -1,0 +1,6 @@
+@patch 2
+@require_hash 36b01f17cc8f764281e93effcb8d8f96afbb4f4dd18e9bd8fb42d32cabcd5d2a
+
+@replace_line_hash 36b01f17cc8f764281e93effcb8d8f96afbb4f4dd18e9bd8fb42d32cabcd5d2a
+#define lod_bias log2(taau_render_scale) // COMBATANT_DYNAMIC_LOD_BIAS
+@end

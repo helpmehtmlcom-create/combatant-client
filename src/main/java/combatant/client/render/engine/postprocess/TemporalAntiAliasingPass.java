@@ -9,15 +9,17 @@ import combatant.client.config.MainConfig;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.core.CombatantWorldMatrices;
 import combatant.client.render.engine.rhi.CombatantRhi;
+import combatant.client.render.engine.rhi.shader.RhiStorageImage;
 import combatant.client.render.iris.IrisRuntime;
 import combatant.client.util.logging.DebugLog;
+import com.mojang.blaze3d.textures.GpuTextureView;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 
 /** Canonical production TAA pass. MSAA/TAA exclusivity is owned by VisualConfig.
  *  Native-resolution reprojection intentionally reconstructs the current jittered screen sample
- *  through the stable projection, matching Photon: the raster jitter is not cancelled before
+ *  through the stable projection: the raster jitter is not cancelled before
  *  history lookup, so a static output pixel accumulates different sub-pixel samples over time.
  */
 public final class TemporalAntiAliasingPass implements PostProcessPass, PostProcessBackendResourceOwner {
@@ -35,6 +37,7 @@ public final class TemporalAntiAliasingPass implements PostProcessPass, PostProc
     private TemporalAntiAliasingPass() { }
 
     public static boolean shouldJitter() {
+        // Shaderpack raster jitter is injected by the selected data-driven adapter.
         if (!MainConfig.get().isTaaRuntimeActive() || IrisRuntime.isShaderpackRendererActive()) return false;
         try {
             return INSTANCE.computeSupported && PostProcessExecutionPolicy.useCompute(CombatantRenderSystem.rhi());
@@ -45,6 +48,8 @@ public final class TemporalAntiAliasingPass implements PostProcessPass, PostProc
 
     @Override
     public boolean isActive() {
+        // This is the main-framebuffer graph path only. A shaderpack adapter invokes the same
+        // backend from its declared temporal stage through renderShaderpack().
         boolean selected = MainConfig.get().isTaaRuntimeActive() && !IrisRuntime.isShaderpackRendererActive();
         if (!selected && wasSelected) invalidateHistory();
         wasSelected = selected;
@@ -66,11 +71,33 @@ public final class TemporalAntiAliasingPass implements PostProcessPass, PostProc
             return false;
         }
 
+        return renderResources(execution.rhi(), execution.destinationStorage(), execution.source(),
+                execution.context().mainDepth());
+    }
+
+    /** Runs the canonical TAA backend at a shaderpack-owned HDR stage. */
+    public boolean renderShaderpack(CombatantRhi rhi,
+                                    RhiStorageImage destination,
+                                    GpuTextureView currentColor,
+                                    GpuTextureView currentDepth) {
+        if (!MainConfig.get().isTaaRuntimeActive() || !IrisRuntime.isShaderpackRendererActive()
+                || !computeSupported || rhi == null || destination == null
+                || currentColor == null || currentDepth == null) {
+            invalidateHistory();
+            return false;
+        }
+        return renderResources(rhi, destination, currentColor, currentDepth);
+    }
+
+    private boolean renderResources(CombatantRhi rhi,
+                                    RhiStorageImage destination,
+                                    GpuTextureView currentColor,
+                                    GpuTextureView currentDepth) {
         Matrix4f currentView = CombatantWorldMatrices.positionMatrix();
         Matrix4f currentProjection = CombatantWorldMatrices.unjitteredRenderProjectionMatrix();
         Vec3 currentCamera = CombatantWorldMatrices.cameraPosition();
         if (currentView == null || currentProjection == null
-                || currentCamera == null || execution.context().mainDepth() == null) {
+                || currentCamera == null || currentDepth == null) {
             capture(currentView, currentProjection, currentCamera);
             backend.invalidateHistory();
             return false;
@@ -86,7 +113,7 @@ public final class TemporalAntiAliasingPass implements PostProcessPass, PostProc
         try {
             MainConfig config = MainConfig.get();
             backend.render(
-                    execution.rhi(), execution.destinationStorage(), execution.source(), execution.context().mainDepth(),
+                    rhi, destination, currentColor, currentDepth,
                     currentView, currentProjection, reprojectionView, reprojectionProjection,
                     cameraDelta, usableHistory,
                     config.isTaaFxaaEnabled(), config.isTaaSharpenEnabled(),

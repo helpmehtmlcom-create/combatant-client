@@ -17,8 +17,12 @@ import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.visuals.FullBright;
 import combatant.client.features.module.modules.visuals.WorldTweaks;
 import combatant.client.render.engine.RenderState;
+import combatant.client.config.MainConfig;
+import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.light.LightmapState;
+import combatant.client.render.engine.temporal.TemporalJitterSequence;
 import combatant.client.util.logging.DebugLog;
+import org.joml.Vector2f;
 
 public enum CombatantIrisUniforms {
     ;
@@ -45,7 +49,9 @@ public enum CombatantIrisUniforms {
                 .uniform1b(UniformUpdateFrequency.PER_FRAME, "combatantWorldTweaksTimeOverride", CombatantIrisUniforms::timeOverride)
                 .uniform1i(UniformUpdateFrequency.PER_FRAME, "combatantWorldTweaksTimeTicks", CombatantIrisUniforms::timeTicks)
                 .uniform1i(UniformUpdateFrequency.PER_FRAME, "combatantWorldTweaksWeatherMode", CombatantIrisUniforms::weatherMode)
-                .uniform1b(UniformUpdateFrequency.PER_FRAME, "combatantSuppressShaderpackMotionBlur", IrisCompatibilityGuards::suppressShaderpackMotionBlur);
+                .uniform1b(UniformUpdateFrequency.PER_FRAME, "combatantSuppressShaderpackMotionBlur", IrisCompatibilityGuards::suppressShaderpackMotionBlur)
+                .uniform1i(UniformUpdateFrequency.PER_FRAME, "combatantAaOwner", CombatantIrisUniforms::aaOwner)
+                .uniform2f(UniformUpdateFrequency.PER_FRAME, "combatantTaaOffset", CombatantIrisUniforms::taaOffset);
     }
 
     private static boolean fullbrightEnabled() {
@@ -149,5 +155,26 @@ public enum CombatantIrisUniforms {
         if (world == null) return 0;
         if (WorldTweaks.isServerThundering(world)) return 2;
         return WorldTweaks.isServerRaining(world) ? 1 : 0;
+    }
+
+    private static int aaOwner() {
+        IrisAaOwner owner = IrisAaIntegration.resolve(MainConfig.get().getAntialiasing3dMode()).owner();
+        return switch (owner) {
+            case COMBATANT_MSAA -> 1;
+            case COMBATANT_TAA -> 2;
+            default -> 0;
+        };
+    }
+
+    private static Vector2f taaOffset() {
+        if (aaOwner() != 2 || IrisRuntime.isRenderingShadowPass()) return new Vector2f();
+        var frame = CombatantRenderSystem.currentContext();
+        if (frame == null) return new Vector2f();
+        Minecraft client = Minecraft.getInstance();
+        int width = client != null && client.gameRenderer != null && client.gameRenderer.mainRenderTarget() != null
+                ? Math.max(1, client.gameRenderer.mainRenderTarget().width) : 1;
+        Vector2f sample = TemporalJitterSequence.sample(frame.frameId());
+        // Adapter shaders own the pack-specific scaling/convention for this clip-space offset.
+        return new Vector2f(sample.x * 2.0f / width, sample.y * 2.0f / width);
     }
 }

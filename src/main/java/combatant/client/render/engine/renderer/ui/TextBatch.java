@@ -7,13 +7,19 @@
 
 package combatant.client.render.engine.renderer.ui;
 
+import java.util.Objects;
+
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import combatant.client.render.engine.text.GlyphFont;
+import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.text.backend.TextPlacementMode;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import combatant.client.render.engine.renderer.ui.clip.UiClipSnapshot;
 import combatant.client.render.engine.renderer.ui.clip.UiScissorSnapshot;
 import combatant.client.render.engine.renderer.ui.draw.UiRect;
+import combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest;
+import combatant.client.render.engine.renderer.ui.draw.UiBlurQuality;
+import combatant.client.render.engine.renderer.ui.blend.UiBackdropBlendSpec;
 
 public final class TextBatch {
     public String label;
@@ -25,6 +31,8 @@ public final class TextBatch {
     public MeshBuilder mesh;
     public boolean liquidGlass;
     public UiRect glassBounds;
+    public UiBackdropBlendSpec backdropBlend;
+    public UiBackdropRequest backdropRequest;
 
     public void begin(String label, GlyphFont font, RenderPipeline pipeline,
                TextPlacementMode placement, UiScissorSnapshot scissorSnapshot, UiClipSnapshot clipSnapshot) {
@@ -36,6 +44,8 @@ public final class TextBatch {
         this.clipSnapshot = clipSnapshot != null ? clipSnapshot : UiClipSnapshot.NONE;
         this.liquidGlass = false;
         this.glassBounds = null;
+        this.backdropBlend = null;
+        this.backdropRequest = UiBackdropRequest.NONE;
         if (mesh == null) {
             mesh = new MeshBuilder(pipeline);
         } else if (mesh.isBuilding()) {
@@ -61,9 +71,29 @@ public final class TextBatch {
                                  UiRect bounds,
                                  UiScissorSnapshot scissorSnapshot,
                                  UiClipSnapshot clipSnapshot) {
+        beginLiquidGlass(label, font, pipeline, placement, bounds, null,
+                UiBackdropRequest.capturedSceneGlass(bounds, UiBlurQuality.LIQUID_GLASS,
+                        Renderer2D.LIQUID_GLASS_KAWASE_OFFSET_PX),
+                scissorSnapshot, clipSnapshot);
+    }
+
+    public void beginLiquidGlass(String label,
+                                 GlyphFont font,
+                                 RenderPipeline pipeline,
+                                 TextPlacementMode placement,
+                                 UiRect bounds,
+                                 UiBackdropBlendSpec backdropBlend,
+                                 UiBackdropRequest backdropRequest,
+                                 UiScissorSnapshot scissorSnapshot,
+                                 UiClipSnapshot clipSnapshot) {
         begin(label, font, pipeline, placement, scissorSnapshot, clipSnapshot);
         this.liquidGlass = true;
         this.glassBounds = bounds;
+        this.backdropBlend = backdropBlend;
+        this.backdropRequest = backdropRequest != null
+                ? backdropRequest.withCaptureBounds(bounds)
+                : UiBackdropRequest.capturedSceneGlass(bounds, UiBlurQuality.LIQUID_GLASS,
+                Renderer2D.LIQUID_GLASS_KAWASE_OFFSET_PX);
     }
 
     public boolean canMergeLiquidGlass(GlyphFont font,
@@ -71,12 +101,32 @@ public final class TextBatch {
                                        TextPlacementMode placement,
                                        UiScissorSnapshot scissorSnapshot,
                                        UiClipSnapshot clipSnapshot) {
+        return canMergeLiquidGlass(font, pipeline, placement, null, null, scissorSnapshot, clipSnapshot);
+    }
+
+    public boolean canMergeLiquidGlass(GlyphFont font,
+                                       RenderPipeline pipeline,
+                                       TextPlacementMode placement,
+                                       UiBackdropBlendSpec backdropBlend,
+                                       UiBackdropRequest backdropRequest,
+                                       UiScissorSnapshot scissorSnapshot,
+                                       UiClipSnapshot clipSnapshot) {
         return liquidGlass
                 && this.font == font
                 && this.pipeline == pipeline
                 && this.placement == (placement != null ? placement : TextPlacementMode.UI)
+                && Objects.equals(this.backdropBlend, backdropBlend)
+                && compatibleBackdrop(this.backdropRequest, backdropRequest)
                 && this.scissorSnapshot.id() == scissorSnapshot.id()
                 && this.clipSnapshot.id() == clipSnapshot.id();
+    }
+
+    private static boolean compatibleBackdrop(UiBackdropRequest current, UiBackdropRequest requested) {
+        if (requested == null) return current == null || current.requiresCapturedScene();
+        if (current == null) return false;
+        return current.compatibleInputs(requested)
+                && Float.compare(current.sceneMix(), requested.sceneMix()) == 0
+                && Float.compare(current.uiMix(), requested.uiMix()) == 0;
     }
 
     public void expandGlassBounds(UiRect bounds) {
@@ -90,6 +140,7 @@ public final class TextBatch {
         float x1 = Math.max(glassBounds.x() + glassBounds.width(), bounds.x() + bounds.width());
         float y1 = Math.max(glassBounds.y() + glassBounds.height(), bounds.y() + bounds.height());
         glassBounds = new UiRect(x0, y0, Math.max(0f, x1 - x0), Math.max(0f, y1 - y0));
+        if (backdropRequest != null) backdropRequest = backdropRequest.withCaptureBounds(glassBounds);
     }
 
     public void append(MeshBuilder source) {

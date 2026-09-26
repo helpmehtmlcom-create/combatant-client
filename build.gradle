@@ -179,6 +179,15 @@ dependencies {
 
     bundledLibrary "de.marhali:json5-java:3.0.0"
 
+    // glTF 2.0 decoding foundation. GFBS-glTF-derived importer code converts JglTF models
+    // into Combatant-owned immutable asset contracts; no JglTF renderer is used.
+    bundledLibrary "de.javagl:jgltf-model:2.0.4"
+    bundledLibrary "de.javagl:jgltf-impl-v1:2.0.4"
+    bundledLibrary "de.javagl:jgltf-impl-v2:2.0.4"
+    bundledLibrary "com.fasterxml.jackson.core:jackson-annotations:2.13.4"
+    bundledLibrary "com.fasterxml.jackson.core:jackson-core:2.13.4"
+    bundledLibrary "com.fasterxml.jackson.core:jackson-databind:2.13.4.2"
+
     // Linux-only MPRIS backend dependencies. Kept in a separate bundle so slim
     // distributions can remove the complete transitive payload safely.
     linuxBundledLibrary "com.github.hypfvieh:dbus-java-core:4.3.1"
@@ -598,6 +607,15 @@ jar {
         into "THIRD_PARTY_LICENSES"
     }
     from("THIRD_PARTY_LICENSES/Iosevka-OFL-1.1.txt") {
+        into "THIRD_PARTY_LICENSES"
+    }
+    from("THIRD_PARTY_LICENSES/GFBS-glTF-MIT.txt") {
+        into "THIRD_PARTY_LICENSES"
+    }
+    from("THIRD_PARTY_LICENSES/JglTF-MIT.txt") {
+        into "THIRD_PARTY_LICENSES"
+    }
+    from("THIRD_PARTY_LICENSES/Jackson-Apache-2.0.txt") {
         into "THIRD_PARTY_LICENSES"
     }
     from {

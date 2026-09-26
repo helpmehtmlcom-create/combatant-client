@@ -14,28 +14,47 @@
       "v1.3b"
     ],
     "verifiedMinecraftVersions": [
-      "1.21.11"
+      "26.2"
     ],
     "verifiedIrisVersions": [
-      "1.10.7+1.21.11-fabric"
+      "1.11.4+mc26.2"
     ],
     "features": [
       "fullbright",
       "worldtweaks_fog",
       "underwater_fog",
-      "shaderpack_motion_blur_suppression"
+      "shaderpack_motion_blur_suppression",
+      "combatant_taa_replacement",
+      "combatant_msaa_replacement",
+      "aa_option_policy"
     ]
+  },
+  "integration": {
+    "aa": {
+      "temporalPass": "composite4",
+      "sceneColorTarget": 0,
+      "historyTarget": 5,
+      "colorFormat": "rgba16f",
+      "preserveHistoryAlphaOrigin": true,
+      "taaReplacement": true,
+      "msaaReplacement": true
+    },
+    "options": {
+      "aa": ["TAA", "TAAU", "TAAU_RENDER_SCALE", "FXAA", "CAS", "CAS_INTENSITY"],
+      "motionBlur": ["MOTION_BLUR", "MOTION_BLUR_INTENSITY"],
+      "depthOfField": ["DOF", "DOF_INTENSITY", "DOF_SAMPLES", "DOF_FOCUS"]
+    }
   },
   "targets": [
     {
       "path": "/program/c0_vl.fsh",
       "patch": "c0_vl.patch",
-      "marker": "combatantPhotonSoftenWaterFog"
+      "marker": "combatantPhotonApplyWorldTweaksAirFog"
     },
     {
       "path": "/program/c1_blend_layers.fsh",
       "patch": "c1_blend_layers.patch",
-      "marker": "combatantPhotonApplyWorldTweaksFog"
+      "marker": "combatantPhotonApplyWorldTweaksFogMatrix"
     },
     {
       "path": "/include/lighting/diffuse_lighting.glsl",
@@ -43,9 +62,104 @@
       "marker": "combatantPhotonFullbrightStrength"
     },
     {
+      "path": "/include/global.glsl",
+      "patch": "aa_scale.patch",
+      "marker": "COMBATANT_AA_UNIFORMS"
+    },
+    {
       "path": "/program/c16_motion_blur.fsh",
       "patch": "motion_blur.patch",
       "marker": "combatantSuppressShaderpackMotionBlur"
+    },
+    {
+      "path": "/program/c4_taa_exposure.fsh",
+      "patch": "taa_bypass.patch",
+      "marker": "combatantAaOwner",
+      "ownershipCritical": true,
+      "stage": "fragment"
+    },
+    {
+      "path": "/include/utility/space_conversion.glsl",
+      "patch": "space_conversion.patch",
+      "marker": "combatantAaReprojectionOffset"
+    },
+    {
+      "path": "/program/gbuffers_all_solid.vsh",
+      "patch": "jitter_clip.patch",
+      "marker": "combatantTaaOffset",
+      "stage": "vertex"
+    },
+    {
+      "path": "/program/gbuffers_all_solid.fsh",
+      "patch": "dynamic_lod_bias.patch",
+      "marker": "COMBATANT_DYNAMIC_LOD_BIAS",
+      "stage": "fragment"
+    },
+    {
+      "path": "/program/gbuffers_basic.vsh",
+      "patch": "jitter_clip.patch",
+      "marker": "combatantTaaOffset",
+      "stage": "vertex"
+    },
+    {
+      "path": "/program/gbuffers_damagedblock.vsh",
+      "patch": "jitter_clip.patch",
+      "marker": "combatantTaaOffset",
+      "stage": "vertex"
+    },
+    {
+      "path": "/program/gbuffers_damagedblock.fsh",
+      "patch": "dynamic_lod_bias.patch",
+      "marker": "COMBATANT_DYNAMIC_LOD_BIAS",
+      "stage": "fragment"
+    },
+    {
+      "path": "/program/gbuffers_armor_glint.vsh",
+      "patch": "jitter_clip.patch",
+      "marker": "combatantTaaOffset",
+      "stage": "vertex"
+    },
+    {
+      "path": "/program/gbuffers_armor_glint.fsh",
+      "patch": "dynamic_lod_bias.patch",
+      "marker": "COMBATANT_DYNAMIC_LOD_BIAS",
+      "stage": "fragment"
+    },
+    {
+      "path": "/program/gbuffers_weather.vsh",
+      "patch": "jitter_clip.patch",
+      "marker": "combatantTaaOffset",
+      "stage": "vertex"
+    },
+    {
+      "path": "/program/dh_terrain.vsh",
+      "patch": "jitter_clip.patch",
+      "marker": "combatantTaaOffset",
+      "stage": "vertex"
+    },
+    {
+      "path": "/program/dh_water.vsh",
+      "patch": "jitter_clip.patch",
+      "marker": "combatantTaaOffset",
+      "stage": "vertex"
+    },
+    {
+      "path": "/program/gbuffers_all_translucent.vsh",
+      "patch": "jitter_position.patch",
+      "marker": "combatantTaaOffset",
+      "stage": "vertex"
+    },
+    {
+      "path": "/program/gbuffers_all_translucent.fsh",
+      "patch": "dynamic_lod_bias.patch",
+      "marker": "COMBATANT_DYNAMIC_LOD_BIAS",
+      "stage": "fragment"
+    },
+    {
+      "path": "/program/gbuffers_skytextured.vsh",
+      "patch": "jitter_sky.patch",
+      "marker": "combatantTaaOffset",
+      "stage": "vertex"
     }
   ]
 }

@@ -38,6 +38,14 @@ layout (std140) uniform UIBatch {
     vec4 uLayer;
 };
 
+layout (std140) uniform UIBlend {
+    vec4 uBlendParams; // x = mode, y = strength, z = pivot, w = softness
+    vec4 uBlendTone0;
+    vec4 uBlendTone1;
+};
+
+#moj_import <combatant:ui_backdrop_blend.glsl>
+
 #ifdef COMBATANT_ANALYTIC_CLIP
 #moj_import <combatant:ui_clip.glsl>
 #endif
@@ -625,5 +633,24 @@ void main() {
     finalColor = (blurLayerColor * blurLayerAlpha * (1.0 - materialAlpha)
             + finalColor * materialAlpha) / max(finalAlpha, 1e-5);
 
-    fragColor = vec4(finalColor, finalAlpha);
+    // Optional reusable backdrop compositor. NORMAL is bit-for-bit the ordinary glass source.
+    // Other modes operate on the destination snapshot, while fixed-function alpha remains only
+    // the final Porter-Duff coverage stage.
+    vec3 blendBackdrop = texture(u_Texture, uv).rgb;
+#ifdef COMBATANT_UI_UNDERLAY
+    vec4 blendUi = texture(u_UiUnderlayTexture, uv);
+    float blendUiCoverage = clamp(blendUi.a * uUiBackdrop.x, 0.0, 1.0);
+    vec3 blendUiColor = blendUi.rgb / max(blendUi.a, 0.0001);
+    blendBackdrop = mix(blendBackdrop, blendUiColor, blendUiCoverage);
+#endif
+    finalColor = combatantResolveBackdropBlend(
+            blendBackdrop,
+            clamp(finalColor, 0.0, 1.0),
+            tint,
+            uBlendParams,
+            uBlendTone0,
+            uBlendTone1
+    );
+
+    fragColor = vec4(clamp(finalColor, 0.0, 1.0), finalAlpha);
 }

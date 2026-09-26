@@ -87,6 +87,14 @@ public final class MainConfig implements ConfigAggregate, ConfigNameProvider, Se
         return visual.getMsaa3dSamples();
     }
 
+    public int getConfiguredMsaa3dSamples() {
+        return visual.getConfiguredMsaa3dSamples();
+    }
+
+    public String getAntialiasing3dMode() {
+        return visual.getAntialiasing3dMode();
+    }
+
     public boolean isTaaRuntimeActive() {
         return visual.isTaaRuntimeActive();
     }

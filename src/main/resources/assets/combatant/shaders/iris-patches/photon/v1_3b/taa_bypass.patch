@@ -1,0 +1,23 @@
+@patch 2
+@require_function main
+@require_uniform colortex0
+@require_ident bloom_input
+@require_ident result
+
+@insert_zone declarations
+uniform int combatantAaOwner;
+
+@end
+
+@insert_after_function_open main
+    // Keep this pass and its Iris flips alive; only Photon temporal accumulation is bypassed.
+    // Combatant replaces both color outputs immediately after this pass.
+    if (combatantAaOwner != 0) {
+        ivec2 combatantTemporalTexel = ivec2(gl_FragCoord.xy);
+        result = texelFetch(colortex0, combatantTemporalTexel, 0);
+        if (combatantTemporalTexel == ivec2(0)) result.a = exposure;
+        bloom_input = result.rgb;
+        return;
+    }
+
+@end

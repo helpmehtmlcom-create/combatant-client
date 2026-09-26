@@ -31,6 +31,16 @@ Combatant's current renderer, UI batching, post-processing, frame graph, effects
 
 Upstream: https://github.com/MeteorDevelopment/meteor-client
 
+## GFBS-glTF / LytharaLab
+
+Combatant's imported-model decoding foundation is adapted from **GFBS-glTF 1.5.1**, commit `8906d4083c23b5d5bbf5191a0555d149a5272900`, under the MIT License. The adapted code is limited to immutable glTF data contracts, validation, glTF/GLB decoding, OBJ/MTL importing, resource resolution, animation data needed by the loader, and selected backend-neutral CPU morph/skin geometry transforms. GFBS' Forge renderer, OpenGL GPU model path, networking, collision, plugin manager, and RenderType integration are not incorporated. Combatant ports the importer to Minecraft 26.2 `Identifier`, its own material contracts, and backend-neutral RHI ownership.
+
+Upstream: https://github.com/LytharaLab/GFBS-glTF
+
+The decoder uses **JglTF 2.0.4** by Marco Hutter (`de.javagl`) under the MIT License. JglTF is used as a parsing/model dependency; its viewer/renderers are not used. JglTF pulls Jackson for JSON decoding; Jackson is licensed under Apache-2.0.
+
+The dev source set contains Khronos **BoxVertexColors.glb** as a tiny importer smoke fixture. The asset is CC0/public domain and is not part of release resources. The intended full PBR/Photon validation fixture is Khronos **BoomBox** (CC0), loaded externally/dev-only because it is substantially larger.
+
 ## Other acknowledged upstream work
 
 - **MediaPlayerInfo** by Redstonecrafter0: modified Java/native port under AGPL-3.0-only in `java/combatant/client/util/media/**`.

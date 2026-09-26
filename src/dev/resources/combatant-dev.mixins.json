@@ -8,8 +8,7 @@
     "ProfilersMixin",
     "DevDeferredGameRendererMixin",
     "DevDeferredLevelRendererMixin",
-    "DevDeferredClientPacketListenerMixin",
-    "sodium.DevDeferredSodiumWorldRendererMixin"
+    "DevDeferredClientPacketListenerMixin"
   ],
   "injectors": {
     "defaultRequire": 1

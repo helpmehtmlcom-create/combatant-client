@@ -1,0 +1,31 @@
+@patch 2
+@require_function main
+@require_uniform taa_offset
+@require_hash f92b76008007c1bfe9bee999c1b66d574b89622b3fae63031f9bfc7e5c510ff7
+@require_hash a3bcdad8b29af497e2408803645e4de7efd390f1f1d4feac77d3fb66674bb77b
+@require_hash 9c89f72aa7e07cc5b79499d7d528cd3176b099ee4784e20c948f9c4dc10189b6
+
+@insert_after_ident taa_offset 1
+#ifndef COMBATANT_AA_UNIFORMS
+#define COMBATANT_AA_UNIFORMS
+uniform int combatantAaOwner;
+uniform vec2 combatantTaaOffset;
+#endif
+
+@end
+
+@replace_line_hash f92b76008007c1bfe9bee999c1b66d574b89622b3fae63031f9bfc7e5c510ff7
+    if (combatantAaOwner == 0) position_clip.xy = position_clip.xy * taau_render_scale +
+@end
+
+@replace_line_hash a3bcdad8b29af497e2408803645e4de7efd390f1f1d4feac77d3fb66674bb77b
+    if (combatantAaOwner == 0) position_clip.xy += taa_offset * position_clip.w;
+@end
+
+@replace_line_hash 9c89f72aa7e07cc5b79499d7d528cd3176b099ee4784e20c948f9c4dc10189b6
+    if (combatantAaOwner == 0) position_clip.xy += taa_offset * position_clip.w * 0.66;
+@end
+
+@insert_before_ident gl_Position 1
+    if (combatantAaOwner == 2) position_clip.xy += combatantTaaOffset * position_clip.w * 0.66;
+@end

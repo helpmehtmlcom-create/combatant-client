@@ -7,7 +7,11 @@
 
 package combatant.client.render.engine.text;
 
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+
 import combatant.client.render.engine.color.RenderColor;
+import combatant.client.render.engine.renderer.ui.blend.UiBackdropBlendSpec;
+import combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest;
 
 /**
  * Keeps the selected Combatant font for glyphs it owns and delegates missing
@@ -192,6 +196,19 @@ public final class LanguageFallbackTextRenderer implements TextRenderer {
                                                  double boundsY,
                                                  double boundsWidth,
                                                  double boundsHeight) {
+        return renderLiquidGlassQuadGradient(text, x, y, gradient, boundsX, boundsY, boundsWidth, boundsHeight, null);
+    }
+
+    @Override
+    public double renderLiquidGlassQuadGradient(String text,
+                                                 double x,
+                                                 double y,
+                                                 Font.GlyphQuadGradient gradient,
+                                                 double boundsX,
+                                                 double boundsY,
+                                                 double boundsWidth,
+                                                 double boundsHeight,
+                                                 RenderPipeline pipelineOverride) {
         if (text == null || text.isEmpty() || gradient == null) return x;
         boolean implicitBegin = !building;
         if (implicitBegin) begin();
@@ -211,7 +228,53 @@ public final class LanguageFallbackTextRenderer implements TextRenderer {
                             boundsX,
                             boundsY,
                             boundsWidth,
-                            boundsHeight
+                            boundsHeight,
+                            pipelineOverride
+                    );
+                    return 0.0;
+                });
+                glyphBase[0] += run.codePointCount(0, run.length());
+                return 0.0;
+            });
+            return cursor[0];
+        } finally {
+            if (implicitBegin) end();
+        }
+    }
+
+    @Override
+    public double renderLiquidGlassBlendQuadGradient(String text,
+                                                      double x,
+                                                      double y,
+                                                      Font.GlyphQuadGradient gradient,
+                                                      double boundsX,
+                                                      double boundsY,
+                                                      double boundsWidth,
+                                                      double boundsHeight,
+                                                      UiBackdropBlendSpec blend,
+                                                      UiBackdropRequest backdrop) {
+        if (text == null || text.isEmpty() || gradient == null) return x;
+        boolean implicitBegin = !building;
+        if (implicitBegin) begin();
+        try {
+            final double[] cursor = {x};
+            final int[] glyphBase = {0};
+            visitRuns(text, text.length(), (renderer, start, finish) -> {
+                String run = text.substring(start, finish);
+                int runGlyphBase = glyphBase[0];
+                withRenderer(renderer, () -> {
+                    cursor[0] = renderer.renderLiquidGlassBlendQuadGradient(
+                            run,
+                            cursor[0],
+                            y,
+                            (index, codePoint, x0, y0, x1, y1, out) ->
+                                    gradient.colors(runGlyphBase + index, codePoint, x0, y0, x1, y1, out),
+                            boundsX,
+                            boundsY,
+                            boundsWidth,
+                            boundsHeight,
+                            blend,
+                            backdrop
                     );
                     return 0.0;
                 });

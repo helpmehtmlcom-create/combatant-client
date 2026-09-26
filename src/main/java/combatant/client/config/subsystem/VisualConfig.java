@@ -11,17 +11,14 @@ import combatant.client.config.SettingDef;
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.ModeValue;
 import combatant.client.config.values.NumberValue;
-import combatant.client.render.iris.IrisRuntime;
-import net.minecraft.client.resources.language.I18n;
+import combatant.client.render.iris.IrisAaIntegration;
+import combatant.client.render.iris.IrisAaOwner;
 
 import java.util.List;
 
 @ConfigSubsystem(value = "visual", legacyNames = "mainconfig", settingOwner = "main_config")
 public final class VisualConfig extends SubsystemConfig {
     public static final VisualConfig INSTANCE = new VisualConfig();
-
-    private static final String IRIS_MSAA_REASON_KEY = "setting.main_config.antialiasing3d.iris_blocked";
-    private static final String IRIS_MSAA_REASON_FALLBACK = "Disable the Iris shader pack to change anti-aliasing.";
 
     private final BooleanValue combatantMainMenu = bool("combatantMainMenu", true);
     private final ModeValue menuBackground = mode("menuBackground", "png", "png", "aurora", "waves");
@@ -72,13 +69,20 @@ public final class VisualConfig extends SubsystemConfig {
         return "taa".equalsIgnoreCase(getAntialiasing3dMode());
     }
 
-    /** Runtime ownership for the vanilla/Sodium path. Iris ownership is attached later by its adapter. */
     public boolean isTaaRuntimeActive() {
-        return isTaaSelected() && !IrisRuntime.isShaderpackRendererActive();
+        return IrisAaIntegration.resolve(getAntialiasing3dMode()).owner() == IrisAaOwner.COMBATANT_TAA;
     }
 
     public int getMsaa3dSamples() {
-        if (!isMsaa3dSelected() || IrisRuntime.isShaderpackRendererActive()) return 0;
+        var ownership = IrisAaIntegration.resolve(getAntialiasing3dMode());
+        if (ownership.owner() != IrisAaOwner.COMBATANT_MSAA) return 0;
+        // The vanilla/Sodium wrapper must not wrap Iris' main target. A shaderpack adapter
+        // allocates and resolves multisample gbuffer attachments at Iris' own world boundary.
+        if (ownership.shaderpackActive()) return 0;
+        return getConfiguredMsaa3dSamples();
+    }
+
+    public int getConfiguredMsaa3dSamples() {
         String value = msaa3dSamples.get();
         if (value == null) return 4;
         if (value.equalsIgnoreCase("2x")) return 2;
@@ -137,8 +141,7 @@ public final class VisualConfig extends SubsystemConfig {
     @Override
     public List<SettingDef> getSettingDefs() {
         return settings(
-                SettingDef.mode(antialiasing3d)
-                        .unavailableWhen(IrisRuntime::isShaderpackRendererActive, VisualConfig::irisAaReason),
+                SettingDef.mode(antialiasing3d),
                 SettingDef.mode(msaa3dSamples).visibleWhen(this::isMsaa3dSelected),
                 SettingDef.bool(taaFxaa).visibleWhen(this::isTaaSelected),
                 SettingDef.bool(taaSharpen).visibleWhen(this::isTaaSelected),
@@ -150,8 +153,4 @@ public final class VisualConfig extends SubsystemConfig {
         );
     }
 
-    private static String irisAaReason() {
-        String translated = I18n.get(IRIS_MSAA_REASON_KEY);
-        return IRIS_MSAA_REASON_KEY.equals(translated) ? IRIS_MSAA_REASON_FALLBACK : translated;
-    }
 }

@@ -535,6 +535,7 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
                     jitter,
                     cameraPosition
             );
+            CombatantRenderSystem.refreshPrimarySceneView();
             return original.call(instance, effectiveProjection);
         }
         return original.call(instance, renderProjectionMatrix);

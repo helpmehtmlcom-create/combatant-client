@@ -194,6 +194,37 @@ public enum CombatantVertexFormats {
             .build();
 
     /**
+     * Canonical imported PBR surface vertex. The layout is shaderpack-neutral and intentionally
+     * carries both glTF UV sets so adapter code can honor per-texture texCoord selection.
+     * 12 + 8 + 8 + 12 + 16 + 4 = 60 bytes.
+     */
+    public static final VertexFormat ASSET_PBR_STATIC = VertexFormat.builder(0)
+            .addAttribute("Position", CombatantVertexFormatElements.POS3)
+            .addAttribute("UV0", CombatantVertexFormatElements.TEXTURE)
+            .addAttribute("UV1", CombatantVertexFormatElements.TEXTURE)
+            .addAttribute("Normal", CombatantVertexFormatElements.NORMAL)
+            .addAttribute("Tangent", CombatantVertexFormatElements.TANGENT)
+            .addAttribute("Color", CombatantVertexFormatElements.COLOR)
+            .build();
+
+    /**
+     * Imported PBR vertex with glTF JOINTS_0/WEIGHTS_0. 32-bit joints are retained here instead
+     * of silently truncating them to the older rig renderer's 8-bit bone ABI. GPU skinning/adapters
+     * can lower this canonical representation later according to actual backend limits.
+     * 60 + 16 + 16 = 92 bytes.
+     */
+    public static final VertexFormat ASSET_PBR_SKINNED = VertexFormat.builder(0)
+            .addAttribute("Position", CombatantVertexFormatElements.POS3)
+            .addAttribute("UV0", CombatantVertexFormatElements.TEXTURE)
+            .addAttribute("UV1", CombatantVertexFormatElements.TEXTURE)
+            .addAttribute("Normal", CombatantVertexFormatElements.NORMAL)
+            .addAttribute("Tangent", CombatantVertexFormatElements.TANGENT)
+            .addAttribute("Color", CombatantVertexFormatElements.COLOR)
+            .addAttribute("JointIndices", CombatantVertexFormatElements.BONE_INDICES32)
+            .addAttribute("JointWeights", CombatantVertexFormatElements.BONE_WEIGHTS32)
+            .build();
+
+    /**
      * Rigged textured 3D vertex. Attribute order is mirrored by rig_textured.vert.
      * 12 + 8 + 12 + 4 + 4 + 4 + 16 + 4 = 64 bytes.
      */

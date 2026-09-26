@@ -44,10 +44,15 @@ public final class CombatantMixinPlugin implements IMixinConfigPlugin {
     );
     private static final Set<String> OPTIONAL_IRIS_MIXINS = Set.of(
             "combatant.client.mixins.iris.IrisCommonUniformsMixin",
+            "combatant.client.mixins.iris.IrisCompositePassMixin",
+            "combatant.client.mixins.iris.IrisCompositeRendererMixin",
             "combatant.client.mixins.iris.IrisGameRendererInteropMixin",
+            "combatant.client.mixins.iris.IrisGlFramebufferMsaaMixin",
             "combatant.client.mixins.iris.IrisHandRendererAccessor",
             "combatant.client.mixins.iris.IrisHandRendererMixin",
             "combatant.client.mixins.iris.IrisIncludeProcessorMixin",
+            "combatant.client.mixins.iris.IrisOptionMenuMixin",
+            "combatant.client.mixins.iris.IrisRenderTargetsMsaaMixin",
             "combatant.client.mixins.iris.IrisShaderPackLoadMixin",
             "combatant.client.mixins.iris.IrisRenderingPipelineFinalizeMixin",
             "combatant.client.mixins.iris.IrisShaderKeyMixin",

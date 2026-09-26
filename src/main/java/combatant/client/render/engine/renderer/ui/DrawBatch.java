@@ -14,6 +14,7 @@ import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.ui.clip.UiClipSnapshot;
 import combatant.client.render.engine.renderer.ui.clip.UiScissorSnapshot;
 import combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest;
+import combatant.client.render.engine.renderer.ui.blend.UiBackdropBlendSpec;
 
 import java.util.Objects;
 
@@ -28,6 +29,7 @@ public final class DrawBatch {
     public Renderer2D.BlurQuality blurQuality = Renderer2D.DEFAULT_BLUR_QUALITY;
     public float blurOffsetPx = Renderer2D.DEFAULT_KAWASE_OFFSET_PX;
     public UiBackdropRequest backdropRequest = UiBackdropRequest.NONE;
+    public UiBackdropBlendSpec backdropBlend = UiBackdropBlendSpec.NORMAL;
     public UiClipSnapshot clipSnapshot = UiClipSnapshot.NONE;
     public UiScissorSnapshot scissorSnapshot = UiScissorSnapshot.NONE;
 
@@ -46,6 +48,7 @@ public final class DrawBatch {
         this.blurQuality = Renderer2D.DEFAULT_BLUR_QUALITY;
         this.blurOffsetPx = Renderer2D.DEFAULT_KAWASE_OFFSET_PX;
         this.backdropRequest = UiBackdropRequest.NONE;
+        this.backdropBlend = UiBackdropBlendSpec.NORMAL;
         this.scissorSnapshot = scissorSnapshot != null ? scissorSnapshot : UiScissorSnapshot.NONE;
         this.clipSnapshot = clipSnapshot != null ? clipSnapshot : UiClipSnapshot.NONE;
         if (mesh.isBuilding()) {
@@ -65,10 +68,19 @@ public final class DrawBatch {
     public void beginBlur(GpuTextureView view, GpuSampler sampler, Renderer2D.BlurQuality quality, float offsetPx,
                           UiBackdropRequest backdropRequest,
                           UiScissorSnapshot scissorSnapshot, UiClipSnapshot clipSnapshot) {
+        beginBlur(view, sampler, quality, offsetPx, backdropRequest, UiBackdropBlendSpec.NORMAL,
+                scissorSnapshot, clipSnapshot);
+    }
+
+    public void beginBlur(GpuTextureView view, GpuSampler sampler, Renderer2D.BlurQuality quality, float offsetPx,
+                          UiBackdropRequest backdropRequest,
+                          UiBackdropBlendSpec backdropBlend,
+                          UiScissorSnapshot scissorSnapshot, UiClipSnapshot clipSnapshot) {
         begin(view, sampler, scissorSnapshot, clipSnapshot);
         this.blurQuality = quality != null ? quality : Renderer2D.DEFAULT_BLUR_QUALITY;
         this.blurOffsetPx = Float.isFinite(offsetPx) ? Math.max(0.0f, offsetPx) : Renderer2D.DEFAULT_KAWASE_OFFSET_PX;
         this.backdropRequest = backdropRequest != null ? backdropRequest : UiBackdropRequest.NONE;
+        this.backdropBlend = backdropBlend != null ? backdropBlend : UiBackdropBlendSpec.NORMAL;
     }
 
     public boolean canMerge(UiBatchType type, GpuTextureView view, GpuSampler sampler,
@@ -91,13 +103,24 @@ public final class DrawBatch {
                                 Renderer2D.BlurQuality quality, float offsetPx,
                                 UiBackdropRequest backdropRequest,
                                 UiScissorSnapshot scissorSnapshot, UiClipSnapshot clipSnapshot) {
+        return canMergeBlur(type, view, sampler, quality, offsetPx, backdropRequest, UiBackdropBlendSpec.NORMAL,
+                scissorSnapshot, clipSnapshot);
+    }
+
+    public boolean canMergeBlur(UiBatchType type, GpuTextureView view, GpuSampler sampler,
+                                Renderer2D.BlurQuality quality, float offsetPx,
+                                UiBackdropRequest backdropRequest,
+                                UiBackdropBlendSpec backdropBlend,
+                                UiScissorSnapshot scissorSnapshot, UiClipSnapshot clipSnapshot) {
         Renderer2D.BlurQuality normalizedQuality = quality != null ? quality : Renderer2D.DEFAULT_BLUR_QUALITY;
         float normalizedOffset = Float.isFinite(offsetPx) ? Math.max(0.0f, offsetPx) : Renderer2D.DEFAULT_KAWASE_OFFSET_PX;
         return canMerge(type, view, sampler, scissorSnapshot, clipSnapshot)
                 && this.blurQuality == normalizedQuality
                 && Float.compare(this.blurOffsetPx, normalizedOffset) == 0
                 && Objects.equals(this.backdropRequest,
-                backdropRequest != null ? backdropRequest : UiBackdropRequest.NONE);
+                backdropRequest != null ? backdropRequest : UiBackdropRequest.NONE)
+                && Objects.equals(this.backdropBlend,
+                backdropBlend != null ? backdropBlend : UiBackdropBlendSpec.NORMAL);
     }
 
     private static boolean sameState(UiScissorSnapshot a, UiScissorSnapshot b) {

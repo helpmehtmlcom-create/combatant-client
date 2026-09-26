@@ -8,27 +8,52 @@
 package combatant.client.render.engine.material;
 
 import net.minecraft.resources.Identifier;
+
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Map;
 
-/** Immutable map from canonical material semantics to actual resource-pack textures. */
+/** Immutable map from canonical material semantics to backend-neutral texture sources. */
 public final class MaterialTextureSet {
-    private final Map<MaterialTextureSemantic, Identifier> textures;
+    private final Map<MaterialTextureSemantic, MaterialTextureSource> textures;
     private final int presenceMask;
 
+    /** Compatibility constructor for ordinary Minecraft/resource-pack textures. */
     public MaterialTextureSet(Map<MaterialTextureSemantic, Identifier> textures) {
-        EnumMap<MaterialTextureSemantic, Identifier> copy = new EnumMap<>(MaterialTextureSemantic.class);
-        if (textures != null) copy.putAll(textures);
-        this.textures = Collections.unmodifiableMap(copy);
-        int mask = 0;
-        for (MaterialTextureSemantic semantic : copy.keySet()) {
-            mask |= 1 << semantic.ordinal();
+        EnumMap<MaterialTextureSemantic, MaterialTextureSource> copy = new EnumMap<>(MaterialTextureSemantic.class);
+        if (textures != null) {
+            for (Map.Entry<MaterialTextureSemantic, Identifier> entry : textures.entrySet()) {
+                if (entry.getKey() != null && entry.getValue() != null) {
+                    copy.put(entry.getKey(), new MaterialTextureSource.Resource(entry.getValue()));
+                }
+            }
         }
-        this.presenceMask = mask;
+        this.textures = Collections.unmodifiableMap(copy);
+        this.presenceMask = presenceMask(copy);
     }
 
+    private MaterialTextureSet(Map<MaterialTextureSemantic, MaterialTextureSource> textures, boolean trustedSources) {
+        EnumMap<MaterialTextureSemantic, MaterialTextureSource> copy = new EnumMap<>(MaterialTextureSemantic.class);
+        if (textures != null) {
+            for (Map.Entry<MaterialTextureSemantic, MaterialTextureSource> entry : textures.entrySet()) {
+                if (entry.getKey() != null && entry.getValue() != null) copy.put(entry.getKey(), entry.getValue());
+            }
+        }
+        this.textures = Collections.unmodifiableMap(copy);
+        this.presenceMask = presenceMask(copy);
+    }
+
+    public static MaterialTextureSet fromSources(Map<MaterialTextureSemantic, MaterialTextureSource> textures) {
+        return new MaterialTextureSet(textures, true);
+    }
+
+    /** Returns an Identifier only when this semantic is backed by a Minecraft resource texture. */
     public Identifier texture(MaterialTextureSemantic semantic) {
+        MaterialTextureSource source = textures.get(semantic);
+        return source instanceof MaterialTextureSource.Resource resource ? resource.id() : null;
+    }
+
+    public MaterialTextureSource source(MaterialTextureSemantic semantic) {
         return textures.get(semantic);
     }
 
@@ -40,7 +65,24 @@ public final class MaterialTextureSet {
         return presenceMask;
     }
 
+    /** Resource-backed compatibility view. Imported sources are intentionally omitted. */
     public Map<MaterialTextureSemantic, Identifier> asMap() {
+        EnumMap<MaterialTextureSemantic, Identifier> resources = new EnumMap<>(MaterialTextureSemantic.class);
+        for (Map.Entry<MaterialTextureSemantic, MaterialTextureSource> entry : textures.entrySet()) {
+            if (entry.getValue() instanceof MaterialTextureSource.Resource resource) {
+                resources.put(entry.getKey(), resource.id());
+            }
+        }
+        return Collections.unmodifiableMap(resources);
+    }
+
+    public Map<MaterialTextureSemantic, MaterialTextureSource> sources() {
         return textures;
+    }
+
+    private static int presenceMask(Map<MaterialTextureSemantic, MaterialTextureSource> textures) {
+        int mask = 0;
+        for (MaterialTextureSemantic semantic : textures.keySet()) mask |= 1 << semantic.ordinal();
+        return mask;
     }
 }

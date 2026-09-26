@@ -45,6 +45,8 @@ import combatant.client.render.engine.rhi.state.PipelineStateBackend;
 import combatant.client.render.engine.rhi.shader.AdvancedShaderBackend;
 import combatant.client.render.engine.rhi.upload.DynamicMeshBackend;
 import combatant.client.render.engine.rhi.upload.Blaze3dDynamicMeshBackend;
+import combatant.client.render.engine.rhi.upload.Blaze3dPersistentMeshBackend;
+import combatant.client.render.engine.rhi.upload.PersistentMeshBackend;
 import combatant.client.render.engine.uniform.impl.MeshUniforms;
 import combatant.client.render.engine.uniform.impl.UIBatchUniforms;
 
@@ -64,6 +66,7 @@ public final class SodiumGlBackend implements CombatantRhi {
     private RhiCapabilities capabilities;
     private boolean multiDrawRuntimeDisabled;
     private final Blaze3dDynamicMeshBackend dynamicMeshes = new Blaze3dDynamicMeshBackend(stats);
+    private final Blaze3dPersistentMeshBackend persistentMeshes = new Blaze3dPersistentMeshBackend(stats);
     private final Blaze3dFullscreenBackend fullscreen = new Blaze3dFullscreenBackend();
     private final GlTextureBlitter blitter = new GlTextureBlitter(stats);
     private final SodiumGlMsaaControl msaa = new SodiumGlMsaaControl();
@@ -108,6 +111,11 @@ public final class SodiumGlBackend implements CombatantRhi {
     @Override
     public DynamicMeshBackend dynamicMeshes() {
         return dynamicMeshes;
+    }
+
+    @Override
+    public PersistentMeshBackend persistentMeshes() {
+        return persistentMeshes;
     }
 
     @Override
@@ -564,6 +572,7 @@ public final class SodiumGlBackend implements CombatantRhi {
     public void close() {
         advancedShaders.close();
         msaa.close();
+        persistentMeshes.close();
         dynamicMeshes.close();
         fullscreen.close();
         resources.close();

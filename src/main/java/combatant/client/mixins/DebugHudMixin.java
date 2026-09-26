@@ -21,6 +21,7 @@ import combatant.client.render.engine.debug.RenderThread2DDebugRenderer;
 import combatant.client.render.engine.msaa.MsaaWorldTarget;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.text.FontDebugStats;
+import combatant.client.render.iris.IrisAaIntegration;
 import combatant.client.runtime.RuntimeGate;
 import combatant.client.util.logging.DebugMode;
 import combatant.client.util.sound.SoundDebugStats;
@@ -85,6 +86,7 @@ public abstract class DebugHudMixin {
         out.add("§cCombatant Engine");
         out.add("status:§aok");
         out.add(msaa);
+        out.add("iris " + IrisAaIntegration.resolve(MainConfig.get().getAntialiasing3dMode()).shortLine());
 
         RenderThread2DDebugRenderer.Snapshot debug2d = RenderThread2DDebugRenderer.snapshot();
         out.add(String.format("2d rt gui: frame=%d gui=%dx%d rects=%d err=%s",

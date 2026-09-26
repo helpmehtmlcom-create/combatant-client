@@ -39,6 +39,8 @@ import combatant.client.render.engine.rhi.shader.AdvancedShaderBackend;
 import combatant.client.render.engine.rhi.state.PipelineStateBackend;
 import combatant.client.render.engine.rhi.upload.DynamicMeshBackend;
 import combatant.client.render.engine.rhi.upload.Blaze3dDynamicMeshBackend;
+import combatant.client.render.engine.rhi.upload.Blaze3dPersistentMeshBackend;
+import combatant.client.render.engine.rhi.upload.PersistentMeshBackend;
 import combatant.client.render.engine.uniform.impl.MeshUniforms;
 import combatant.client.render.engine.uniform.impl.UIBatchUniforms;
 
@@ -55,6 +57,7 @@ import java.util.Map;
 public final class CombatantVulkanBackend implements CombatantRhi {
     private final RhiStats stats = new RhiStats();
     private final Blaze3dDynamicMeshBackend dynamicMeshes = new Blaze3dDynamicMeshBackend(stats);
+    private final Blaze3dPersistentMeshBackend persistentMeshes = new Blaze3dPersistentMeshBackend(stats);
     private final Blaze3dFullscreenBackend fullscreen = new Blaze3dFullscreenBackend();
     private final Blaze3dTextureBlitter blitter = new Blaze3dTextureBlitter(stats);
     private final VulkanMsaaControl msaa = new VulkanMsaaControl();
@@ -101,6 +104,11 @@ public final class CombatantVulkanBackend implements CombatantRhi {
     @Override
     public DynamicMeshBackend dynamicMeshes() {
         return dynamicMeshes;
+    }
+
+    @Override
+    public PersistentMeshBackend persistentMeshes() {
+        return persistentMeshes;
     }
 
     @Override
@@ -426,7 +434,8 @@ public final class CombatantVulkanBackend implements CombatantRhi {
     public void close() {
         advancedShaders.close();
         try {
-            dynamicMeshes.close();
+            persistentMeshes.close();
+        dynamicMeshes.close();
             fullscreen.close();
             shapeClip.close();
             resources.close();

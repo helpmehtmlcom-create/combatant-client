@@ -12,6 +12,7 @@ public enum MaterialResolutionSource {
     EXPLICIT_DESCRIPTOR,
     TAG,
     LABPBR_METADATA,
+    IMPORTED_ASSET,
     VANILLA_FALLBACK,
     UNKNOWN
 }

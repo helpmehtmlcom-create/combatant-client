@@ -17,15 +17,19 @@ import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.ui.UiRenderDispatcher;
+import combatant.client.render.engine.renderer.ui.blend.UiBackdropBlendSpec;
 import combatant.client.render.engine.renderer.ui.clip.UiClipSnapshot;
 import combatant.client.render.engine.renderer.ui.clip.UiMsaaClipLayer;
 import combatant.client.render.engine.renderer.ui.draw.UiRect;
+import combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest;
+import combatant.client.render.engine.renderer.ui.draw.UiBlurQuality;
 import combatant.client.render.engine.rhi.GpuMeshHandle;
 import combatant.client.render.engine.rhi.RhiDrawCommand;
 import combatant.client.render.engine.rhi.resource.GlyphAtlasManager;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import combatant.client.render.engine.uniform.impl.MsdfTextUniforms;
 import combatant.client.render.engine.uniform.impl.UIBatchUniforms;
+import combatant.client.render.engine.uniform.impl.UIBlendUniforms;
 import combatant.client.render.engine.uniform.impl.UiClipUniforms;
 
 import java.util.ArrayList;
@@ -112,6 +116,54 @@ public enum TextRenderSystem {
 
         // Glass text is a UI backdrop material. Outside an ordered UI batch, preserve readable
         // output rather than sampling the active color attachment recursively.
+        submitGlyphMeshImmediate(label, font, mesh,
+                font.isMsdf() ? CombatantRenderPipelines.UI_TEXT_MSDF_FAST : CombatantRenderPipelines.UI_TEXT_FAST,
+                uiPlacement);
+    }
+
+    public static void submitLiquidGlassBlendGlyphMesh(String label,
+                                                        GlyphFont font,
+                                                        MeshBuilder mesh,
+                                                        TextPlacementMode placement,
+                                                        double boundsX,
+                                                        double boundsY,
+                                                        double boundsWidth,
+                                                        double boundsHeight,
+                                                        UiBackdropBlendSpec blend,
+                                                        UiBackdropRequest backdrop) {
+        if (font == null || mesh == null) return;
+        if (mesh.isBuilding()) mesh.end();
+        if (mesh.getIndicesCount() <= 0) return;
+
+        UiRect bounds = UiRect.of(boundsX, boundsY, boundsWidth, boundsHeight);
+        UiBackdropRequest request = backdrop != null
+                ? backdrop.withCaptureBounds(bounds)
+                : UiBackdropRequest.currentTargetGlass(
+                bounds, UiBlurQuality.LIQUID_GLASS, Renderer2D.LIQUID_GLASS_KAWASE_OFFSET_PX);
+        UiBackdropBlendSpec material = blend != null ? blend : UiBackdropBlendSpec.NORMAL;
+        TextPlacementMode uiPlacement = placement != null ? placement : TextPlacementMode.UI;
+        RenderPipeline pipeline = CombatantRenderPipelines.UI_TEXT_MSDF_GLASS_BLEND_FAST;
+
+        if (uiPlacement == TextPlacementMode.UI || uiPlacement == TextPlacementMode.SCREEN_SPACE) {
+            if (Renderer2D.enqueueLiquidGlassTextMesh(
+                    label, font, mesh, pipeline, uiPlacement, bounds, material, request)) {
+                return;
+            }
+            boolean auto = UiRenderDispatcher.beginAutoBatch();
+            if (auto) {
+                try {
+                    if (Renderer2D.enqueueLiquidGlassTextMesh(
+                            label, font, mesh, pipeline, uiPlacement, bounds, material, request)) {
+                        return;
+                    }
+                } finally {
+                    UiRenderDispatcher.endAutoBatch(true);
+                }
+            }
+        }
+
+        // A backdrop operator needs a stable destination image. Outside ordered UI replay, fall
+        // back to ordinary MSDF text rather than pretending that a recursive attachment sample is valid.
         submitGlyphMeshImmediate(label, font, mesh,
                 font.isMsdf() ? CombatantRenderPipelines.UI_TEXT_MSDF_FAST : CombatantRenderPipelines.UI_TEXT_FAST,
                 uiPlacement);
@@ -280,6 +332,62 @@ public enum TextRenderSystem {
                     .sampler("u_SceneTexture", sceneView, sceneSampler)
                     .sampler("u_BlurTexture", blurView, blurSampler)
                     .uniform("UIBatch", UIBatchUniforms.get())
+                    .uniform("MsdfText", MsdfTextUniforms.get());
+
+            commands.add(command.build());
+            handle = null;
+        } finally {
+            if (handle != null) handle.close();
+        }
+    }
+
+    public static void appendLiquidGlassBlendGlyphMeshCommand(List<RhiDrawCommand> commands,
+                                                              String label,
+                                                              GlyphFont font,
+                                                              MeshBuilder mesh,
+                                                              TextPlacementMode placement,
+                                                              UiClipSnapshot clipSnapshot,
+                                                              GpuTextureView sceneView,
+                                                              GpuSampler sceneSampler,
+                                                              GpuTextureView blurView,
+                                                              GpuSampler blurSampler,
+                                                              float framebufferWidth,
+                                                              float framebufferHeight,
+                                                              UiBackdropBlendSpec blend) {
+        if (commands == null || font == null || mesh == null) return;
+        if (sceneView == null || sceneSampler == null || blurView == null || blurSampler == null) return;
+        if (mesh.isBuilding()) mesh.end();
+        if (mesh.getIndicesCount() <= 0 || !font.isReady() || !font.isMsdf()) return;
+
+        AbstractTexture texture = font.getTexture();
+        if (texture == null || texture.getTextureView() == null || texture.getSampler() == null) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.gameRenderer.mainRenderTarget() == null) return;
+
+        int vertexBytes = mesh.getVertexBytes();
+        int indexBytes = mesh.getIndexBytes();
+        GpuMeshHandle handle = null;
+        try {
+            handle = CombatantRenderSystem.rhi().dynamicMeshes().upload(mesh);
+            STATS.meshUpload(vertexBytes, indexBytes);
+            STATS.glyphs(Math.max(0, mesh.getVertexCount() / 4));
+            STATS.backend(TextBackendPreference.MSDF);
+
+            UIBatchUniforms.update(framebufferWidth, framebufferHeight);
+            MsdfTextUniforms.update(font.getPxRange(), font.getAtlasWidth(), font.getAtlasHeight());
+
+            RhiDrawCommand.Builder command = RhiDrawCommand.builder(
+                            label != null ? label : "Combatant Backdrop Blend Text")
+                    .pipeline(CombatantRenderPipelines.UI_TEXT_MSDF_GLASS_BLEND_FAST)
+                    .colorAttachment(UiMsaaClipLayer.currentColorAttachment(
+                            mc.gameRenderer.mainRenderTarget().getColorTextureView()))
+                    .mesh(handle)
+                    .sampler("u_Texture", texture.getTextureView(), texture.getSampler())
+                    .sampler("u_SceneTexture", sceneView, sceneSampler)
+                    .sampler("u_BlurTexture", blurView, blurSampler)
+                    .uniform("UIBatch", UIBatchUniforms.get())
+                    .uniform("UIBlend", UIBlendUniforms.write(
+                            blend != null ? blend : UiBackdropBlendSpec.NORMAL))
                     .uniform("MsdfText", MsdfTextUniforms.get());
 
             commands.add(command.build());

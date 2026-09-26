@@ -16,9 +16,26 @@ uniform vec3 combatantWorldTweaksFogColor;
 uniform int combatantWorldTweaksFogDisableMask;
 #endif
 
+vec3 combatantPhotonFogWorkingColor() {
+    // WorldTweaks stores UI colors in sRGB/Rec.709. Photon composites fog in
+    // linear Rec.2020, so never inject the UI value directly into the HDR scene.
+    vec3 c = pow(clamp(combatantWorldTweaksFogColor, vec3(0.0), vec3(1.0)), vec3(2.2));
+    return vec3(
+        dot(c, vec3(0.62742569, 0.32928911, 0.04335024)),
+        dot(c, vec3(0.06902744, 0.91957858, 0.01136138)),
+        dot(c, vec3(0.01636642, 0.08802890, 0.89568432))
+    );
+}
+
+float combatantPhotonFogTransmittance(float distanceToCamera) {
+    float fogStart = max(combatantWorldTweaksFogStart, 0.0);
+    float fogEnd = max(combatantWorldTweaksFogEnd, fogStart + 1.0);
+    float amount = smoothstep(fogStart, fogEnd, max(distanceToCamera, 0.0));
+    return 1.0 - amount;
+}
+
 bool combatantPhotonSuppressDefaultAirFog() {
-    if (!combatantWorldTweaksFogControl) return false;
-    if (combatantWorldTweaksFogModify) return true;
+    if (!combatantWorldTweaksFogControl || combatantWorldTweaksFogModify) return false;
     #if defined WORLD_OVERWORLD
         return (combatantWorldTweaksFogDisableMask & 200) != 0;
     #elif defined WORLD_NETHER
@@ -30,22 +47,62 @@ bool combatantPhotonSuppressDefaultAirFog() {
     #endif
 }
 
-void combatantPhotonSoftenWaterFog(inout mat2x3 waterFog) {
+void combatantPhotonApplyWorldTweaksAirFog(
+    inout mat2x3 fog,
+    float distanceToCamera,
+    bool sky
+) {
     if (!combatantWorldTweaksFogControl) return;
-    float visibility = combatantWorldTweaksFogModify || (combatantWorldTweaksFogDisableMask & 1) != 0 ? 1.0 : 0.78;
-    waterFog[0] *= 1.0 - 0.88 * visibility;
-    waterFog[1] = mix(waterFog[1], vec3(1.0), visibility);
-} // combatantPhotonSoftenWaterFog
+
+    if (combatantWorldTweaksFogModify) {
+        // Keep Photon's own atmospheric treatment for the infinite sky/cloud
+        // background. Applying a finite-distance UI fog curve to sky pixels is
+        // what previously washed the sky and erased clouds.
+        if (sky) return;
+
+        float transmittance = combatantPhotonFogTransmittance(distanceToCamera);
+        vec3 t = vec3(transmittance);
+        fog = mat2x3(combatantPhotonFogWorkingColor() * (1.0 - t), t);
+        return;
+    }
+
+    if (combatantPhotonSuppressDefaultAirFog()) {
+        fog = mat2x3(vec3(0.0), vec3(1.0));
+    }
+} // combatantPhotonApplyWorldTweaksAirFog
+
+void combatantPhotonApplyWorldTweaksWaterFog(
+    inout mat2x3 fog,
+    float distanceToCamera
+) {
+    if (!combatantWorldTweaksFogControl) return;
+
+    // Fog modification has the same precedence as the vanilla WorldTweaks
+    // FogEnvironment mixins: explicit custom fog wins over the no-water-fog
+    // toggle and is expressed through Photon's scattering/transmittance pair.
+    if (combatantWorldTweaksFogModify) {
+        float transmittance = combatantPhotonFogTransmittance(distanceToCamera);
+        vec3 t = vec3(transmittance);
+        fog = mat2x3(combatantPhotonFogWorkingColor() * (1.0 - t), t);
+    } else if ((combatantWorldTweaksFogDisableMask & 1) != 0) {
+        fog = mat2x3(vec3(0.0), vec3(1.0));
+    }
+} // combatantPhotonApplyWorldTweaksWaterFog
 @end
 
 @insert_before_hash edca557442dab12ad7e45ab3d92af16882dac5dbe47803ecda08ea07dcf82d25
-            if (combatantPhotonSuppressDefaultAirFog()) {
-                fog = mat2x3(vec3(0.0), vec3(1.0));
-            }
+            combatantPhotonApplyWorldTweaksAirFog(
+                fog,
+                length(world_end_pos - world_start_pos),
+                depth0 == 1.0
+            );
 
 @end
 
 @insert_before_hash 04c1c600e2564adc886777a68521ea4876b7ff06ece947d48590eed71b959168
-            combatantPhotonSoftenWaterFog(water_fog);
+            combatantPhotonApplyWorldTweaksWaterFog(
+                water_fog,
+                length(world_end_pos - world_start_pos)
+            );
 
 @end

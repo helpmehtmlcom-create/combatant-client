@@ -18,8 +18,8 @@ src/main/resources/assets/combatant/shaders/iris-patches/
 
 | Shaderpack | Manifest id | Targeted shaderpack version | Manifest verified Minecraft | Manifest verified Iris | Modrinth |
 | --- | --- | --- | --- | --- | --- |
-| Complementary Shaders - Reimagined | `complementary_reimagined.r5` | `r5.6.1` | `1.21.11` | `1.10.7+1.21.11-fabric` | https://modrinth.com/shader/complementary-reimagined/version/r5.6.1 |
-| Photon Shaders | `photon.v1_3b` | `v1.3b` | `1.21.11` | `1.10.7+1.21.11-fabric` | https://modrinth.com/shader/photon-shader/version/v1.3b |
+| Complementary Shaders - Reimagined | `complementary_reimagined.r5` | `r5.6.1` | `26.2` | `1.11.4+mc26.2` | https://modrinth.com/shader/complementary-reimagined/version/r5.6.1 |
+| Photon Shaders | `photon.v1_3b` | `v1.3b` | `26.2` | `1.11.4+mc26.2` | https://modrinth.com/shader/photon-shader/version/v1.3b |
 
 The client currently targets Minecraft 26.2. The manifest verification fields describe the shaderpack versions and loader environment the patch payloads were last structurally checked against. A shaderpack may advertise broader Minecraft compatibility on Modrinth than the specific manifest verification entry inside Combatant.
 
@@ -38,7 +38,15 @@ Photon `v1.3b` patches currently cover:
 - fullbright;
 - WorldTweaks fog;
 - underwater fog;
-- shaderpack motion blur suppression.
+- shaderpack motion blur suppression;
+- Combatant-owned TAA at the manifest-declared HDR temporal pass, including native temporal bypass and raster jitter;
+- Combatant-owned world MSAA with resolve before single-sample shaderpack stages;
+- non-destructive AA, Motion Blur, and DoF option ownership metadata.
+
+Runtime integration is shaderpack-agnostic. Java code reads pass names, render-target mappings,
+replacement capabilities, ownership anchors, and option IDs from the selected manifest. A new
+shaderpack is supported by adding its manifest and shader patches; pack-specific buffer/program
+names do not belong in the core Iris integration.
 
 ## How Patch Matching Works
 
@@ -49,6 +57,8 @@ This means:
 - the shaderpack name must match the manifest's `packNameRegex`;
 - the expected GLSL target paths must exist;
 - patch markers prevent duplicate injection;
+- `ownershipCritical` targets decide when a replacement may claim runtime ownership, while other
+  preflight-verified targets may still compile lazily in Iris;
 - newer shaderpack versions may work if their structure is still compatible, but they are not treated as verified until the manifest is updated.
 
 ## Validation

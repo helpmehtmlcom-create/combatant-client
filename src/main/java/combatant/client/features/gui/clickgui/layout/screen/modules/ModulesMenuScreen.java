@@ -27,6 +27,10 @@ import combatant.client.features.gui.clickgui.util.ClickGuiHintOverlay;
 import combatant.client.features.gui.clickgui.util.ClickGuiI18n;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.renderer.Renderer2D;
+import combatant.client.render.engine.renderer.ui.blend.UiBackdropBlendSpec;
+import combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest;
+import combatant.client.render.engine.renderer.ui.draw.UiBlurQuality;
+import combatant.client.render.engine.renderer.ui.draw.UiRect;
 import combatant.client.render.engine.svg.SvgRenderOptions;
 import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
@@ -78,8 +82,10 @@ public final class ModulesMenuScreen {
 
     private String frameHoverDescriptionId;
     private String frameHoverDescription;
+    private ModulesMenuCategory frameHoverDescriptionCategory;
     private String activeHoverDescriptionId;
     private String activeHoverDescription;
+    private ModulesMenuCategory activeHoverDescriptionCategory;
     private float hoverDescriptionAnim;
 
     public ModulesMenuScreen() {
@@ -250,6 +256,7 @@ public final class ModulesMenuScreen {
 
         frameHoverDescriptionId = null;
         frameHoverDescription = null;
+        frameHoverDescriptionCategory = null;
 
         for (ModulesMenuPanel panel : panels) {
             if (panel.isDraggingScrollbar()) panel.updateScrollbarDrag(mouseX, mouseY);
@@ -417,6 +424,7 @@ public final class ModulesMenuScreen {
     private void resetTransientState() {
         frameHoverDescriptionId = null;
         frameHoverDescription = null;
+        frameHoverDescriptionCategory = null;
         activeHoverDescriptionId = null;
         activeHoverDescription = null;
         hoverDescriptionAnim = 0.0f;
@@ -517,7 +525,7 @@ public final class ModulesMenuScreen {
                     boolean hover = inside(mouseX, mouseY, pageX, y, listW, rowH);
                     float hoverAnim = panel.hoverAnim(entry.getId(), hover);
                     if (hover && panel.selected == null) {
-                        captureHoverDescription(entry.getId(), entry.description());
+                        captureHoverDescription(entry.getId(), entry.description(), panel.category);
                     }
                     renderModuleRowHover(panel, entry.getId(), pageX, y, listW, rowH,
                             mouseX, mouseY, alpha, hoverAnim);
@@ -728,10 +736,11 @@ public final class ModulesMenuScreen {
         return (hash & 0x00FFFFFF) / 16777215.0f;
     }
 
-    private void captureHoverDescription(String id, String description) {
+    private void captureHoverDescription(String id, String description, ModulesMenuCategory category) {
         if (id == null || id.isBlank() || description == null || description.isBlank()) return;
         frameHoverDescriptionId = id;
         frameHoverDescription = description;
+        frameHoverDescriptionCategory = category;
     }
 
     private void updateHoverDescription(float dt) {
@@ -739,9 +748,11 @@ public final class ModulesMenuScreen {
         if (hasTarget && !frameHoverDescriptionId.equals(activeHoverDescriptionId)) {
             activeHoverDescriptionId = frameHoverDescriptionId;
             activeHoverDescription = frameHoverDescription;
+            activeHoverDescriptionCategory = frameHoverDescriptionCategory;
             hoverDescriptionAnim = Math.min(hoverDescriptionAnim, 0.32f);
         } else if (hasTarget) {
             activeHoverDescription = frameHoverDescription;
+            activeHoverDescriptionCategory = frameHoverDescriptionCategory;
         }
 
         float target = hasTarget ? 1.0f : 0.0f;
@@ -756,6 +767,7 @@ public final class ModulesMenuScreen {
         if (!hasTarget && hoverDescriptionAnim <= 0.001f) {
             activeHoverDescriptionId = null;
             activeHoverDescription = null;
+            activeHoverDescriptionCategory = null;
         }
     }
 
@@ -786,49 +798,42 @@ public final class ModulesMenuScreen {
                 + (1.0f - motionProgress) * 5.5f * scale;
         y = Math.max(areaY + 2.0f * scale, y);
 
-        int primary = ModulesMenuStyle.hoverDescriptionPrimary(alpha);
-        int secondary = ModulesMenuStyle.hoverDescriptionSecondary(alpha);
-        int highlight = ModulesMenuStyle.hoverDescriptionHighlight(alpha);
-        float phase = AnimationUtility.time(0.00034f, AnimationUtility.Mode.NANOS);
-        float phase01 = phase - (float) Math.floor(phase);
-        float invWidth = 1.0f / Math.max(1.0f, textW);
+        int negativeGlassColor = withAlpha(0xFFFFFFFF, Math.min(1.0f, alpha * 0.82f));
+
+        float blendBoundsX = x - 3.0f * scale;
+        float blendBoundsY = y - 3.0f * scale;
+        float blendBoundsW = textW + 6.0f * scale;
+        float blendBoundsH = textH + 6.0f * scale;
+        UiRect blendBounds = UiRect.of(blendBoundsX, blendBoundsY, blendBoundsW, blendBoundsH);
+        UiBackdropBlendSpec blend = UiBackdropBlendSpec.negative(0.64f);
+        UiBackdropRequest backdrop = UiBackdropRequest.currentTargetGlass(
+                blendBounds,
+                UiBlurQuality.LIQUID_GLASS,
+                Renderer2D.LIQUID_GLASS_KAWASE_OFFSET_PX
+        );
 
         comfortaa.beginSize(fontSize, false, false);
         try {
-            comfortaa.renderLiquidGlassQuadGradient(
+            comfortaa.renderLiquidGlassBlendQuadGradient(
                     text,
                     x,
                     y,
                     (index, codePoint, x0, y0, x1, y1, out) -> {
-                        float nx0 = AnimationUtility.clamp((float) ((x0 - x) * invWidth), 0.0f, 1.0f);
-                        float nx1 = AnimationUtility.clamp((float) ((x1 - x) * invWidth), 0.0f, 1.0f);
-                        out[0] = hoverDescriptionColor(nx0, phase01, primary, secondary, highlight);
-                        out[1] = out[0];
-                        out[2] = hoverDescriptionColor(nx1, phase01, primary, secondary, highlight);
-                        out[3] = out[2];
+                        out[0] = negativeGlassColor;
+                        out[1] = negativeGlassColor;
+                        out[2] = negativeGlassColor;
+                        out[3] = negativeGlassColor;
                     },
-                    x - 3.0f * scale,
-                    y - 3.0f * scale,
-                    textW + 6.0f * scale,
-                    textH + 6.0f * scale
+                    blendBoundsX,
+                    blendBoundsY,
+                    blendBoundsW,
+                    blendBoundsH,
+                    blend,
+                    backdrop
             );
         } finally {
             comfortaa.end();
         }
-    }
-
-    private static int hoverDescriptionColor(float x,
-                                             float phase,
-                                             int primary,
-                                             int secondary,
-                                             int highlight) {
-        float wave = 0.5f + 0.5f * (float) Math.sin((x * 1.35f - phase) * Math.PI * 2.0);
-        int base = mix(primary, secondary, wave);
-        float distance = Math.abs(x - phase);
-        distance = Math.min(distance, 1.0f - distance);
-        float shimmer = 1.0f - AnimationUtility.smoothstep(
-                AnimationUtility.clamp(distance / 0.16f, 0.0f, 1.0f));
-        return mix(base, highlight, shimmer * 0.78f);
     }
 
     private void renderSettingsPage(ModulesMenuPanel panel, float mouseX, float mouseY, float alpha) {

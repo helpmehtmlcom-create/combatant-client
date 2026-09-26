@@ -1,0 +1,21 @@
+@patch 2
+@require_ident taau_render_scale
+@require_hash ad3d47f038377e0ef2f5b9216800263bf3ff0487acd320ec116c8b81cae97824
+@require_hash 245e09121a2eb016f48db33cd57e5fc3034fbf898ee1ce38e6fdba4e551294f7
+
+@insert_after_ident hand_depth 1
+#ifndef COMBATANT_AA_UNIFORMS
+#define COMBATANT_AA_UNIFORMS
+uniform int combatantAaOwner;
+uniform vec2 combatantTaaOffset;
+#endif
+
+@end
+
+@replace_line_hash ad3d47f038377e0ef2f5b9216800263bf3ff0487acd320ec116c8b81cae97824
+#define taau_render_scale (combatantAaOwner == 0 ? float(TAAU_RENDER_SCALE) : 1.0)
+@end
+
+@replace_line_hash 245e09121a2eb016f48db33cd57e5fc3034fbf898ee1ce38e6fdba4e551294f7
+#define taau_render_scale 1.0
+@end

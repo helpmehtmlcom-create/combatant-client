@@ -20,6 +20,8 @@ import combatant.client.render.engine.depth.PreTranslucentDepth;
 import combatant.client.render.iris.IrisCombatantFrameHooks;
 import combatant.client.render.iris.IrisSceneDepth;
 import combatant.client.render.iris.IrisRuntime;
+import combatant.client.render.iris.IrisShaderpackMsaaIntegration;
+import combatant.client.render.iris.IrisShaderpackTemporalIntegration;
 
 @Pseudo
 @Mixin(value = IrisRenderingPipeline.class, remap = false)
@@ -34,14 +36,32 @@ public abstract class IrisRenderingPipelineFinalizeMixin {
         IrisSceneDepth.resetFrame();
     }
 
+    @Inject(method = "beginLevelRendering", at = @At("TAIL"), remap = false)
+    private void combatant$seedMsaaAtFrameStart(CallbackInfo ci) {
+        IrisShaderpackMsaaIntegration.beginFrame(IrisRuntime.integrationEpoch());
+    }
+
+    @Inject(method = "renderShadows", at = @At("TAIL"), remap = false)
+    private void combatant$seedMsaaAfterPrepare(CallbackInfo ci) {
+        IrisShaderpackMsaaIntegration.seedWorld();
+    }
+
     @Inject(method = "beginTranslucents", at = @At("HEAD"), remap = false)
     private void combatant$capturePreTranslucentDepth(CallbackInfo ci) {
+        IrisShaderpackMsaaIntegration.resolveWorld();
         PreTranslucentDepth.capture();
+    }
+
+    @Inject(method = "beginTranslucents", at = @At("TAIL"), remap = false)
+    private void combatant$seedMsaaAfterDeferred(CallbackInfo ci) {
+        IrisShaderpackMsaaIntegration.seedWorld();
     }
 
     @Inject(method = "finalizeLevelRendering", at = @At("HEAD"), remap = false)
     private void combatant$captureIrisSceneBeforeFinalPass(CallbackInfo ci) {
+        IrisShaderpackMsaaIntegration.resolveWorld();
         IrisSceneDepth.capture(renderTargets);
+        IrisShaderpackTemporalIntegration.beginFrame(renderTargets, IrisRuntime.integrationEpoch());
     }
 
     @Inject(method = "finalizeLevelRendering", at = @At("TAIL"), remap = false)
@@ -52,6 +72,8 @@ public abstract class IrisRenderingPipelineFinalizeMixin {
     @Inject(method = "destroy", at = @At("HEAD"), remap = false)
     private void combatant$shutdownDepth(CallbackInfo ci) {
         IrisRuntime.pipelineDestroyed(this);
+        IrisShaderpackMsaaIntegration.shutdown();
+        IrisShaderpackTemporalIntegration.shutdown();
         IrisSceneDepth.shutdown();
     }
 }

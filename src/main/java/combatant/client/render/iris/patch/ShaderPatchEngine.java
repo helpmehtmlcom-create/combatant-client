@@ -31,6 +31,7 @@ public enum ShaderPatchEngine {
     private static final CopyOnWriteArrayList<String> EXTRA_MANIFEST_RESOURCES = new CopyOnWriteArrayList<>();
     private static final AtomicReference<Repository> REPOSITORY = new AtomicReference<>();
     private static final Map<String, String> DIAGNOSTICS = new ConcurrentHashMap<>();
+    private static final Map<String, ManifestApplication> APPLICATIONS = new ConcurrentHashMap<>();
     private static final ThreadLocal<String> LOADING_SHADER_PACK_NAME = new ThreadLocal<>();
     private static final AtomicReference<String> GLOBAL_LOADING_SHADER_PACK_NAME = new AtomicReference<>();
 
@@ -51,6 +52,8 @@ public enum ShaderPatchEngine {
     }
 
     public static void beginShaderPackLoad(String shaderPackName) {
+        DIAGNOSTICS.clear();
+        APPLICATIONS.clear();
         if (shaderPackName == null || shaderPackName.isBlank()) {
             LOADING_SHADER_PACK_NAME.remove();
             return;
@@ -95,6 +98,38 @@ public enum ShaderPatchEngine {
         return repository().select(shaderPackName).targetsByPath.keySet().stream().sorted().toList();
     }
 
+    /** Actual load-session state. Manifest metadata alone is never treated as runtime ownership. */
+    public static PatchApplicationState applicationState(String manifestId) {
+        Manifest manifest = repository().manifestsById.get(manifestId);
+        Set<String> required = manifest == null ? Set.of() : manifest.ownershipTargetPaths();
+        int expected = required.size();
+        ManifestApplication application = APPLICATIONS.get(manifestId);
+        if (application == null) {
+            return new PatchApplicationState(manifestId, false, false, 0, expected, "not loaded");
+        }
+        int applied = (int) required.stream().filter(application.appliedPaths::contains).count();
+        boolean complete = application.preflightAccepted && expected > 0
+                && application.appliedPaths.containsAll(required);
+        return new PatchApplicationState(manifestId, application.preflightAccepted, complete,
+                applied, expected, application.reason);
+    }
+
+    public static boolean manifestApplied(String manifestId) {
+        return applicationState(manifestId).complete();
+    }
+
+    public record PatchApplicationState(String manifestId,
+                                        boolean preflightAccepted,
+                                        boolean complete,
+                                        int appliedTargets,
+                                        int expectedTargets,
+                                        String reason) {
+        public PatchApplicationState {
+            manifestId = manifestId == null ? "" : manifestId;
+            reason = reason == null ? "" : reason;
+        }
+    }
+
     /** Runtime-facing identity selected by the same manifest rules that own patch application. */
     public static ShaderpackProfile profile(String shaderPackName) {
         Repository repository = repository();
@@ -110,7 +145,8 @@ public enum ShaderPatchEngine {
                 selected.identity.family,
                 selected.identity.profileId,
                 selected.priority,
-                selected.compatibility.features
+                selected.compatibility.features,
+                selected.integration
         );
     }
 
@@ -118,18 +154,48 @@ public enum ShaderPatchEngine {
                                     String family,
                                     String profileId,
                                     int priority,
-                                    Set<String> features) {
-        public static final ShaderpackProfile NONE = new ShaderpackProfile("", "", "", 0, Set.of());
+                                    Set<String> features,
+                                    ShaderpackIntegration integration) {
+        public static final ShaderpackProfile NONE = new ShaderpackProfile(
+                "", "", "", 0, Set.of(), ShaderpackIntegration.NONE);
 
         public ShaderpackProfile {
             manifestId = manifestId == null ? "" : manifestId;
             family = family == null ? "" : family;
             profileId = profileId == null ? "" : profileId;
             features = features == null ? Set.of() : Set.copyOf(features);
+            integration = integration == null ? ShaderpackIntegration.NONE : integration;
         }
 
         public boolean matched() {
             return !manifestId.isBlank();
+        }
+    }
+
+    /** Data-driven runtime mapping supplied by the selected shaderpack manifest. */
+    public record ShaderpackIntegration(String temporalPass,
+                                        int sceneColorTarget,
+                                        int historyTarget,
+                                        String colorFormat,
+                                        boolean preserveHistoryAlphaOrigin,
+                                        boolean taaReplacement,
+                                        boolean msaaReplacement,
+                                        Set<String> aaOptions,
+                                        Set<String> motionBlurOptions,
+                                        Set<String> depthOfFieldOptions) {
+        public static final ShaderpackIntegration NONE = new ShaderpackIntegration(
+                "", -1, -1, "rgba16f", false, false, false, Set.of(), Set.of(), Set.of());
+
+        public ShaderpackIntegration {
+            temporalPass = temporalPass == null ? "" : temporalPass;
+            colorFormat = colorFormat == null ? "rgba16f" : colorFormat;
+            aaOptions = aaOptions == null ? Set.of() : Set.copyOf(aaOptions);
+            motionBlurOptions = motionBlurOptions == null ? Set.of() : Set.copyOf(motionBlurOptions);
+            depthOfFieldOptions = depthOfFieldOptions == null ? Set.of() : Set.copyOf(depthOfFieldOptions);
+        }
+
+        public boolean hasTemporalMapping() {
+            return !temporalPass.isBlank() && sceneColorTarget >= 0 && historyTarget >= 0;
         }
     }
 
@@ -214,6 +280,7 @@ public enum ShaderPatchEngine {
             DebugLog.renderThread("[IrisPatch] path=%s candidates=%d sourceLines=%d", normalizePath(path), candidates.size(), source.size());
             for (Target target : candidates) {
                 if (contains(source, target.marker)) {
+                    markApplied(target);
                     setDiagnostic(target, "already applied");
                     DebugLog.renderThread("[IrisPatch] %s %s already applied marker=%s", target.manifestId, target.path, target.marker);
                     return source;
@@ -234,6 +301,7 @@ public enum ShaderPatchEngine {
                             target.stages
                     );
                     ImmutableList<String> patched = ShaderPatchCompiler.apply(compiled, source);
+                    markApplied(target);
                     setDiagnostic(target, "applied edits=" + compiled.edits().size());
                     DebugLog.info("[IrisPatch] %s %s applied: schema=%d stages=%s edits=%d marker=%s",
                             target.manifestId,
@@ -275,6 +343,7 @@ public enum ShaderPatchEngine {
         private boolean preflight(String manifestId, SourceProvider sourceProvider) {
             Manifest manifest = repository().manifestsById.get(manifestId);
             if (manifest == null) {
+                markRejected(manifestId, "missing manifest");
                 DebugLog.warn("[IrisPatch] preflight rejected: missing manifest %s", manifestId);
                 return false;
             }
@@ -289,6 +358,7 @@ public enum ShaderPatchEngine {
                 for (Target target : manifest.targets) {
                     ImmutableList<String> source = sourceProvider.load(target.path);
                     if (source == null) {
+                        markRejected(manifestId, "source unavailable: " + target.path);
                         setDiagnostic(target, "preflight rejected: source unavailable");
                         DebugLog.warn("[IrisPatch] %s %s preflight rejected: source unavailable", target.manifestId, target.path);
                         return false;
@@ -309,11 +379,13 @@ public enum ShaderPatchEngine {
                                 source.size(),
                                 compiled.edits().size());
                     } catch (ShaderPatchCompiler.CompileException e) {
+                        markRejected(manifestId, target.path + ": " + e.getMessage());
                         setDiagnostic(target, "preflight rejected: " + e.getMessage());
                         DebugLog.warn("[IrisPatch] %s %s preflight rejected: %s", target.manifestId, target.path, e.getMessage());
                         return false;
                     }
                 }
+                markPreflightAccepted(manifestId);
                 DebugLog.info("[IrisPatch] preflight accepted: manifest=%s shaderPack='%s'", manifestId, shaderPackName);
                 return true;
             } finally {
@@ -327,6 +399,7 @@ public enum ShaderPatchEngine {
             int priority,
             String path,
             String marker,
+            boolean ownershipCritical,
             Set<ShaderPatchCompiler.ShaderStage> stages,
             ShaderPatchCompiler.PatchProgram program
     ) {
@@ -336,7 +409,50 @@ public enum ShaderPatchEngine {
                             int priority,
                             Identity identity,
                             Compatibility compatibility,
+                            ShaderpackIntegration integration,
                             List<Target> targets) {
+        private Set<String> ownershipTargetPaths() {
+            Set<String> explicit = targets.stream()
+                    .filter(Target::ownershipCritical)
+                    .map(Target::path)
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
+            if (!explicit.isEmpty()) return explicit;
+            return targets.stream().map(Target::path)
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        }
+    }
+
+    private static void markPreflightAccepted(String manifestId) {
+        APPLICATIONS.computeIfAbsent(manifestId, ignored -> new ManifestApplication())
+                .accept("preflight accepted");
+    }
+
+    private static void markRejected(String manifestId, String reason) {
+        APPLICATIONS.computeIfAbsent(manifestId, ignored -> new ManifestApplication())
+                .reject(reason);
+    }
+
+    private static void markApplied(Target target) {
+        ManifestApplication application = APPLICATIONS.computeIfAbsent(
+                target.manifestId, ignored -> new ManifestApplication());
+        application.appliedPaths.add(target.path);
+        application.reason = "applied " + application.appliedPaths.size() + " target(s)";
+    }
+
+    private static final class ManifestApplication {
+        private final Set<String> appliedPaths = ConcurrentHashMap.newKeySet();
+        private volatile boolean preflightAccepted;
+        private volatile String reason = "preflight pending";
+
+        private void accept(String value) {
+            preflightAccepted = true;
+            reason = value;
+        }
+
+        private void reject(String value) {
+            preflightAccepted = false;
+            reason = value == null ? "rejected" : value;
+        }
     }
 
     private record Compatibility(Set<String> features) {
@@ -405,6 +521,7 @@ public enum ShaderPatchEngine {
             // Runtime patchability is still decided by preflight. Feature metadata is shared with
             // IrisRuntime so identity/capability selection cannot drift from the applied manifest.
             Compatibility compatibility = readCompatibility(requireObject(manifestJson, "compatibility"));
+            ShaderpackIntegration integration = readIntegration(manifestJson);
 
             String base = parent(manifestPath);
             ArrayList<Target> targets = new ArrayList<>();
@@ -421,6 +538,7 @@ public enum ShaderPatchEngine {
                         priority,
                         path,
                         requireString(targetJson, "marker"),
+                        optionalBoolean(targetJson, "ownershipCritical", false),
                         readStages(targetJson),
                         program
                 ));
@@ -428,7 +546,51 @@ public enum ShaderPatchEngine {
             if (targets.isEmpty()) {
                 throw new IllegalArgumentException("Shader patch manifest has no targets: " + manifestId);
             }
-            return new Manifest(manifestId, priority, identity, compatibility, List.copyOf(targets));
+            return new Manifest(manifestId, priority, identity, compatibility, integration, List.copyOf(targets));
+        }
+
+        private static ShaderpackIntegration readIntegration(JsonObject manifest) {
+            if (!manifest.has("integration") || !manifest.get("integration").isJsonObject()) {
+                return ShaderpackIntegration.NONE;
+            }
+            JsonObject integration = manifest.getAsJsonObject("integration");
+            JsonObject aa = integration.has("aa") && integration.get("aa").isJsonObject()
+                    ? integration.getAsJsonObject("aa") : new JsonObject();
+            JsonObject options = integration.has("options") && integration.get("options").isJsonObject()
+                    ? integration.getAsJsonObject("options") : new JsonObject();
+            return new ShaderpackIntegration(
+                    optionalString(aa, "temporalPass", ""),
+                    optionalInt(aa, "sceneColorTarget", -1),
+                    optionalInt(aa, "historyTarget", -1),
+                    optionalString(aa, "colorFormat", "rgba16f"),
+                    optionalBoolean(aa, "preserveHistoryAlphaOrigin", false),
+                    optionalBoolean(aa, "taaReplacement", false),
+                    optionalBoolean(aa, "msaaReplacement", false),
+                    stringSet(options, "aa"),
+                    stringSet(options, "motionBlur"),
+                    stringSet(options, "depthOfField")
+            );
+        }
+
+        private static Set<String> stringSet(JsonObject object, String key) {
+            if (!object.has(key) || !object.get(key).isJsonArray()) return Set.of();
+            LinkedHashSet<String> result = new LinkedHashSet<>();
+            for (JsonElement element : object.getAsJsonArray(key)) {
+                if (element.isJsonPrimitive()) result.add(element.getAsString());
+            }
+            return Set.copyOf(result);
+        }
+
+        private static String optionalString(JsonObject object, String key, String fallback) {
+            return object.has(key) && object.get(key).isJsonPrimitive() ? object.get(key).getAsString() : fallback;
+        }
+
+        private static int optionalInt(JsonObject object, String key, int fallback) {
+            return object.has(key) && object.get(key).isJsonPrimitive() ? object.get(key).getAsInt() : fallback;
+        }
+
+        private static boolean optionalBoolean(JsonObject object, String key, boolean fallback) {
+            return object.has(key) && object.get(key).isJsonPrimitive() ? object.get(key).getAsBoolean() : fallback;
         }
 
         private static Compatibility readCompatibility(JsonObject compatibility) {

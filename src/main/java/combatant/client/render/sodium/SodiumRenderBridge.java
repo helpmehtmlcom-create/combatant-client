@@ -88,7 +88,7 @@ public final class SodiumRenderBridge {
      * Compatibility entry point. Prefer visibilityProvider().isBoxVisible(...).
      */
     public boolean isBoxVisible(AABB box) {
-        return isSectionBoxVisible(box, VisibilityQuery.worldOverlay(box));
+        return isSectionBoxVisible(box, null);
     }
 
     public boolean isSectionBoxVisible(AABB box, VisibilityQuery query) {

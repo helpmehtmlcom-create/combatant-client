@@ -3,7 +3,9 @@
 @require_ident is_sky
 @require_ident fog_transmittance
 @require_ident fog_scattering
-@require_hash be5ef0bea5057e7d62bad71bec7721dc0048bffd6e941be27511a801bbe48a0a
+@require_call air_fog_analytic
+@require_hash d65531dcee4d63822ad99cde5fb21ab46f36faeeaf61978d434d5759a554a2e3
+@require_hash 74a874c432fd7e09cb78dae93183aac13b5d325a219e699969984334b2d399e5
 
 @insert_zone declarations
 #ifndef COMBATANT_WORLD_TWEAKS_FOG_UNIFORMS_DECLARED
@@ -16,22 +18,99 @@ uniform vec3 combatantWorldTweaksFogColor;
 uniform int combatantWorldTweaksFogDisableMask;
 #endif
 
-float combatantPhotonWorldTweaksFogAmount(float distanceToCamera, bool sky) {
-    float fogRange = max(combatantWorldTweaksFogEnd - combatantWorldTweaksFogStart, 1.0);
-    float fogDistance = min(distanceToCamera, combatantWorldTweaksFogEnd);
-    float fog = smoothstep(0.0, 1.0, clamp((fogDistance - combatantWorldTweaksFogStart) / fogRange, 0.0, 1.0));
-    if (sky) fog *= 0.16;
-    return fog;
+vec3 combatantPhotonFogWorkingColor() {
+    vec3 c = pow(clamp(combatantWorldTweaksFogColor, vec3(0.0), vec3(1.0)), vec3(2.2));
+    return vec3(
+        dot(c, vec3(0.62742569, 0.32928911, 0.04335024)),
+        dot(c, vec3(0.06902744, 0.91957858, 0.01136138)),
+        dot(c, vec3(0.01636642, 0.08802890, 0.89568432))
+    );
 }
 
-void combatantPhotonApplyWorldTweaksFog(inout vec3 color, float distanceToCamera, bool sky) {
-    color = mix(color, combatantWorldTweaksFogColor, combatantPhotonWorldTweaksFogAmount(distanceToCamera, sky));
-} // combatantPhotonApplyWorldTweaksFog
+float combatantPhotonFogTransmittance(float distanceToCamera) {
+    float fogStart = max(combatantWorldTweaksFogStart, 0.0);
+    float fogEnd = max(combatantWorldTweaksFogEnd, fogStart + 1.0);
+    return 1.0 - smoothstep(fogStart, fogEnd, max(distanceToCamera, 0.0));
+}
+
+bool combatantPhotonSuppressDefaultAirFog() {
+    if (!combatantWorldTweaksFogControl || combatantWorldTweaksFogModify) return false;
+    #if defined WORLD_OVERWORLD
+        return (combatantWorldTweaksFogDisableMask & 200) != 0;
+    #elif defined WORLD_NETHER
+        return (combatantWorldTweaksFogDisableMask & 16) != 0;
+    #elif defined WORLD_END
+        return (combatantWorldTweaksFogDisableMask & 32) != 0;
+    #else
+        return false;
+    #endif
+}
+
+void combatantPhotonApplyWorldTweaksFogMatrix(
+    inout mat2x3 fog,
+    float startDistance,
+    float endDistance,
+    bool sky,
+    bool water
+) {
+    if (!combatantWorldTweaksFogControl) return;
+
+    if (combatantWorldTweaksFogModify) {
+        // Photon owns the infinite background atmosphere. Custom finite-range
+        // fog is only substituted on actual scene geometry/layers.
+        if (sky) return;
+
+        float startT = combatantPhotonFogTransmittance(startDistance);
+        float endT = combatantPhotonFogTransmittance(endDistance);
+        float segmentT = startT > 1e-4 ? clamp(endT / startT, 0.0, 1.0) : 1.0;
+        vec3 t = vec3(segmentT);
+        fog = mat2x3(combatantPhotonFogWorkingColor() * (1.0 - t), t);
+        return;
+    }
+
+    bool disabled = water
+        ? ((combatantWorldTweaksFogDisableMask & 1) != 0)
+        : combatantPhotonSuppressDefaultAirFog();
+    if (disabled) {
+        fog = mat2x3(vec3(0.0), vec3(1.0));
+    }
+} // combatantPhotonApplyWorldTweaksFogMatrix
 @end
 
-@insert_after_hash be5ef0bea5057e7d62bad71bec7721dc0048bffd6e941be27511a801bbe48a0a
-    if (combatantWorldTweaksFogControl && combatantWorldTweaksFogModify) {
-        combatantPhotonApplyWorldTweaksFog(fragment_color, view_distance, is_sky);
-    }
+; Analytic fog behind translucent geometry is a segment, not a second full-screen
+; fog overlay. Convert the user's cumulative fog curve into segment transmittance.
+@insert_before_hash d65531dcee4d63822ad99cde5fb21ab46f36faeeaf61978d434d5759a554a2e3
+        combatantPhotonApplyWorldTweaksFogMatrix(
+            analytic_fog,
+            length(front_position_world - cameraPosition),
+            length(back_position_world - cameraPosition),
+            is_sky,
+            false
+        );
+
+@end
+
+; When VL is disabled Photon falls back to analytic water fog. Keep the same
+; WorldTweaks ownership there as in the volumetric path.
+@insert_before_hash 74a874c432fd7e09cb78dae93183aac13b5d325a219e699969984334b2d399e5 1
+        combatantPhotonApplyWorldTweaksFogMatrix(
+            analytic_fog,
+            0.0,
+            view_distance,
+            false,
+            true
+        );
+
+@end
+
+; Analytic overworld fog fallback. Sky remains under Photon atmosphere ownership.
+@insert_before_hash 74a874c432fd7e09cb78dae93183aac13b5d325a219e699969984334b2d399e5 2
+        combatantPhotonApplyWorldTweaksFogMatrix(
+            analytic_fog,
+            0.0,
+            view_distance,
+            is_sky,
+            false
+        );
 
 @end

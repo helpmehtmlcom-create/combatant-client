@@ -14,6 +14,8 @@ public enum MaterialTextureSemantic {
     AMBIENT_OCCLUSION,
     ROUGHNESS,
     METALLIC,
+    /** glTF metallic-roughness packing: G=roughness, B=metallic. */
+    METALLIC_ROUGHNESS,
     SPECULAR,
     EMISSIVE,
     HEIGHT,

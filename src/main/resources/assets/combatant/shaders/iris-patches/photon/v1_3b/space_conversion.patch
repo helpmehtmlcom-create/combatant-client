@@ -1,0 +1,43 @@
+@patch 2
+@require_function screen_to_view_space
+@require_function view_to_screen_space
+@require_ident taa_offset
+@require_hash cbc9956839cff4250d5c14311320609cc2465c3469d0a0190cfdd6cf266c57a8
+@require_hash 039518535cbc509fb120d97bd6147f0e9ad672e16cd1663d8397e16c957aad16
+
+@insert_after_define INCLUDE_UTILITY_SPACE_CONVERSION
+#ifndef COMBATANT_AA_UNIFORMS
+#define COMBATANT_AA_UNIFORMS
+uniform int combatantAaOwner;
+uniform vec2 combatantTaaOffset;
+#endif
+
+vec2 combatantAaReprojectionOffset() {
+    return combatantAaOwner == 2 ? combatantTaaOffset * 0.66 : vec2(0.0);
+}
+
+@end
+
+@replace_line_hash cbc9956839cff4250d5c14311320609cc2465c3469d0a0190cfdd6cf266c57a8 1
+    vec2 jitter_offset = combatantAaOwner == 0 ? taa_offset * rcp(taau_render_scale) : vec2(0.0);
+@end
+
+@replace_line_hash 039518535cbc509fb120d97bd6147f0e9ad672e16cd1663d8397e16c957aad16 1
+    vec2 jitter_offset = combatantAaOwner == 0 ? taa_offset * 0.66 : vec2(0.0);
+@end
+
+@replace_line_hash cbc9956839cff4250d5c14311320609cc2465c3469d0a0190cfdd6cf266c57a8 2
+    vec2 jitter_offset = combatantAaOwner == 0 ? taa_offset * rcp(taau_render_scale) : vec2(0.0);
+@end
+
+@replace_line_hash 039518535cbc509fb120d97bd6147f0e9ad672e16cd1663d8397e16c957aad16 2
+    vec2 jitter_offset = combatantAaOwner == 0 ? taa_offset * 0.66 : vec2(0.0);
+@end
+
+@insert_before_hash 31a5ac51f743e871b1770af5f8e64c59dae3150edb6bc82e59357b5f2a8d6ef9
+    if (handle_jitter) ndc_pos.xy -= combatantAaReprojectionOffset();
+@end
+
+@insert_before_hash 363e43609e68f048abfb70d2fcdde1fd4b18afffb1de16fc41f5dd23d62a31cc
+    if (handle_jitter) ndc_pos.xy += combatantAaReprojectionOffset();
+@end

@@ -73,8 +73,8 @@ public record MaterialSurfaceDescriptor(
         int mask = 0;
         if (textures.has(MaterialTextureSemantic.NORMAL) || textures.has(MaterialTextureSemantic.LABPBR_NORMAL)) mask |= 1 << 0;
         if (textures.has(MaterialTextureSemantic.AMBIENT_OCCLUSION) || textures.has(MaterialTextureSemantic.ORM)) mask |= 1 << 1;
-        if (textures.has(MaterialTextureSemantic.ROUGHNESS) || textures.has(MaterialTextureSemantic.ORM) || textures.has(MaterialTextureSemantic.LABPBR_SPECULAR)) mask |= 1 << 2;
-        if (textures.has(MaterialTextureSemantic.METALLIC) || textures.has(MaterialTextureSemantic.ORM) || textures.has(MaterialTextureSemantic.LABPBR_SPECULAR)) mask |= 1 << 3;
+        if (textures.has(MaterialTextureSemantic.ROUGHNESS) || textures.has(MaterialTextureSemantic.METALLIC_ROUGHNESS) || textures.has(MaterialTextureSemantic.ORM) || textures.has(MaterialTextureSemantic.LABPBR_SPECULAR)) mask |= 1 << 2;
+        if (textures.has(MaterialTextureSemantic.METALLIC) || textures.has(MaterialTextureSemantic.METALLIC_ROUGHNESS) || textures.has(MaterialTextureSemantic.ORM) || textures.has(MaterialTextureSemantic.LABPBR_SPECULAR)) mask |= 1 << 3;
         if (textures.has(MaterialTextureSemantic.SPECULAR) || textures.has(MaterialTextureSemantic.LABPBR_SPECULAR)) mask |= 1 << 4;
         if (textures.has(MaterialTextureSemantic.EMISSIVE) || textures.has(MaterialTextureSemantic.LABPBR_SPECULAR)) mask |= 1 << 5;
         if (textures.has(MaterialTextureSemantic.HEIGHT) || textures.has(MaterialTextureSemantic.LABPBR_NORMAL)) mask |= 1 << 6;

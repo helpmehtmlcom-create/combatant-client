@@ -16,11 +16,14 @@ import combatant.client.render.engine.rhi.resource.RenderResourceManager;
 import combatant.client.render.engine.rhi.state.PipelineStateBackend;
 import combatant.client.render.engine.rhi.shader.AdvancedShaderBackend;
 import combatant.client.render.engine.rhi.upload.DynamicMeshBackend;
+import combatant.client.render.engine.rhi.upload.PersistentMeshBackend;
 
 import java.util.List;
 
 public interface CombatantRhi extends AutoCloseable {
     DynamicMeshBackend dynamicMeshes();
+
+    PersistentMeshBackend persistentMeshes();
 
     FullscreenBackend fullscreen();
 

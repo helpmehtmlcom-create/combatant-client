@@ -23,6 +23,15 @@ final class ShaderPatchEngineProfileTest {
         assertEquals("photon.v1_3b", selected.manifestId());
         assertEquals("photon", selected.profileId());
         assertTrue(selected.features().contains("fullbright"));
+        assertTrue(selected.features().contains("combatant_taa_replacement"));
+        assertTrue(selected.features().contains("combatant_msaa_replacement"));
+        assertEquals("composite4", selected.integration().temporalPass());
+        assertEquals(0, selected.integration().sceneColorTarget());
+        assertEquals(5, selected.integration().historyTarget());
+        assertTrue(selected.integration().preserveHistoryAlphaOrigin());
+        assertTrue(selected.integration().taaReplacement());
+        assertTrue(selected.integration().msaaReplacement());
+        assertTrue(selected.integration().aaOptions().contains("TAA"));
         assertEquals(IrisCompatibilityProfile.PHOTON, IrisCompatibilityProfiles.resolve(selected, true));
     }
 
@@ -34,6 +43,8 @@ final class ShaderPatchEngineProfileTest {
         assertTrue(selected.matched());
         assertEquals("complementary_reimagined.r5", selected.manifestId());
         assertEquals("complementary_reimagined", selected.profileId());
+        assertFalse(selected.integration().taaReplacement());
+        assertTrue(selected.integration().motionBlurOptions().contains("MOTION_BLUR_EFFECT"));
         assertEquals(IrisCompatibilityProfile.COMPLEMENTARY_REIMAGINED,
                 IrisCompatibilityProfiles.resolve(selected, true));
     }
@@ -43,6 +54,7 @@ final class ShaderPatchEngineProfileTest {
         ShaderPatchEngine.ShaderpackProfile selected = ShaderPatchEngine.profile("unknown-pack.zip");
 
         assertFalse(selected.matched());
+        assertEquals(ShaderPatchEngine.ShaderpackIntegration.NONE, selected.integration());
         assertEquals(IrisCompatibilityProfile.GENERIC_IRIS,
                 IrisCompatibilityProfiles.resolve(selected, true));
         assertEquals(IrisCompatibilityProfile.NONE,
