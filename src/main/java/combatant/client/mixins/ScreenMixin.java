@@ -26,6 +26,7 @@ import combatant.client.features.theme.Themes;
 import combatant.client.features.gui.hud.nondraggable.impl.BetterButtons;
 import combatant.client.features.gui.hud.nondraggable.impl.BetterTooltips;
 import combatant.client.features.module.Modules;
+import combatant.client.features.module.modules.player.PortalChat;
 import combatant.client.features.module.modules.visuals.NoRender;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.animation.AnimationUtility;
@@ -186,5 +187,13 @@ public abstract class ScreenMixin {
     @Unique
     private static int combatant$withAlpha(int rgb, int alpha) {
         return (rgb & 0x00FFFFFF) | (Mth.clamp(alpha, 0, 255) << 24);
+    }
+
+    @Inject(method = "isAllowedInPortal", at = @At("HEAD"), cancellable = true)
+    private void combatant$allowScreenInPortal(CallbackInfoReturnable<Boolean> cir) {
+        PortalChat portalChat = Modules.get(PortalChat.class);
+        if (portalChat != null && portalChat.isEnabled()) {
+            cir.setReturnValue(true);
+        }
     }
 }

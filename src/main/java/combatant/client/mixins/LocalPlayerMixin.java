@@ -42,6 +42,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
@@ -49,6 +50,7 @@ import combatant.client.events.Events;
 import combatant.client.events.impl.*;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.movement.*;
+import combatant.client.features.module.modules.player.LiquidInteract;
 import combatant.client.features.module.modules.player.XCarry;
 import combatant.client.features.module.modules.visuals.Freecam;
 import combatant.client.mixininterface.ILocalPlayer;
@@ -899,5 +901,15 @@ public abstract class LocalPlayerMixin implements ILocalPlayer {
         if (event.isCancelled()) {
             ci.cancel();
         }
+    }
+
+    @ModifyArg(
+            method = "pick(Lnet/minecraft/world/entity/Entity;DDF)Lnet/minecraft/world/phys/HitResult;",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/Entity;pick(DFZ)Lnet/minecraft/world/phys/HitResult;"),
+            index = 2
+    )
+    private static boolean combatant$includeFluidsIfLiquidInteract(boolean includeFluids) {
+        LiquidInteract li = Modules.get(LiquidInteract.class);
+        return (li != null && li.isEnabled()) || includeFluids;
     }
 }

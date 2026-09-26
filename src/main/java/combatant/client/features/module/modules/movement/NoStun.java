@@ -39,8 +39,10 @@ import java.util.Map;
 @ModuleInfo(
         id = "nostun",
         displayName = "NoStun",
+        aliases = {"NoSlow", "NoSlowdown"},
         category = ModuleCategory.MOVEMENT,
-        description = "module.nostun.description")
+        description = "module.nostun.description"
+)
 public class NoStun extends Module {
 
     private static final float DEFAULT_SLIPPERINESS = 0.6F;

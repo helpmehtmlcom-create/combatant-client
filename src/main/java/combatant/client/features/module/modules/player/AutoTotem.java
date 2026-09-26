@@ -15,7 +15,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import combatant.client.config.common.CommonSettingSchemas;
 import combatant.client.config.values.BooleanValue;
+import combatant.client.config.values.EnumValue;
 import combatant.client.config.values.NumberValue;
+import net.minecraft.tags.ItemTags;
 import combatant.client.features.gui.hud.draggable.impl.Itemizer;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
@@ -27,11 +29,15 @@ import java.util.function.Predicate;
 @ModuleInfo(
         id = "autototem",
         displayName = "AutoTotem",
+        aliases = {"Totem", "OffhandTotem"},
         category = ModuleCategory.PLAYER,
-        description = "module.autototem.description")
+        description = "module.autototem.description"
+)
 public class AutoTotem extends Module {
     private final Minecraft mc = Minecraft.getInstance();
 
+    private final EnumValue<Mode> mode =
+            enumSetting("autoTotemMode", "mode", Mode.SMART, Mode.values());
     private final NumberValue<Float> healthThreshold =
             numCommon(
                     "autototem_threshold",
@@ -126,6 +132,10 @@ public class AutoTotem extends Module {
     }
 
     private boolean shouldHoldTotem(LocalPlayer player, float health) {
+        if (mode.get() == Mode.ALWAYS) {
+            return true;
+        }
+
         if (player.isFallFlying() && health <= elytraHealth.get()) {
             return true;
         }
@@ -136,6 +146,18 @@ public class AutoTotem extends Module {
 
         if (fallCheck.get() && player.fallDistance > 10.0f) {
             return true;
+        }
+
+        if (mode.get() == Mode.SMART) {
+            ItemStack mainHand = player.getMainHandItem();
+            if (mainHand.is(ItemTags.SWORDS)
+                    || mainHand.is(ItemTags.AXES)
+                    || mainHand.is(Items.END_CRYSTAL)
+                    || mainHand.is(Items.RESPAWN_ANCHOR)) {
+                if (health <= healthThreshold.get() * 1.5f) {
+                    return true;
+                }
+            }
         }
 
         return getClosestCrystalDistance(player) <= crystalDistance.get();
@@ -334,5 +356,11 @@ public class AutoTotem extends Module {
         previousOffhand = ItemStack.EMPTY;
         previousOffhandSlot = -1;
         usingTotem = false;
+    }
+
+    public enum Mode {
+        SMART,
+        HEALTH,
+        ALWAYS
     }
 }

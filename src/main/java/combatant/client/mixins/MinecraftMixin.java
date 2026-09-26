@@ -24,6 +24,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -40,6 +41,7 @@ import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.movement.Timer;
 import combatant.client.features.module.modules.player.NoDelay;
 import combatant.client.features.module.modules.player.NoInteract;
+import combatant.client.features.module.modules.player.MultiTask;
 import combatant.client.features.module.modules.visuals.Freecam;
 import combatant.client.features.module.modules.visuals.ViewModel;
 import combatant.client.features.relations.StaffTracker;
@@ -130,6 +132,21 @@ public class MinecraftMixin implements MinecraftGameConfigHolder {
         }
     }
 
+    @ModifyExpressionValue(
+            method = "handleKeybinds",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/player/LocalPlayer;isUsingItem()Z")
+    )
+    private boolean combatant$multiTaskHandleKeybinds(boolean original) {
+        return original && !Modules.enabled(MultiTask.class);
+    }
+
+    @ModifyExpressionValue(
+            method = "continueAttack",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/player/LocalPlayer;isUsingItem()Z")
+    )
+    private boolean combatant$multiTaskContinueAttack(boolean original) {
+        return original && !Modules.enabled(MultiTask.class);
+    }
     @Inject(method = "shouldEntityAppearGlowing", at = @At("HEAD"), cancellable = true)
     private void combatant$disablePvpGlow(Entity entity, CallbackInfoReturnable<Boolean> cir) {
         if (!(entity instanceof Player)) return;
