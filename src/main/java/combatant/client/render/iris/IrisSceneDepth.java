@@ -12,9 +12,7 @@ import com.mojang.blaze3d.textures.GpuTexture;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import net.irisshaders.iris.targets.RenderTargets;
 
-/**
- * Read-only views of the resolved Iris scene depth used by Combatant postprocess passes.
- */
+/** Managed views of Iris scene depth shared by imported geometry and Combatant postprocess. */
 public enum IrisSceneDepth {
     ;
     private static GpuTexture mainTexture;
@@ -62,6 +60,15 @@ public enum IrisSceneDepth {
     }
 
     public static GpuTextureView mainDepthView() {
+        return isValid() ? mainView : null;
+    }
+
+    /**
+     * Writable attachment for the imported opaque G-buffer insertion point. Callers may only use
+     * this while Iris is still before translucents; all postprocess consumers treat the same view
+     * as read-only.
+     */
+    public static GpuTextureView importedGeometryDepthAttachment() {
         return isValid() ? mainView : null;
     }
 

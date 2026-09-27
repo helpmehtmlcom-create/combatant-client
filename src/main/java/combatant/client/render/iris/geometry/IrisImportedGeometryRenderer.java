@@ -22,6 +22,7 @@ import combatant.client.render.engine.scene.visibility.SceneViewType;
 import combatant.client.render.engine.scene.visibility.SceneVisibilityMode;
 import combatant.client.render.iris.IrisRuntime;
 import combatant.client.render.iris.IrisRuntimeSnapshot;
+import combatant.client.render.iris.IrisSceneDepth;
 import combatant.client.render.iris.patch.ShaderPatchEngine;
 import combatant.client.util.logging.DebugLog;
 import net.irisshaders.iris.shadows.ShadowRenderer;
@@ -85,7 +86,12 @@ public final class IrisImportedGeometryRenderer {
         if (renderer == null || renderer.mainRenderTarget() == null) return;
         var target = renderer.mainRenderTarget();
         var color = target.getColorTextureView();
-        var depth = target.getDepthTextureView();
+        // The color view is only the Blaze3D descriptor anchor: ExtendedShader binds the actual
+        // shaderpack MRT. Depth is not a dummy attachment, though. Point it at Iris' current scene
+        // depth so fixed-function testing/writes and shaderpack depthtex* consumers share storage.
+        var depth = route == Route.SHADOW
+                ? target.getDepthTextureView()
+                : IrisSceneDepth.importedGeometryDepthAttachment();
         if (color == null || depth == null) return;
         ArrayList<RhiDrawCommand> commands = new ArrayList<>();
         ArrayList<VisibleInstance> visible = new ArrayList<>();

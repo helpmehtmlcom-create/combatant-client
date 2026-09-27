@@ -48,6 +48,11 @@ public abstract class IrisRenderingPipelineFinalizeMixin {
 
     @Inject(method = "beginTranslucents", at = @At("HEAD"), remap = false)
     private void combatant$capturePreTranslucentDepth(CallbackInfo ci) {
+        // Imported opaque geometry is submitted while Iris still owns the pre-translucent
+        // G-buffer. Publish Iris' physical depth attachment first so the Combatant render pass
+        // tests and writes the same image later exposed to depthtex0 / depthtex1. Relying on
+        // Minecraft.mainRenderTarget here only happened to alias this texture on some backends.
+        IrisSceneDepth.capture(renderTargets);
         IrisRuntime.renderImportedGeometryPrimary();
         IrisShaderpackMsaaIntegration.resolveWorld();
         PreTranslucentDepth.capture();

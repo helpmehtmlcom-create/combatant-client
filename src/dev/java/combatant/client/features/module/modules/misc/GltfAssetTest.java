@@ -38,13 +38,13 @@ import java.io.IOException;
 @ModuleInfo(id = "gltfassettest", displayName = "glTF Asset Test", category = ModuleCategory.MISC)
 public final class GltfAssetTest extends Module {
     private final StringValue assetLocation = text(
-            "gltfTestAsset", "asset", "combatant:models/dev/textured_pbr_cube.gltf");
+            "gltfTestAsset", "asset", "combatant:models/dev/boombox.gltf");
     private final BooleanValue invalidateBeforeLoad = bool(
             "gltfTestInvalidate", "invalidate_cache", false);
     private final NumberValue<Double> distance = num(
             "gltfTestDistance", "distance", 4.0, 1.0, 32.0);
     private final NumberValue<Double> scale = num(
-            "gltfTestScale", "scale", 1.0, 0.01, 20.0);
+            "gltfTestScale", "scale", 100.0, 0.01, 500.0);
     private final BooleanValue animateRotation = bool(
             "gltfTestRotate", "animate_rotation", true);
 
@@ -81,8 +81,8 @@ public final class GltfAssetTest extends Module {
             Diagnostics diagnostics = inspect(runtime);
 
             // Spawn directly in front of the camera yaw and place the imported bounds on the
-            // player's foot plane. The fixture cube has local Y [-1,+1], so using player Y as the
-            // asset origin would bury half of it in terrain.
+            // player's foot plane. BoomBox is authored in centimetre-scale coordinates, hence the
+            // larger default scale; bounds-based placement keeps this valid for alternate assets.
             Vec3 cameraForward = Vec3.directionFromRotation(0.0f, mc.gameRenderer.mainCamera().yRot());
             Vec3 horizontalForward = new Vec3(cameraForward.x, 0.0, cameraForward.z);
             if (horizontalForward.lengthSqr() < 1.0e-8) horizontalForward = new Vec3(0.0, 0.0, 1.0);

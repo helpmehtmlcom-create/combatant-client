@@ -9,13 +9,19 @@ package combatant.client.mixins;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
 import combatant.client.util.logging.DebugLog;
 import combatant.client.render.engine.rhi.backend.gl.GlNativeStateTracker;
+import combatant.client.render.iris.IrisRuntime;
 import com.mojang.blaze3d.opengl.DirectStateAccess;
+import net.irisshaders.iris.vertices.ImmediateState;
 import net.minecraft.resources.Identifier;
 import org.slf4j.Logger;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * GlCommandEncoder is package-private in Mojang's OpenGL backend, so this mixin
@@ -23,6 +29,23 @@ import org.spongepowered.asm.mixin.injection.At;
  */
 @Mixin(targets = "com.mojang.blaze3d.opengl.GlCommandEncoder")
 public abstract class GlCommandEncoderMixin {
+    @Shadow
+    private RenderPipeline lastPipeline;
+
+    /**
+     * Iris unlocks its deferred depth/color masks at the head of trySetup. Blaze3D normally
+     * reapplies the pipeline immediately afterwards, but skips that work when its cached pipeline
+     * identity is unchanged. Imported geometry uses a persistent pipeline and a fresh render pass,
+     * so this cache hit could inherit depth-test/depth-write state from the preceding shaderpack
+     * pass. safeToMultiply is scoped specifically around Combatant's Iris geometry submission.
+     */
+    @Inject(method = "trySetup", at = @At("HEAD"))
+    private void combatant$reapplyImportedIrisPipelineState(CallbackInfoReturnable<Boolean> cir) {
+        if (ImmediateState.safeToMultiply && IrisRuntime.isShaderpackRendererActive()) {
+            lastPipeline = null;
+        }
+    }
+
     @WrapOperation(
             method = "trySetup",
             at = @At(
