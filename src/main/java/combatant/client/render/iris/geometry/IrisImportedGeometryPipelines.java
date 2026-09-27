@@ -21,15 +21,29 @@ public final class IrisImportedGeometryPipelines {
     public static final RenderPipeline GBUFFER_DOUBLE_SIDED = pipeline("iris_imported_geometry_double_sided", false, false);
     public static final RenderPipeline SHADOW_CULL = pipeline("iris_imported_shadow_cull", true, true);
     public static final RenderPipeline SHADOW_DOUBLE_SIDED = pipeline("iris_imported_shadow_double_sided", false, true);
-    public static final RenderPipeline TRANSLUCENT_CULL = translucent("iris_imported_translucent_cull", true);
-    public static final RenderPipeline TRANSLUCENT_DOUBLE_SIDED = translucent("iris_imported_translucent_double_sided", false);
+    public static final RenderPipeline TRANSLUCENT_CULL = translucent(
+            "iris_imported_translucent_cull", true, true, true);
+    public static final RenderPipeline TRANSLUCENT_DOUBLE_SIDED = translucent(
+            "iris_imported_translucent_double_sided", false, true, true);
+    public static final RenderPipeline TRANSLUCENT_BLEND_CULL = translucent(
+            "iris_imported_translucent_blend_cull", true, true, false);
+    public static final RenderPipeline TRANSLUCENT_BLEND_DOUBLE_SIDED = translucent(
+            "iris_imported_translucent_blend_double_sided", false, true, false);
+    public static final RenderPipeline TRANSLUCENT_NO_DEPTH_CULL = translucent(
+            "iris_imported_translucent_no_depth_cull", true, false, false);
+    public static final RenderPipeline TRANSLUCENT_NO_DEPTH_DOUBLE_SIDED = translucent(
+            "iris_imported_translucent_no_depth_double_sided", false, false, false);
 
     private IrisImportedGeometryPipelines() {}
 
     public static boolean owns(RenderPipeline pipeline) {
         return pipeline == GBUFFER_CULL || pipeline == GBUFFER_DOUBLE_SIDED
                 || pipeline == SHADOW_CULL || pipeline == SHADOW_DOUBLE_SIDED
-                || pipeline == TRANSLUCENT_CULL || pipeline == TRANSLUCENT_DOUBLE_SIDED;
+                || pipeline == TRANSLUCENT_CULL || pipeline == TRANSLUCENT_DOUBLE_SIDED
+                || pipeline == TRANSLUCENT_BLEND_CULL
+                || pipeline == TRANSLUCENT_BLEND_DOUBLE_SIDED
+                || pipeline == TRANSLUCENT_NO_DEPTH_CULL
+                || pipeline == TRANSLUCENT_NO_DEPTH_DOUBLE_SIDED;
     }
 
     private static RenderPipeline pipeline(String path, boolean cull, boolean shadow) {
@@ -48,15 +62,18 @@ public final class IrisImportedGeometryPipelines {
         return CombatantRenderPipelines.registerAddonPipeline(pipeline);
     }
 
-    private static RenderPipeline translucent(String path, boolean cull) {
+    private static RenderPipeline translucent(String path, boolean cull,
+                                              boolean depthTest, boolean depthWrite) {
         RenderPipeline pipeline = entityBuilder()
                 .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/" + path))
                 .withDomain(PipelineDomain.WORLD)
                 .withVertexFormat(IrisVertexFormats.ENTITY, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
                 .withVertexShader(Identifier.withDefaultNamespace("core/entity"))
                 .withFragmentShader(Identifier.withDefaultNamespace("core/entity"))
-                .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-                .withDepthWrite(false)
+                .withDepthTestFunction(depthTest
+                        ? DepthTestFunction.GEQUAL_DEPTH_TEST
+                        : DepthTestFunction.NO_DEPTH_TEST)
+                .withDepthWrite(depthWrite)
                 .withBlend(BlendFunction.TRANSLUCENT)
                 .withCull(cull)
                 .build();

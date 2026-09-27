@@ -17,6 +17,7 @@ import com.mojang.blaze3d.framegraph.FramePass;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
 import com.mojang.blaze3d.resource.ResourceHandle;
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -43,8 +44,14 @@ import combatant.client.features.module.modules.visuals.WorldTweaks;
 import combatant.client.mixins.accessors.GameRendererAccessor;
 import combatant.client.mixins.accessors.LevelRendererAccessor;
 import combatant.client.render.engine.core.CombatantWorldMatrices;
+import combatant.client.render.engine.RenderState;
+import combatant.client.render.engine.asset.gltf.render.ImportedAssetCompatibilityRenderer;
+import combatant.client.render.engine.core.CombatantRenderSystem;
+import combatant.client.render.engine.core.RenderPhase;
+import combatant.client.render.engine.core.RenderPhaseScope;
 import combatant.client.render.engine.depth.PreTranslucentDepth;
 import combatant.client.render.engine.depth.WorldSceneDepth;
+import combatant.client.render.engine.renderer.MeshRenderer;
 import combatant.client.render.iris.IrisRuntime;
 import combatant.client.render.sky.CustomSkyboxRenderer;
 
@@ -273,5 +280,58 @@ public abstract class LevelRendererMixin {
             mainFramebuffer = mc != null && mc.gameRenderer != null ? mc.gameRenderer.mainRenderTarget() : null;
         }
         PreTranslucentDepth.captureFrom(mainFramebuffer);
+    }
+
+    @Inject(
+            method = "lambda$addMainPass$0",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/renderer/feature/FeatureRenderDispatcher$PreparedFrame;executeTranslucent()V",
+                    shift = At.Shift.AFTER
+            ),
+            remap = false
+    )
+    private void combatant$renderImportedWorldEntities(
+            GpuBufferSlice fogBuffer,
+            LevelRenderState worldRenderState,
+            net.minecraft.util.profiling.ProfilerFiller profiler,
+            net.minecraft.client.renderer.chunk.ChunkSectionsToRender chunkSections,
+            com.mojang.blaze3d.resource.ResourceHandle<?> entityOutlineHandle,
+            net.minecraft.client.renderer.feature.FeatureRenderDispatcher.PreparedFrame preparedFrame,
+            com.mojang.blaze3d.resource.ResourceHandle<?> translucentFramebufferHandle,
+            com.mojang.blaze3d.resource.ResourceHandle<?> mainFramebufferHandle,
+            com.mojang.blaze3d.resource.ResourceHandle<?> itemEntityFramebufferHandle,
+            com.mojang.blaze3d.resource.ResourceHandle<?> particlesFramebufferHandle,
+            CallbackInfo ci
+    ) {
+        if (IrisRuntime.isShaderpackRendererActive() || !CombatantWorldMatrices.isValid()) {
+            return;
+        }
+        RenderTarget mainFramebuffer = combatant$getFramebuffer(
+                combatant$asRenderTargetHandle(mainFramebufferHandle));
+        RenderTarget entityTranslucentFramebuffer = combatant$getFramebuffer(
+                combatant$asRenderTargetHandle(itemEntityFramebufferHandle));
+        RenderTarget renderTarget = entityTranslucentFramebuffer != null
+                ? entityTranslucentFramebuffer : mainFramebuffer;
+        org.joml.Matrix4f position = CombatantWorldMatrices.positionMatrix();
+        org.joml.Matrix4f projection = CombatantWorldMatrices.renderProjectionMatrix();
+        if (renderTarget == null || position == null || projection == null) {
+            return;
+        }
+
+        var modelView = RenderSystem.getModelViewStack();
+        boolean previousRendering3D = RenderState.rendering3D;
+        modelView.pushMatrix();
+        try (RenderPhaseScope ignored = CombatantRenderSystem.phase(RenderPhase.WORLD_BEFORE_TRANSLUCENT)) {
+            modelView.identity();
+            modelView.mul(position);
+            RenderState.rendering3D = true;
+            RenderState.worldProjection.set(projection);
+            MeshRenderer.setProjection(projection);
+            ImportedAssetCompatibilityRenderer.renderWorldEntities(renderTarget);
+        } finally {
+            RenderState.rendering3D = previousRendering3D;
+            modelView.popMatrix();
+        }
     }
 }

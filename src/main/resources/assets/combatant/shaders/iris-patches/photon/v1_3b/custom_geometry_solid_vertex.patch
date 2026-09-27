@@ -10,6 +10,7 @@
 
 @insert_zone declarations
 out vec2 combatant_uv1;
+out mat3 combatant_smooth_tbn;
 flat out uint combatant_geometry_marker;
 
 @end
@@ -43,6 +44,10 @@ uniform float combatantOverrideAmbientLight;
 
 
 @insert_after_hash fad71d3e91aaddde2d201ec96d096ab4382c998ac8e96a0dc2f43eea9b83a88c
+    // Photon intentionally declares its entity TBN as flat for Minecraft's faceted meshes.
+    // glTF vertex normals and tangents are smooth, so carry a separate interpolated basis for
+    // imported materials instead of inheriting the provoking vertex across each triangle.
+    combatant_smooth_tbn = tbn;
     light_levels = max(light_levels, vec2(max(
         combatantFullbrightEnabled ? clamp(combatantFullbrightMinLight, 0.0, 1.0) : 0.0,
         clamp(combatantOverrideAmbientLight, 0.0, 1.0)

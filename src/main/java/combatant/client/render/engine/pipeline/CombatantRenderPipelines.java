@@ -209,12 +209,19 @@ public enum CombatantRenderPipelines {
             "rig_entity_translucent_no_depth_write_cull", SHADER_RIG_ENTITY_TRANSLUCENT_FRAG, true, false, true
     ));
 
-    /** Shaderpack-off/dev correctness path for static imported PBR geometry. */
-    public static final RenderPipeline ASSET_COMPATIBILITY_CULL = add(assetCompatibilityPipeline(
-            "asset_compatibility_cull", true
+    /** Shaderpack-off entity-translucent path for static imported PBR geometry. */
+    public static final RenderPipeline ASSET_COMPATIBILITY_TRANSLUCENT_CULL = add(assetCompatibilityPipeline(
+            "asset_compatibility_translucent_cull", true, true
     ));
-    public static final RenderPipeline ASSET_COMPATIBILITY_DOUBLE_SIDED = add(assetCompatibilityPipeline(
-            "asset_compatibility_double_sided", false
+    public static final RenderPipeline ASSET_COMPATIBILITY_TRANSLUCENT_DOUBLE_SIDED = add(assetCompatibilityPipeline(
+            "asset_compatibility_translucent_double_sided", false, true
+    ));
+    /** Explicit overlay variant; never selected for ordinary ENTITY instances. */
+    public static final RenderPipeline ASSET_COMPATIBILITY_TRANSLUCENT_NO_DEPTH_CULL = add(assetCompatibilityPipeline(
+            "asset_compatibility_translucent_no_depth_cull", true, false
+    ));
+    public static final RenderPipeline ASSET_COMPATIBILITY_TRANSLUCENT_NO_DEPTH_DOUBLE_SIDED = add(assetCompatibilityPipeline(
+            "asset_compatibility_translucent_no_depth_double_sided", false, false
     ));
 
 
@@ -1922,7 +1929,7 @@ public enum CombatantRenderPipelines {
                 && pipeline.getVertexFormatBinding(0) == CombatantVertexFormats.RIG_POSITION_TEXTURE_NORMAL_COLOR_BONES_DEFORM;
     }
 
-    private static RenderPipeline assetCompatibilityPipeline(String path, boolean cull) {
+    private static RenderPipeline assetCompatibilityPipeline(String path, boolean cull, boolean depthTest) {
         return new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
                 .withUniform("AssetMaterial", UniformType.UNIFORM_BUFFER)
                 .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/" + path))
@@ -1936,8 +1943,11 @@ public enum CombatantRenderPipelines {
                 .withSampler("u_Normal")
                 .withSampler("u_Occlusion")
                 .withSampler("u_Emissive")
-                .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
-                .withDepthWrite(true)
+                .withDepthTestFunction(depthTest
+                        ? DepthTestFunction.GEQUAL_DEPTH_TEST
+                        : DepthTestFunction.NO_DEPTH_TEST)
+                .withDepthWrite(depthTest)
+                .withBlend(BlendFunction.TRANSLUCENT)
                 .withCull(cull)
                 .build();
     }

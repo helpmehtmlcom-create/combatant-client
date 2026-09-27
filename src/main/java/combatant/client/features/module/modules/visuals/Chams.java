@@ -62,7 +62,7 @@ import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.rhi.CombatantRhi;
 
-@ModuleInfo(id = "chams", displayName = "Chams", category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.ESP,
+@ModuleInfo(id = "chams", displayName = "Chams", category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.COSMETIC,
         description = "module.chams.description")
 public class Chams extends Module {
 

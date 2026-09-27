@@ -8,6 +8,7 @@
 
 @insert_zone declarations
 in vec2 combatant_uv1;
+in mat3 combatant_smooth_tbn;
 flat in uint combatant_geometry_marker;
 
 @end
@@ -68,6 +69,15 @@ vec3 combatant_srgb_to_linear(vec3 value) {
     return mix(high, low, cutoff);
 }
 
+mat3 combatant_interpolated_tbn(mat3 basis) {
+    vec3 normal = normalize(basis[2]);
+    vec3 tangent = basis[0] - normal * dot(basis[0], normal);
+    tangent = normalize(tangent);
+    vec3 bitangent = cross(tangent, normal);
+    bitangent *= sign(dot(bitangent, basis[1]));
+    return mat3(tangent, normalize(bitangent), normal);
+}
+
 float combatant_pack_emission(vec3 emission, bool unlit) {
     float maximum = max(emission.r, max(emission.g, emission.b));
     uint exponent = uint(clamp(ceil(log2(max(maximum, 1.0))), 0.0, 7.0));
@@ -91,7 +101,8 @@ float combatant_pack_emission(vec3 emission, bool unlit) {
             return;
         }
 
-        mat3 combatant_tbn = gl_FrontFacing ? tbn : -tbn;
+        mat3 combatant_tbn = combatant_interpolated_tbn(combatant_smooth_tbn);
+        combatant_tbn = gl_FrontFacing ? combatant_tbn : -combatant_tbn;
         vec3 tangent_normal = combatant_sample_material_map(1).xyz * 2.0 - 1.0;
         tangent_normal.xy *= combatant_material_param(9);
         tangent_normal = normalize(tangent_normal);

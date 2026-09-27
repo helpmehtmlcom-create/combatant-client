@@ -611,30 +611,32 @@ public final class ModulesMenuScreen {
 
                 UiBoxShape shape = UiBoxShape.rounded(x, rowY, itemW, rowH, radius);
 
-                // Keep a restrained glass response, but no expanded backdrop/negative layer around
-                // the pill. The readable body is the authored theme gradient below.
-                int glassRgb = mix(ModulesMenuStyle.panelBgGlassDark(), ModulesMenuStyle.themeAccentSoft(),
-                        0.24f + 0.08f * hover);
-                int glassTint = withAlpha(glassRgb, Math.round(alpha * (42.0f + 14.0f * hover)));
+                // Tint the optical glass itself. The old version put an opaque-ish theme gradient
+                // over the result, which flattened the refraction and made these read as matte pills.
+                // Keep only a whisper of authored gradient below for the theme's two-colour direction.
+                int themeGlass = mix(buttonGradient.start(), buttonGradient.end(), 0.50f);
+                int glassRgb = mix(ModulesMenuStyle.panelBgGlassDark(), themeGlass,
+                        0.72f + 0.08f * hover);
+                int glassTint = withAlpha(glassRgb, Math.round(alpha * (108.0f + 18.0f * hover)));
                 UiLiquidGlassMaterial material = UiLiquidGlassMaterial.DEFAULT.withInnerGlow(
-                        0.010f + hover * 0.008f,
-                        2.4f + hover * 0.3f,
-                        withAlpha(ModulesMenuStyle.themeAccentSoft(), Math.round(alpha * (8.0f + 6.0f * hover)))
+                        0.006f + hover * 0.006f,
+                        2.15f + hover * 0.20f,
+                        withAlpha(themeGlass, Math.round(alpha * (4.0f + 4.0f * hover)))
                 );
                 renderer.withLiquidGlassMaterial(material, () -> renderer.liquidGlassRect(
                         x, rowY, itemW, rowH, radius,
                         glassTint,
-                        alpha * (0.42f + hover * 0.05f),
-                        alpha * 0.28f,
+                        alpha * (0.92f + hover * 0.04f),
+                        alpha * (0.82f + hover * 0.06f),
                         Renderer2D.LiquidGlassPreset.HUD_SMALL
                 ));
 
-                int idleStart = withAlpha(buttonGradient.start(), Math.round(alpha * (46.0f + 18.0f * hover)));
-                int idleEnd = withAlpha(buttonGradient.end(), Math.round(alpha * (40.0f + 17.0f * hover)));
+                int idleStart = withAlpha(buttonGradient.start(), Math.round(alpha * (7.0f + 5.0f * hover)));
+                int idleEnd = withAlpha(buttonGradient.end(), Math.round(alpha * (5.0f + 5.0f * hover)));
                 renderer.box(shape, UiPaint.linear(idleStart, idleEnd, gradientAngle, 0.0f));
 
-                int strokeStart = withAlpha(buttonGradient.start(), Math.round(alpha * (23.0f + 16.0f * hover)));
-                int strokeEnd = withAlpha(buttonGradient.end(), Math.round(alpha * (20.0f + 14.0f * hover)));
+                int strokeStart = withAlpha(buttonGradient.start(), Math.round(alpha * (17.0f + 10.0f * hover)));
+                int strokeEnd = withAlpha(buttonGradient.end(), Math.round(alpha * (14.0f + 9.0f * hover)));
                 renderer.boxStroke(
                         shape,
                         UiPaint.linear(strokeStart, strokeEnd, gradientAngle, 0.0f),
@@ -667,29 +669,30 @@ public final class ModulesMenuScreen {
                     smoothing
             );
 
-            int activeGlassTint = withAlpha(
-                    mix(ModulesMenuStyle.themeAccent(), ModulesMenuStyle.themeAccentSoft(), 0.36f),
-                    Math.round(alpha * 62.0f)
-            );
+            int activeThemeGlass = mix(buttonGradient.start(), buttonGradient.end(), 0.50f);
+            int activeGlassRgb = mix(ModulesMenuStyle.panelBgGlassDark(), activeThemeGlass, 0.86f);
+            int activeGlassTint = withAlpha(activeGlassRgb, Math.round(alpha * 148.0f));
             UiLiquidGlassMaterial activeMaterial = UiLiquidGlassMaterial.DEFAULT.withInnerGlow(
-                    0.022f + 0.006f * motion,
-                    2.8f + 0.25f * motion,
-                    withAlpha(ModulesMenuStyle.themeAccentSoft(), Math.round(alpha * 16.0f))
+                    0.012f + 0.004f * motion,
+                    2.45f + 0.18f * motion,
+                    withAlpha(activeThemeGlass, Math.round(alpha * 8.0f))
             );
             renderer.withLiquidGlassMaterial(activeMaterial, () -> renderer.liquidGlassCompound(
                     activeShape,
                     activeGlassTint,
-                    alpha * 0.54f,
-                    alpha * 0.38f,
+                    alpha * 0.98f,
+                    alpha * 0.90f,
                     Renderer2D.LiquidGlassPreset.HUD_SMALL
             ));
 
-            int activeStart = withAlpha(buttonGradient.start(), Math.round(alpha * 138.0f));
-            int activeEnd = withAlpha(buttonGradient.end(), Math.round(alpha * 126.0f));
+            // Preserve the configured theme gradient, but at surface-coating strength only. The
+            // scene/refraction remains the dominant body of the active control.
+            int activeStart = withAlpha(buttonGradient.start(), Math.round(alpha * 20.0f));
+            int activeEnd = withAlpha(buttonGradient.end(), Math.round(alpha * 15.0f));
             renderer.compoundSdf(activeShape, UiPaint.linear(activeStart, activeEnd, gradientAngle, 0.0f));
 
-            int activeStrokeStart = withAlpha(buttonGradient.start(), Math.round(alpha * 82.0f));
-            int activeStrokeEnd = withAlpha(buttonGradient.end(), Math.round(alpha * 74.0f));
+            int activeStrokeStart = withAlpha(buttonGradient.start(), Math.round(alpha * 48.0f));
+            int activeStrokeEnd = withAlpha(buttonGradient.end(), Math.round(alpha * 40.0f));
             renderer.compoundSdfStroke(
                     activeShape,
                     UiPaint.linear(activeStrokeStart, activeStrokeEnd, gradientAngle, 0.0f),

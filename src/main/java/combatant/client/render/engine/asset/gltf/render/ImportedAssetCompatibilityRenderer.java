@@ -6,6 +6,7 @@
 package combatant.client.render.engine.asset.gltf.render;
 
 import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.pipeline.RenderTarget;
 import combatant.client.render.engine.asset.gltf.gpu.GltfGpuAssetResidency;
 import combatant.client.render.engine.asset.gltf.gpu.GltfGpuPrimitive;
 import combatant.client.render.engine.asset.gltf.gpu.GltfGpuResidencyManager;
@@ -17,40 +18,40 @@ import combatant.client.render.engine.asset.gltf.runtime.GltfSceneInstanceAsset;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.rhi.RhiDrawCommand;
+import combatant.client.render.engine.scene.SceneDrawClass;
 import combatant.client.render.engine.scene.instance.SceneAssetInstance;
 import combatant.client.render.engine.scene.visibility.SceneViewContext;
 import combatant.client.render.engine.scene.visibility.SceneVisibilityMode;
 import combatant.client.render.engine.uniform.impl.AssetCompatibilityMaterialUniforms;
 import combatant.client.render.iris.IrisRuntime;
 import combatant.client.util.logging.DebugLog;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 
 import java.util.ArrayList;
 
 /**
- * Shaderpack-off correctness path for imported static assets.
+ * Shaderpack-off world-entity path for imported static assets.
  *
  * <p>This is deliberately not the Photon renderer. It proves geometry/material/texture residency,
- * depth, transforms and visibility before pack-specific G-buffer insertion exists. When Iris owns
- * the world, this path stays off instead of pretending to reproduce the active shaderpack.</p>
+ * depth, transforms and visibility before pack-specific G-buffer insertion exists. HAND instances
+ * are intentionally excluded: first-person replacements require a dedicated hand submission.
+ * When Iris owns the world, this path stays off instead of pretending to reproduce the active
+ * shaderpack.</p>
  */
 public final class ImportedAssetCompatibilityRenderer {
     private static volatile ImportedAssetCompatibilityRenderStats stats = ImportedAssetCompatibilityRenderStats.EMPTY;
 
     private ImportedAssetCompatibilityRenderer() {}
 
-    public static void renderPrimary() {
+    /** Submits opaque imported assets in vanilla's solid-entity section of the main world pass. */
+    public static void renderWorldEntities(RenderTarget worldTarget) {
         if (IrisRuntime.isShaderpackRendererActive()) {
             diagnostic("shaderpack-active", 0, 0);
             return;
         }
-        Minecraft mc = Minecraft.getInstance();
-        GameRenderer gameRenderer = mc != null ? mc.gameRenderer : null;
-        if (gameRenderer == null || gameRenderer.mainRenderTarget() == null) {
-            diagnostic("no-main-target", 0, 0);
+        if (worldTarget == null) {
+            diagnostic("no-world-target", 0, 0);
             return;
         }
 
@@ -59,11 +60,10 @@ public final class ImportedAssetCompatibilityRenderer {
             diagnostic("no-scene-view", 0, 0);
             return;
         }
-        var target = gameRenderer.mainRenderTarget();
-        var color = target.getColorTextureView();
-        var depth = target.getDepthTextureView();
+        var color = worldTarget.getColorTextureView();
+        var depth = worldTarget.getDepthTextureView();
         if (color == null || depth == null) {
-            diagnostic("missing-color-or-depth", 0, 0);
+            diagnostic("missing-world-color-or-depth", 0, 0);
             return;
         }
 
@@ -76,6 +76,9 @@ public final class ImportedAssetCompatibilityRenderer {
                 SceneVisibilityMode.SECTION_AND_FRUSTUM,
                 (instance, state) -> {
                     if (!(instance.asset() instanceof GltfSceneInstanceAsset source)) return true;
+                    // First-person assets have their own hand/item submission and must never leak
+                    // into the world entity layer.
+                    if (instance.drawClass() == SceneDrawClass.HAND) return true;
                     counters[0]++;
                     submitInstance(commands, instance, source, camera, color, depth, counters);
                     return true;
@@ -129,9 +132,15 @@ public final class ImportedAssetCompatibilityRenderer {
 
             Matrix4f model = new Matrix4f(cameraRelative).mul(placement.localToAsset());
             boolean mirrored = instance.mirroredTransform() ^ placement.mirroredWinding();
-            RenderPipeline pipeline = (!material.doubleSided() && !mirrored)
-                    ? CombatantRenderPipelines.ASSET_COMPATIBILITY_CULL
-                    : CombatantRenderPipelines.ASSET_COMPATIBILITY_DOUBLE_SIDED;
+            boolean cull = !material.doubleSided() && !mirrored;
+            boolean noDepth = instance.drawClass() == SceneDrawClass.WORLD_OVERLAY;
+            RenderPipeline pipeline = noDepth
+                    ? (cull
+                        ? CombatantRenderPipelines.ASSET_COMPATIBILITY_TRANSLUCENT_NO_DEPTH_CULL
+                        : CombatantRenderPipelines.ASSET_COMPATIBILITY_TRANSLUCENT_NO_DEPTH_DOUBLE_SIDED)
+                    : (cull
+                        ? CombatantRenderPipelines.ASSET_COMPATIBILITY_TRANSLUCENT_CULL
+                        : CombatantRenderPipelines.ASSET_COMPATIBILITY_TRANSLUCENT_DOUBLE_SIDED);
 
             GltfGpuTexture base = residency.colorOrWhite(material.baseColorTexture());
             GltfGpuTexture mr = residency.dataOrWhite(material.metallicRoughnessTexture());

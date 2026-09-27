@@ -20,8 +20,9 @@ Jackson is licensed under Apache License 2.0. See `THIRD_PARTY_LICENSES/Jackson-
 
 Additional third-party components and provenance are documented in `CREDITS.md` and the existing files under `THIRD_PARTY_LICENSES/`.
 
-## Khronos glTF Sample Assets — BoxVertexColors dev fixture
+## Khronos glTF Sample Assets — BoomBox dev fixture
 
-`dev/resources/assets/combatant/models/dev/box_vertex_colors.glb` is the Khronos BoxVertexColors test asset. It is public-domain/CC0 material and is included only in the development source set for importer smoke testing.
-Source: https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/BoxVertexColors
-SHA-256: `9c48227f33b0ba2fbcf23b98ebf60d1c8ae0c6e6c5281e0aa3cc58affee10382`.
+`dev/resources/assets/combatant/models/dev/boombox.gltf` and its associated buffer and textures
+are the Khronos BoomBox sample asset. They are public-domain/CC0 material and are included only
+in the development source set for imported PBR geometry testing.
+Source: https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/BoomBox

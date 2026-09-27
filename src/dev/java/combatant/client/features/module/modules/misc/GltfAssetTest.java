@@ -23,6 +23,7 @@ import combatant.client.render.engine.asset.gltf.runtime.GltfSceneInstanceAsset;
 import combatant.client.render.engine.asset.gltf.runtime.GltfSceneInstances;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.material.MaterialTextureSemantic;
+import combatant.client.render.engine.scene.SceneDrawClass;
 import combatant.client.render.engine.scene.instance.SceneAssetInstance;
 import combatant.client.render.engine.scene.lod.SceneLodProfile;
 import combatant.client.runtime.CombatantBuild;
@@ -47,8 +48,12 @@ public final class GltfAssetTest extends Module {
             "gltfTestScale", "scale", 100.0, 0.01, 500.0);
     private final BooleanValue animateRotation = bool(
             "gltfTestRotate", "animate_rotation", true);
+    private final BooleanValue depthTest = bool(
+            "gltfTestDepthTest", "depth_test", true);
 
     private SceneAssetInstance<GltfSceneInstanceAsset> instance;
+    private GltfRuntimeAsset loadedAsset;
+    private boolean appliedDepthTest;
     private Vec3 anchor = Vec3.ZERO;
     private float angle;
 
@@ -61,6 +66,7 @@ public final class GltfAssetTest extends Module {
     @Override
     public void onEnable() {
         closeInstance();
+        loadedAsset = null;
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.level == null || mc.player == null || mc.getResourceManager() == null || mc.gameRenderer == null) {
             CommandOutput.error("glTF test: world/resource manager is unavailable");
@@ -93,17 +99,14 @@ public final class GltfAssetTest extends Module {
             anchor = new Vec3(horizontalAnchor.x, originY, horizontalAnchor.z);
             angle = 0.0f;
 
-            instance = GltfSceneInstances.spawnDefault(
-                    CombatantRenderSystem.sceneInstances(),
-                    runtime,
-                    transform(),
-                    new SceneLodProfile(new float[0], 0.10f)
-            );
+            loadedAsset = runtime;
+            spawnInstance();
 
             String message = "glTF test spawned " + id
                     + " at " + formatPosition(anchor)
                     + " groundY=" + String.format(java.util.Locale.ROOT, "%.1f", mc.player.getY())
                     + " | distance=" + String.format(java.util.Locale.ROOT, "%.1f", distance.get())
+                    + " depthTest=" + depthTest.get()
                     + " scenes=" + runtime.asset().scenes().size()
                     + " nodes=" + runtime.asset().nodes().size()
                     + " meshes=" + runtime.asset().meshes().size()
@@ -120,6 +123,7 @@ public final class GltfAssetTest extends Module {
             DebugLog.info(message);
         } catch (IOException | RuntimeException exception) {
             closeInstance();
+            loadedAsset = null;
             CommandOutput.error("glTF test failed for " + id + ": " + concise(exception));
             DebugLog.error("glTF dev asset test failed for {}", id, exception);
         }
@@ -128,10 +132,14 @@ public final class GltfAssetTest extends Module {
     @Override
     public void onDisable() {
         closeInstance();
+        loadedAsset = null;
     }
 
     @Override
     public void onFrame(float tickDelta) {
+        if (loadedAsset != null && appliedDepthTest != depthTest.get()) {
+            spawnInstance();
+        }
         if (instance == null || instance.isClosed() || !animateRotation.get()) return;
         angle += Math.max(0.0f, tickDelta) * 0.025f;
         instance.setWorldTransform(transform());
@@ -143,6 +151,19 @@ public final class GltfAssetTest extends Module {
                 .translation((float) anchor.x, (float) anchor.y, (float) anchor.z)
                 .rotateY(angle)
                 .scale(s);
+    }
+
+    private void spawnInstance() {
+        if (loadedAsset == null) return;
+        closeInstance();
+        appliedDepthTest = depthTest.get();
+        instance = GltfSceneInstances.spawnDefault(
+                CombatantRenderSystem.sceneInstances(),
+                loadedAsset,
+                transform(),
+                appliedDepthTest ? SceneDrawClass.ENTITY : SceneDrawClass.WORLD_OVERLAY,
+                new SceneLodProfile(new float[0], 0.10f)
+        );
     }
 
     private void closeInstance() {

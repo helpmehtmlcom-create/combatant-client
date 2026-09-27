@@ -2472,30 +2472,6 @@ enum UnifiedSettingRenderer {
         ColorValue value = setting.value();
         if (modern()) {
             if (button != 0 || !UnifiedSettingsSkin.inside(mx, my, ui.swatchX, ui.swatchY, ui.swatchW, ui.swatchH)) return;
-
-            int presetCount = modernColorBarPresetCount(ui.swatchW);
-            float firstCenter = modernColorBarFirstSwatchCenter(ui.swatchX);
-            float step = modernColorBarSwatchStep();
-            java.util.List<Integer> presets = ColorPresetStore.presets();
-            for (int i = 0; i < presetCount; i++) {
-                float center = firstCenter + i * step;
-                if (!UnifiedSettingsSkin.inside(mx, my, center - step * 0.5f, ui.swatchY, step, ui.swatchH)) continue;
-                applyColor(value, presetDisplayColor(value, presets.get(i)));
-                syncColorFromValue(ui, value);
-                GuiSound.COLOR_SELECT.feedback();
-                if (setting.getParent() != null) setting.getParent().saveConfig();
-                return;
-            }
-
-            float hexStart = modernColorBarHexStart(ui.swatchX, presetCount);
-            if (mx >= hexStart) {
-                int argb = value.getArgb();
-                ClipboardUtil.copy(String.format(value.supportsAlpha() ? "#%08X" : "#%06X",
-                        value.supportsAlpha() ? argb : (argb & 0x00FFFFFF)));
-                GuiSound.BUTTON.feedback(0.45);
-                return;
-            }
-
             SettingOverlayHost host = overlayHost();
             if (host != null) host.toggle(setting, ui.swatchX, ui.swatchY, ui.swatchW, ui.swatchH);
             return;
@@ -2697,132 +2673,63 @@ enum UnifiedSettingRenderer {
         ColorSetting.UiState ui = setting.ui();
         ColorValue value = setting.value();
         if (!ui.hexFocused && !colorDragActive(ui)) syncColorFromValue(ui, value);
+
         float barH = UnifiedSettingsSkin.controlHeight();
         float barY = y + UnifiedSettingsSkin.modernMetric(26f, 26f);
         float barX = x;
         float barW = w;
-        ui.lastX = x; ui.lastY = y; ui.lastW = w;
-        ui.swatchX = barX; ui.swatchY = barY; ui.swatchW = barW; ui.swatchH = barH;
+        ui.lastX = x;
+        ui.lastY = y;
+        ui.lastW = w;
+        ui.swatchX = barX;
+        ui.swatchY = barY;
+        ui.swatchW = barW;
+        ui.swatchH = barH;
+
         SettingOverlayHost host = overlayHost();
         boolean open = host != null && host.isActive(setting);
         boolean hover = UnifiedSettingsSkin.inside(mx, my, barX, barY, barW, barH);
         if (hover) SystemCursor.set(SystemCursor.CursorType.HAND);
-        ui.previewGlowAnim = AnimationUtility.approach(ui.previewGlowAnim, open ? 1f : hover ? 0.55f : 0f,
-                AnimationUtility.deltaTime(), 13f);
+        ui.previewGlowAnim = AnimationUtility.approach(
+                ui.previewGlowAnim,
+                open ? 1f : hover ? 0.55f : 0f,
+                AnimationUtility.deltaTime(),
+                13f);
 
         renderModernTopLabel(setting.getDisplayName(), x, y, w);
         renderModernControlSurface(barX, barY, barW, barH, UnifiedSettingsSkin.controlRadius(),
                 hover ? 1f : 0f, open ? 1f : 0f);
 
-        // Expensive: one continuous 25px color bar -> 40px preview, preset swatches, hex/copy segment.
-        // The entire composition remains inside the same rounded control mask.
-        float stroke = UnifiedSettingsSkin.controlStroke();
-        float previewW = modernColorBarPreviewWidth();
-        float innerX = barX + stroke;
-        float innerY = barY + stroke;
-        float innerW = Math.max(1f, barW - stroke * 2f);
-        float innerH = Math.max(1f, barH - stroke * 2f);
-        boolean rounded = ClipFunction.pushRoundedRect(innerX, innerY, innerW, innerH,
-                Math.max(0f, UnifiedSettingsSkin.controlRadius() - stroke));
-        ClickGuiRenderer.drawRect(innerX, innerY, Math.max(1f, previewW - stroke), innerH, value.getArgb());
-        if (rounded) ClipFunction.pop();
+        float pad = UnifiedSettingsSkin.modernMetric(4f, 4f);
+        float preview = Math.max(1f, barH - pad * 2f);
+        float previewX = barX + pad;
+        float previewY = barY + pad;
+        float previewRadius = Math.min(UnifiedSettingsSkin.controlRadius() - UnifiedSettingsSkin.controlStroke(), preview * 0.28f);
+        ClickGuiRenderer.drawRoundedRect(previewX, previewY, preview, preview, previewRadius, value.getArgb());
+        ClickGuiRenderer.drawRoundedRectStroke(previewX, previewY, preview, preview, previewRadius,
+                UnifiedSettingsSkin.controlStroke(),
+                UnifiedSettingsSkin.withAlpha(UnifiedSettingsSkin.modernControlBorderHover(), 150));
 
-        float icon = UnifiedSettingsSkin.modernMetric(12f, 12f);
-        float iconX = barX + previewW * 0.5f - icon * 0.5f;
-        float iconY = barY + (barH - icon) * 0.5f;
-        modernSvg("paintbrush", iconX, iconY, icon, UnifiedSettingsSkin.withAlpha(0xFFF0F1F4, 230));
-
-        float dividerX = barX + previewW;
-        float dividerW = Math.max(1f, UnifiedSettingsSkin.modernMetric(1f, 1f));
-        ClickGuiRenderer.drawRect(dividerX, barY, dividerW, barH, UnifiedSettingsSkin.modernControlBorder());
-
-        java.util.List<Integer> presets = ColorPresetStore.presets();
-        int presetCount = modernColorBarPresetCount(barW);
-        float firstCenter = modernColorBarFirstSwatchCenter(barX);
-        float step = modernColorBarSwatchStep();
-        float baseDiameter = UnifiedSettingsSkin.modernMetric(10f, 10f);
-        int current = value.getArgb();
-        for (int i = 0; i < presetCount; i++) {
-            float centerX = firstCenter + i * step;
-            boolean swatchHover = UnifiedSettingsSkin.inside(mx, my, centerX - step * 0.5f, barY, step, barH);
-            float diameter = baseDiameter + (swatchHover ? UnifiedSettingsSkin.modernMetric(1.5f, 1.5f) : 0f);
-            float radius = diameter * 0.5f;
-            float centerY = barY + barH * 0.5f;
-            int color = presetDisplayColor(value, presets.get(i));
-            ClickGuiRenderer.drawCircle(centerX, centerY, radius, color);
-            boolean selected = current == color;
-            if (selected) {
-                float check = UnifiedSettingsSkin.modernMetric(8f, 8f);
-                int r = (color >>> 16) & 0xFF;
-                int g = (color >>> 8) & 0xFF;
-                int b = color & 0xFF;
-                int checkColor = (r * 299 + g * 587 + b * 114) / 1000 > 150 ? 0xE6000000 : 0xF2FFFFFF;
-                modernSvg("check", centerX - check * 0.5f, centerY - check * 0.5f, check, checkColor);
-            }
-        }
-
-        float hexStart = modernColorBarHexStart(barX, presetCount);
-        if (hexStart > dividerX + dividerW) {
-            ClickGuiRenderer.drawRect(hexStart, barY, dividerW, barH, UnifiedSettingsSkin.modernControlBorder());
-        }
-        float hexX = hexStart + UnifiedSettingsSkin.modernMetric(8f, 8f);
-        float hexRight = barX + barW - UnifiedSettingsSkin.modernMetric(8f, 8f);
-        float hexW = Math.max(1f, hexRight - hexX);
-        boolean hexHover = UnifiedSettingsSkin.inside(mx, my, hexStart, barY, Math.max(1f, barX + barW - hexStart), barH);
+        TextRenderer font = UnifiedSettingsSkin.fontSemibold();
+        float textSize = UnifiedSettingsSkin.modernMetric(10.5f, 10.5f);
         int argb = value.getArgb();
         String hex = String.format(value.supportsAlpha() ? "#%08X" : "#%06X",
                 value.supportsAlpha() ? argb : (argb & 0x00FFFFFF));
-        TextRenderer font = UnifiedSettingsSkin.fontSemibold();
-        float textSize = UnifiedSettingsSkin.modernMetric(10f, 10f);
-        if (hexHover && hexW >= UnifiedSettingsSkin.modernMetric(50f, 50f)) {
-            float copyIcon = UnifiedSettingsSkin.modernMetric(11f, 11f);
-            modernSvg("clipboard", hexX, barY + (barH - copyIcon) * 0.5f, copyIcon, UnifiedSettingsSkin.modernIconMuted());
-            String copy = "Copy";
-            float copyX = hexX + copyIcon + UnifiedSettingsSkin.modernMetric(5f, 5f);
-            float copyY = barY + (barH - UnifiedSettingsSkin.textHeight(font, textSize)) * 0.5f;
-            ClickGuiRenderer.drawText(font, UnifiedSettingsSkin.fit(font, copy, textSize, Math.max(1f, hexRight - copyX)),
-                    copyX, copyY, textSize, UnifiedSettingsSkin.modernTextSecondary(), false);
-        } else {
-            String fitted = UnifiedSettingsSkin.fit(font, hex, textSize, hexW);
-            float tw = UnifiedSettingsSkin.textWidth(font, fitted, textSize);
-            float tx = hexX + Math.max(0f, (hexW - tw) * 0.5f);
-            float ty = barY + (barH - UnifiedSettingsSkin.textHeight(font, textSize)) * 0.5f;
-            ClickGuiRenderer.drawText(font, fitted, tx, ty, textSize, UnifiedSettingsSkin.modernTextSecondary(), false);
-        }
-    }
+        float textX = previewX + preview + UnifiedSettingsSkin.modernMetric(8f, 8f);
+        float rightReserve = UnifiedSettingsSkin.modernMetric(28f, 28f);
+        float textMaxW = Math.max(1f, barX + barW - rightReserve - textX);
+        float textY = barY + (barH - UnifiedSettingsSkin.textHeight(font, textSize)) * 0.5f;
+        ClickGuiRenderer.drawText(font,
+                UnifiedSettingsSkin.fit(font, hex, textSize, textMaxW),
+                textX, textY, textSize,
+                UnifiedSettingsSkin.modernTextSecondary(), false);
 
-    private static float modernColorBarPreviewWidth() {
-        return UnifiedSettingsSkin.modernMetric(40f, 40f);
-    }
-
-    private static float modernColorBarSwatchStep() {
-        return UnifiedSettingsSkin.modernMetric(19f, 19f);
-    }
-
-    private static float modernColorBarFirstSwatchCenter(float barX) {
-        return barX + modernColorBarPreviewWidth() + UnifiedSettingsSkin.modernMetric(19f, 19f);
-    }
-
-    private static int modernColorBarPresetCount(float barW) {
-        int availablePresets = Math.min(7, ColorPresetStore.presets().size());
-        if (availablePresets <= 0) return 0;
-        float preview = modernColorBarPreviewWidth();
-        float startOffset = UnifiedSettingsSkin.modernMetric(19f, 19f);
-        float step = modernColorBarSwatchStep();
-        float tail = UnifiedSettingsSkin.modernMetric(18f, 18f);
-        float minHex = UnifiedSettingsSkin.modernMetric(74f, 74f);
-        float available = barW - preview - startOffset - tail - minHex;
-        if (available < 0f) return 0;
-        int byWidth = 1 + (int) Math.floor(available / Math.max(1f, step));
-        return Math.max(0, Math.min(availablePresets, byWidth));
-    }
-
-    private static float modernColorBarHexStart(float barX, int presetCount) {
-        float dividerX = barX + modernColorBarPreviewWidth();
-        if (presetCount <= 0) return dividerX;
-        return modernColorBarFirstSwatchCenter(barX)
-                + (presetCount - 1) * modernColorBarSwatchStep()
-                + UnifiedSettingsSkin.modernMetric(18f, 18f);
+        float icon = UnifiedSettingsSkin.modernMetric(12f, 12f);
+        float iconX = barX + barW - UnifiedSettingsSkin.modernMetric(9f, 9f) - icon;
+        float iconY = barY + (barH - icon) * 0.5f;
+        modernSvg(open ? "palette" : "paintbrush", iconX, iconY, icon,
+                UnifiedSettingsSkin.mix(UnifiedSettingsSkin.modernIconMuted(), UnifiedSettingsSkin.modernTextBright(),
+                        Math.max(ui.previewGlowAnim * 0.55f, open ? 0.75f : 0f)));
     }
 
     private static void layoutColor(ColorSetting.UiState ui, float x, float y, float w, boolean hasAlpha) {
@@ -3900,53 +3807,244 @@ enum UnifiedSettingRenderer {
         if (revealClip) ScissorFunction.pop();
     }
 
+    private static float modernColorOverlayHeight(boolean hasAlpha) {
+        float pad = UnifiedSettingsSkin.modernMetric(10f, 10f);
+        float squareH = UnifiedSettingsSkin.modernMetric(116f, 126f);
+        float barH = UnifiedSettingsSkin.modernMetric(8f, 9f);
+        float gap = UnifiedSettingsSkin.modernMetric(8f, 8f);
+        float presetH = UnifiedSettingsSkin.modernMetric(18f, 19f);
+        float hexH = UnifiedSettingsSkin.modernMetric(24f, 25f);
+        float h = pad + squareH + gap + barH;
+        if (hasAlpha) h += gap + barH;
+        h += UnifiedSettingsSkin.modernMetric(11f, 11f) + presetH + gap + hexH + pad;
+        return h;
+    }
+
+    private static void layoutModernColorOverlay(ColorSetting.UiState ui, float x, float y, float w, boolean hasAlpha) {
+        float pad = UnifiedSettingsSkin.modernMetric(10f, 10f);
+        float gap = UnifiedSettingsSkin.modernMetric(8f, 8f);
+        float barH = UnifiedSettingsSkin.modernMetric(8f, 9f);
+        ui.squareX = x + pad;
+        ui.squareY = y + pad;
+        ui.squareW = Math.max(1f, w - pad * 2f);
+        ui.squareH = UnifiedSettingsSkin.modernMetric(116f, 126f);
+
+        ui.hueX = ui.squareX;
+        ui.hueY = ui.squareY + ui.squareH + gap;
+        ui.hueW = ui.squareW;
+        ui.hueH = barH;
+
+        float cursorY = ui.hueY + ui.hueH;
+        if (hasAlpha) {
+            ui.alphaX = ui.squareX;
+            ui.alphaY = cursorY + gap;
+            ui.alphaW = ui.squareW;
+            ui.alphaH = barH;
+            cursorY = ui.alphaY + ui.alphaH;
+        } else {
+            ui.alphaX = ui.alphaY = ui.alphaW = ui.alphaH = 0f;
+        }
+
+        ui.presetX = ui.squareX;
+        ui.presetY = cursorY + UnifiedSettingsSkin.modernMetric(11f, 11f);
+        ui.presetW = ui.squareW;
+        ui.presetH = UnifiedSettingsSkin.modernMetric(18f, 19f);
+
+        ui.hexX = ui.squareX;
+        ui.hexY = ui.presetY + ui.presetH + gap;
+        ui.hexW = ui.squareW;
+        ui.hexH = UnifiedSettingsSkin.modernMetric(24f, 25f);
+
+        // Modern Main/Map picker deliberately keeps the advanced RGB/rainbow controls out of the
+        // primary popover. Legacy/module surfaces still expose the full editor.
+        ui.rX = ui.rY = ui.rW = ui.rH = 0f;
+        ui.gX = ui.gY = ui.gW = ui.gH = 0f;
+        ui.bX = ui.bY = ui.bW = ui.bH = 0f;
+        ui.aX = hasAlpha ? ui.alphaX : 0f;
+        ui.aY = hasAlpha ? ui.alphaY : 0f;
+        ui.aW = hasAlpha ? ui.alphaW : 0f;
+        ui.aH = hasAlpha ? ui.alphaH : 0f;
+        ui.sliderX = ui.sliderY = ui.sliderW = ui.sliderH = 0f;
+        ui.rnbX = ui.rnbY = ui.rnbW = ui.rnbH = 0f;
+        ui.presetToggleX = ui.savePresetX = ui.deletePresetX = 0f;
+        ui.presetToggleY = ui.savePresetY = ui.deletePresetY = 0f;
+        ui.presetToggleW = ui.savePresetW = ui.deletePresetW = 0f;
+        ui.presetToggleH = ui.savePresetH = ui.deletePresetH = 0f;
+        ui.presetListX = ui.presetListY = ui.presetListW = ui.presetListH = 0f;
+        ui.presetsMaxScroll = 0f;
+    }
+
+    private static void renderModernHueBar(ColorSetting.UiState ui) {
+        float radius = ui.hueH * 0.5f;
+        boolean clip = ClipFunction.pushRoundedRect(ui.hueX, ui.hueY, ui.hueW, ui.hueH, radius);
+        int segments = 6;
+        float segW = ui.hueW / segments;
+        for (int i = 0; i < segments; i++) {
+            float x0 = ui.hueX + i * segW;
+            float x1 = i == segments - 1 ? ui.hueX + ui.hueW : x0 + segW + 0.5f;
+            int c0 = hsbToArgb(i / 6f, 1f, 1f, 255);
+            int c1 = hsbToArgb((i + 1) / 6f, 1f, 1f, 255);
+            ClickGuiRenderer.drawGradientRect(x0, ui.hueY, Math.max(1f, x1 - x0), ui.hueH, c0, c1, c1, c0);
+        }
+        if (clip) ClipFunction.pop();
+        ClickGuiRenderer.drawRoundedRectStroke(ui.hueX, ui.hueY, ui.hueW, ui.hueH, radius,
+                UnifiedSettingsSkin.controlStroke(),
+                UnifiedSettingsSkin.withAlpha(UnifiedSettingsSkin.modernControlBorderHover(), 130));
+    }
+
+    private static void renderModernAlphaBar(ColorSetting.UiState ui) {
+        float radius = ui.alphaH * 0.5f;
+        int rgb = hsbToArgb(ui.hue, ui.saturation, ui.brightness, 255);
+        boolean clip = ClipFunction.pushRoundedRect(ui.alphaX, ui.alphaY, ui.alphaW, ui.alphaH, radius);
+        if (clip) {
+            renderCheckerCells(ui.alphaX, ui.alphaY, ui.alphaW, ui.alphaH, UnifiedSettingsSkin.modernMetric(4f, 4f));
+            ClickGuiRenderer.drawGradientRect(ui.alphaX, ui.alphaY, ui.alphaW, ui.alphaH,
+                    withAlpha(rgb, 0), withAlpha(rgb, 255), withAlpha(rgb, 255), withAlpha(rgb, 0));
+            ClipFunction.pop();
+        } else {
+            renderChecker(ui.alphaX, ui.alphaY, ui.alphaW, ui.alphaH,
+                    UnifiedSettingsSkin.modernMetric(4f, 4f), radius);
+            ClickGuiRenderer.drawRoundedRectGradient(ui.alphaX, ui.alphaY, ui.alphaW, ui.alphaH, radius,
+                    withAlpha(rgb, 0), withAlpha(rgb, 255), 0f);
+        }
+        ClickGuiRenderer.drawRoundedRectStroke(ui.alphaX, ui.alphaY, ui.alphaW, ui.alphaH, radius,
+                UnifiedSettingsSkin.controlStroke(),
+                UnifiedSettingsSkin.withAlpha(UnifiedSettingsSkin.modernControlBorderHover(), 130));
+    }
+
+    private static void renderModernColorMarkers(ColorSetting.UiState ui, boolean hasAlpha) {
+        float outer = UnifiedSettingsSkin.modernMetric(4.5f, 4.5f);
+        float inner = UnifiedSettingsSkin.modernMetric(3f, 3f);
+        float sbX = ui.squareX + ui.saturation * ui.squareW;
+        float sbY = ui.squareY + (1f - ui.brightness) * ui.squareH;
+        ClickGuiRenderer.drawCircle(sbX, sbY, outer, 0xD9000000);
+        ClickGuiRenderer.drawCircle(sbX, sbY, inner, 0xFFFFFFFF);
+
+        float hueX = ui.hueX + ui.hue * ui.hueW;
+        float hueY = ui.hueY + ui.hueH * 0.5f;
+        ClickGuiRenderer.drawCircle(hueX, hueY, outer, 0xD9000000);
+        ClickGuiRenderer.drawCircle(hueX, hueY, inner, 0xFFFFFFFF);
+
+        if (hasAlpha) {
+            float alphaX = ui.alphaX + (ui.alpha / 255f) * ui.alphaW;
+            float alphaY = ui.alphaY + ui.alphaH * 0.5f;
+            ClickGuiRenderer.drawCircle(alphaX, alphaY, outer, 0xD9000000);
+            ClickGuiRenderer.drawCircle(alphaX, alphaY, inner, 0xFFFFFFFF);
+        }
+    }
+
+    private static void renderModernPresetStrip(ColorSetting.UiState ui, ColorValue value, float mx, float my) {
+        java.util.List<Integer> presets = ColorPresetStore.presets();
+        if (presets.isEmpty()) return;
+        float icon = UnifiedSettingsSkin.modernMetric(12f, 12f);
+        int iconColor = UnifiedSettingsSkin.withAlpha(UnifiedSettingsSkin.modernIconMuted(), 205);
+        modernSvg("palette", ui.presetX, ui.presetY + (ui.presetH - icon) * 0.5f, icon, iconColor);
+
+        float swatch = UnifiedSettingsSkin.modernMetric(13f, 14f);
+        float gap = UnifiedSettingsSkin.modernMetric(6f, 6f);
+        float sx = ui.presetX + icon + gap;
+        int max = Math.max(0, (int) Math.floor((ui.presetX + ui.presetW - sx + gap) / (swatch + gap)));
+        max = Math.min(max, presets.size());
+        int current = value.getArgb();
+        for (int i = 0; i < max; i++) {
+            float px = sx + i * (swatch + gap);
+            float py = ui.presetY + (ui.presetH - swatch) * 0.5f;
+            int color = presetDisplayColor(value, presets.get(i));
+            boolean hover = UnifiedSettingsSkin.inside(mx, my, px, py, swatch, swatch);
+            ClickGuiRenderer.drawCircle(px + swatch * 0.5f, py + swatch * 0.5f,
+                    swatch * 0.5f + (hover ? UnifiedSettingsSkin.modernMetric(0.75f, 0.75f) : 0f), color);
+            if ((current & (value.supportsAlpha() ? 0xFFFFFFFF : 0x00FFFFFF))
+                    == (color & (value.supportsAlpha() ? 0xFFFFFFFF : 0x00FFFFFF))) {
+                ClickGuiRenderer.drawCircle(px + swatch * 0.5f, py + swatch * 0.5f,
+                        Math.max(1f, swatch * 0.18f), 0xFFFFFFFF);
+            }
+        }
+    }
+
+    private static boolean modernPresetStripClicked(ColorSetting setting, ColorValue value, ColorSetting.UiState ui,
+                                                     double mx, double my, int button) {
+        if (button != 0) return false;
+        java.util.List<Integer> presets = ColorPresetStore.presets();
+        if (presets.isEmpty()) return false;
+        float icon = UnifiedSettingsSkin.modernMetric(12f, 12f);
+        float swatch = UnifiedSettingsSkin.modernMetric(13f, 14f);
+        float gap = UnifiedSettingsSkin.modernMetric(6f, 6f);
+        float sx = ui.presetX + icon + gap;
+        int max = Math.max(0, (int) Math.floor((ui.presetX + ui.presetW - sx + gap) / (swatch + gap)));
+        max = Math.min(max, presets.size());
+        for (int i = 0; i < max; i++) {
+            float px = sx + i * (swatch + gap);
+            float py = ui.presetY + (ui.presetH - swatch) * 0.5f;
+            if (!UnifiedSettingsSkin.inside(mx, my, px, py, swatch, swatch)) continue;
+            applyColor(value, presetDisplayColor(value, presets.get(i)));
+            syncColorFromValue(ui, value);
+            GuiSound.COLOR_SELECT.feedback();
+            if (setting.getParent() != null) setting.getParent().saveConfig();
+            return true;
+        }
+        return false;
+    }
+
+    private static void updateModernColorDrag(ColorSetting.UiState ui, ColorValue value, float mx, float my, boolean hasAlpha) {
+        if (value.isRainbow()) return;
+        if (ui.sbFocused) {
+            ui.saturation = UnifiedSettingsSkin.clamp01((mx - ui.squareX) / Math.max(1f, ui.squareW));
+            ui.brightness = UnifiedSettingsSkin.clamp01(1f - (my - ui.squareY) / Math.max(1f, ui.squareH));
+            setColorFromHsb(ui, value);
+        }
+        if (ui.hFocused) {
+            ui.hue = UnifiedSettingsSkin.clamp01((mx - ui.hueX) / Math.max(1f, ui.hueW));
+            setColorFromHsb(ui, value);
+        }
+        if (hasAlpha && ui.aFocused) {
+            ui.alpha = Math.round(UnifiedSettingsSkin.clamp01((mx - ui.alphaX) / Math.max(1f, ui.alphaW)) * 255f);
+            setColorFromHsb(ui, value);
+        }
+    }
+
     private static void renderColorOverlay(ColorSetting setting, SettingOverlayHost host, float mx, float my, float reveal) {
         ColorSetting.UiState ui = setting.ui();
         ColorValue value = setting.value();
         boolean hasAlpha = value.supportsAlpha();
         ui.editing = true;
-        ui.expandAnim = 1f; // host owns reveal/clip; picker children stay in one stable coordinate system
-        float dt = AnimationUtility.deltaTime();
-        ui.rgbExpandAnim = AnimationUtility.approach(ui.rgbExpandAnim, ui.showRgbBars ? 1f : 0f, dt, ui.showRgbBars ? 10f : 9f);
-        ui.rgbExpandAnim = AnimationUtility.snap(ui.rgbExpandAnim, ui.showRgbBars ? 1f : 0f, 0.002f);
-        ui.presetsExpandAnim = AnimationUtility.approach(ui.presetsExpandAnim, ui.presetsExpanded ? 1f : 0f, dt, ui.presetsExpanded ? 9.5f : 8.5f);
-        ui.presetsExpandAnim = AnimationUtility.snap(ui.presetsExpandAnim, ui.presetsExpanded ? 1f : 0f, 0.002f);
+        ui.expandAnim = 1f;
         if (!ui.hexFocused && !colorDragActive(ui)) syncColorFromValue(ui, value);
         ui.rainbow = value.isRainbow();
         if (ui.rainbow) clearColorFocus(ui);
 
-        float desiredW = UnifiedSettingsSkin.modernMetric(224f, 224f);
-        float desiredH = colorExpandedHeight(ui, hasAlpha) + UnifiedSettingsSkin.modernMetric(10f, 10f);
+        float desiredW = UnifiedSettingsSkin.modernMetric(252f, 274f);
+        float desiredH = modernColorOverlayHeight(hasAlpha);
         float[] r = host.place(desiredW, desiredH, UnifiedSettingsSkin.modernMetric(5f, 5f));
         float px = r[0], py = r[1], pw = r[2], ph = r[3];
-        ui.popupX = px; ui.popupY = py; ui.popupW = pw; ui.popupH = ph;
+        ui.popupX = px;
+        ui.popupY = py;
+        ui.popupW = pw;
+        ui.popupH = ph;
 
-        // Reuse the mature picker internals, but anchor the body directly to the popover instead of
-        // expanding the setting row. All children share the host's one reveal clip/lifecycle.
-        layoutColor(ui, px, py - colorHeaderH() - m(1f, 1f), pw, hasAlpha);
-        updateColorDrag(ui, value, mx, my, hasAlpha);
+        layoutModernColorOverlay(ui, px, py, pw, hasAlpha);
+        updateModernColorDrag(ui, value, mx, my, hasAlpha);
+
         float eased = AnimationUtility.easeInOutCubic(UnifiedSettingsSkin.clamp01(reveal));
         boolean above = py < host.anchorY();
         float clipH = Math.max(0.5f, ph * eased);
         float clipY = above ? py + ph - clipH : py;
         boolean revealClip = false;
         if (eased < 0.985f) {
-            float revealBleed = UnifiedSettingsSkin.modernMetric(3f, 3f);
-            revealClip = ScissorFunction.pushRaw(px - revealBleed, clipY - revealBleed,
-                    pw + revealBleed * 2f, clipH + revealBleed * 2f);
+            float bleed = UnifiedSettingsSkin.modernMetric(3f, 3f);
+            revealClip = ScissorFunction.pushRaw(px - bleed, clipY - bleed,
+                    pw + bleed * 2f, clipH + bleed * 2f);
         }
+
         drawModernPopupShadow(px, py, pw, ph, eased);
         boolean rounded = ClipFunction.pushRoundedRect(px, py, pw, ph, UnifiedSettingsSkin.popupRadius());
         drawModernPopupBody(px, py, pw, ph, eased);
 
         renderColorSquare(ui, ui.squareY);
-        renderHueBar(ui, 0f);
-        if (hasAlpha) renderAlphaBar(ui, 0f);
-        if (ui.rgbExpandAnim > 0.001f) renderRgbBars(ui, hasAlpha, 0f);
-        renderColorMarkers(ui, hasAlpha, 0f);
-        renderColorPresets(ui, value, mx, my, 0f);
+        renderModernHueBar(ui);
+        if (hasAlpha) renderModernAlphaBar(ui);
+        renderModernColorMarkers(ui, hasAlpha);
+        renderModernPresetStrip(ui, value, mx, my);
         renderHexInput(ui, value, mx, my, 0f);
-        renderColorActions(ui, value, mx, my, 0f);
 
         if (rounded) ClipFunction.pop();
         if (revealClip) ScissorFunction.pop();
@@ -4018,38 +4116,25 @@ enum UnifiedSettingRenderer {
         ColorSetting.UiState ui = setting.ui();
         ColorValue value = setting.value();
         boolean hasAlpha = value.supportsAlpha();
-        if (handleColorPresetClick(setting, value, ui, mx, my, button)) return true;
+
+        if (modernPresetStripClicked(setting, value, ui, mx, my, button)) return true;
         if (button != 0) return true;
+
         if (UnifiedSettingsSkin.inside(mx, my, ui.hexX, ui.hexY, ui.hexW, ui.hexH)) {
             beginHexEdit(ui, value);
             setHexCursorFromMouse(ui, (float) mx, false);
             return true;
         }
         if (ui.hexFocused && !commitHexEdit(setting, value, ui, true)) return true;
-        if (UnifiedSettingsSkin.inside(mx, my, ui.sliderX, ui.sliderY, ui.sliderW, ui.sliderH)) {
-            ui.showRgbBars = !ui.showRgbBars;
-            clearColorFocus(ui);
-            GuiSound.BUTTON.feedback(0.50);
-            return true;
-        }
-        if (UnifiedSettingsSkin.inside(mx, my, ui.rnbX, ui.rnbY, ui.rnbW, ui.rnbH)) {
-            value.set(value.isRainbow() ? value.rainbowFallbackHex() : value.toRainbowValue());
-            syncColorFromValue(ui, value);
-            clearColorFocus(ui);
-            GuiSound.COLOR_SELECT.feedback();
-            if (setting.getParent() != null) setting.getParent().saveConfig();
-            return true;
-        }
         if (value.isRainbow()) return true;
+
         clearColorFocus(ui);
-        if (UnifiedSettingsSkin.inside(mx, my, ui.squareX, ui.squareY, ui.squareW, ui.squareH)) ui.sbFocused = true;
-        else if (UnifiedSettingsSkin.inside(mx, my, ui.hueX - m(2f, 2f), ui.hueY, ui.hueW + m(4f, 4f), ui.hueH)) ui.hFocused = true;
-        else if (hasAlpha && UnifiedSettingsSkin.inside(mx, my, ui.alphaX - m(2f, 2f), ui.alphaY, ui.alphaW + m(4f, 4f), ui.alphaH)) ui.aFocused = true;
-        else if (ui.showRgbBars && ui.rgbExpandAnim > 0.20f) {
-            if (UnifiedSettingsSkin.inside(mx, my, ui.rX, ui.rY, ui.rW, ui.rH)) ui.rFocused = true;
-            else if (UnifiedSettingsSkin.inside(mx, my, ui.gX, ui.gY, ui.gW, ui.gH)) ui.gFocused = true;
-            else if (UnifiedSettingsSkin.inside(mx, my, ui.bX, ui.bY, ui.bW, ui.bH)) ui.bFocused = true;
-            else if (hasAlpha && UnifiedSettingsSkin.inside(mx, my, ui.aX, ui.aY, ui.aW, ui.aH)) ui.aRgbFocused = true;
+        if (UnifiedSettingsSkin.inside(mx, my, ui.squareX, ui.squareY, ui.squareW, ui.squareH)) {
+            ui.sbFocused = true;
+        } else if (UnifiedSettingsSkin.inside(mx, my, ui.hueX, ui.hueY, ui.hueW, ui.hueH)) {
+            ui.hFocused = true;
+        } else if (hasAlpha && UnifiedSettingsSkin.inside(mx, my, ui.alphaX, ui.alphaY, ui.alphaW, ui.alphaH)) {
+            ui.aFocused = true;
         }
         return true;
     }

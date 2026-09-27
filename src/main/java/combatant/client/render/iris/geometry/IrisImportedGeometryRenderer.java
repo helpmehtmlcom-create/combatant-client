@@ -16,6 +16,7 @@ import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.core.CombatantWorldMatrices;
 import combatant.client.render.engine.rhi.CombatantRhi;
 import combatant.client.render.engine.rhi.RhiDrawCommand;
+import combatant.client.render.engine.scene.SceneDrawClass;
 import combatant.client.render.engine.scene.instance.SceneAssetInstance;
 import combatant.client.render.engine.scene.visibility.SceneViewContext;
 import combatant.client.render.engine.scene.visibility.SceneViewType;
@@ -156,6 +157,17 @@ public final class IrisImportedGeometryRenderer {
                                        com.mojang.blaze3d.textures.GpuTextureView color,
                                        com.mojang.blaze3d.textures.GpuTextureView depth,
                                        Route route) {
+        SceneDrawClass drawClass = instance.drawClass();
+        if (drawClass == SceneDrawClass.HAND) return;
+
+        // Imported world assets intentionally share Iris' ordinary entity-translucent stage.
+        // Routing glTF OPAQUE/MASK materials through a late custom G-buffer made their material
+        // response diverge from the compatibility renderer and from normal Iris entities.
+        // Hand submissions have their own stage; overlays never participate in depth/shadows.
+        if (route == Route.GBUFFER) return;
+        boolean noDepth = drawClass == SceneDrawClass.WORLD_OVERLAY;
+        if (route == Route.SHADOW && noDepth) return;
+
         IrisImportedGeometryResidency residency = IrisImportedGeometryResidency.acquire(
                 CombatantRenderSystem.rhi(), source.asset());
         Matrix4f cameraRelative = new Matrix4f().translation(
@@ -166,15 +178,19 @@ public final class IrisImportedGeometryRenderer {
                     residency.primitive(placement.meshIndex(), placement.primitiveIndex());
             if (primitive.skinned()) continue;
             GltfMaterialBinding material = source.asset().material(primitive.material());
-            boolean blend = material.alphaMode() == AlphaMode.BLEND;
-            if (route == Route.TRANSLUCENT ? !blend : blend) continue;
             boolean mirrored = instance.mirroredTransform() ^ placement.mirroredWinding();
             boolean cull = !material.doubleSided() && !mirrored;
             RenderPipeline pipeline = switch (route) {
                 case GBUFFER -> cull ? IrisImportedGeometryPipelines.GBUFFER_CULL
                         : IrisImportedGeometryPipelines.GBUFFER_DOUBLE_SIDED;
-                case TRANSLUCENT -> cull ? IrisImportedGeometryPipelines.TRANSLUCENT_CULL
-                        : IrisImportedGeometryPipelines.TRANSLUCENT_DOUBLE_SIDED;
+                case TRANSLUCENT -> noDepth
+                        ? (cull ? IrisImportedGeometryPipelines.TRANSLUCENT_NO_DEPTH_CULL
+                                : IrisImportedGeometryPipelines.TRANSLUCENT_NO_DEPTH_DOUBLE_SIDED)
+                        : material.alphaMode() == AlphaMode.BLEND
+                        ? (cull ? IrisImportedGeometryPipelines.TRANSLUCENT_BLEND_CULL
+                                : IrisImportedGeometryPipelines.TRANSLUCENT_BLEND_DOUBLE_SIDED)
+                        : (cull ? IrisImportedGeometryPipelines.TRANSLUCENT_CULL
+                                : IrisImportedGeometryPipelines.TRANSLUCENT_DOUBLE_SIDED);
                 case SHADOW -> cull ? IrisImportedGeometryPipelines.SHADOW_CULL
                         : IrisImportedGeometryPipelines.SHADOW_DOUBLE_SIDED;
             };

@@ -62,6 +62,10 @@ enum IrisRuntimeBridge {
         assignImportedGeometry(api, IrisImportedGeometryPipelines.GBUFFER_DOUBLE_SIDED);
         assignImportedTranslucent(api, IrisImportedGeometryPipelines.TRANSLUCENT_CULL);
         assignImportedTranslucent(api, IrisImportedGeometryPipelines.TRANSLUCENT_DOUBLE_SIDED);
+        assignImportedTranslucent(api, IrisImportedGeometryPipelines.TRANSLUCENT_BLEND_CULL);
+        assignImportedTranslucent(api, IrisImportedGeometryPipelines.TRANSLUCENT_BLEND_DOUBLE_SIDED);
+        assignImportedTranslucent(api, IrisImportedGeometryPipelines.TRANSLUCENT_NO_DEPTH_CULL);
+        assignImportedTranslucent(api, IrisImportedGeometryPipelines.TRANSLUCENT_NO_DEPTH_DOUBLE_SIDED);
         assignImportedShadow(api, IrisImportedGeometryPipelines.SHADOW_CULL);
         assignImportedShadow(api, IrisImportedGeometryPipelines.SHADOW_DOUBLE_SIDED);
         if (!shadowCallbackRegistered) {

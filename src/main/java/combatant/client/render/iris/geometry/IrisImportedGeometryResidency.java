@@ -122,7 +122,7 @@ public final class IrisImportedGeometryResidency implements AutoCloseable {
             vertices.putShort((short) COMBATANT_ENTITY_MARKER)
                     .putShort((short) 0).putShort((short) 0).putShort((short) 0);
             put2(vertices, uv1, vertex * 2, 0.0f, 0.0f);
-            putSnorm4(vertices, tangents, vertex * 4, 1.0f, 0.0f, 0.0f, 1.0f);
+            putIrisTangent(vertices, tangents, vertex * 4);
         }
         vertices.flip();
         if (vertices.remaining() != primitive.vertexCount() * stride) {
@@ -181,6 +181,18 @@ public final class IrisImportedGeometryResidency implements AutoCloseable {
         out.put(snorm(values != null ? values[offset + 1] : y));
         out.put(snorm(values != null ? values[offset + 2] : z));
         out.put(snorm(values != null && values.length > offset + 3 ? values[offset + 3] : w));
+    }
+    private static void putIrisTangent(ByteBuffer out, float[] values, int offset) {
+        float x = values != null ? values[offset] : 1.0f;
+        float y = values != null ? values[offset + 1] : 0.0f;
+        float z = values != null ? values[offset + 2] : 0.0f;
+        float gltfHandedness = values != null && values.length > offset + 3 ? values[offset + 3] : 1.0f;
+        /*
+         * glTF defines B = cross(N, T) * tangent.w. Iris entity shaders define the stored sign
+         * for B = cross(T, N) * at_tangent.w. The cross products have opposite signs, so the
+         * handedness must be inverted when adapting a glTF vertex to Iris' ENTITY format.
+         */
+        out.put(snorm(x)).put(snorm(y)).put(snorm(z)).put(snorm(-gltfHandedness));
     }
     private static void putColor(ByteBuffer out, float[] colors, int vertex, int vertexCount) {
         if (colors == null) {

@@ -9,6 +9,7 @@
 
 @insert_zone declarations
 in vec2 combatant_uv1;
+in mat3 combatant_smooth_tbn;
 flat in uint combatant_geometry_marker;
 
 @end
@@ -54,6 +55,15 @@ vec3 combatant_translucent_srgb(vec3 value) {
     return mix(pow((value + 0.055) / 1.055, vec3(2.4)), value / 12.92, cutoff);
 }
 
+mat3 combatant_translucent_tbn(mat3 basis) {
+    vec3 normal = normalize(basis[2]);
+    vec3 tangent = basis[0] - normal * dot(basis[0], normal);
+    tangent = normalize(tangent);
+    vec3 bitangent = cross(tangent, normal);
+    bitangent *= sign(dot(bitangent, basis[1]));
+    return mat3(tangent, normalize(bitangent), normal);
+}
+
 @end
 
 @replace_line_hash 909ebd3217a244bd18df4397f192636be52fb87fdd33bd0ad64480159ae7aa4c 1
@@ -65,12 +75,20 @@ vec3 combatant_translucent_srgb(vec3 value) {
         fragment_color = combatant_translucent_map(0) *
             vec4(combatant_translucent_param(1), combatant_translucent_param(2),
                  combatant_translucent_param(3), combatant_translucent_param(4)) * tint;
-        if (fragment_color.a <= rcp(255.0)) {
-            discard; // Canonical BLEND contains no visible coverage.
+        float combatant_alpha_mode = combatant_translucent_param(14);
+        if ((combatant_alpha_mode > 0.5 && combatant_alpha_mode < 1.5 &&
+             fragment_color.a < combatant_translucent_param(15)) ||
+            (combatant_alpha_mode > 1.5 && fragment_color.a <= rcp(255.0))) {
+            discard; // Canonical MASK cutoff or zero-coverage BLEND.
             return;
         }
-        material = material_from(fragment_color.rgb, 255u, world_pos, tbn[2], adjusted_light_levels);
-        mat3 combatant_tbn = gl_FrontFacing ? tbn : -tbn;
+        // OPAQUE ignores source alpha; MASK uses alpha only for coverage and then writes an
+        // opaque entity fragment. Only canonical BLEND remains alpha blended.
+        if (combatant_alpha_mode < 1.5) fragment_color.a = 1.0;
+        mat3 combatant_tbn = combatant_translucent_tbn(combatant_smooth_tbn);
+        combatant_tbn = gl_FrontFacing ? combatant_tbn : -combatant_tbn;
+        material = material_from(fragment_color.rgb, 255u, world_pos,
+            combatant_tbn[2], adjusted_light_levels);
         vec3 tangent_normal = combatant_translucent_map(1).xyz * 2.0 - 1.0;
         tangent_normal.xy *= combatant_translucent_param(9);
         normal = normalize(combatant_tbn * normalize(tangent_normal));

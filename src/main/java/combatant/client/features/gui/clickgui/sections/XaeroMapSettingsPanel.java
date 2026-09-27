@@ -207,7 +207,6 @@ final class XaeroMapSettingsPanel {
         addProfiled(manager, WorldMapProfiledConfigOptions.COORDINATES, Category.DISPLAY);
         addProfiled(manager, WorldMapProfiledConfigOptions.FOOTSTEPS, Category.DISPLAY);
         addProfiled(manager, WorldMapProfiledConfigOptions.ARROW, Category.DISPLAY);
-        addProfiled(manager, WorldMapProfiledConfigOptions.ARROW_COLOR, Category.DISPLAY);
         addProfiled(manager, WorldMapProfiledConfigOptions.DISPLAY_ZOOM, Category.DISPLAY);
         addProfiled(manager, WorldMapProfiledConfigOptions.DISPLAY_HOVERED_BIOME, Category.DISPLAY);
         addProfiled(manager, WorldMapProfiledConfigOptions.ZOOM_BUTTONS, Category.DISPLAY);
@@ -1344,7 +1343,7 @@ final class XaeroMapSettingsPanel {
     }
 
     private void auditXaeroCoverage() {
-        auditXaeroOptionClass(WorldMapProfiledConfigOptions.class, Set.of());
+        auditXaeroOptionClass(WorldMapProfiledConfigOptions.class, Set.of(WorldMapProfiledConfigOptions.ARROW_COLOR));
         auditXaeroOptionClass(WorldMapPrimaryClientConfigOptions.class, Set.of(
                 WorldMapPrimaryClientConfigOptions.IGNORED_UPDATE,
                 WorldMapPrimaryClientConfigOptions.RELOAD_VIEWED_VERSION,
@@ -1373,7 +1372,6 @@ final class XaeroMapSettingsPanel {
         return option == WorldMapProfiledConfigOptions.BLOCK_COLORS
                 || option == WorldMapProfiledConfigOptions.TERRAIN_SLOPES
                 || option == WorldMapProfiledConfigOptions.AUTO_CAVE_MODE
-                || option == WorldMapProfiledConfigOptions.ARROW_COLOR
                 || option == WorldMapProfiledConfigOptions.DEFAULT_CAVE_MODE_TYPE;
     }
 

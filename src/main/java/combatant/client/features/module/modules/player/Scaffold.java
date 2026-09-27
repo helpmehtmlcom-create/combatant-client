@@ -75,7 +75,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-@ModuleInfo(id = "scaffold", displayName = "Scaffold", aliases = {"bridge", "autobridge"}, category = ModuleCategory.PLAYER, subcategory = ModuleSubcategory.EXPLOIT,
+@ModuleInfo(id = "scaffold", displayName = "Scaffold", aliases = {"bridge", "autobridge"}, category = ModuleCategory.PLAYER, subcategory = ModuleSubcategory.AUTOMATION,
         description = "module.scaffold.description")
 public class Scaffold extends Module {
     private static final boolean DEBUG_LOGS = true;

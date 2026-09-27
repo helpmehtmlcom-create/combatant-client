@@ -59,7 +59,6 @@ import combatant.client.features.module.modules.visuals.*;
 import combatant.client.mixins.accessors.GameRendererAccessor;
 import combatant.client.mixins.accessors.LocalPlayerAccessor;
 import combatant.client.render.engine.RenderState;
-import combatant.client.render.engine.asset.gltf.render.ImportedAssetCompatibilityRenderer;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.core.CombatantWorldMatrices;
 import combatant.client.render.engine.temporal.TemporalJitterSequence;
@@ -355,12 +354,6 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
                     Matrix4f inverseBob = new Matrix4f(combatant$matrices.last().pose()).invert();
                     mv.mul(inverseBob);
                 }
-
-                // Imported compatibility geometry must be submitted from the same 3D scope as the
-                // rest of Combatant world rendering. The Fabric level event happens outside this
-                // scope, where RenderState.rendering3D/model-view ownership is not guaranteed and
-                // object transforms can be projected without the active camera rotation.
-                ImportedAssetCompatibilityRenderer.renderPrimary();
 
                 combatant$renderer.begin();
                 combatant$depthRenderer.begin();
