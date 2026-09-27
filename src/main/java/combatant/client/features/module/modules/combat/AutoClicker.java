@@ -24,7 +24,7 @@ import java.util.concurrent.ThreadLocalRandom;
 @ModuleInfo(
         id = "autoclicker",
         displayName = "AutoClicker",
-        aliases = {"TriggerBot", "FastClicker"},
+        aliases = {"FastClicker", "SpamClicker"},
         category = ModuleCategory.COMBAT,
         description = "Automatically clicks when holding mouse buttons with randomized CPS."
 )

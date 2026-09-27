@@ -174,6 +174,14 @@ final class CombatantIndexTest {
                 .contains("combatant.client.features.module.modules.player.InvCleaner"));
         assertTrue(CombatantIndex.classNames(CombatantIndex.Kind.MODULE)
                 .contains("combatant.client.features.module.modules.misc.AutoSign"));
+        assertTrue(CombatantIndex.classNames(CombatantIndex.Kind.MODULE)
+                .contains("combatant.client.features.module.modules.combat.TriggerBot"));
+        assertTrue(CombatantIndex.classNames(CombatantIndex.Kind.MODULE)
+                .contains("combatant.client.features.module.modules.combat.AutoWeapon"));
+        assertTrue(CombatantIndex.classNames(CombatantIndex.Kind.MODULE)
+                .contains("combatant.client.features.module.modules.combat.AimAssist"));
+        assertTrue(CombatantIndex.classNames(CombatantIndex.Kind.MODULE)
+                .contains("combatant.client.features.module.modules.combat.BowAim"));
         assertTrue(CombatantIndex.classNames(CombatantIndex.Kind.COMMAND)
                 .contains("combatant.client.features.command.impl.VClipCommand"));
         assertTrue(CombatantIndex.classNames(CombatantIndex.Kind.COMMAND)
