@@ -101,24 +101,45 @@ void main() {
             uBlendTone1
     );
 
-    // Glass cues are layered after the color operator. This avoids the gray c <-> (1-c) mix while
-    // keeping a bright SDF rim/specular and a visible refractive edge on top of the negative body.
+    // Glass cues are layered after the color operator. v_Color.rgb is an animated prism control
+    // signal here; it must shape dispersion/rim response rather than behave like a flat fill.
+    vec3 prismSignal = clamp(tint, 0.0, 1.0);
+    float prismLuma = luminance(prismSignal);
+    vec3 prismChroma = prismSignal - vec3(prismLuma);
+    float prismEnergy = clamp(length(prismChroma) * 1.55, 0.0, 1.0);
+    float lensEnergy = clamp(length(cleanScene - blurredScene) * 2.2, 0.0, 1.0);
+
     float directional = clamp(dot(normal, safeNormalize(vec2(-0.42, 0.91))) * 0.5 + 0.5, 0.0, 1.0);
     float rimLight = rim * (0.17 + 0.30 * directional);
     float specular = hairline * (0.12 + 0.24 * directional);
-    vec3 rimColor = mix(vec3(0.78), vec3(1.0), directional);
+    vec3 neutralRim = mix(vec3(0.78), vec3(1.0), directional);
+    vec3 rimColor = mix(neutralRim, prismSignal, 0.32 + prismEnergy * 0.28);
     blended += rimColor * rimLight;
-    blended += vec3(1.0) * specular;
+    blended += mix(vec3(1.0), prismSignal, 0.18 + prismEnergy * 0.18) * specular;
 
-    // A tiny edge-only chromatic split makes refraction legible without tinting the glyph body.
-    vec2 chromaOffset = normal * ((0.42 + rim * 0.66) / fbSize);
-    float chromaMask = rim * 0.16;
-    if (chromaMask > 0.001) {
-        float r = 1.0 - texture(u_SceneTexture, clamp(refractedUv + chromaOffset, vec2(0.001), vec2(0.999))).r;
-        float b = 1.0 - texture(u_SceneTexture, clamp(refractedUv - chromaOffset, vec2(0.001), vec2(0.999))).b;
-        vec3 chroma = vec3(r, blended.g, b);
-        blended = mix(blended, chroma, chromaMask);
-    }
+    // Real chromatic dispersion: sample the refracted backdrop at three different offsets, invert
+    // those samples for NEGATIVE, then inject them mostly at the SDF edge and where the lens differs
+    // from the prepared blur. The animated prism signal changes both direction and strength.
+    vec2 tangent = vec2(-normal.y, normal.x);
+    float phaseBias = prismSignal.r - prismSignal.b;
+    vec2 dispersionDir = safeNormalize(normal + tangent * phaseBias * 0.34);
+    float dispersionPx = 0.58 + rim * 1.05 + hairline * 0.48 + prismEnergy * 0.32;
+    vec2 chromaOffset = dispersionDir * (dispersionPx / fbSize);
+    float chromaMask = clamp(0.055 + rim * 0.30 + hairline * 0.14 + lensEnergy * 0.08, 0.0, 0.46);
+    vec2 uvR = clamp(refractedUv + chromaOffset, vec2(0.001), vec2(0.999));
+    vec2 uvB = clamp(refractedUv - chromaOffset, vec2(0.001), vec2(0.999));
+    vec3 dispersedNegative = vec3(
+            1.0 - texture(u_SceneTexture, uvR).r,
+            1.0 - texture(u_SceneTexture, refractedUv).g,
+            1.0 - texture(u_SceneTexture, uvB).b
+    );
+    dispersedNegative += prismChroma * (0.10 + rim * 0.10 + lensEnergy * 0.06);
+    blended = mix(blended, clamp(dispersedNegative, 0.0, 1.0), chromaMask);
+
+    // Restrained interior iridescence keeps the glyph alive even over low-detail backdrops without
+    // turning the body into a rainbow fill. It is strongest where refraction/blur actually diverge.
+    float interiorPrism = (0.025 + lensEnergy * 0.075) * (0.42 + rim * 0.58) * prismEnergy;
+    blended += prismChroma * interiorPrism;
 
     float denseGlyphAlpha = 1.0 - pow(max(1.0 - glyphAlpha, 0.0), 1.18);
     float coverage = clamp(denseGlyphAlpha * v_Color.a * (0.84 + rim * 0.12 + hairline * 0.04), 0.0, 0.94);

@@ -31,6 +31,7 @@ public enum ResourceReloadHooks {
         try {
             // Static resource-backed systems are discovered through @AssetLoad.
             AssetAutoLoader.reload(manager);
+            IrisRuntime.invalidateImportedGeometryResidency();
             MaterialRegistry.global().reload(manager);
 
             I18nDuplicateScanner.scan(manager, "resource reload");

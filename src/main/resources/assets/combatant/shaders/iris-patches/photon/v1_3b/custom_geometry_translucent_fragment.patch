@@ -1,0 +1,110 @@
+@patch 2
+@require_function main
+@require_uniform gtexture
+@require_ident material_from
+@require_hash 36b01f17cc8f764281e93effcb8d8f96afbb4f4dd18e9bd8fb42d32cabcd5d2a
+@require_hash 909ebd3217a244bd18df4397f192636be52fb87fdd33bd0ad64480159ae7aa4c
+@require_hash 21c7fc2937e9400d6a3714206a384156deca12697edbf9ea1fc13a83935b6082
+@require_hash 3132fd2d46968a699ec7d757d0a4318742e9f0ca4248bb9e13c273f6f12a4768
+
+@insert_zone declarations
+in vec2 combatant_uv1;
+flat in uint combatant_geometry_marker;
+
+@end
+
+@replace_line_hash 36b01f17cc8f764281e93effcb8d8f96afbb4f4dd18e9bd8fb42d32cabcd5d2a
+#define lod_bias log2(taau_render_scale) // COMBATANT_DYNAMIC_LOD_BIAS
+@end
+
+@insert_before_function main
+float combatant_translucent_param(int index) {
+    uvec4 bytes = uvec4(round(texelFetch(gtexture, ivec2(index, 0), 0) * 255.0));
+    uint bits = bytes.r | (bytes.g << 8u) | (bytes.b << 16u) | (bytes.a << 24u);
+    return uintBitsToFloat(bits);
+}
+
+float combatant_translucent_wrap(float value, float mode) {
+    if (mode < 0.5) return clamp(value, 0.0, 1.0);
+    if (mode < 1.5) return 1.0 - abs(mod(value, 2.0) - 1.0);
+    return fract(value);
+}
+
+vec4 combatant_translucent_map(int map_index) {
+    int transform_index = 17 + map_index * 6;
+    int sampling_index = 47 + map_index * 3;
+    vec2 source_uv = combatant_translucent_param(sampling_index) < 0.5 ? uv : combatant_uv1;
+    vec2 transformed_uv = vec2(
+        dot(vec3(source_uv, 1.0), vec3(combatant_translucent_param(transform_index + 0),
+            combatant_translucent_param(transform_index + 1), combatant_translucent_param(transform_index + 2))),
+        dot(vec3(source_uv, 1.0), vec3(combatant_translucent_param(transform_index + 3),
+            combatant_translucent_param(transform_index + 4), combatant_translucent_param(transform_index + 5)))
+    );
+    transformed_uv.x = combatant_translucent_wrap(transformed_uv.x, combatant_translucent_param(sampling_index + 1));
+    transformed_uv.y = combatant_translucent_wrap(transformed_uv.y, combatant_translucent_param(sampling_index + 2));
+    ivec2 atlas_size = textureSize(gtexture, 0);
+    float tile_size = float(atlas_size.x / 3);
+    vec2 origin = vec2(float(map_index % 3), float(map_index / 3)) * tile_size + vec2(0.0, 1.0);
+    return textureLod(gtexture, (origin + vec2(0.5) + transformed_uv * (tile_size - 1.0)) /
+        vec2(atlas_size), 0.0);
+}
+
+vec3 combatant_translucent_srgb(vec3 value) {
+    bvec3 cutoff = lessThanEqual(value, vec3(0.04045));
+    return mix(pow((value + 0.055) / 1.055, vec3(2.4)), value / 12.92, cutoff);
+}
+
+@end
+
+@replace_line_hash 909ebd3217a244bd18df4397f192636be52fb87fdd33bd0ad64480159ae7aa4c 1
+    bool combatant_custom_geometry = combatant_geometry_marker != 0u;
+    float combatant_forward_ao = 1.0;
+    bool combatant_forward_unlit = false;
+    vec3 combatant_forward_unlit_color = vec3(0.0);
+    if (combatant_custom_geometry) {
+        fragment_color = combatant_translucent_map(0) *
+            vec4(combatant_translucent_param(1), combatant_translucent_param(2),
+                 combatant_translucent_param(3), combatant_translucent_param(4)) * tint;
+        if (fragment_color.a <= rcp(255.0)) {
+            discard; // Canonical BLEND contains no visible coverage.
+            return;
+        }
+        material = material_from(fragment_color.rgb, 255u, world_pos, tbn[2], adjusted_light_levels);
+        mat3 combatant_tbn = gl_FrontFacing ? tbn : -tbn;
+        vec3 tangent_normal = combatant_translucent_map(1).xyz * 2.0 - 1.0;
+        tangent_normal.xy *= combatant_translucent_param(9);
+        normal = normalize(combatant_tbn * normalize(tangent_normal));
+        vec4 metallic_roughness = combatant_translucent_map(2);
+        float roughness = clamp01(combatant_translucent_param(11) * metallic_roughness.g);
+        float metallic = clamp01(combatant_translucent_param(12) * metallic_roughness.b);
+        vec3 base_material_color = material.albedo;
+        material.roughness = max(roughness, 0.002);
+        material.f0 = mix(vec3(clamp01(combatant_translucent_param(13))), base_material_color, metallic);
+        material.albedo = base_material_color * (1.0 - metallic);
+        material.is_metal = metallic >= 0.5;
+        material.is_hardcoded_metal = false;
+        material.f82 = vec3(0.0);
+        material.sss_amount = 0.0;
+        material.sheen_amount = 0.0; // Canonical glTF has no shaderpack SSS/sheen channel.
+        material.porosity = 0.0;
+        material.emission = combatant_translucent_srgb(combatant_translucent_map(4).rgb) *
+            vec3(combatant_translucent_param(5), combatant_translucent_param(6),
+                 combatant_translucent_param(7)) * combatant_translucent_param(8) * rec709_to_rec2020;
+        material.ssr_multiplier = step(0.01,
+            material.f0.x - material.f0.x * material.roughness * SSR_ROUGHNESS_THRESHOLD);
+        combatant_forward_ao = mix(1.0, combatant_translucent_map(3).r, combatant_translucent_param(10));
+        combatant_forward_unlit = combatant_translucent_param(16) > 0.5;
+        combatant_forward_unlit_color = base_material_color + material.emission;
+    } else if (is_water) {
+@end
+
+@replace_line_hash 21c7fc2937e9400d6a3714206a384156deca12697edbf9ea1fc13a83935b6082 17
+            combatant_custom_geometry ? combatant_forward_ao : 1.0,
+@end
+
+@insert_before_hash 3132fd2d46968a699ec7d757d0a4318742e9f0ca4248bb9e13c273f6f12a4768
+    if (combatant_custom_geometry && combatant_forward_unlit) {
+        fragment_color.rgb = combatant_forward_unlit_color * fragment_color.a;
+    }
+
+@end

@@ -29,7 +29,6 @@ import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.renderer.FullScreenRenderer;
 import combatant.client.render.engine.profiler.TracyGpuProfiler;
 import combatant.client.render.engine.uniform.impl.DepthOfFieldUniforms;
-import combatant.client.render.helpers.SodiumMaterialFlags;
 import combatant.client.render.iris.IrisSceneDepth;
 import combatant.client.render.iris.IrisRuntime;
 import combatant.client.util.logging.DebugLog;
@@ -43,8 +42,6 @@ public class ReimaginedVisual extends Module implements PostProcessPass, PostPro
 
     private static final String SETTING_EFFECTS = "effects";
     private static final String EFFECT_SHADER_SKY = "shader_sky";
-    private static final String EFFECT_WORLD_SUN = "world_sun";
-    private static final String EFFECT_WAVY_VEGETATION = "wavy_vegetation";
     private static final String EFFECT_DEPTH_OF_FIELD = "depth_of_field";
     private static final String SETTING_SKYBOX_SHADER_SYNC_THEME = "skybox_shader_sync_theme";
     private static final String SETTING_SKYBOX_SHADER_COLOR = "skybox_shader_color";
@@ -60,15 +57,6 @@ public class ReimaginedVisual extends Module implements PostProcessPass, PostPro
     private static final String SETTING_SKYBOX_SHADER_TWINKLE_STRENGTH = "skybox_shader_twinkle_strength";
     private static final String SETTING_SKYBOX_SHADER_LAYERS = "skybox_shader_layers";
     private static final String SETTING_SKYBOX_SKY_FOG_BLEND = "skybox_sky_fog_blend";
-    private static final String SETTING_WORLD_SUN_GLARE_ENABLED = "world_sun_glare_enabled";
-    private static final String SETTING_WORLD_SUN_SIZE = "world_sun_size";
-    private static final String SETTING_WORLD_SUN_GLOW = "world_sun_glow";
-    private static final String SETTING_WORLD_SUN_INTENSITY = "world_sun_intensity";
-    private static final String SETTING_WAVY_VEGETATION_ROOTED_HORIZONTAL_AMPLITUDE = "wavy_vegetation_rooted_horizontal_amplitude";
-    private static final String SETTING_WAVY_VEGETATION_ROOTED_VERTICAL_AMPLITUDE = "wavy_vegetation_rooted_vertical_amplitude";
-    private static final String SETTING_WAVY_VEGETATION_FREE_HORIZONTAL_AMPLITUDE = "wavy_vegetation_free_horizontal_amplitude";
-    private static final String SETTING_WAVY_VEGETATION_FREE_VERTICAL_AMPLITUDE = "wavy_vegetation_free_vertical_amplitude";
-    private static final String SETTING_WAVY_VEGETATION_SPEED = "wavy_vegetation_speed";
     private static final String SETTING_DOF_DEPTH_SOURCE = "dof_depth_source";
     private static final String SETTING_DOF_FAR_START = "dof_far_start";
     private static final String SETTING_DOF_FAR_TRANSITION = "dof_far_transition";
@@ -134,32 +122,7 @@ public class ReimaginedVisual extends Module implements PostProcessPass, PostPro
                     num("reimaginedVisualSkyboxSkyFogBlend", SETTING_SKYBOX_SKY_FOG_BLEND, 0.35f, 0.0f, 1.0f),
                     this::isShaderSkyboxSettingsVisible
             ));
-    private final BooleanValue worldSunGlareEnabled =
-            visibleWhen(bool("reimaginedVisualWorldSunGlareEnabled", SETTING_WORLD_SUN_GLARE_ENABLED, true),
-                    this::isWorldSunSettingsVisible);
-    private final NumberValue<Float> worldSunSize =
-            visibleWhen(num("reimaginedVisualWorldSunSize", SETTING_WORLD_SUN_SIZE, 0.06f, 0.01f, 0.20f),
-                    this::isWorldSunSettingsVisible);
-    private final NumberValue<Float> worldSunGlow =
-            visibleWhen(num("reimaginedVisualWorldSunGlow", SETTING_WORLD_SUN_GLOW, 0.18f, 0.02f, 0.40f),
-                    this::isWorldSunSettingsVisible);
-    private final NumberValue<Float> worldSunIntensity =
-            visibleWhen(num("reimaginedVisualWorldSunIntensity", SETTING_WORLD_SUN_INTENSITY, 1.0f, 0.0f, 3.0f),
-                    this::isWorldSunSettingsVisible);
-    private final NumberValue<Float> wavyVegetationRootedHorizontalAmplitude =
-            visibleWhen(num("reimaginedVisualWavyVegetationRootedHorizontalAmplitude", SETTING_WAVY_VEGETATION_ROOTED_HORIZONTAL_AMPLITUDE, 1.0f, 0.0f, 3.0f), this::isWavyVegetationSettingsVisible);
-    private final NumberValue<Float> wavyVegetationRootedVerticalAmplitude =
-            visibleWhen(num("reimaginedVisualWavyVegetationRootedVerticalAmplitude", SETTING_WAVY_VEGETATION_ROOTED_VERTICAL_AMPLITUDE, 1.0f, 0.0f, 3.0f), this::isWavyVegetationSettingsVisible);
-    private final NumberValue<Float> wavyVegetationFreeHorizontalAmplitude =
-            visibleWhen(num("reimaginedVisualWavyVegetationFreeHorizontalAmplitude", SETTING_WAVY_VEGETATION_FREE_HORIZONTAL_AMPLITUDE, 1.0f, 0.0f, 3.0f), this::isWavyVegetationSettingsVisible);
-    private final NumberValue<Float> wavyVegetationFreeVerticalAmplitude =
-            visibleWhen(num("reimaginedVisualWavyVegetationFreeVerticalAmplitude", SETTING_WAVY_VEGETATION_FREE_VERTICAL_AMPLITUDE, 1.0f, 0.0f, 3.0f), this::isWavyVegetationSettingsVisible);
-    private final NumberValue<Float> wavyVegetationSpeed =
-            visibleWhen(num("reimaginedVisualWavyVegetationSpeed", SETTING_WAVY_VEGETATION_SPEED, 1.0f, 0.0f, 3.0f), this::isWavyVegetationSettingsVisible);
     private final Minecraft mc = Minecraft.getInstance();
-    private boolean wavyVegetationStateInitialized;
-    private boolean lastWavyVegetationActive;
-    private int lastWavyVegetationSettingsPacked;
     private final NumberValue<Float> dofFarStart =
             depthOfFieldNotAppliedWithIris(visibleWhen(num("reimaginedVisualDofFarStart", SETTING_DOF_FAR_START, 4.0f, 0.0f, 512.0f),
                     this::isDepthOfFieldSettingsVisible));
@@ -193,8 +156,6 @@ public class ReimaginedVisual extends Module implements PostProcessPass, PostPro
     private static Map<String, Boolean> createDefaultEffects() {
         LinkedHashMap<String, Boolean> defaults = new LinkedHashMap<>();
         defaults.put(EFFECT_SHADER_SKY, true);
-        defaults.put(EFFECT_WORLD_SUN, true);
-        defaults.put(EFFECT_WAVY_VEGETATION, false);
         defaults.put(EFFECT_DEPTH_OF_FIELD, false);
         return defaults;
     }
@@ -219,46 +180,6 @@ public class ReimaginedVisual extends Module implements PostProcessPass, PostPro
         defaults.put("large_stars", true);
         defaults.put("detail_stars", true);
         return defaults;
-    }
-
-    public static boolean isWorldSunEnabledStatic() {
-        ReimaginedVisual module = module();
-        return module != null && module.isEnabled() && module.isEffectSelected(EFFECT_WORLD_SUN);
-    }
-
-    public static float getWorldSunSizeStatic() {
-        ReimaginedVisual module = module();
-        return module != null ? module.worldSunSize.get() : 0.06f;
-    }
-
-    public static float getWorldSunGlowStatic() {
-        ReimaginedVisual module = module();
-        return module != null ? module.worldSunGlow.get() : 0.18f;
-    }
-
-    public static float getWorldSunIntensityStatic() {
-        ReimaginedVisual module = module();
-        return module != null ? module.worldSunIntensity.get() : 1.0f;
-    }
-
-    public static boolean isWorldSunGlareEnabledStatic() {
-        ReimaginedVisual module = module();
-        return module != null
-                && module.isEnabled()
-                && module.isEffectSelected(EFFECT_WORLD_SUN)
-                && module.worldSunGlareEnabled.get();
-    }
-
-    public static boolean isWavyVegetationEnabledStatic() {
-        ReimaginedVisual module = module();
-        return module != null
-                && module.isEnabled()
-                && module.isEffectSelected(EFFECT_WAVY_VEGETATION);
-    }
-
-    public static int packWavyVegetationSettingsStatic() {
-        ReimaginedVisual module = module();
-        return module != null ? module.packWavyVegetationSettings() : packWavyVegetationSettings(1.0f, 1.0f, 1.0f, 1.0f, 1.0f);
     }
 
     private static ReimaginedVisual module() {
@@ -538,23 +459,16 @@ public class ReimaginedVisual extends Module implements PostProcessPass, PostPro
     }
 
     @Override
-    public void onTick() {
-        refreshWavyVegetationTerrainState();
-    }
-
-    @Override
     public void onEnable() {
         depthSamplerSupported = true;
         dofFocusResolveSupported = true;
         dofComputeSupported = true;
-        refreshWavyVegetationTerrainState();
     }
 
     @Override
     public void onDisable() {
         closeDofFocusTarget();
         dofComputeBackend.close();
-        refreshWavyVegetationTerrainState(false);
     }
 
     @Override
@@ -563,47 +477,6 @@ public class ReimaginedVisual extends Module implements PostProcessPass, PostPro
         closeDofFocusTarget();
         dofComputeSupported = true;
         dofFocusResolveSupported = true;
-    }
-
-    private void refreshWavyVegetationTerrainState() {
-        refreshWavyVegetationTerrainState(isEnabled() && isEffectSelected(EFFECT_WAVY_VEGETATION));
-    }
-
-    private void refreshWavyVegetationTerrainState(boolean active) {
-        int settingsPacked = active ? packWavyVegetationSettings() : 0;
-        if (!wavyVegetationStateInitialized) {
-            wavyVegetationStateInitialized = true;
-            lastWavyVegetationActive = false;
-            lastWavyVegetationSettingsPacked = 0;
-        }
-
-        if (lastWavyVegetationActive == active && lastWavyVegetationSettingsPacked == settingsPacked) return;
-        lastWavyVegetationActive = active;
-        lastWavyVegetationSettingsPacked = settingsPacked;
-        CombatantRenderSystem.sodium().reloadWorldRenderer();
-    }
-
-    private int packWavyVegetationSettings() {
-        return packWavyVegetationSettings(
-                wavyVegetationRootedHorizontalAmplitude.get(),
-                wavyVegetationRootedVerticalAmplitude.get(),
-                wavyVegetationFreeHorizontalAmplitude.get(),
-                wavyVegetationFreeVerticalAmplitude.get(),
-                wavyVegetationSpeed.get()
-        );
-    }
-
-    private static int packWavyVegetationSettings(float rootedHorizontal, float rootedVertical, float freeHorizontal, float freeVertical, float speed) {
-        return (encodeWavyVegetationSetting(rootedHorizontal) << SodiumMaterialFlags.WAVE_ROOTED_HORIZONTAL_SHIFT)
-                | (encodeWavyVegetationSetting(rootedVertical) << SodiumMaterialFlags.WAVE_ROOTED_VERTICAL_SHIFT)
-                | (encodeWavyVegetationSetting(freeHorizontal) << SodiumMaterialFlags.WAVE_FREE_HORIZONTAL_SHIFT)
-                | (encodeWavyVegetationSetting(freeVertical) << SodiumMaterialFlags.WAVE_FREE_VERTICAL_SHIFT)
-                | (encodeWavyVegetationSetting(speed) << SodiumMaterialFlags.WAVE_SPEED_SHIFT);
-    }
-
-    private static int encodeWavyVegetationSetting(float value) {
-        float clamped = Math.max(0.0f, Math.min(SodiumMaterialFlags.WAVE_SETTING_MAX, value));
-        return Math.round((clamped / SodiumMaterialFlags.WAVE_SETTING_MAX) * SodiumMaterialFlags.WAVE_SETTING_MASK);
     }
 
     private DepthBindings resolveDepthBindings(PostProcessContext context) {
@@ -634,9 +507,6 @@ public class ReimaginedVisual extends Module implements PostProcessPass, PostPro
         );
     }
 
-    private boolean isWorldSunSettingsVisible() {
-        return isEffectSelected(EFFECT_WORLD_SUN);
-    }
 
     private boolean isShaderSkyboxSettingsVisible() {
         return isEffectSelected(EFFECT_SHADER_SKY);
@@ -655,8 +525,19 @@ public class ReimaginedVisual extends Module implements PostProcessPass, PostPro
         return notAppliedWhen(value, this::isShaderSkyboxBlockedByIris, this::shaderSkyboxIrisReason);
     }
 
+    public static boolean isDepthOfFieldRequestedStatic() {
+        ReimaginedVisual module = module();
+        return module != null && module.isEnabled() && module.isEffectSelected(EFFECT_DEPTH_OF_FIELD);
+    }
+
+    public static boolean isDepthOfFieldActiveStatic() {
+        ReimaginedVisual module = module();
+        return module != null && module.isActive();
+    }
+
     private boolean isDepthOfFieldBlockedByIris() {
-        return IrisRuntime.isShaderpackRendererActive();
+        return IrisRuntime.isShaderpackRendererActive()
+                && !combatant.client.render.iris.IrisCompatibilityGuards.supportsCombatantDepthOfField();
     }
 
     private String depthOfFieldIrisReason() {
@@ -672,9 +553,6 @@ public class ReimaginedVisual extends Module implements PostProcessPass, PostPro
         return isEffectSelected(EFFECT_DEPTH_OF_FIELD);
     }
 
-    private boolean isWavyVegetationSettingsVisible() {
-        return isEffectSelected(EFFECT_WAVY_VEGETATION);
-    }
 
     private boolean isEffectSelected(String effect) {
         return effects.get(effect);

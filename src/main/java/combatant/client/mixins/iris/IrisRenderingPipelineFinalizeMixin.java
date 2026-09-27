@@ -48,6 +48,7 @@ public abstract class IrisRenderingPipelineFinalizeMixin {
 
     @Inject(method = "beginTranslucents", at = @At("HEAD"), remap = false)
     private void combatant$capturePreTranslucentDepth(CallbackInfo ci) {
+        IrisRuntime.renderImportedGeometryPrimary();
         IrisShaderpackMsaaIntegration.resolveWorld();
         PreTranslucentDepth.capture();
     }
@@ -55,6 +56,7 @@ public abstract class IrisRenderingPipelineFinalizeMixin {
     @Inject(method = "beginTranslucents", at = @At("TAIL"), remap = false)
     private void combatant$seedMsaaAfterDeferred(CallbackInfo ci) {
         IrisShaderpackMsaaIntegration.seedWorld();
+        IrisRuntime.renderImportedGeometryTranslucent();
     }
 
     @Inject(method = "finalizeLevelRendering", at = @At("HEAD"), remap = false)

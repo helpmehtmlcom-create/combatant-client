@@ -1,0 +1,91 @@
+@patch 2
+@require_function main
+@require_ident material_from
+@require_ident ambient_upscaled
+@require_ident weight_sum
+@require_hash 9223d9964b40b5bd14e158f2a258762d6bb585a0bd40293426c68b3324e9838a
+
+@insert_before_function main
+#ifndef COMBATANT_FULLBRIGHT_DEFERRED_UNIFORMS_DECLARED
+#define COMBATANT_FULLBRIGHT_DEFERRED_UNIFORMS_DECLARED
+uniform bool combatantFullbrightEnabled;
+uniform float combatantFullbrightMinLight;
+uniform float combatantOverrideAmbientLight;
+#endif
+
+vec3 combatant_decode_emission(float packed, out bool unlit) {
+    uint bits = uint(round(clamp01(packed) * 65535.0));
+    unlit = (bits & 0x8000u) != 0u;
+    vec3 encoded = vec3(float(bits & 0xFu), float((bits >> 4u) & 0xFu),
+                        float((bits >> 8u) & 0xFu)) * rcp(15.0);
+    float scale = exp2(float((bits >> 12u) & 0x7u));
+    return encoded * scale;
+}
+
+@end
+
+@insert_after_hash 508fd96f7ebdedb81c660b83c31314670cb2d152e011c2fc6ef3efff8d865607
+        float combatant_deferred_fullbright = max(
+            combatantFullbrightEnabled ? clamp(combatantFullbrightMinLight, 0.0, 1.0) : 0.0,
+            clamp(combatantOverrideAmbientLight, 0.0, 1.0)
+        );
+        light_levels = max(light_levels, vec2(combatant_deferred_fullbright));
+        bool combatant_custom_geometry = material_mask == 255u;
+        float combatant_material_ao = 1.0;
+        bool combatant_unlit = false;
+        vec3 combatant_unlit_color = vec3(0.0);
+
+@end
+
+@insert_before_hash b2d53ab0e633cd17d5acf7007f21012d2e878eea23178e23b721619838e31864
+        if (combatant_custom_geometry) {
+            // Photon only declares its local gbuffer_data_1 when the pack's
+            // NORMAL_MAPPING or SPECULAR_MAPPING option is enabled. Combatant
+            // custom materials always populate colortex2, so sample it directly
+            // here instead of depending on that compile-time local.
+            vec4 combatant_gbuffer_data_1 = texelFetch(colortex2, texel, 0);
+            normal = decode_unit_vector(unpack_unorm_2x8(combatant_gbuffer_data_1.x));
+            vec2 roughness_metallic = unpack_unorm_2x8(combatant_gbuffer_data_1.y);
+            vec2 ao_f0 = unpack_unorm_2x8(combatant_gbuffer_data_1.z);
+            vec3 base_material_color = material.albedo;
+            material.roughness = max(roughness_metallic.x, 0.002);
+            material.f0 = mix(vec3(ao_f0.y), base_material_color, roughness_metallic.y);
+            material.albedo = base_material_color * (1.0 - roughness_metallic.y);
+            material.is_metal = roughness_metallic.y >= 0.5;
+            material.is_hardcoded_metal = false;
+            material.f82 = vec3(0.0);
+            material.sss_amount = 0.0;
+            material.sheen_amount = 0.0; // Canonical glTF has no Photon SSS/sheen channel.
+            material.porosity = 0.0;
+            material.emission = combatant_decode_emission(combatant_gbuffer_data_1.w, combatant_unlit) *
+                rec709_to_rec2020;
+            material.ssr_multiplier = step(
+                0.01,
+                material.f0.x - material.f0.x * material.roughness * SSR_ROUGHNESS_THRESHOLD
+            );
+            combatant_material_ao = ao_f0.x;
+            combatant_unlit_color = base_material_color + material.emission;
+        }
+
+@end
+
+@insert_after_hash c4f1a466087904244b3e12231afb19e54847ac08f2c37f5a21469e6926ff4431
+        if (combatant_custom_geometry) ao *= combatant_material_ao;
+
+@end
+
+@insert_before_hash 1b97050183b2e23ca056f516450f3a51044912ee1356c152a45a076832a5c0ba
+        if (combatant_custom_geometry && combatant_unlit) {
+            fragment_color = combatant_unlit_color;
+        }
+
+@end
+
+@replace_line_hash 9223d9964b40b5bd14e158f2a258762d6bb585a0bd40293426c68b3324e9838a
+            // Imported geometry is submitted after Photon's ambient pass, so it cannot reuse
+            // ambient_00 when none of the depth-aware taps match. Preserve Photon's original
+            // fallback for every native pixel; changing it globally corrupts native entities.
+            ambient_upscaled = combatant_custom_geometry
+                ? vec4(1.0, 0.0, 0.0, 0.0)
+                : ambient_00;
+@end

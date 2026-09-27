@@ -77,9 +77,8 @@ void combatantPhotonApplyWorldTweaksWaterFog(
 ) {
     if (!combatantWorldTweaksFogControl) return;
 
-    // Fog modification has the same precedence as the vanilla WorldTweaks
-    // FogEnvironment mixins: explicit custom fog wins over the no-water-fog
-    // toggle and is expressed through Photon's scattering/transmittance pair.
+    // Explicit custom fog wins over the no-water-fog toggle and is expressed
+    // through Photon's native scattering/transmittance representation.
     if (combatantWorldTweaksFogModify) {
         float transmittance = combatantPhotonFogTransmittance(distanceToCamera);
         vec3 t = vec3(transmittance);

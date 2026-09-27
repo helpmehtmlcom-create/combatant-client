@@ -1,0 +1,14 @@
+@patch 2
+@require_ident cas_filter
+
+@insert_zone declarations
+uniform bool combatantSuppressShaderpackPostFx;
+
+@end
+
+@insert_after_function_open cas_filter 1
+    if (combatantSuppressShaderpackPostFx) {
+        return display_eotf(texelFetch(sampler, texel, 0).rgb);
+    }
+
+@end

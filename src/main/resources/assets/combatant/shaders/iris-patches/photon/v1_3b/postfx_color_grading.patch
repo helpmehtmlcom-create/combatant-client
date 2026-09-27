@@ -1,0 +1,37 @@
+@patch 2
+@require_ident grade_input
+@require_ident grade_output
+@require_ident vignette
+
+@insert_zone declarations
+uniform bool combatantSuppressShaderpackPostFx;
+
+@end
+
+@insert_after_function_open grade_input 1
+    if (combatantSuppressShaderpackPostFx) {
+        // Keep Photon's fixed artistic baseline, but remove its user-facing grading controls while
+        // Combatant PostFX owns brightness/contrast/saturation/color grading.
+        rgb *= 0.83;
+        float combatant_lum = dot(rgb, luminance_weights);
+        rgb = max0(mix(vec3(combatant_lum), rgb, 0.98));
+        return rgb;
+    }
+
+@end
+
+@insert_after_function_open grade_output 1
+    if (combatantSuppressShaderpackPostFx) {
+        // Preserve the pack's fixed output response (gain 1.05) without applying its configurable
+        // hue/saturation grading a second time after Combatant PostFX.
+        rgb = sqrt(rgb);
+        rgb = gain(rgb, 1.05);
+        return sqr(rgb);
+    }
+
+@end
+
+@insert_after_function_open vignette 1
+    if (combatantSuppressShaderpackPostFx) return 1.0;
+
+@end

@@ -25,8 +25,14 @@
       "underwater_fog",
       "shaderpack_motion_blur_suppression",
       "combatant_taa_replacement",
+      "combatant_taa_ssr_stabilization",
       "combatant_msaa_replacement",
-      "aa_option_policy"
+      "aa_option_policy",
+      "custom_geometry_gbuffer",
+      "custom_geometry_translucent",
+      "custom_geometry_shadows",
+      "shaderpack_depth_of_field_suppression",
+      "shaderpack_postfx_suppression"
     ]
   },
   "integration": {
@@ -57,6 +63,20 @@
         "DOF_INTENSITY",
         "DOF_SAMPLES",
         "DOF_FOCUS"
+      ],
+      "postFx": [
+        "GRADE_BRIGHTNESS",
+        "GRADE_CONTRAST",
+        "GRADE_SATURATION",
+        "GRADE_WHITE_BALANCE",
+        "GRADE_ORANGE_SAT_BOOST",
+        "GRADE_TEAL_SAT_BOOST",
+        "GRADE_GREEN_SAT_BOOST",
+        "GRADE_GREEN_HUE_SHIFT",
+        "VIGNETTE",
+        "VIGNETTE_INTENSITY",
+        "CAS",
+        "CAS_INTENSITY"
       ]
     }
   },
@@ -87,6 +107,24 @@
       "marker": "combatantSuppressShaderpackMotionBlur"
     },
     {
+      "path": "/program/c2_dof.fsh",
+      "patch": "dof.patch",
+      "marker": "combatantSuppressShaderpackDepthOfField",
+      "stage": "fragment"
+    },
+    {
+      "path": "/program/c14_color_grading.fsh",
+      "patch": "postfx_color_grading.patch",
+      "marker": "combatantSuppressShaderpackPostFx",
+      "stage": "fragment"
+    },
+    {
+      "path": "/program/final.fsh",
+      "patch": "postfx_final.patch",
+      "marker": "combatantSuppressShaderpackPostFx",
+      "stage": "fragment"
+    },
+    {
       "path": "/program/c4_taa_exposure.fsh",
       "patch": "taa_bypass.patch",
       "marker": "combatantAaOwner",
@@ -100,24 +138,24 @@
     },
     {
       "path": "/include/lighting/specular_lighting.glsl",
-      "patch": "ssr_history.patch",
-      "marker": "combatantAaOwner == 2"
+      "patch": "ssr_reprojection.patch",
+      "marker": "combatantAaSsrStableHitReprojection"
     },
     {
       "path": "/program/gbuffers_all_solid.vsh",
-      "patch": "jitter_clip.patch",
-      "marker": "combatantTaaOffset",
+      "patch": "custom_geometry_solid_vertex.patch",
+      "marker": "combatant_uv1",
       "stage": "vertex"
     },
     {
       "path": "/program/gbuffers_all_solid.fsh",
-      "patch": "dynamic_lod_bias.patch",
-      "marker": "COMBATANT_DYNAMIC_LOD_BIAS",
+      "patch": "custom_geometry_solid_fragment.patch",
+      "marker": "combatant_sample_material_map",
       "stage": "fragment"
     },
     {
       "path": "/program/gbuffers_basic.vsh",
-      "patch": "jitter_clip.patch",
+      "patch": "jitter_clip_fullbright_basic.patch",
       "marker": "combatantTaaOffset",
       "stage": "vertex"
     },
@@ -153,26 +191,26 @@
     },
     {
       "path": "/program/dh_terrain.vsh",
-      "patch": "jitter_clip.patch",
+      "patch": "jitter_clip_fullbright_dh_terrain.patch",
       "marker": "combatantTaaOffset",
       "stage": "vertex"
     },
     {
       "path": "/program/dh_water.vsh",
-      "patch": "jitter_clip.patch",
+      "patch": "jitter_clip_fullbright_dh_water.patch",
       "marker": "combatantTaaOffset",
       "stage": "vertex"
     },
     {
       "path": "/program/gbuffers_all_translucent.vsh",
-      "patch": "jitter_position.patch",
-      "marker": "combatantTaaOffset",
+      "patch": "custom_geometry_translucent_vertex.patch",
+      "marker": "combatant_uv1",
       "stage": "vertex"
     },
     {
       "path": "/program/gbuffers_all_translucent.fsh",
-      "patch": "dynamic_lod_bias.patch",
-      "marker": "COMBATANT_DYNAMIC_LOD_BIAS",
+      "patch": "custom_geometry_translucent_fragment.patch",
+      "marker": "combatant_translucent_map",
       "stage": "fragment"
     },
     {
@@ -180,6 +218,24 @@
       "patch": "jitter_sky.patch",
       "marker": "combatantTaaOffset",
       "stage": "vertex"
+    },
+    {
+      "path": "/program/d4_deferred_shading.fsh",
+      "patch": "custom_geometry_deferred.patch",
+      "marker": "combatant_custom_geometry",
+      "stage": "fragment"
+    },
+    {
+      "path": "/program/shadow.vsh",
+      "patch": "custom_geometry_shadow_vertex.patch",
+      "marker": "combatant_uv1",
+      "stage": "vertex"
+    },
+    {
+      "path": "/program/shadow.fsh",
+      "patch": "custom_geometry_shadow_fragment.patch",
+      "marker": "combatant_shadow_base_color",
+      "stage": "fragment"
     }
   ]
 }

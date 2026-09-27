@@ -180,6 +180,48 @@ public enum IrisRuntime {
         }
     }
 
+    /** Submits canonical imported geometry only when the selected data-driven patch advertises it. */
+    public static void renderImportedGeometryPrimary() {
+        if (!MOD_LOADED) return;
+        try {
+            IrisRuntimeBridge.renderImportedGeometryPrimary();
+        } catch (LinkageError | RuntimeException t) {
+            DebugLog.warnOnChange("iris.imported.geometry.submit", t.getClass().getName(),
+                    "[IrisCompat] imported geometry submission failed: %s: %s",
+                    t.getClass().getSimpleName(), t.getMessage());
+        }
+    }
+
+    /** Called from Iris beginTranslucents after the shaderpack switched to its forward target. */
+    public static void renderImportedGeometryTranslucent() {
+        if (!MOD_LOADED) return;
+        try {
+            IrisRuntimeBridge.renderImportedGeometryTranslucent();
+        } catch (LinkageError | RuntimeException t) {
+            DebugLog.warnOnChange("iris.imported.geometry.translucent", t.getClass().getName(),
+                    "[IrisCompat] imported translucent geometry submission failed: %s: %s",
+                    t.getClass().getSimpleName(), t.getMessage());
+        }
+    }
+
+    public static void releaseImportedGeometryBackend(combatant.client.render.engine.rhi.CombatantRhi rhi) {
+        if (!MOD_LOADED || rhi == null) return;
+        try {
+            IrisRuntimeBridge.releaseImportedGeometryBackend(rhi);
+        } catch (LinkageError | RuntimeException ignored) {
+            // Iris may already be tearing down; backend close remains authoritative.
+        }
+    }
+
+    public static void invalidateImportedGeometryResidency() {
+        if (!MOD_LOADED) return;
+        try {
+            IrisRuntimeBridge.invalidateImportedGeometryResidency();
+        } catch (LinkageError | RuntimeException ignored) {
+            // The optional Iris adapter may not be linkable during reload or teardown.
+        }
+    }
+
     public static boolean supports(IrisCompatibilityFeature feature) {
         return snapshot().profile().supports(feature);
     }

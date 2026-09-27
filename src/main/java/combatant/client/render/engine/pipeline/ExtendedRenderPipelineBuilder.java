@@ -41,6 +41,7 @@ public class ExtendedRenderPipelineBuilder {
             Collections.synchronizedMap(new IdentityHashMap<>());
     private final RenderPipeline.Builder delegate;
     private final List<String> samplers = new ArrayList<>();
+    private final List<String> externallyLaidOutSamplers = new ArrayList<>();
     private final List<UniformSpec> uniforms = new ArrayList<>();
     private final List<String> inheritedSamplers = new ArrayList<>();
     private final List<String> inheritedUniforms = new ArrayList<>();
@@ -186,6 +187,18 @@ public class ExtendedRenderPipelineBuilder {
         return this;
     }
 
+    /** Declares a bind group supplied by Minecraft/Iris instead of rebuilding its ABI here. */
+    public ExtendedRenderPipelineBuilder withExternalBindGroupLayout(BindGroupLayout layout) {
+        if (layout != null) delegate.withBindGroupLayout(layout);
+        return this;
+    }
+
+    /** Adds validation metadata for a sampler that belongs to an external bind-group layout. */
+    public ExtendedRenderPipelineBuilder withExternalSampler(String name) {
+        if (name != null && !name.isBlank()) externallyLaidOutSamplers.add(name);
+        return this;
+    }
+
     public ExtendedRenderPipelineBuilder withUniform(String name, UniformType type) {
         uniforms.add(new UniformSpec(name, type));
         return this;
@@ -298,6 +311,7 @@ public class ExtendedRenderPipelineBuilder {
                 .clipSupport(shapeClipContract != ShapeClipRenderPassContract.NONE || isUiCanvasPipeline())
                 .vertexLayoutId(vertexFormat != null ? vertexFormat.toString() : "unknown")
                 .samplers(inheritedSamplers)
+                .samplers(externallyLaidOutSamplers)
                 .samplers(samplers);
         if (contract.meshDataRequired()) metadata.requiredUniform("MeshData");
         if (contract.uiBatchRequired()) metadata.requiredUniform("UIBatch");

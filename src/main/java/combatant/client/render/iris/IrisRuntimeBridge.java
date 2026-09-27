@@ -12,15 +12,20 @@ import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import net.irisshaders.iris.Iris;
 import net.irisshaders.iris.api.v0.IrisApi;
 import net.irisshaders.iris.api.v0.IrisProgram;
+import net.irisshaders.iris.api.v0.IrisShadowProgram;
 import net.irisshaders.iris.pathways.HandRenderer;
 import net.irisshaders.iris.vertices.ImmediateState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.item.ItemStack;
 import combatant.client.render.CombatantEntityRenderTypes;
+import combatant.client.render.iris.geometry.IrisImportedGeometryPipelines;
+import combatant.client.render.iris.geometry.IrisImportedGeometryRenderer;
+import combatant.client.render.iris.geometry.IrisImportedGeometryResidency;
 import combatant.client.render.iris.patch.ShaderPatchEngine;
 
 enum IrisRuntimeBridge {
     ;
+    private static boolean shadowCallbackRegistered;
 
     static IrisRuntimeSnapshot snapshot() {
         IrisApi api = IrisApi.getInstance();
@@ -52,6 +57,16 @@ enum IrisRuntimeBridge {
         java.util.List<RenderPipeline> pipelines = CombatantEntityRenderTypes.irisMappedPipelines();
         for (RenderPipeline pipeline : pipelines) {
             assign(api, pipeline, IrisProgram.ENTITIES_TRANSLUCENT);
+        }
+        assignImportedGeometry(api, IrisImportedGeometryPipelines.GBUFFER_CULL);
+        assignImportedGeometry(api, IrisImportedGeometryPipelines.GBUFFER_DOUBLE_SIDED);
+        assignImportedTranslucent(api, IrisImportedGeometryPipelines.TRANSLUCENT_CULL);
+        assignImportedTranslucent(api, IrisImportedGeometryPipelines.TRANSLUCENT_DOUBLE_SIDED);
+        assignImportedShadow(api, IrisImportedGeometryPipelines.SHADOW_CULL);
+        assignImportedShadow(api, IrisImportedGeometryPipelines.SHADOW_DOUBLE_SIDED);
+        if (!shadowCallbackRegistered) {
+            api.registerShadowRenderCallback(IrisImportedGeometryRenderer::renderShadow);
+            shadowCallbackRegistered = true;
         }
     }
 
@@ -93,6 +108,49 @@ enum IrisRuntimeBridge {
             api.assignPipeline(pipeline, program);
         } catch (IllegalStateException ignored) {
             // Iris keeps pipeline assignments globally; resource reloads can call this more than once.
+        }
+    }
+
+    static void renderImportedGeometryPrimary() {
+        IrisImportedGeometryRenderer.renderPrimary();
+    }
+
+    static void renderImportedGeometryTranslucent() {
+        IrisImportedGeometryRenderer.renderTranslucent();
+    }
+
+    static void releaseImportedGeometryBackend(combatant.client.render.engine.rhi.CombatantRhi rhi) {
+        IrisImportedGeometryRenderer.releaseBackend(rhi);
+    }
+
+    static void invalidateImportedGeometryResidency() {
+        IrisImportedGeometryResidency.invalidateImportedIrisResidency();
+    }
+
+    private static void assignImportedGeometry(IrisApi api, RenderPipeline pipeline) {
+        if (api == null || pipeline == null) return;
+        try {
+            api.assignPipeline(pipeline, IrisProgram.ENTITIES);
+        } catch (IllegalStateException ignored) {
+            // Global Iris assignments survive resource reloads.
+        }
+    }
+
+    private static void assignImportedTranslucent(IrisApi api, RenderPipeline pipeline) {
+        if (api == null || pipeline == null) return;
+        try {
+            api.assignPipeline(pipeline, IrisProgram.ENTITIES_TRANSLUCENT);
+        } catch (IllegalStateException ignored) {
+            // Global Iris assignments survive resource reloads.
+        }
+    }
+
+    private static void assignImportedShadow(IrisApi api, RenderPipeline pipeline) {
+        if (api == null || pipeline == null) return;
+        try {
+            api.assignPipelineShadow(pipeline, IrisShadowProgram.SHADOW_ENTITIES);
+        } catch (IllegalStateException ignored) {
+            // Global Iris assignments survive resource reloads.
         }
     }
 

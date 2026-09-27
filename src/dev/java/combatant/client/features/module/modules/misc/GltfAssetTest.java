@@ -12,7 +12,6 @@ import combatant.client.features.command.CommandOutput;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
-import combatant.client.features.module.WorldPhase;
 import combatant.client.render.engine.asset.gltf.GltfAssetRepository;
 import combatant.client.render.engine.asset.gltf.GltfRuntimeAsset;
 import combatant.client.render.engine.asset.gltf.geometry.GltfCompiledPrimitive;
@@ -20,12 +19,10 @@ import combatant.client.render.engine.asset.gltf.geometry.GltfTriangleIndices;
 import combatant.client.render.engine.asset.gltf.material.GltfMaterialBinding;
 import combatant.client.render.engine.asset.gltf.model.GltfMesh;
 import combatant.client.render.engine.asset.gltf.model.GltfPrimitive;
-import combatant.client.render.engine.asset.gltf.render.ImportedAssetCompatibilityRenderer;
 import combatant.client.render.engine.asset.gltf.runtime.GltfSceneInstanceAsset;
 import combatant.client.render.engine.asset.gltf.runtime.GltfSceneInstances;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.material.MaterialTextureSemantic;
-import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.scene.instance.SceneAssetInstance;
 import combatant.client.render.engine.scene.lod.SceneLodProfile;
 import combatant.client.runtime.CombatantBuild;
@@ -37,11 +34,7 @@ import org.joml.Matrix4f;
 
 import java.io.IOException;
 
-/**
- * Dev acceptance harness for imported geometry/material/texture residency and shared scene culling.
- * Shaderpack-off rendering uses the generic compatibility material; pack-owned shading is tested by
- * the later geometry-adapter slice rather than faked here.
- */
+/** Dev acceptance harness for imported geometry and shaderpack-owned material rendering. */
 @ModuleInfo(id = "gltfassettest", displayName = "glTF Asset Test", category = ModuleCategory.MISC)
 public final class GltfAssetTest extends Module {
     private final StringValue assetLocation = text(
@@ -69,7 +62,7 @@ public final class GltfAssetTest extends Module {
     public void onEnable() {
         closeInstance();
         Minecraft mc = Minecraft.getInstance();
-        if (mc == null || mc.level == null || mc.getResourceManager() == null || mc.gameRenderer == null) {
+        if (mc == null || mc.level == null || mc.player == null || mc.getResourceManager() == null || mc.gameRenderer == null) {
             CommandOutput.error("glTF test: world/resource manager is unavailable");
             return;
         }
@@ -86,11 +79,20 @@ public final class GltfAssetTest extends Module {
         try {
             GltfRuntimeAsset runtime = repository.load(mc.getResourceManager(), id);
             Diagnostics diagnostics = inspect(runtime);
-            Vec3 camera = mc.gameRenderer.mainCamera().position();
-            Vec3 forward = Vec3.directionFromRotation(
-                    mc.gameRenderer.mainCamera().xRot(), mc.gameRenderer.mainCamera().yRot()).normalize();
-            anchor = camera.add(forward.scale(distance.get()));
+
+            // Spawn directly in front of the camera yaw and place the imported bounds on the
+            // player's foot plane. The fixture cube has local Y [-1,+1], so using player Y as the
+            // asset origin would bury half of it in terrain.
+            Vec3 cameraForward = Vec3.directionFromRotation(0.0f, mc.gameRenderer.mainCamera().yRot());
+            Vec3 horizontalForward = new Vec3(cameraForward.x, 0.0, cameraForward.z);
+            if (horizontalForward.lengthSqr() < 1.0e-8) horizontalForward = new Vec3(0.0, 0.0, 1.0);
+            horizontalForward = horizontalForward.normalize();
+            Vec3 horizontalAnchor = mc.player.position().add(horizontalForward.scale(distance.get()));
+            var sceneBounds = runtime.sceneLayout(runtime.asset().defaultScene()).bounds();
+            double originY = mc.player.getY() - sceneBounds.minY() * scale.get();
+            anchor = new Vec3(horizontalAnchor.x, originY, horizontalAnchor.z);
             angle = 0.0f;
+
             instance = GltfSceneInstances.spawnDefault(
                     CombatantRenderSystem.sceneInstances(),
                     runtime,
@@ -99,7 +101,10 @@ public final class GltfAssetTest extends Module {
             );
 
             String message = "glTF test spawned " + id
-                    + " | scenes=" + runtime.asset().scenes().size()
+                    + " at " + formatPosition(anchor)
+                    + " groundY=" + String.format(java.util.Locale.ROOT, "%.1f", mc.player.getY())
+                    + " | distance=" + String.format(java.util.Locale.ROOT, "%.1f", distance.get())
+                    + " scenes=" + runtime.asset().scenes().size()
                     + " nodes=" + runtime.asset().nodes().size()
                     + " meshes=" + runtime.asset().meshes().size()
                     + " materials=" + runtime.materials().size()
@@ -132,16 +137,6 @@ public final class GltfAssetTest extends Module {
         instance.setWorldTransform(transform());
     }
 
-    @Override
-    public WorldPhase getWorldPhase() {
-        return WorldPhase.BEFORE_TRANSLUCENT;
-    }
-
-    @Override
-    public void onRenderWorldEngine(Renderer3D renderer, Renderer3D depthRenderer, float tickDelta) {
-        ImportedAssetCompatibilityRenderer.renderPrimary();
-    }
-
     private Matrix4f transform() {
         float s = scale.get().floatValue();
         return new Matrix4f()
@@ -151,10 +146,16 @@ public final class GltfAssetTest extends Module {
     }
 
     private void closeInstance() {
-        if (instance != null) {
-            try { instance.close(); } catch (Throwable ignored) { }
-            instance = null;
+        if (instance == null) return;
+        try {
+            instance.close();
+        } catch (Throwable ignored) {
         }
+        instance = null;
+    }
+
+    private static String formatPosition(Vec3 position) {
+        return String.format(java.util.Locale.ROOT, "[%.1f, %.1f, %.1f]", position.x, position.y, position.z);
     }
 
     private static Diagnostics inspect(GltfRuntimeAsset runtime) {

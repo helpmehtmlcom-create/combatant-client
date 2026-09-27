@@ -1,0 +1,45 @@
+@patch 2
+@require_function main
+@require_uniform taa_offset
+@require_hash bafe73feb89322395db4d01b8bc47fd6563b2729262c4eb07a04447ad4abc6c5
+@require_hash 376fb533e19024ee9646ce493759f0fe673852f810e1d76ec1d0f2eee2af7e51
+@require_hash 14a02d3e954222afcd7fc99f34d467f0597d9afb1d17b3a0a8e685379a1c7814
+@require_hash d1b577b25966c9b5c21f73d3b1e616fa6fe6cf42dc7eb56551f71aef903decd7
+
+@insert_after_ident taa_offset 1
+#ifndef COMBATANT_AA_UNIFORMS
+#define COMBATANT_AA_UNIFORMS
+uniform int combatantAaOwner;
+uniform vec2 combatantTaaOffset;
+#endif
+#ifndef COMBATANT_FULLBRIGHT_VERTEX_UNIFORMS_DECLARED
+#define COMBATANT_FULLBRIGHT_VERTEX_UNIFORMS_DECLARED
+uniform bool combatantFullbrightEnabled;
+uniform float combatantFullbrightMinLight;
+uniform float combatantOverrideAmbientLight;
+#endif
+
+@end
+
+@replace_line_hash bafe73feb89322395db4d01b8bc47fd6563b2729262c4eb07a04447ad4abc6c5
+    if (combatantAaOwner == 0) clip_pos.xy = clip_pos.xy * taau_render_scale +
+@end
+
+@replace_line_hash 376fb533e19024ee9646ce493759f0fe673852f810e1d76ec1d0f2eee2af7e51
+    if (combatantAaOwner == 0) clip_pos.xy += taa_offset * clip_pos.w;
+@end
+
+@replace_line_hash 14a02d3e954222afcd7fc99f34d467f0597d9afb1d17b3a0a8e685379a1c7814
+    if (combatantAaOwner == 0) clip_pos.xy += taa_offset * clip_pos.w * 0.66;
+@end
+
+@insert_before_ident gl_Position 1
+    if (combatantAaOwner == 2) clip_pos.xy += taa_offset * clip_pos.w * 0.66;
+@end
+
+@insert_before_hash d1b577b25966c9b5c21f73d3b1e616fa6fe6cf42dc7eb56551f71aef903decd7
+    light_levels = max(light_levels, vec2(max(
+        combatantFullbrightEnabled ? clamp(combatantFullbrightMinLight, 0.0, 1.0) : 0.0,
+        clamp(combatantOverrideAmbientLight, 0.0, 1.0)
+    )));
+@end

@@ -1,0 +1,60 @@
+@patch 2
+@require_function main
+@require_uniform tex
+@require_ident shadowcolor0_out
+
+@insert_zone declarations
+in vec2 combatant_uv1;
+flat in uint combatant_geometry_marker;
+
+@end
+
+@insert_before_function main
+float combatant_shadow_material_param(int index) {
+    uvec4 bytes = uvec4(round(texelFetch(tex, ivec2(index, 0), 0) * 255.0));
+    uint bits = bytes.r | (bytes.g << 8u) | (bytes.b << 16u) | (bytes.a << 24u);
+    return uintBitsToFloat(bits);
+}
+
+float combatant_shadow_wrap(float value, float mode) {
+    if (mode < 0.5) return clamp(value, 0.0, 1.0);
+    if (mode < 1.5) return 1.0 - abs(mod(value, 2.0) - 1.0);
+    return fract(value);
+}
+
+vec4 combatant_shadow_base_color() {
+    vec2 source_uv = combatant_shadow_material_param(47) < 0.5 ? uv : combatant_uv1;
+    vec2 transformed_uv = vec2(
+        dot(vec3(source_uv, 1.0), vec3(combatant_shadow_material_param(17),
+            combatant_shadow_material_param(18), combatant_shadow_material_param(19))),
+        dot(vec3(source_uv, 1.0), vec3(combatant_shadow_material_param(20),
+            combatant_shadow_material_param(21), combatant_shadow_material_param(22)))
+    );
+    transformed_uv.x = combatant_shadow_wrap(transformed_uv.x, combatant_shadow_material_param(48));
+    transformed_uv.y = combatant_shadow_wrap(transformed_uv.y, combatant_shadow_material_param(49));
+    ivec2 atlas_size = textureSize(tex, 0);
+    float tile_size = float(atlas_size.x / 3);
+    vec2 atlas_pixel = vec2(0.5) + transformed_uv * (tile_size - 1.0) + vec2(0.0, 1.0);
+    return textureLod(tex, atlas_pixel / vec2(atlas_size), 0.0);
+}
+
+@end
+
+@insert_after_function_open main
+#if defined PROGRAM_SHADOW_ENTITIES
+    if (combatant_geometry_marker != 0u) {
+        vec4 base_color = combatant_shadow_base_color() *
+            vec4(combatant_shadow_material_param(1), combatant_shadow_material_param(2),
+                 combatant_shadow_material_param(3), combatant_shadow_material_param(4)) *
+            vec4(tint, 1.0);
+        if (combatant_shadow_material_param(14) > 0.5 &&
+            base_color.a < combatant_shadow_material_param(15)) {
+            discard;
+            return;
+        }
+        shadowcolor0_out = 0.25 * srgb_eotf_inv(base_color.rgb) * rec709_to_rec2020;
+        return;
+    }
+#endif
+
+@end

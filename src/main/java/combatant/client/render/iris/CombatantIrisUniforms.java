@@ -50,6 +50,8 @@ public enum CombatantIrisUniforms {
                 .uniform1i(UniformUpdateFrequency.PER_FRAME, "combatantWorldTweaksTimeTicks", CombatantIrisUniforms::timeTicks)
                 .uniform1i(UniformUpdateFrequency.PER_FRAME, "combatantWorldTweaksWeatherMode", CombatantIrisUniforms::weatherMode)
                 .uniform1b(UniformUpdateFrequency.PER_FRAME, "combatantSuppressShaderpackMotionBlur", IrisCompatibilityGuards::suppressShaderpackMotionBlur)
+                .uniform1b(UniformUpdateFrequency.PER_FRAME, "combatantSuppressShaderpackDepthOfField", IrisCompatibilityGuards::suppressShaderpackDepthOfField)
+                .uniform1b(UniformUpdateFrequency.PER_FRAME, "combatantSuppressShaderpackPostFx", IrisCompatibilityGuards::suppressShaderpackPostFx)
                 .uniform1i(UniformUpdateFrequency.PER_FRAME, "combatantAaOwner", CombatantIrisUniforms::aaOwner)
                 .uniform2f(UniformUpdateFrequency.PER_FRAME, "combatantTaaOffset", CombatantIrisUniforms::taaOffset);
     }
@@ -174,7 +176,9 @@ public enum CombatantIrisUniforms {
         int width = client != null && client.gameRenderer != null && client.gameRenderer.mainRenderTarget() != null
                 ? Math.max(1, client.gameRenderer.mainRenderTarget().width) : 1;
         Vector2f sample = TemporalJitterSequence.sample(frame.frameId());
-        // Adapter shaders own the pack-specific scaling/convention for this clip-space offset.
-        return new Vector2f(sample.x * 2.0f / width, sample.y * 2.0f / width);
+        // Final NDC offset used by Combatant TAA. Keep shaderpack rasterization, depth reconstruction,
+        // SSRT/SSR screen-space conversions and imported geometry on exactly the same sequence.
+        Vector2f uvOffset = TemporalJitterSequence.uvOffset(sample, width);
+        return new Vector2f(uvOffset.x * 2.0f, uvOffset.y * 2.0f);
     }
 }

@@ -26,7 +26,7 @@
       "underwater_fog",
       "shaderpack_motion_blur_suppression"
     ],
-    "notes": "Runtime application is gated by active Iris shaderpack name first, then by structural probes compiled against the loaded expanded GLSL. Patch payload remains Combatant-owned; exact SHA-256 anchors are reserved for dangerous line-level mutations. Stage gating is intentionally not used for expanded include targets; fragment-only composite logic avoids new shaderpack uniforms in declaration payload."
+    "notes": "This version is not smoke-tested."
   },
   "integration": {
     "options": {

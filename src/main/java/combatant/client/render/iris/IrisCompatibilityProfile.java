@@ -50,6 +50,8 @@ public record IrisCompatibilityProfile(
                     IrisCompatibilityFeature.LIGHTING_POLICY,
                     IrisCompatibilityFeature.HAND_RENDERING_POLICY,
                     IrisCompatibilityFeature.MOTION_BLUR_POLICY,
+                    IrisCompatibilityFeature.DEPTH_OF_FIELD_POLICY,
+                    IrisCompatibilityFeature.POST_FX_POLICY,
                     IrisCompatibilityFeature.INTERACTION_POLICY
             )
     );

@@ -1,0 +1,128 @@
+@patch 2
+@require_function main
+@require_ident gbuffer_data_0
+@require_ident gbuffer_data_1
+@require_uniform gtexture
+@require_hash 36b01f17cc8f764281e93effcb8d8f96afbb4f4dd18e9bd8fb42d32cabcd5d2a
+@require_hash 06197be98c2e4b3ccd64a8357fbce8277f4c2e83fbebe322af5d55c932e9cc22
+
+@insert_zone declarations
+in vec2 combatant_uv1;
+flat in uint combatant_geometry_marker;
+
+@end
+
+@replace_line_hash 1f596a4b127c85145703005dac463cc3ca6a355ec883bf30084e1a70dd0b0621 1
+#if defined PROGRAM_GBUFFERS_ENTITIES
+/* RENDERTARGETS: 1,2 */
+#else
+/* RENDERTARGETS: 1 */
+#endif
+@end
+
+@replace_line_hash 36b01f17cc8f764281e93effcb8d8f96afbb4f4dd18e9bd8fb42d32cabcd5d2a
+#define lod_bias log2(taau_render_scale) // COMBATANT_DYNAMIC_LOD_BIAS
+@end
+
+@insert_before_function main
+float combatant_material_param(int index) {
+    uvec4 bytes = uvec4(round(texelFetch(gtexture, ivec2(index, 0), 0) * 255.0));
+    uint bits = bytes.r | (bytes.g << 8u) | (bytes.b << 16u) | (bytes.a << 24u);
+    return uintBitsToFloat(bits);
+}
+
+float combatant_wrap_coord(float value, float mode) {
+    if (mode < 0.5) return clamp(value, 0.0, 1.0);
+    if (mode < 1.5) return 1.0 - abs(mod(value, 2.0) - 1.0);
+    return fract(value);
+}
+
+vec4 combatant_sample_material_map(int map_index) {
+    int transform_index = 17 + map_index * 6;
+    int sampling_index = 47 + map_index * 3;
+    vec2 source_uv = combatant_material_param(sampling_index) < 0.5 ? uv : combatant_uv1;
+    vec2 transformed_uv = vec2(
+        dot(vec3(source_uv, 1.0), vec3(
+            combatant_material_param(transform_index + 0),
+            combatant_material_param(transform_index + 1),
+            combatant_material_param(transform_index + 2))),
+        dot(vec3(source_uv, 1.0), vec3(
+            combatant_material_param(transform_index + 3),
+            combatant_material_param(transform_index + 4),
+            combatant_material_param(transform_index + 5)))
+    );
+    transformed_uv.x = combatant_wrap_coord(transformed_uv.x, combatant_material_param(sampling_index + 1));
+    transformed_uv.y = combatant_wrap_coord(transformed_uv.y, combatant_material_param(sampling_index + 2));
+
+    ivec2 atlas_size = textureSize(gtexture, 0);
+    float tile_size = float(atlas_size.x / 3);
+    vec2 tile_origin = vec2(float(map_index % 3), float(map_index / 3)) * tile_size + vec2(0.0, 1.0);
+    vec2 atlas_pixel = tile_origin + vec2(0.5) + transformed_uv * (tile_size - 1.0);
+    return textureLod(gtexture, atlas_pixel / vec2(atlas_size), 0.0);
+}
+
+vec3 combatant_srgb_to_linear(vec3 value) {
+    bvec3 cutoff = lessThanEqual(value, vec3(0.04045));
+    vec3 low = value / 12.92;
+    vec3 high = pow((value + 0.055) / 1.055, vec3(2.4));
+    return mix(high, low, cutoff);
+}
+
+float combatant_pack_emission(vec3 emission, bool unlit) {
+    float maximum = max(emission.r, max(emission.g, emission.b));
+    uint exponent = uint(clamp(ceil(log2(max(maximum, 1.0))), 0.0, 7.0));
+    vec3 encoded = round(clamp01(emission / exp2(float(exponent))) * 15.0);
+    uint bits = uint(encoded.r) | (uint(encoded.g) << 4u) | (uint(encoded.b) << 8u) |
+        (exponent << 12u) | (uint(unlit) << 15u);
+    return float(bits) * rcp(65535.0);
+}
+
+@end
+
+@insert_after_function_open main
+#if defined PROGRAM_GBUFFERS_ENTITIES
+    if (combatant_geometry_marker != 0u) {
+        vec4 base_color = combatant_sample_material_map(0) *
+            vec4(combatant_material_param(1), combatant_material_param(2),
+                 combatant_material_param(3), combatant_material_param(4)) * tint;
+        float alpha_mode = combatant_material_param(14);
+        if (alpha_mode > 0.5 && base_color.a < combatant_material_param(15)) {
+            discard; // Combatant canonical alpha-mask route.
+            return;
+        }
+
+        mat3 combatant_tbn = gl_FrontFacing ? tbn : -tbn;
+        vec3 tangent_normal = combatant_sample_material_map(1).xyz * 2.0 - 1.0;
+        tangent_normal.xy *= combatant_material_param(9);
+        tangent_normal = normalize(tangent_normal);
+        vec3 detailed_normal = normalize(combatant_tbn * tangent_normal);
+        vec4 metallic_roughness = combatant_sample_material_map(2);
+        float roughness = clamp01(combatant_material_param(11) * metallic_roughness.g);
+        float metallic = clamp01(combatant_material_param(12) * metallic_roughness.b);
+        float material_ao = mix(1.0, combatant_sample_material_map(3).r, combatant_material_param(10));
+        vec3 emission = combatant_srgb_to_linear(combatant_sample_material_map(4).rgb) *
+            vec3(combatant_material_param(5), combatant_material_param(6), combatant_material_param(7)) *
+            combatant_material_param(8);
+        bool unlit = combatant_material_param(16) > 0.5;
+
+        gbuffer_data_0.x = pack_unorm_2x8(base_color.rg);
+        gbuffer_data_0.y = pack_unorm_2x8(base_color.b, 1.0);
+        gbuffer_data_0.z = pack_unorm_2x8(encode_unit_vector(combatant_tbn[2]));
+        gbuffer_data_0.w = pack_unorm_2x8(light_levels);
+        gbuffer_data_1.x = pack_unorm_2x8(encode_unit_vector(detailed_normal));
+        gbuffer_data_1.y = pack_unorm_2x8(roughness, metallic);
+        gbuffer_data_1.z = pack_unorm_2x8(material_ao, clamp01(combatant_material_param(13)));
+        gbuffer_data_1.w = combatant_pack_emission(emission, unlit);
+        return; // Combatant canonical material fully populated both G-buffer targets.
+    }
+#endif
+
+@end
+
+@insert_after_hash 06197be98c2e4b3ccd64a8357fbce8277f4c2e83fbebe322af5d55c932e9cc22
+#if defined PROGRAM_GBUFFERS_ENTITIES
+    // G-buffer mask 255 is the adapter-owned custom material discriminator.
+    // Keep unmapped/high native Iris entity ids on Photon's ordinary fallback path.
+    new_material_mask = min(new_material_mask, 254u);
+#endif
+@end

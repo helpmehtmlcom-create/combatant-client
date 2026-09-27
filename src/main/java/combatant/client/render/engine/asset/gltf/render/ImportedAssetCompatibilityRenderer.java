@@ -22,6 +22,7 @@ import combatant.client.render.engine.scene.visibility.SceneViewContext;
 import combatant.client.render.engine.scene.visibility.SceneVisibilityMode;
 import combatant.client.render.engine.uniform.impl.AssetCompatibilityMaterialUniforms;
 import combatant.client.render.iris.IrisRuntime;
+import combatant.client.util.logging.DebugLog;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.world.phys.Vec3;
@@ -42,17 +43,29 @@ public final class ImportedAssetCompatibilityRenderer {
     private ImportedAssetCompatibilityRenderer() {}
 
     public static void renderPrimary() {
-        if (IrisRuntime.isShaderpackRendererActive()) return;
+        if (IrisRuntime.isShaderpackRendererActive()) {
+            diagnostic("shaderpack-active", 0, 0);
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         GameRenderer gameRenderer = mc != null ? mc.gameRenderer : null;
-        if (gameRenderer == null || gameRenderer.mainRenderTarget() == null) return;
+        if (gameRenderer == null || gameRenderer.mainRenderTarget() == null) {
+            diagnostic("no-main-target", 0, 0);
+            return;
+        }
 
         SceneViewContext view = CombatantRenderSystem.currentSceneView();
-        if (view == null) return;
+        if (view == null) {
+            diagnostic("no-scene-view", 0, 0);
+            return;
+        }
         var target = gameRenderer.mainRenderTarget();
         var color = target.getColorTextureView();
         var depth = target.getDepthTextureView();
-        if (color == null || depth == null) return;
+        if (color == null || depth == null) {
+            diagnostic("missing-color-or-depth", 0, 0);
+            return;
+        }
 
         ArrayList<RhiDrawCommand> commands = new ArrayList<>();
         int[] counters = new int[4]; // visible, submitted, skinned, translucent
@@ -71,6 +84,18 @@ public final class ImportedAssetCompatibilityRenderer {
 
         if (!commands.isEmpty()) CombatantRenderSystem.rhi().drawMeshes(commands);
         stats = new ImportedAssetCompatibilityRenderStats(view.frameId(), counters[0], counters[1], counters[2], counters[3]);
+        diagnostic("draw", counters[0], counters[1]);
+    }
+
+    private static void diagnostic(String state, int visible, int submitted) {
+        int registered = CombatantRenderSystem.sceneInstances().size();
+        DebugLog.renderThreadOnChange(
+                "gltf.compatibility.submit",
+                state + "|" + registered + "|" + visible + "|" + submitted,
+                "[GltfCompat] state=%s registered=%d visible=%d submitted=%d rendering3D=%s",
+                state, registered, visible, submitted,
+                combatant.client.render.engine.RenderState.rendering3D
+        );
     }
 
     public static ImportedAssetCompatibilityRenderStats statsSnapshot() {

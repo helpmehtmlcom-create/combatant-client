@@ -69,7 +69,7 @@ public class WorldTweaks extends Module {
             visibleWhen(num("worldTweaksFogStart", SETTING_FOG_START, 0, 0, 256),
                     () -> fogControlEnabled.get() && fogModifyEnabled.get());
     private final NumberValue<Integer> fogEnd =
-            visibleWhen(num("worldTweaksFogEnd", SETTING_FOG_END, 64, 10, 256),
+            visibleWhen(num("worldTweaksFogEnd", SETTING_FOG_END, 128, 10, 1024),
                     () -> fogControlEnabled.get() && fogModifyEnabled.get());
     private final RGBColorValue fogColor =
             visibleWhen(colorNoAlpha("worldTweaksFogColor", SETTING_FOG_COLOR, "#A900FF"),

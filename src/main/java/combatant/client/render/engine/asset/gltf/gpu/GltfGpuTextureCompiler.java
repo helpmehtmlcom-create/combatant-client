@@ -150,8 +150,16 @@ public final class GltfGpuTextureCompiler {
     }
 
     private static NativeImage copy(NativeImage source) {
+        // Keep this independent of NativeImage.copyRect direction/overload semantics. This runs
+        // once while creating immutable imported texture residency, so an explicit pixel copy is
+        // cheap and, more importantly, cannot accidentally overwrite the decoded source with a
+        // zero-initialized destination (the cause of fully-black imported textures).
         NativeImage out = new NativeImage(source.getWidth(), source.getHeight(), false);
-        out.copyRect(source, 0, 0, 0, 0, source.getWidth(), source.getHeight(), false, false);
+        for (int y = 0; y < source.getHeight(); y++) {
+            for (int x = 0; x < source.getWidth(); x++) {
+                out.setPixel(x, y, source.getPixel(x, y));
+            }
+        }
         return out;
     }
 

@@ -1,9 +1,0 @@
-@patch 2
-@require_function trace_specular_ray
-@require_hash bba673e5de9c373809b77f3f96141953423ff769a9f7c4b2ea2096f5321c6884
-@require_hash fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa
-@require_hash 45925358ef121a34b8d9b5b77482a8f04ad4bafca37b68a2695164452e9313b8
-
-@replace_line_hash fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa
-            combatantAaOwner == 2
-@end

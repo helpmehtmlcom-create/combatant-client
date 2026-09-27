@@ -118,6 +118,14 @@ public enum ShaderPatchEngine {
         return applicationState(manifestId).complete();
     }
 
+    /** True only when this exact shaderpack target was successfully patched in the current load session. */
+    public static boolean targetApplied(String manifestId, String path) {
+        if (manifestId == null || manifestId.isBlank() || path == null || path.isBlank()) return false;
+        ManifestApplication application = APPLICATIONS.get(manifestId);
+        if (application == null || !application.preflightAccepted) return false;
+        return application.appliedPaths.contains(normalizePath(path));
+    }
+
     public record PatchApplicationState(String manifestId,
                                         boolean preflightAccepted,
                                         boolean complete,
@@ -182,9 +190,10 @@ public enum ShaderPatchEngine {
                                         boolean msaaReplacement,
                                         Set<String> aaOptions,
                                         Set<String> motionBlurOptions,
-                                        Set<String> depthOfFieldOptions) {
+                                        Set<String> depthOfFieldOptions,
+                                        Set<String> postFxOptions) {
         public static final ShaderpackIntegration NONE = new ShaderpackIntegration(
-                "", -1, -1, "rgba16f", false, false, false, Set.of(), Set.of(), Set.of());
+                "", -1, -1, "rgba16f", false, false, false, Set.of(), Set.of(), Set.of(), Set.of());
 
         public ShaderpackIntegration {
             temporalPass = temporalPass == null ? "" : temporalPass;
@@ -192,6 +201,7 @@ public enum ShaderPatchEngine {
             aaOptions = aaOptions == null ? Set.of() : Set.copyOf(aaOptions);
             motionBlurOptions = motionBlurOptions == null ? Set.of() : Set.copyOf(motionBlurOptions);
             depthOfFieldOptions = depthOfFieldOptions == null ? Set.of() : Set.copyOf(depthOfFieldOptions);
+            postFxOptions = postFxOptions == null ? Set.of() : Set.copyOf(postFxOptions);
         }
 
         public boolean hasTemporalMapping() {
@@ -568,7 +578,8 @@ public enum ShaderPatchEngine {
                     optionalBoolean(aa, "msaaReplacement", false),
                     stringSet(options, "aa"),
                     stringSet(options, "motionBlur"),
-                    stringSet(options, "depthOfField")
+                    stringSet(options, "depthOfField"),
+                    stringSet(options, "postFx")
             );
         }
 

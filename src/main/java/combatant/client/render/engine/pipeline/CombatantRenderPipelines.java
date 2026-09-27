@@ -155,7 +155,6 @@ public enum CombatantRenderPipelines {
     public static final Identifier SHADER_HAND_GHOSTING_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/hand_ghosting.frag");
     public static final Identifier SHADER_UI_BLUR_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/ui_blur.frag");
     public static final Identifier SHADER_HAND_GLASS_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/hand_glass.frag");
-    public static final Identifier SHADER_SKY_SUN_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/sky_sun.frag");
     private static final List<RenderPipeline> PIPELINES = new ArrayList<>();
     public static final RenderPipeline GUI_TEXTURE_LOOKUP = add(new ExtendedRenderPipelineBuilder(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED_SNIPPET)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/gui_texture_lookup"))
@@ -1336,18 +1335,6 @@ public enum CombatantRenderPipelines {
     /**
      * No depth test; additive; textured-color triangles with procedural sun shading.
      */
-    public static final RenderPipeline WORLD_SKY_SUN = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
-            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_sky_sun"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
-            .withVertexShader(SHADER_POS_TEX_COLOR_VERT)
-            .withFragmentShader(SHADER_SKY_SUN_FRAG)
-            .withUniform("SkySun", UniformType.UNIFORM_BUFFER)
-            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
-            .withDepthWrite(false)
-            .withBlend(BlendFunctions.ALPHA_ADDITIVE)
-            .withCull(false)
-            .build()
-    );
     /**
      * Fullscreen nether portal rift (pos2).
      */

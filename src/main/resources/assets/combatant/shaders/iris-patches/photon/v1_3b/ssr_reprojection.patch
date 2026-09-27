@@ -1,0 +1,17 @@
+@patch 2
+@require_function trace_specular_ray
+@require_hash fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa
+
+@insert_before_function trace_specular_ray 1
+bool combatantAaSsrStableHitReprojection() {
+    // colortex5 contains Combatant's resolved, presentation-aligned history.
+    // Undo the current raster jitter before converting an SSR hit back to view space,
+    // otherwise static geometry is reprojected to a different history UV every frame.
+    return combatantAaOwner == 2;
+}
+
+@end
+
+@replace_line_hash fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa
+            combatantAaSsrStableHitReprojection()
+@end

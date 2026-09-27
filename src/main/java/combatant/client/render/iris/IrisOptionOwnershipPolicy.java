@@ -19,17 +19,18 @@ public enum IrisOptionOwnershipPolicy {
         if (!profile.matched()) return false;
         if (adapter.aaOptions().contains(optionId)) {
             IrisAaIntegrationState aa = IrisAaIntegration.resolve(MainConfig.get().getAntialiasing3dMode());
-            return (aa.owner() == IrisAaOwner.COMBATANT_TAA || aa.owner() == IrisAaOwner.COMBATANT_MSAA)
-                    && aa.nativeTemporalBypass();
+            if ((aa.owner() == IrisAaOwner.COMBATANT_TAA || aa.owner() == IrisAaOwner.COMBATANT_MSAA)
+                    && aa.nativeTemporalBypass()) return true;
         }
         if (adapter.motionBlurOptions().contains(optionId)) {
             return ShaderPatchEngine.manifestApplied(profile.manifestId())
                     && IrisCompatibilityGuards.suppressShaderpackMotionBlur();
         }
         if (adapter.depthOfFieldOptions().contains(optionId)) {
-            // Current Combatant DoF deliberately reports inactive with an Iris shaderpack. Keep
-            // pack values visible until that replacement actually owns the stage.
-            return false;
+            return IrisCompatibilityGuards.suppressShaderpackDepthOfField();
+        }
+        if (adapter.postFxOptions().contains(optionId)) {
+            return IrisCompatibilityGuards.suppressShaderpackPostFx();
         }
         return false;
     }

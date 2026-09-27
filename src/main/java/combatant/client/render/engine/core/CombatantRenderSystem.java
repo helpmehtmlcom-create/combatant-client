@@ -149,6 +149,7 @@ public enum CombatantRenderSystem {
             UiBlurResources.onBackendChanged();
             PostProcessManager.releaseBackendResources(previous);
             GltfGpuResidencyManager.global().releaseBackend(previous);
+            IrisRuntime.releaseImportedGeometryBackend(previous);
             previous.close();
         } catch (Throwable t) {
             DebugLog.warnOnChange(
@@ -486,6 +487,7 @@ public enum CombatantRenderSystem {
             UiBlurResources.onBackendChanged();
             PostProcessManager.releaseBackendResources(rhi);
             GltfGpuResidencyManager.global().releaseBackend(rhi);
+            IrisRuntime.releaseImportedGeometryBackend(rhi);
             UNIFORMS.close();
             rhi.close();
         } finally {

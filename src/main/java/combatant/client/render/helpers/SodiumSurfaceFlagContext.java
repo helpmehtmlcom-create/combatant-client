@@ -7,19 +7,12 @@
 
 package combatant.client.render.helpers;
 
-import net.minecraft.tags.BlockTags;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.GrowingPlantBlock;
-import net.minecraft.world.level.block.LeavesBlock;
-import net.minecraft.world.level.block.VegetationBlock;
-import net.minecraft.world.level.block.VineBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import combatant.client.features.module.modules.visuals.NoRender;
 import combatant.client.render.engine.material.MaterialClassification;
 import combatant.client.render.engine.material.MaterialClassifier;
 import combatant.client.render.engine.material.MaterialDomain;
-import combatant.client.features.module.modules.visuals.ReimaginedVisual;
 import combatant.client.util.logging.DebugLog;
 
 import java.util.ArrayDeque;
@@ -39,13 +32,9 @@ public enum SodiumSurfaceFlagContext {
 
     public static void pushForState(Object stateObj, BlockPos worldPos, BlockPos origin) {
         boolean softFade = false;
-        WaveType waveType = WaveType.NONE;
         BlockState blockState = null;
         if (stateObj instanceof BlockState state) {
             softFade = NoRender.shouldFadeSoftBlock(state);
-            if (ReimaginedVisual.isWavyVegetationEnabledStatic()) {
-                waveType = getVegetationWaveType(state);
-            }
             blockState = state;
             if (softFade && !loggedSoftFadeState) {
                 loggedSoftFadeState = true;
@@ -53,7 +42,7 @@ public enum SodiumSurfaceFlagContext {
             }
         }
         STACK.get().addLast(new StateFlags(
-                softFade, waveType, origin == null ? 0 : origin.getY(), blockState,
+                softFade, blockState,
                 worldPos == null ? null : worldPos.immutable(),
                 origin == null ? null : origin.immutable()
         ));
@@ -79,14 +68,6 @@ public enum SodiumSurfaceFlagContext {
         if (flags.softFade) {
             encoded |= SodiumMaterialFlags.SURFACE_FLAG_SOFT_FADE;
         }
-        if (flags.waveType != WaveType.NONE) {
-            encoded |= SodiumMaterialFlags.SURFACE_FLAG_WAVY_VEGETATION;
-            encoded |= ReimaginedVisual.packWavyVegetationSettingsStatic();
-            if (flags.waveType == WaveType.FREE) {
-                encoded |= SodiumMaterialFlags.SURFACE_FLAG_WAVY_VEGETATION_FREE;
-            }
-            encoded |= encodeLocalY(vertexY - flags.originY) << SodiumMaterialFlags.WAVE_LOCAL_Y_SHIFT;
-        }
         return encoded;
     }
 
@@ -103,43 +84,13 @@ public enum SodiumSurfaceFlagContext {
         return current().renderOrigin;
     }
 
-    private static WaveType getVegetationWaveType(BlockState state) {
-        Block block = state.getBlock();
-        if (state.is(BlockTags.LEAVES)
-                || state.is(BlockTags.CAVE_VINES)
-                || block instanceof LeavesBlock
-                || block instanceof VineBlock) {
-            return WaveType.FREE;
-        }
-
-        if (state.is(BlockTags.FLOWERS)
-                || state.is(BlockTags.CROPS)
-                || block instanceof VegetationBlock
-                || block instanceof GrowingPlantBlock) {
-            return WaveType.ROOTED;
-        }
-
-        return WaveType.NONE;
-    }
-
-    private static int encodeLocalY(float localY) {
-        float clamped = Math.max(0.0f, Math.min(1.0f, localY));
-        return Math.round(clamped * SodiumMaterialFlags.WAVE_LOCAL_Y_MASK);
-    }
-
     private static StateFlags current() {
         ArrayDeque<StateFlags> stack = STACK.get();
         return stack.isEmpty() ? StateFlags.EMPTY : stack.peekLast();
     }
 
-    private enum WaveType {
-        NONE,
-        ROOTED,
-        FREE
-    }
-
-    private record StateFlags(boolean softFade, WaveType waveType, int originY, BlockState blockState,
+    private record StateFlags(boolean softFade, BlockState blockState,
                               BlockPos worldPos, BlockPos renderOrigin) {
-        private static final StateFlags EMPTY = new StateFlags(false, WaveType.NONE, 0, null, null, null);
+        private static final StateFlags EMPTY = new StateFlags(false, null, null, null);
     }
 }

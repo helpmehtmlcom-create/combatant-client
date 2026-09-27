@@ -15,6 +15,7 @@ import combatant.client.config.values.RGBColorValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.Modules;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.engine.postprocess.PostProcessExecutionContext;
@@ -112,6 +113,11 @@ public class PostFX extends Module implements PostProcessPass {
 
     {
         PostProcessManager.register(this);
+    }
+
+    public static boolean isActiveStatic() {
+        PostFX module = Modules.get(PostFX.class);
+        return module != null && module.isActive();
     }
 
     @Override
