@@ -41,6 +41,7 @@
     "AbstractSelectionListMixin",
     "AbstractSliderButtonMixin",
     "AbstractWidgetSoundMixin",
+    "accessors.AbstractSignEditScreenAccessor",
     "accessors.BiomeAccessor",
     "accessors.BiomeClimateSettingsAccessor",
     "accessors.BossHealthOverlayAccessor",

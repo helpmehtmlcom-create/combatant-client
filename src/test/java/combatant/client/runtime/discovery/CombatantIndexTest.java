@@ -166,6 +166,14 @@ final class CombatantIndexTest {
                 .contains("combatant.client.features.module.modules.misc.AutoShear"));
         assertTrue(CombatantIndex.classNames(CombatantIndex.Kind.MODULE)
                 .contains("combatant.client.features.module.modules.movement.LongJump"));
+        assertTrue(CombatantIndex.classNames(CombatantIndex.Kind.MODULE)
+                .contains("combatant.client.features.module.modules.visuals.Breadcrumbs"));
+        assertTrue(CombatantIndex.classNames(CombatantIndex.Kind.MODULE)
+                .contains("combatant.client.features.module.modules.misc.MiddleClickFriend"));
+        assertTrue(CombatantIndex.classNames(CombatantIndex.Kind.MODULE)
+                .contains("combatant.client.features.module.modules.player.InvCleaner"));
+        assertTrue(CombatantIndex.classNames(CombatantIndex.Kind.MODULE)
+                .contains("combatant.client.features.module.modules.misc.AutoSign"));
         assertTrue(CombatantIndex.classNames(CombatantIndex.Kind.COMMAND)
                 .contains("combatant.client.features.command.impl.VClipCommand"));
         assertTrue(CombatantIndex.classNames(CombatantIndex.Kind.COMMAND)
