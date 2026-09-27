@@ -44,7 +44,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @ModuleInfo(
         id = "hitbox",
         displayName = "Hitbox",
-        category = ModuleCategory.COMBAT,
+        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.ATTACK,
         description = "module.hitbox.description")
 public class Hitbox extends Module {
 

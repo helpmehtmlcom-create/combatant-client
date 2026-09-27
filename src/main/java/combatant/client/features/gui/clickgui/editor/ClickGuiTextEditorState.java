@@ -11,6 +11,10 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import org.lwjgl.glfw.GLFW;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
+import combatant.client.features.gui.clickgui.layout.screen.settings.render.LayoutRender2D;
+import combatant.client.render.engine.renderer.Renderer2D;
+import combatant.client.render.engine.svg.SvgRenderOptions;
+import combatant.client.render.helpers.SystemCursor;
 import combatant.client.features.gui.clickgui.settings.TextEditorOwner;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.text.TextRenderer;
@@ -21,13 +25,14 @@ import combatant.client.util.text.TextSelection;
 import static combatant.client.features.theme.Theme.theme;
 
 public final class ClickGuiTextEditorState {
-    private static final float WIDTH = 360f;
-    private static final float HEIGHT = 240f;
-    private static final float PADDING = 14f;
-    private static final float TEXT_PADDING = 8f;
-    private static final float BUTTON_W = 70f;
-    private static final float BUTTON_H = 24f;
-    private static final float LINE_H = 18f;
+    private static final float WIDTH = 392f;
+    private static final float HEIGHT = 270f;
+    private static final float PADDING = 15f;
+    private static final float TEXT_PADDING = 9f;
+    private static final float MULTI_GUTTER_W = 30f;
+    private static final float BUTTON_W = 82f;
+    private static final float BUTTON_H = 26f;
+    private static final float LINE_H = 20f;
 
     private final TextEditorOwner owner;
     private final String title;
@@ -288,35 +293,82 @@ public final class ClickGuiTextEditorState {
     public void render(int fbw, int fbh) {
         layout(fbw, fbh);
 
-        ClickGuiRenderer.drawRoundedRect(modalX, modalY, WIDTH, HEIGHT, 12f, theme().windowBg());
-        ClickGuiRenderer.drawRoundedRectStroke(modalX, modalY, WIDTH, HEIGHT, 12f, 1.2f, theme().windowStroke());
+        int accent = theme().accent();
+        int accentSoft = theme().accentSoft();
+        int rootTop = ClickGuiRenderer.mixColor(theme().windowBg(), theme().surface(), 0.22f);
+        int rootBottom = ClickGuiRenderer.mixColor(theme().windowBg(), 0xFF000000, 0.16f);
+        int editorTop = ClickGuiRenderer.mixColor(theme().surface(), theme().surfaceHover(), 0.18f);
+        int editorBottom = ClickGuiRenderer.mixColor(theme().surface(), theme().windowBg(), 0.34f);
+        int strokeA = ClickGuiRenderer.mixColor(theme().strokeSoft(), accentSoft, 0.12f);
+        int strokeB = ClickGuiRenderer.mixColor(theme().windowStroke(), accent, 0.08f);
 
-        TextRenderer titleFont = ClickGuiRenderer.getIosevkaRegular();
+        LayoutRender2D.roundedSoftShadow(modalX, modalY, WIDTH, HEIGHT, 12f, 18f, 0.24f, 0x72000000);
+        LayoutRender2D.roundedQuad(modalX, modalY, WIDTH, HEIGHT, 12f,
+                LayoutRender2D.alpha(rootTop, 0.97f), LayoutRender2D.alpha(rootTop, 0.94f),
+                LayoutRender2D.alpha(rootBottom, 0.98f), LayoutRender2D.alpha(rootBottom, 0.98f));
+        LayoutRender2D.roundedStrokeQuad(modalX, modalY, WIDTH, HEIGHT, 12f, 1.1f,
+                LayoutRender2D.alpha(strokeA, 0.82f), LayoutRender2D.alpha(strokeB, 0.92f),
+                LayoutRender2D.alpha(strokeB, 0.72f), LayoutRender2D.alpha(strokeA, 0.66f));
+
+        TextRenderer titleFont = ClickGuiRenderer.getInterMedium();
+        TextRenderer textFont = ClickGuiRenderer.getIosevkaRegular();
         float titleSize = 16f;
-        ClickGuiRenderer.drawText(titleFont, title, modalX + PADDING, modalY + 12f, titleSize, theme().textPrimary(), false);
-        if (!singleLine) {
-            ClickGuiRenderer.drawText(ClickGuiRenderer.getIosevkaRegular(), "One entry per line", modalX + PADDING, modalY + 30f, 12f, theme().textMuted(), false);
+        float icon = 15f;
+        Renderer2D.COLOR.svg(singleLine ? "pencil" : "clipboard", modalX + PADDING, modalY + 13f, icon, icon,
+                SvgRenderOptions.overrideColor(ClickGuiRenderer.mixColor(theme().textMuted(), accent, 0.48f)));
+        ClickGuiRenderer.drawText(titleFont, title, modalX + PADDING + icon + 8f, modalY + 12f,
+                titleSize, theme().textPrimary(), false);
+
+        String[] lines = buffer.toString().split("\n", -1);
+        int entryCount = 0;
+        for (String line : lines) if (!line.isBlank()) entryCount++;
+        String subtitle = singleLine ? "Single-line value"
+                : entryCount + (entryCount == 1 ? " entry" : " entries") + "  ·  one entry per line";
+        ClickGuiRenderer.drawText(ClickGuiRenderer.getInterRegular(), subtitle, modalX + PADDING, modalY + 34f,
+                11.5f, LayoutRender2D.alpha(theme().textMuted(), 0.88f), false);
+
+        LayoutRender2D.rectQuad(modalX + PADDING, modalY + 50f, WIDTH - PADDING * 2f, 0.6f,
+                LayoutRender2D.alpha(theme().strokeSoft(), 0.14f), LayoutRender2D.alpha(accentSoft, 0.44f),
+                LayoutRender2D.alpha(accentSoft, 0.44f), LayoutRender2D.alpha(theme().strokeSoft(), 0.14f));
+
+        LayoutRender2D.roundedQuad(textX, textY, textW, textH, 8f,
+                LayoutRender2D.alpha(editorTop, 0.95f), LayoutRender2D.alpha(editorTop, 0.91f),
+                LayoutRender2D.alpha(editorBottom, 0.96f), LayoutRender2D.alpha(editorBottom, 0.98f));
+        LayoutRender2D.roundedStrokeQuad(textX, textY, textW, textH, 8f, 1.0f,
+                LayoutRender2D.alpha(strokeA, 0.62f), LayoutRender2D.alpha(strokeB, 0.76f),
+                LayoutRender2D.alpha(strokeB, 0.62f), LayoutRender2D.alpha(strokeA, 0.54f));
+
+        float gutter = gutterWidth();
+        if (gutter > 0f) {
+            float gx = textX + TEXT_PADDING + gutter - 6f;
+            LayoutRender2D.rectQuad(gx, textY + 7f, 0.6f, textH - 14f,
+                    LayoutRender2D.alpha(theme().strokeSoft(), 0.18f), LayoutRender2D.alpha(accentSoft, 0.30f),
+                    LayoutRender2D.alpha(accentSoft, 0.30f), LayoutRender2D.alpha(theme().strokeSoft(), 0.18f));
         }
 
-        ClickGuiRenderer.drawRoundedRect(textX, textY, textW, textH, 8f, theme().surface());
-        ClickGuiRenderer.drawRoundedRectStroke(textX, textY, textW, textH, 8f, 1.0f, theme().strokeSoft());
-
-        String[] lines = buffer.toString().split("\\n", -1);
-        TextRenderer textFont = ClickGuiRenderer.getIosevkaRegular();
-        float fontSize = 15f;
-        float viewX = textX + TEXT_PADDING - scrollX;
+        float viewX = textX + TEXT_PADDING + gutter - scrollX;
         float viewY = textY + TEXT_PADDING + scroll;
         float lineTop = viewY;
 
-        float scissorX = textX + TEXT_PADDING;
+        float scissorX = textX + TEXT_PADDING + gutter;
         float scissorY = textY + TEXT_PADDING;
-        float scissorW = textW - TEXT_PADDING * 2f;
+        float scissorW = Math.max(1f, textW - TEXT_PADDING * 2f - gutter);
         float scissorH = textH - TEXT_PADDING * 2f;
 
-        boolean clipped = ScissorFunction.pushRaw(scissorX, scissorY, scissorW, scissorH);
+        boolean clipped = ScissorFunction.pushRaw(textX + TEXT_PADDING, scissorY,
+                textW - TEXT_PADDING * 2f, scissorH);
         int globalOffset = 0;
+        float fontSize = 15f;
         for (int idx = 0; idx < lines.length; idx++) {
             String line = lines[idx];
+            if (!singleLine) {
+                String number = Integer.toString(idx + 1);
+                float nw = ClickGuiRenderer.textWidth(ClickGuiRenderer.getInterMedium(), number, 10.5f);
+                float ny = lineTop + (LINE_H - ClickGuiRenderer.textHeight(ClickGuiRenderer.getInterMedium(), 10.5f)) * 0.5f;
+                ClickGuiRenderer.drawText(ClickGuiRenderer.getInterMedium(), number,
+                        textX + TEXT_PADDING + gutter - 10f - nw, ny, 10.5f,
+                        LayoutRender2D.alpha(theme().textMuted(), 0.52f), false);
+            }
             if (selection.appliesToLine(0) && selection.hasRange()) {
                 int selStart = Math.min(selection.start(), selection.end());
                 int selEnd = Math.max(selection.start(), selection.end()) + 1;
@@ -327,12 +379,13 @@ public final class ClickGuiTextEditorState {
                     int colB = selB - globalOffset;
                     float x0 = viewX + ClickGuiRenderer.textWidth(textFont, safeSubstring(line, 0, colA), fontSize);
                     float x1 = viewX + ClickGuiRenderer.textWidth(textFont, safeSubstring(line, 0, colB), fontSize);
-                    float y0 = lineTop;
-                    ClickGuiRenderer.drawRoundedRect(x0, y0, Math.max(1f, x1 - x0), LINE_H, 3f, theme().accentSoft());
+                    LayoutRender2D.roundedQuad(x0, lineTop + 1f, Math.max(1f, x1 - x0), LINE_H - 2f, 3f,
+                            LayoutRender2D.alpha(accentSoft, 0.46f), LayoutRender2D.alpha(accent, 0.38f),
+                            LayoutRender2D.alpha(accent, 0.30f), LayoutRender2D.alpha(accentSoft, 0.38f));
                 }
             }
-            float textY = lineTop + (LINE_H - ClickGuiRenderer.textHeight(textFont, fontSize)) * 0.5f;
-            ClickGuiRenderer.drawText(textFont, line, viewX, textY, fontSize, theme().textPrimary(), false);
+            float drawY = lineTop + (LINE_H - ClickGuiRenderer.textHeight(textFont, fontSize)) * 0.5f;
+            ClickGuiRenderer.drawText(textFont, line, viewX, drawY, fontSize, theme().textPrimary(), false);
             lineTop += LINE_H;
             globalOffset += line.length();
             if (idx < lines.length - 1) globalOffset++;
@@ -343,49 +396,70 @@ public final class ClickGuiTextEditorState {
         String caretLine = caretPos[0] < lines.length ? lines[caretPos[0]] : "";
         float caretOffsetX = ClickGuiRenderer.textWidth(textFont, safeSubstring(caretLine, 0, caretPos[1]), fontSize);
         float cx = viewX + caretOffsetX;
-        float cy0 = caretLineTop + 2f;
-        float cy1 = caretLineTop + LINE_H - 2f;
         if (AnimationUtility.blink(500L)) {
-            ClickGuiRenderer.drawLine(cx, cy0, cx, cy1, theme().textPrimary());
+            LayoutRender2D.rectQuad(cx, caretLineTop + 2f, 1.0f, LINE_H - 4f,
+                    accent, accent, theme().textPrimary(), theme().textPrimary());
         }
         if (clipped) ScissorFunction.pop();
 
         float contentHeight = lines.length * LINE_H;
         float visibleHeight = scissorH;
         if (contentHeight > visibleHeight + 0.5f) {
-            float trackX = scissorX + scissorW - 6f;
+            float trackX = textX + textW - 7f;
             float trackY = scissorY;
-            float trackW = 4f;
+            float trackW = 3f;
             float trackH = scissorH;
-
             float thumbH = Math.max(18f, trackH * (visibleHeight / contentHeight));
             float maxScroll = contentHeight - visibleHeight;
             float scrollNorm = Math.min(1f, Math.max(0f, -scroll / maxScroll));
             float thumbY = trackY + (trackH - thumbH) * scrollNorm;
-
-            ClickGuiRenderer.drawRoundedRect(trackX, trackY, trackW, trackH, 3f, theme().surface());
-            ClickGuiRenderer.drawRoundedRect(trackX, thumbY, trackW, thumbH, 3f, theme().strokeSoft());
+            LayoutRender2D.roundedQuad(trackX, trackY, trackW, trackH, 2f,
+                    LayoutRender2D.alpha(theme().surface(), 0.34f), LayoutRender2D.alpha(theme().surface(), 0.34f),
+                    LayoutRender2D.alpha(theme().windowBg(), 0.48f), LayoutRender2D.alpha(theme().windowBg(), 0.48f));
+            LayoutRender2D.roundedQuad(trackX, thumbY, trackW, thumbH, 2f,
+                    LayoutRender2D.alpha(accentSoft, 0.58f), LayoutRender2D.alpha(accent, 0.72f),
+                    LayoutRender2D.alpha(accent, 0.62f), LayoutRender2D.alpha(accentSoft, 0.48f));
         }
 
-        int saveBg = theme().accent();
-        int cancelBg = theme().surface();
         float mx = ClickGuiRenderer.getMouseX();
         float my = ClickGuiRenderer.getMouseY();
         boolean hoverCancel = inside(mx, my, cancelX, cancelY, cancelW, cancelH);
         boolean hoverSave = inside(mx, my, saveX, saveY, saveW, saveH);
+        if (hoverCancel || hoverSave) SystemCursor.set(SystemCursor.CursorType.HAND);
+        else if (inside(mx, my, textX, textY, textW, textH)) SystemCursor.set(SystemCursor.CursorType.TEXT);
 
-        int cancelFill = hoverCancel ? theme().surfaceHover() : cancelBg;
-        int saveFill = hoverSave ? ClickGuiRenderer.mixColor(saveBg, theme().surfaceHover(), 0.35f) : saveBg;
+        renderFooterButton(cancelX, cancelY, cancelW, cancelH, "x", "Cancel", hoverCancel, false);
+        renderFooterButton(saveX, saveY, saveW, saveH, "save", "Save", hoverSave, true);
+    }
 
-        ClickGuiRenderer.drawRoundedRect(cancelX, cancelY, cancelW, cancelH, 8f, cancelFill);
-        ClickGuiRenderer.drawRoundedRectStroke(cancelX, cancelY, cancelW, cancelH, 8f, 1.05f, theme().strokeSoft());
-        float cancelTextY = cancelY + (cancelH - ClickGuiRenderer.textHeight(textFont, 14f)) * 0.5f;
-        ClickGuiRenderer.drawText(textFont, "Cancel", cancelX + 14f, cancelTextY, 14f, theme().textPrimary(), false);
+    private void renderFooterButton(float x, float y, float w, float h, String iconName, String label,
+                                    boolean hover, boolean primary) {
+        int accent = theme().accent();
+        int base = primary ? ClickGuiRenderer.mixColor(theme().surface(), accent, 0.42f) : theme().surface();
+        int top = hover ? ClickGuiRenderer.mixColor(base, theme().surfaceHover(), 0.55f) : base;
+        int bottom = ClickGuiRenderer.mixColor(top, theme().windowBg(), primary ? 0.16f : 0.28f);
+        LayoutRender2D.roundedQuad(x, y, w, h, 7f,
+                LayoutRender2D.alpha(top, primary ? 0.98f : 0.90f),
+                LayoutRender2D.alpha(ClickGuiRenderer.mixColor(top, accent, primary ? 0.18f : 0.04f), primary ? 0.98f : 0.90f),
+                LayoutRender2D.alpha(bottom, 0.96f), LayoutRender2D.alpha(bottom, 0.94f));
+        LayoutRender2D.roundedStrokeQuad(x, y, w, h, 7f, 1f,
+                LayoutRender2D.alpha(theme().strokeSoft(), 0.52f),
+                LayoutRender2D.alpha(primary ? accent : theme().windowStroke(), hover ? 0.86f : 0.62f),
+                LayoutRender2D.alpha(primary ? accent : theme().windowStroke(), hover ? 0.72f : 0.48f),
+                LayoutRender2D.alpha(theme().strokeSoft(), 0.42f));
+        float iconSize = 11f;
+        float tx = x + 10f;
+        float iy = y + (h - iconSize) * 0.5f;
+        Renderer2D.COLOR.svg(iconName, tx, iy, iconSize, iconSize,
+                SvgRenderOptions.overrideColor(primary ? theme().textPrimary() : theme().textMuted()));
+        float size = 12.5f;
+        float ty = y + (h - ClickGuiRenderer.textHeight(ClickGuiRenderer.getInterMedium(), size)) * 0.5f;
+        ClickGuiRenderer.drawText(ClickGuiRenderer.getInterMedium(), label, tx + iconSize + 6f, ty, size,
+                primary ? theme().textPrimary() : ClickGuiRenderer.mixColor(theme().textMuted(), theme().textPrimary(), hover ? 0.62f : 0.34f), false);
+    }
 
-        ClickGuiRenderer.drawRoundedRect(saveX, saveY, saveW, saveH, 8f, saveFill);
-        ClickGuiRenderer.drawRoundedRectStroke(saveX, saveY, saveW, saveH, 8f, 1.05f, theme().strokeSoft());
-        float saveTextY = saveY + (saveH - ClickGuiRenderer.textHeight(textFont, 14f)) * 0.5f;
-        ClickGuiRenderer.drawText(textFont, "Save", saveX + 20f, saveTextY, 14f, theme().textPrimary(), false);
+    private float gutterWidth() {
+        return singleLine ? 0f : MULTI_GUTTER_W;
     }
 
     private void layout(int fbw, int fbh) {
@@ -393,15 +467,17 @@ public final class ClickGuiTextEditorState {
         modalX = clamp(anchorX - WIDTH + anchorW + margin, margin, fbw - WIDTH - margin);
         modalY = clamp(anchorY - HEIGHT / 2f, margin, fbh - HEIGHT - margin);
 
-        textX = modalX + PADDING;
-        textY = modalY + 58f;
-        textW = WIDTH - PADDING * 2f;
-        textH = HEIGHT - PADDING * 3f - BUTTON_H;
-
         saveW = BUTTON_W;
         saveH = BUTTON_H;
         saveX = modalX + WIDTH - PADDING - saveW - 14f;
         saveY = modalY + HEIGHT - PADDING - saveH;
+
+        textX = modalX + PADDING;
+        textY = modalY + 58f;
+        textW = WIDTH - PADDING * 2f;
+        // Reserve a real footer band. The editor must never run underneath Save/Cancel;
+        // besides looking broken, that also made clicks in the footer ambiguous.
+        textH = Math.max(72f, saveY - 10f - textY);
 
         cancelW = BUTTON_W;
         cancelH = BUTTON_H;
@@ -425,7 +501,7 @@ public final class ClickGuiTextEditorState {
             if (i < lines.length - 1) lineStart++;
         }
         String line = lines.length > 0 ? lines[lineIdx] : "";
-        float relX = mx - (textX + TEXT_PADDING) + scrollX;
+        float relX = mx - (textX + TEXT_PADDING + gutterWidth()) + scrollX;
         if (relX < 0f) relX = 0f;
         int col = columnForX(line, relX);
         return Math.min(buffer.length(), lineStart + col);
@@ -515,7 +591,7 @@ public final class ClickGuiTextEditorState {
 
         TextRenderer tr = ClickGuiRenderer.getIosevkaRegular();
         float size = 15f;
-        float visibleW = Math.max(1f, textW - TEXT_PADDING * 2f);
+        float visibleW = Math.max(1f, textW - TEXT_PADDING * 2f - gutterWidth());
         float caretOffsetX = 0f;
         if (lines.length > 0 && caretPos[0] >= 0 && caretPos[0] < lines.length) {
             caretOffsetX = ClickGuiRenderer.textWidth(tr, safeSubstring(lines[caretPos[0]], 0, caretPos[1]), size);

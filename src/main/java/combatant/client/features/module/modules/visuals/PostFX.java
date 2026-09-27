@@ -15,6 +15,7 @@ import combatant.client.config.values.RGBColorValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Modules;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
@@ -23,7 +24,7 @@ import combatant.client.render.engine.postprocess.PostProcessPass;
 import combatant.client.render.engine.renderer.FullScreenRenderer;
 import combatant.client.render.engine.uniform.impl.PostFXUniforms;
 
-@ModuleInfo(id = "postfx", displayName = "PostFX", category = ModuleCategory.VISUALS,
+@ModuleInfo(id = "postfx", displayName = "PostFX", category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.COSMETIC,
         description = "module.postfx.description")
 public class PostFX extends Module implements PostProcessPass {
 

@@ -53,7 +53,7 @@ import java.util.List;
 @ModuleInfo(
         id = "elytratarget",
         displayName = "ElytraTarget",
-        category = ModuleCategory.COMBAT,
+        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.ATTACK,
         description = "module.elytratarget.description")
 public final class ElytraTarget extends Module {
 

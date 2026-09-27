@@ -53,6 +53,7 @@ import combatant.client.events.impl.MovementInputEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.player.Scaffold;
 import combatant.client.mixins.accessors.PersistentProjectileEntityAccessor;
@@ -67,7 +68,7 @@ import java.util.Map;
 @ModuleInfo(
         id = "autododge",
         displayName = "AutoDodge",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MOVEMENT, subcategory = ModuleSubcategory.BASIC,
         description = "module.autododge.description")
 public final class AutoDodge extends Module {
 

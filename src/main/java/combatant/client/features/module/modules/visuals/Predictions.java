@@ -68,7 +68,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 
-@ModuleInfo(id = "predictions", displayName = "Predictions", category = ModuleCategory.VISUALS,
+@ModuleInfo(id = "predictions", displayName = "Predictions", category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.ESP,
         description = "module.predictions.description")
 public class Predictions extends Module {
     private static final String SETTING_LINE_COLOR = "line_color";

@@ -21,6 +21,8 @@ import combatant.client.features.gui.clickgui.settings.Setting;
 import combatant.client.features.gui.clickgui.settings.SettingErrorView;
 import combatant.client.runtime.error.ErrorHandler;
 import combatant.client.features.module.Module;
+import combatant.client.features.module.ModuleSubcategoryDefinition;
+import combatant.client.features.theme.Themes;
 import combatant.client.features.gui.clickgui.settings.SettingRenderContext;
 import combatant.client.features.gui.clickgui.settings.SettingRenderSurface;
 import combatant.client.features.gui.clickgui.util.ClickGuiHintOverlay;
@@ -29,8 +31,13 @@ import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.ui.blend.UiBackdropBlendSpec;
 import combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest;
+import combatant.client.render.engine.renderer.ui.draw.UiBoxShape;
+import combatant.client.render.engine.renderer.ui.draw.UiCompoundSdf;
 import combatant.client.render.engine.renderer.ui.draw.UiBlurQuality;
+import combatant.client.render.engine.renderer.ui.draw.UiLiquidGlassMaterial;
+import combatant.client.render.engine.renderer.ui.draw.UiPaint;
 import combatant.client.render.engine.renderer.ui.draw.UiRect;
+import combatant.client.render.engine.renderer.ui.draw.UiStroke;
 import combatant.client.render.engine.svg.SvgRenderOptions;
 import combatant.client.render.engine.text.Fonts;
 import combatant.client.render.engine.text.TextRenderer;
@@ -44,9 +51,16 @@ import java.util.List;
 public final class ModulesMenuScreen {
     private static final float INPUT_READY_PROGRESS = 0.72f;
     private static final float PANEL_W = 115.0f;
-    private static final float PANEL_H = 240.0f;
+    private static final float BASE_PANEL_H = 240.0f;
+    private static final float PANEL_H = 255.0f;
     private static final float PANEL_GAP = 14.0f;
-    private static final float HEADER_H = 24.0f;
+    private static final float BASE_HEADER_H = 24.0f;
+    private static final float MODULE_HEADER_H = 39.0f;
+    private static final float SUBCATEGORY_Y = 24.6f;
+    private static final float SUBCATEGORY_H = 9.4f;
+    private static final float SUBCATEGORY_SIDE_PAD = 5.5f;
+    private static final float SUBCATEGORY_GAP = 2.0f;
+    private static final float SUBCATEGORY_TEXT = 5.2f;
     private static final float SEPARATOR_H = 4.0f;
     private static final float MODULE_ROW_H = 20.0f;
     private static final float PANEL_RADIUS = 10.0f;
@@ -199,7 +213,10 @@ public final class ModulesMenuScreen {
         float startX = areaX + (layoutW - total) * 0.5f + (areaW - layoutW) * 0.5f;
         startX = Math.max(areaX + outerPadX, startX);
 
-        float py = areaY + outerPadTop + Math.max(0.0f, (areaH - outerPadTop - outerPadBottom - ph) * 0.5f);
+        float basePh = BASE_PANEL_H * scale;
+        float py = areaY + outerPadTop + Math.max(0.0f, (areaH - outerPadTop - outerPadBottom - basePh) * 0.5f);
+        float maxPanelY = areaY + areaH - outerPadBottom - ph;
+        if (py > maxPanelY) py = Math.max(areaY + outerPadTop, maxPanelY);
         for (int i = 0; i < panels.size(); i++) {
             ModulesMenuPanel panel = panels.get(i);
             float targetX = startX + i * (pw + gap);
@@ -437,8 +454,18 @@ public final class ModulesMenuScreen {
             panel.modulesScroll = 0.0f;
             panel.modulesSmoothScroll = 0.0f;
             panel.swap = 0.0f;
+            panel.selectedSubcategory = panel.category.subcategories().isEmpty()
+                    ? null
+                    : panel.category.subcategories().get(0);
+            panel.subcategoryScroll = 0.0f;
+            panel.subcategorySmoothScroll = 0.0f;
+            panel.maxSubcategoryScroll = 0.0f;
+            panel.subcategoryIndicatorReady = false;
+            panel.subcategoryContentAnim = 1.0f;
+            panel.subcategoryDirection = 1;
             panel.hits.clear();
             panel.settingHits.clear();
+            panel.subcategoryHits.clear();
         }
     }
 
@@ -471,35 +498,242 @@ public final class ModulesMenuScreen {
 
         panel.hits.clear();
         panel.settingHits.clear();
+        panel.subcategoryHits.clear();
 
-        float titleY = panel.y + middle(textHeight(semibold, 9.0f * scale), HEADER_H * scale) + 0.5f * scale;
+        // Keep the original category-title row intact. Subcategories live in an added row below it.
+        float titleY = panel.y + middle(textHeight(semibold, 9.0f * scale), BASE_HEADER_H * scale) + 0.5f * scale;
         ClickGuiRenderer.drawText(semibold, panel.category.title(), panel.x + TEXT_LEFT_PADDING * scale, titleY, 9.0f * scale, text, false);
         drawCategoryIcon(panel, muted);
 
         if (panel.swap < 0.999f) {
-            renderModulePage(panel, mouseX, mouseY, alpha * (1.0f - panel.swap));
+            float modulePageAlpha = alpha * (1.0f - panel.swap);
+            renderSubcategoryBar(panel, mouseX, mouseY, modulePageAlpha);
+            renderModulePage(panel, mouseX, mouseY, modulePageAlpha);
         }
 
         if (panel.swap > 0.001f) {
             renderSettingsPage(panel, mouseX, mouseY, alpha * panel.swap);
         }
 
+        float headerH = MODULE_HEADER_H + (BASE_HEADER_H - MODULE_HEADER_H) * panel.swap;
         LayoutRender2D.rect(
                 panel.x + 8.0f * scale,
-                panel.y + HEADER_H * scale,
+                panel.y + headerH * scale,
                 panel.w - 16.0f * scale,
                 0.5f * scale,
                 split
         );
     }
 
+    private void renderSubcategoryBar(ModulesMenuPanel panel, float mouseX, float mouseY, float alpha) {
+        if (alpha <= 0.001f) return;
+        List<ModuleSubcategoryDefinition> subcategories = panel.category.subcategories();
+        if (subcategories.isEmpty()) return;
+
+        float rowX = panel.x + SUBCATEGORY_SIDE_PAD * scale;
+        float rowY = panel.y + SUBCATEGORY_Y * scale;
+        float rowW = panel.w - SUBCATEGORY_SIDE_PAD * 2.0f * scale;
+        float rowH = SUBCATEGORY_H * scale;
+        float gap = SUBCATEGORY_GAP * scale;
+        float fontSize = SUBCATEGORY_TEXT * scale;
+        float radius = rowH * 0.5f;
+
+        float[] itemWidths = new float[subcategories.size()];
+        float contentW = gap * Math.max(0, subcategories.size() - 1);
+        float minItemW = 26.0f * scale;
+        float horizontalTextPad = 8.0f * scale;
+        for (int i = 0; i < subcategories.size(); i++) {
+            float preferred = ClickGuiRenderer.textWidth(medium, subcategories.get(i).displayName(), fontSize)
+                    + horizontalTextPad * 2.0f;
+            itemWidths[i] = Math.max(minItemW, preferred);
+            contentW += itemWidths[i];
+        }
+
+        // Fill the row while it fits. Addon-defined groups switch to horizontal scrolling instead
+        // of shrinking labels below their readable width.
+        if (contentW < rowW) {
+            float extra = (rowW - contentW) / subcategories.size();
+            for (int i = 0; i < itemWidths.length; i++) itemWidths[i] += extra;
+            contentW = rowW;
+        }
+
+        panel.maxSubcategoryScroll = Math.max(0.0f, contentW - rowW);
+        panel.subcategoryScroll = AnimationUtility.clamp(
+                panel.subcategoryScroll, 0.0f, panel.maxSubcategoryScroll);
+        panel.subcategorySmoothScroll = AnimationUtility.clamp(
+                panel.subcategorySmoothScroll, 0.0f, panel.maxSubcategoryScroll);
+        panel.subcategoryViewportX = rowX;
+        panel.subcategoryViewportY = rowY - 1.6f * scale;
+        panel.subcategoryViewportW = rowW;
+        panel.subcategoryViewportH = rowH + 3.2f * scale;
+
+        ModuleSubcategoryDefinition active = panel.activeSubcategory();
+        float selectedTargetX = rowX;
+        float selectedTargetW = itemWidths[0];
+        float[] contentXs = new float[subcategories.size()];
+        float[] hoverValues = new float[subcategories.size()];
+        float cursor = rowX;
+        for (int i = 0; i < subcategories.size(); i++) {
+            contentXs[i] = cursor;
+            ModuleSubcategoryDefinition subcategory = subcategories.get(i);
+            if (active != null && active.key().equals(subcategory.key())) {
+                selectedTargetX = cursor;
+                selectedTargetW = itemWidths[i];
+            }
+            cursor += itemWidths[i] + gap;
+        }
+        panel.animateSubcategoryIndicator(selectedTargetX, selectedTargetW);
+
+        Renderer2D renderer = Renderer2D.COLOR;
+        Themes.GradientSpec buttonGradient = Themes.hudSelectionGradient();
+        float gradientAngle = buttonGradient.angleDeg();
+        float scroll = panel.subcategorySmoothScroll;
+        boolean viewportHover = inside(mouseX, mouseY, rowX, rowY, rowW, rowH);
+
+        // The optical/stroke footprint is wider than the logical hit area. Keep the scroll viewport
+        // strict for input, but give the renderer enough guard band so the first/last pill is not
+        // visibly cut by scissor.
+        float clipPadX = 2.4f * scale;
+        float clipPadY = 2.2f * scale;
+        boolean clipped = ScissorFunction.pushRaw(
+                rowX - clipPadX, rowY - clipPadY,
+                rowW + clipPadX * 2.0f, rowH + clipPadY * 2.0f);
+        try {
+            for (int i = 0; i < subcategories.size(); i++) {
+                ModuleSubcategoryDefinition subcategory = subcategories.get(i);
+                float x = contentXs[i] - scroll;
+                float itemW = itemWidths[i];
+                boolean hovered = viewportHover && inside(mouseX, mouseY, x, rowY, itemW, rowH);
+                float hover = panel.subcategoryHoverAnim(subcategory, hovered);
+                hoverValues[i] = hover;
+                if (hovered) SystemCursor.set(SystemCursor.CursorType.HAND);
+                panel.subcategoryHits.add(new ModulesMenuPanel.SubcategoryHit(subcategory, x, rowY, itemW, rowH));
+
+                UiBoxShape shape = UiBoxShape.rounded(x, rowY, itemW, rowH, radius);
+
+                // Keep a restrained glass response, but no expanded backdrop/negative layer around
+                // the pill. The readable body is the authored theme gradient below.
+                int glassRgb = mix(ModulesMenuStyle.panelBgGlassDark(), ModulesMenuStyle.themeAccentSoft(),
+                        0.24f + 0.08f * hover);
+                int glassTint = withAlpha(glassRgb, Math.round(alpha * (42.0f + 14.0f * hover)));
+                UiLiquidGlassMaterial material = UiLiquidGlassMaterial.DEFAULT.withInnerGlow(
+                        0.010f + hover * 0.008f,
+                        2.4f + hover * 0.3f,
+                        withAlpha(ModulesMenuStyle.themeAccentSoft(), Math.round(alpha * (8.0f + 6.0f * hover)))
+                );
+                renderer.withLiquidGlassMaterial(material, () -> renderer.liquidGlassRect(
+                        x, rowY, itemW, rowH, radius,
+                        glassTint,
+                        alpha * (0.42f + hover * 0.05f),
+                        alpha * 0.28f,
+                        Renderer2D.LiquidGlassPreset.HUD_SMALL
+                ));
+
+                int idleStart = withAlpha(buttonGradient.start(), Math.round(alpha * (46.0f + 18.0f * hover)));
+                int idleEnd = withAlpha(buttonGradient.end(), Math.round(alpha * (40.0f + 17.0f * hover)));
+                renderer.box(shape, UiPaint.linear(idleStart, idleEnd, gradientAngle, 0.0f));
+
+                int strokeStart = withAlpha(buttonGradient.start(), Math.round(alpha * (23.0f + 16.0f * hover)));
+                int strokeEnd = withAlpha(buttonGradient.end(), Math.round(alpha * (20.0f + 14.0f * hover)));
+                renderer.boxStroke(
+                        shape,
+                        UiPaint.linear(strokeStart, strokeEnd, gradientAngle, 0.0f),
+                        UiStroke.of(0.22f * scale)
+                );
+            }
+
+            // Faster lead/trail movement. There is still no threshold swap: both lobes converge into
+            // the target continuously, but the whole transition now finishes in ~150 ms.
+            float progress = AnimationUtility.clamp01(panel.subcategoryIndicatorProgress);
+            float leadProgress = AnimationUtility.easeOutQuint(AnimationUtility.clamp01(progress * 1.10f));
+            float trailProgress = AnimationUtility.easeOutCubic(
+                    AnimationUtility.clamp01((progress - 0.035f) / 0.965f)
+            );
+            float motion = (float) Math.sin(Math.PI * progress);
+
+            float leadX = AnimationUtility.lerp(
+                    panel.subcategoryIndicatorStartX, panel.subcategoryIndicatorTargetX, leadProgress) - scroll;
+            float leadW = AnimationUtility.lerp(
+                    panel.subcategoryIndicatorStartW, panel.subcategoryIndicatorTargetW, leadProgress);
+            float trailX = AnimationUtility.lerp(
+                    panel.subcategoryIndicatorStartX, panel.subcategoryIndicatorTargetX, trailProgress) - scroll;
+            float trailW = AnimationUtility.lerp(
+                    panel.subcategoryIndicatorStartW, panel.subcategoryIndicatorTargetW, trailProgress);
+
+            float smoothing = (2.15f + 0.80f * motion) * scale;
+            UiCompoundSdf activeShape = UiCompoundSdf.smoothBoxUnion(
+                    UiRect.of(trailX, rowY, trailW, rowH), radius,
+                    UiRect.of(leadX, rowY, leadW, rowH), radius,
+                    smoothing
+            );
+
+            int activeGlassTint = withAlpha(
+                    mix(ModulesMenuStyle.themeAccent(), ModulesMenuStyle.themeAccentSoft(), 0.36f),
+                    Math.round(alpha * 62.0f)
+            );
+            UiLiquidGlassMaterial activeMaterial = UiLiquidGlassMaterial.DEFAULT.withInnerGlow(
+                    0.022f + 0.006f * motion,
+                    2.8f + 0.25f * motion,
+                    withAlpha(ModulesMenuStyle.themeAccentSoft(), Math.round(alpha * 16.0f))
+            );
+            renderer.withLiquidGlassMaterial(activeMaterial, () -> renderer.liquidGlassCompound(
+                    activeShape,
+                    activeGlassTint,
+                    alpha * 0.54f,
+                    alpha * 0.38f,
+                    Renderer2D.LiquidGlassPreset.HUD_SMALL
+            ));
+
+            int activeStart = withAlpha(buttonGradient.start(), Math.round(alpha * 138.0f));
+            int activeEnd = withAlpha(buttonGradient.end(), Math.round(alpha * 126.0f));
+            renderer.compoundSdf(activeShape, UiPaint.linear(activeStart, activeEnd, gradientAngle, 0.0f));
+
+            int activeStrokeStart = withAlpha(buttonGradient.start(), Math.round(alpha * 82.0f));
+            int activeStrokeEnd = withAlpha(buttonGradient.end(), Math.round(alpha * 74.0f));
+            renderer.compoundSdfStroke(
+                    activeShape,
+                    UiPaint.linear(activeStrokeStart, activeStrokeEnd, gradientAngle, 0.0f),
+                    UiStroke.of(0.30f * scale)
+            );
+
+            for (int i = 0; i < subcategories.size(); i++) {
+                ModuleSubcategoryDefinition subcategory = subcategories.get(i);
+                float x = contentXs[i] - scroll;
+                float itemW = itemWidths[i];
+                float hover = hoverValues[i];
+                boolean selected = active != null && active.key().equals(subcategory.key());
+                String label = subcategory.displayName();
+                float textW = ClickGuiRenderer.textWidth(medium, label, fontSize);
+                float textH = textHeight(medium, fontSize);
+                float textX = x + (itemW - textW) * 0.5f;
+                float textY = rowY + (rowH - textH) * 0.5f - 0.10f * scale;
+                int color = selected
+                        ? withAlpha(ModulesMenuStyle.text(), alpha)
+                        : mix(
+                                withAlpha(ModulesMenuStyle.textMuted(), alpha),
+                                withAlpha(ModulesMenuStyle.text(), alpha),
+                                0.52f + hover * 0.40f
+                        );
+                ClickGuiRenderer.drawText(medium, label, textX, textY, fontSize, color, false);
+            }
+        } finally {
+            if (clipped) ScissorFunction.pop();
+        }
+    }
+
     private void renderModulePage(ModulesMenuPanel panel, float mouseX, float mouseY, float alpha) {
         if (alpha <= 0.001f) return;
 
-        float pageX = panel.x - panel.w * panel.swap;
-        float listY = panel.y + (HEADER_H + SEPARATOR_H - 1.0f) * scale;
-        float clipY = panel.y + (HEADER_H + SEPARATOR_H) * scale;
-        float clipH = panel.h - (HEADER_H + SEPARATOR_H) * scale - 0.5f * scale;
+        float categorySwitch = AnimationUtility.easeOutQuint(panel.subcategoryContentAnim);
+        float switchAlpha = AnimationUtility.clamp(categorySwitch, 0.0f, 1.0f);
+        alpha *= switchAlpha;
+        if (alpha <= 0.001f) return;
+
+        float switchOffset = (1.0f - categorySwitch) * 4.0f * scale * panel.subcategoryDirection;
+        float pageX = panel.x - panel.w * panel.swap + switchOffset;
+        float listY = panel.y + (MODULE_HEADER_H + SEPARATOR_H - 1.0f) * scale;
+        float clipY = panel.y + (MODULE_HEADER_H + SEPARATOR_H) * scale;
+        float clipH = panel.h - (MODULE_HEADER_H + SEPARATOR_H) * scale - 0.5f * scale;
 
         boolean clipped = ScissorFunction.pushRaw(panel.x, clipY, panel.w, clipH);
         ClickGuiRenderer.flushRenderer();
@@ -508,7 +742,8 @@ public final class ModulesMenuScreen {
         float y = listY - panel.modulesSmoothScroll;
         float total = 0.0f;
 
-        List<ModuleComponent.CardEntry> entries = ModulesMenuResolver.buildCards(panel.category);
+        ModuleSubcategoryDefinition subcategoryFilter = ClickGuiSearch.isActive() ? null : panel.activeSubcategory();
+        List<ModuleComponent.CardEntry> entries = ModulesMenuResolver.buildCards(panel.category, subcategoryFilter);
         boolean panelShapeClip = false;
         if (ClipFunction.usesMsaaStencilByDefault()) {
             // The selected fallback owns the complete panel subtree, including procedural hovers.
@@ -686,7 +921,7 @@ public final class ModulesMenuScreen {
         float rh = h - 4.0f * scale;
         if (rw <= 0.5f || rh <= 0.5f) return;
 
-        float clipTop = panel.y + (HEADER_H + SEPARATOR_H) * scale;
+        float clipTop = panel.y + (MODULE_HEADER_H + SEPARATOR_H) * scale;
         float clipBottom = panel.y + panel.h - 0.5f * scale;
         if (ry + rh <= clipTop || ry >= clipBottom) return;
 
@@ -844,7 +1079,7 @@ public final class ModulesMenuScreen {
         float settingsPadRight = 13.0f * scale;
         float settingsX = pageX + settingsPadLeft;
         float settingsW = Math.max(1.0f, panel.w - settingsPadLeft - settingsPadRight);
-        float settingsTop = panel.y + (HEADER_H + SEPARATOR_H) * scale;
+        float settingsTop = panel.y + (BASE_HEADER_H + SEPARATOR_H) * scale;
         float backRowY = panel.y + 28.0f * scale;
         float backRowH = 20.0f * scale;
         boolean pageClip = ScissorFunction.pushRaw(panel.x, panel.y, panel.w, panel.h);
@@ -875,7 +1110,7 @@ public final class ModulesMenuScreen {
                 regular,
                 title,
                 pageX + TEXT_LEFT_PADDING * scale,
-                settingsTop + middle(textHeight(regular, 8.0f * scale), HEADER_H * scale) - scale,
+                settingsTop + middle(textHeight(regular, 8.0f * scale), BASE_HEADER_H * scale) - scale,
                 8.0f * scale,
                 withAlpha(ModulesMenuStyle.text(), alpha),
                 false
@@ -883,8 +1118,8 @@ public final class ModulesMenuScreen {
 
         } finally { if (headerClip) ScissorFunction.pop(); }
 
-        float clipY = settingsTop + HEADER_H * scale;
-        float clipH = panel.h - HEADER_H * 2.0f * scale - SEPARATOR_H * scale - 0.5f * scale - 5.0f * scale;
+        float clipY = settingsTop + BASE_HEADER_H * scale;
+        float clipH = panel.h - BASE_HEADER_H * 2.0f * scale - SEPARATOR_H * scale - 0.5f * scale - 5.0f * scale;
 
         boolean clipped = ScissorFunction.pushRaw(settingsX, clipY, settingsW, clipH);
         try {
@@ -1074,7 +1309,7 @@ public final class ModulesMenuScreen {
     private void drawCategoryIcon(ModulesMenuPanel panel, int color) {
         float icon = 8.0f * scale;
         float ix = panel.x + panel.w - 10.0f * scale - icon;
-        float iy = panel.y + middle(icon, HEADER_H * scale) + 0.5f * scale;
+        float iy = panel.y + middle(icon, BASE_HEADER_H * scale) + 0.5f * scale;
 
         Renderer2D.COLOR.svg(panel.category.icon(), ix, iy, icon, icon, SvgRenderOptions.overrideColor(color));
     }

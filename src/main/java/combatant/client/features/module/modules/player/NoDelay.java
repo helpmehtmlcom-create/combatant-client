@@ -29,6 +29,7 @@ import combatant.client.config.values.NumberValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.mixins.accessors.LivingEntityAccessor;
 import combatant.client.mixins.accessors.MinecraftAccessor;
 import combatant.client.mixins.accessors.MultiPlayerGameModeAccessor;
@@ -40,7 +41,7 @@ import java.util.Map;
         id = "nodelay",
         displayName = "NoDelay",
         aliases = {"FastUse", "FastBreak", "FastPlace"},
-        category = ModuleCategory.PLAYER,
+        category = ModuleCategory.PLAYER, subcategory = ModuleSubcategory.EXPLOIT,
         description = "module.nodelay.description")
 public final class NoDelay extends Module {
 

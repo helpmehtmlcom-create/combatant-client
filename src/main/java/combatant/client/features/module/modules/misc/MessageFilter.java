@@ -14,6 +14,7 @@ import combatant.client.features.gui.clickgui.settings.TextListSetting;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 
 import java.util.Locale;
 import java.util.Set;
@@ -21,7 +22,7 @@ import java.util.Set;
 @ModuleInfo(
         id = "message_filter",
         displayName = "MessageFilter",
-        category = ModuleCategory.MISC,
+        category = ModuleCategory.MISC, subcategory = ModuleSubcategory.CLIENT,
         description = "module.message_filter.description")
 public class MessageFilter extends Module {
 

@@ -20,6 +20,7 @@ import combatant.client.config.values.NumberValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Modules;
 import combatant.client.util.combat.VulcanReachController;
 
@@ -29,7 +30,7 @@ import java.util.Optional;
 @ModuleInfo(
         id = "reach",
         displayName = "Reach",
-        category = ModuleCategory.COMBAT,
+        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.LEGIT,
         description = "module.reach.description")
 public class Reach extends Module {
 

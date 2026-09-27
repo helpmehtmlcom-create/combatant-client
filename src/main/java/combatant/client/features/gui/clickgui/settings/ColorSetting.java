@@ -100,6 +100,7 @@ public class ColorSetting extends Setting {
         float rnbOffAnim = 0f;
         float rgbExpandAnim = 0f;
         float lastX, lastY, lastW;
+        float swatchX, swatchY, swatchW, swatchH;
         float popupX, popupY, popupW, popupH;
         float moduleHoverAnim;
         float squareX, squareY, squareW, squareH;

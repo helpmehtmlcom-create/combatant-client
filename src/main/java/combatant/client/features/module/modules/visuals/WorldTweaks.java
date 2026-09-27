@@ -25,6 +25,7 @@ import combatant.client.events.impl.PacketEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.mixins.accessors.WorldAccessor;
 import combatant.client.render.engine.RenderState;
@@ -32,7 +33,7 @@ import combatant.client.render.engine.RenderState;
 import java.time.LocalTime;
 import java.util.LinkedHashMap;
 
-@ModuleInfo(id = "worldtweaks", displayName = "WorldTweaks", category = ModuleCategory.VISUALS,
+@ModuleInfo(id = "worldtweaks", displayName = "WorldTweaks", category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.COSMETIC,
         description = "module.worldtweaks.description")
 public class WorldTweaks extends Module {
 

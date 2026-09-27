@@ -24,6 +24,7 @@ import combatant.client.config.values.RGBAColorValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.features.relations.CategoryService;
 import combatant.client.mixininterface.IEntity;
@@ -44,7 +45,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.IntFunction;
 
-@ModuleInfo(id = "targetesp", displayName = "TargetESP", aliases = {"target", "targetrender"}, category = ModuleCategory.VISUALS,
+@ModuleInfo(id = "targetesp", displayName = "TargetESP", aliases = {"target", "targetrender"}, category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.ESP,
         description = "module.targetesp.description")
 public class TargetESP extends Module {
 

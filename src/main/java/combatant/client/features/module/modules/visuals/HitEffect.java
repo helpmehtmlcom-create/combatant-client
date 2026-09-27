@@ -16,6 +16,7 @@ import combatant.client.config.values.RGBAColorValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.mixininterface.ILocalPlayer;
 import combatant.client.render.engine.RenderState;
@@ -47,7 +48,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
 
-@ModuleInfo(id = "hiteffect", displayName = "HitEffect", category = ModuleCategory.VISUALS,
+@ModuleInfo(id = "hiteffect", displayName = "HitEffect", category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.COSMETIC,
         description = "module.hiteffect.description")
 public class HitEffect extends Module {
 

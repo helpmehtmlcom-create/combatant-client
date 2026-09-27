@@ -437,19 +437,6 @@ public final class DynamicIsland extends AbstractHudElement {
         return mx >= x && mx <= x + w && my >= y && my <= y + h;
     }
 
-    private int clickGuiCategoryColor(int index) {
-        int[] categoryTints = {
-                0xFF55D6FF,
-                0xFFA98CFF,
-                0xFFFFB85C,
-                0xFF66E3A4,
-                0xFFFF779D,
-                0xFF65A8FF
-        };
-        int tint = categoryTints[Math.floorMod(index, categoryTints.length)];
-        return HudRenderUtil.mixColor(uiPhosphor, tint, 0.38f);
-    }
-
     @Override
     protected void defineSettings(List<SettingDef> defs) {
         defs.add(SettingDef.bool(syncTheme));
@@ -823,6 +810,10 @@ public final class DynamicIsland extends AbstractHudElement {
         }
 
         if (clickGuiMode) {
+            patchShape(patches, "clickgui:active",
+                    "startColor", scaleHexAlpha(phosphorDim, rootAlpha * 0.82f),
+                    "endColor", scaleHexAlpha(phosphor, rootAlpha * 0.30f),
+                    "stroke", scaleHexAlpha(phosphor, rootAlpha * 0.22f));
             Object tabsValue = props.get("clickGuiTabs");
             if (tabsValue instanceof Iterable<?> tabs) {
                 int index = 0;
@@ -831,22 +822,13 @@ public final class DynamicIsland extends AbstractHudElement {
                     String label = String.valueOf(tab.get("label"));
                     boolean active = Boolean.TRUE.equals(tab.get("active"));
                     boolean hovered = Boolean.TRUE.equals(tab.get("hovered"));
-                    String categoryColor = tab.get("color") instanceof String color ? color : phosphor;
-                    float textAlpha = active ? 1.0f : (hovered ? 0.86f : 0.58f);
-                    patchShape(patches, "clickgui:wash:" + index,
-                            "startColor", scaleHexAlpha(categoryColor,
-                                    rootAlpha * (active ? 0.24f : (hovered ? 0.10f : 0.0f))),
-                            "endColor", scaleHexAlpha(phosphorDim,
-                                    rootAlpha * (active ? 0.10f : (hovered ? 0.035f : 0.0f))));
+                    float textAlpha = active ? 1.0f : (hovered ? 0.88f : 0.62f);
                     patchText(patches, "clickgui:tab:" + index, label,
-                            scaleHexAlpha(active || hovered ? categoryColor : secondary, rootAlpha * textAlpha));
-                    patchShape(patches, "clickgui:tab:" + index,
-                            "textGlowColor", scaleHexAlpha(categoryColor, rootAlpha),
-                            "textGlowWidth", active || hovered ? 1.7f : 0.0f,
-                            "textGlowStrength", active ? 0.24f : (hovered ? 0.14f : 0.0f));
-                    patchShape(patches, "clickgui:underline:" + index, "fill",
-                            scaleHexAlpha(active || hovered ? categoryColor : matrixOff,
-                                    rootAlpha * (active ? 1.0f : (hovered ? 0.62f : 0.34f))));
+                            scaleHexAlpha(active || hovered ? primary : secondary, rootAlpha * textAlpha));
+                    if (index > 0) {
+                        patchShape(patches, "clickgui:separator:" + index, "fill",
+                                scaleHexAlpha(matrixOff, rootAlpha * 0.34f));
+                    }
                     index++;
                 }
             }
@@ -935,6 +917,12 @@ public final class DynamicIsland extends AbstractHudElement {
         putBounds(patches, "shell:interaction", rootX + mainX, rootY, mainWidth, height);
 
         if (clickGuiMode) {
+            float activeX = numberProp(props, "clickGuiActiveX", 0.0f);
+            float activeWidth = Math.max(1.0f, numberProp(props, "clickGuiActiveWidth", 1.0f));
+            float activePad = 4.0f;
+            putBounds(patches, "clickgui:active",
+                    rootX + mainX + activeX + activePad, rootY + activePad,
+                    Math.max(1.0f, activeWidth - activePad * 2.0f), Math.max(1.0f, height - activePad * 2.0f));
             Object tabsValue = props.get("clickGuiTabs");
             if (tabsValue instanceof Iterable<?> tabs) {
                 int index = 0;
@@ -942,16 +930,15 @@ public final class DynamicIsland extends AbstractHudElement {
                     if (!(item instanceof Map<?, ?> tab)) continue;
                     float relativeX = mapNumber(tab, "x", 0.0f);
                     float tabWidth = mapNumber(tab, "width", 1.0f);
-                    putBounds(patches, "clickgui:wash:" + index,
-                            rootX + mainX + relativeX + 2.5f, rootY + 3.0f,
-                            Math.max(1.0f, tabWidth - 5.0f), Math.max(1.0f, height - 6.0f));
                     putBounds(patches, "clickgui:tab:" + index,
                             rootX + mainX + relativeX, rootY + (height - 17.0f) * 0.5f - 1.0f,
                             Math.max(1.0f, tabWidth), 17.0f);
-                    boolean active = Boolean.TRUE.equals(tab.get("active"));
-                    putBounds(patches, "clickgui:underline:" + index,
-                            rootX + mainX + relativeX + tabWidth * 0.28f, rootY + height - 6.0f,
-                            Math.max(1.0f, tabWidth * 0.44f), active ? 1.6f : 1.0f);
+                    if (index > 0) {
+                        float sepH = Math.max(1.0f, height - 13.6f);
+                        putBounds(patches, "clickgui:separator:" + index,
+                                rootX + mainX + relativeX, rootY + (height - sepH) * 0.5f,
+                                0.75f, sepH);
+                    }
                     index++;
                 }
             }
@@ -1086,7 +1073,6 @@ public final class DynamicIsland extends AbstractHudElement {
         props.put("pvpTelemetry", pvpActive ? formatPvpTelemetry(predictedPvpSeconds()) : "");
         ClickGuiRenderer.ClickGuiIslandState clickGuiState = ClickGuiRenderer.islandState();
         ArrayList<LinkedHashMap<String, Object>> clickGuiTabs = new ArrayList<>(clickGuiState.tabs().size());
-        int clickGuiTabIndex = 0;
         for (ClickGuiRenderer.ClickGuiIslandTab tab : clickGuiState.tabs()) {
             LinkedHashMap<String, Object> item = new LinkedHashMap<>();
             item.put("label", tab.label());
@@ -1094,10 +1080,11 @@ public final class DynamicIsland extends AbstractHudElement {
             item.put("width", tab.width());
             item.put("active", tab.active());
             item.put("hovered", tab.hovered());
-            item.put("color", hex(clickGuiCategoryColor(clickGuiTabIndex++)));
             clickGuiTabs.add(item);
         }
         props.put("clickGuiTabs", clickGuiTabs);
+        props.put("clickGuiActiveX", clickGuiState.activeX() - clickGuiState.tabBarX());
+        props.put("clickGuiActiveWidth", clickGuiState.activeW());
         props.put("title", title);
         props.put("artist", artist);
         props.put("titleWidthCompact", measureWidth(titleRenderer, title, 0.82f));
@@ -1321,26 +1308,33 @@ public final class DynamicIsland extends AbstractHudElement {
         if (currentMode == IslandMode.CLICKGUI) {
             ClickGuiRenderer.ClickGuiIslandState state = ClickGuiRenderer.islandState();
             TextRenderer tabFont = ClickGuiRenderer.getOnestBold();
+            float activePad = 4.0f;
+            float activeX = drawX + (state.activeX() - state.tabBarX()) + activePad;
+            float activeW = Math.max(1.0f, state.activeW() - activePad * 2.0f);
+            float activeH = Math.max(1.0f, drawHeight - activePad * 2.0f);
+            int activeStart = HudRenderUtil.scaleAlpha(uiPhosphorDim, alpha * 0.82f);
+            int activeEnd = HudRenderUtil.scaleAlpha(uiPhosphor, alpha * 0.30f);
+            renderer.roundedRectGradient(activeX, drawY + activePad, activeW, activeH, activeH * 0.5f, 1.0f,
+                    activeStart, activeEnd, 0.0f);
+
             int index = 0;
             for (ClickGuiRenderer.ClickGuiIslandTab tab : state.tabs()) {
                 float tabX = drawX + tab.relativeX();
                 float tabW = tab.width();
                 float textSize = 12.0f;
                 float textWidth = ClickGuiRenderer.textWidth(tabFont, tab.label(), textSize);
-                int categoryColor = clickGuiCategoryColor(index++);
-                if (tab.active() || tab.hovered()) {
-                    renderer.roundedRect(tabX + 2.5f, drawY + 3.0f,
-                            Math.max(1.0f, tabW - 5.0f), Math.max(1.0f, drawHeight - 6.0f), 2.2f,
-                            HudRenderUtil.scaleAlpha(categoryColor, alpha * (tab.active() ? 0.18f : 0.08f)));
+                if (index > 0) {
+                    float sepH = Math.max(1.0f, drawHeight - 13.6f);
+                    renderer.quad(tabX, drawY + (drawHeight - sepH) * 0.5f, 0.75f, sepH,
+                            HudRenderUtil.scaleAlpha(uiMatrixOff, alpha * 0.34f));
                 }
-                int color = tab.active() || tab.hovered() ? categoryColor : uiTextSecondary;
+                float textAlpha = tab.active() ? 1.0f : (tab.hovered() ? 0.88f : 0.62f);
+                int color = tab.active() || tab.hovered() ? uiTextPrimary : uiTextSecondary;
                 ClickGuiRenderer.drawText(tabFont, tab.label(),
                         tabX + (tabW - textWidth) * 0.5f,
                         drawY + (drawHeight - textSize) * 0.5f,
-                        textSize, HudRenderUtil.scaleAlpha(color, alpha), false);
-                renderer.roundedRect(tabX + tabW * 0.28f, drawY + drawHeight - 6.0f,
-                        Math.max(1.0f, tabW * 0.44f), tab.active() ? 1.6f : 1.0f, 0.8f,
-                        HudRenderUtil.scaleAlpha(tab.active() || tab.hovered() ? categoryColor : uiMatrixOff, alpha));
+                        textSize, HudRenderUtil.scaleAlpha(color, alpha * textAlpha), false);
+                index++;
             }
         }
     }

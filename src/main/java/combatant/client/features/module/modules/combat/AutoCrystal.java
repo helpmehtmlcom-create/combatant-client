@@ -34,6 +34,7 @@ import combatant.client.features.module.Notifier;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.color.RenderColor;
@@ -65,7 +66,7 @@ import java.util.concurrent.ConcurrentHashMap;
         id = "autocrystal",
         displayName = "AutoCrystal",
         aliases = "CrystalAura",
-        category = ModuleCategory.COMBAT,
+        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.ATTACK,
         description = "module.autocrystal.description")
 public class AutoCrystal extends Module {
 

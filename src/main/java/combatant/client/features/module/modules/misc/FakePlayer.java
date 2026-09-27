@@ -40,13 +40,14 @@ import combatant.client.config.values.BooleanValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 
 import java.util.UUID;
 
 @ModuleInfo(
         id = "fakeplayer",
         displayName = "FakePlayer",
-        category = ModuleCategory.MISC,
+        category = ModuleCategory.MISC, subcategory = ModuleSubcategory.UTILITY,
         description = "module.fakeplayer.description")
 public class FakePlayer extends Module {
 

@@ -223,6 +223,12 @@ public final class SodiumGlBackend implements CombatantRhi {
         RhiDrawCommand first = commands.get(start);
         stats.renderPass(first.colorAttachments, first.depthAttachment);
         try (RenderPass pass = createPass(encoder, first.label, first.colorAttachments, first.depthAttachment, first.clearDepth)) {
+            // Pipelines that reuse Minecraft/Iris bind-group layouts expect the current frame's
+            // Projection/Globals/Fog/Lighting UBOs to be present on the RenderPass. Combatant's
+            // own MeshData pipelines do not need them, but binding the defaults is harmless there
+            // and makes external-layout pipelines obey the same contract as BufferUploader.
+            RenderSystem.bindDefaultUniforms(pass);
+
             PassBindingCache bindings = new PassBindingCache();
             com.mojang.blaze3d.pipeline.RenderPipeline activePipeline = null;
             boolean multiDrawAvailable = !multiDrawRuntimeDisabled && capabilities().multiDrawDirectSeparate();
@@ -356,6 +362,18 @@ public final class SodiumGlBackend implements CombatantRhi {
             uiBatch = UIBatchUniforms.get();
         }
 
+        // Minecraft 26.2 no longer derives DynamicTransforms from the mutable model-view stack at
+        // draw time. The stack is only CPU-side state: callers must snapshot it into the dynamic
+        // UBO and bind that slice explicitly. This is critical for Iris' ExtendedShader path: the
+        // transformed gbuffers_entities shader reads ModelViewMat from DynamicTransforms, while
+        // Combatant has already multiplied command.transform into the stack above. Without this
+        // binding imported geometry is submitted with whichever stale vanilla transform happened
+        // to be bound previously and is normally projected completely out of view.
+        GpuBufferSlice dynamicTransforms = pipelineUsesUniform(command.pipeline, "DynamicTransforms")
+                && !command.hasUniform("DynamicTransforms")
+                ? RenderSystem.getDynamicUniforms().writeTransform(RenderSystem.getModelViewMatrixCopy())
+                : null;
+
         if (command.pipelineSpec == null) pipelines.require(command.pipeline);
         if (bindPipeline) {
             if (CombatantRenderPipelines.isRigPipeline(command.pipeline)) {
@@ -369,6 +387,7 @@ public final class SodiumGlBackend implements CombatantRhi {
         int samplerBinds = 0;
         if (meshData != null && bindings.bindUniform(pass, "MeshData", meshData)) uniformBinds++;
         if (uiBatch != null && bindings.bindUniform(pass, "UIBatch", uiBatch)) uniformBinds++;
+        if (dynamicTransforms != null && bindings.bindUniform(pass, "DynamicTransforms", dynamicTransforms)) uniformBinds++;
         for (RhiUniformBinding uniform : command.uniforms) {
             if (bindings.bindUniform(pass, uniform.name(), uniform.slice())) uniformBinds++;
         }
@@ -458,6 +477,15 @@ public final class SodiumGlBackend implements CombatantRhi {
                 next.colorAttachments, next.depthAttachment,
                 next.clearDepth.isPresent()
         );
+    }
+
+    private static boolean pipelineUsesUniform(com.mojang.blaze3d.pipeline.RenderPipeline pipeline, String name) {
+        if (pipeline == null || name == null) return false;
+        for (com.mojang.blaze3d.pipeline.BindGroupLayout.UniformDescription uniform :
+                com.mojang.blaze3d.pipeline.BindGroupLayout.flattenUniforms(pipeline.getBindGroupLayouts())) {
+            if (name.equals(uniform.name())) return true;
+        }
+        return false;
     }
 
     private static boolean requiresMeshData(RenderPipelineSpec pipeline) {

@@ -110,47 +110,48 @@ function clickGuiTabs(p) {
   const mainX = num(p.mainX, 0);
   const height = num(p.height, 34);
   const alpha = num(p.alpha, 1);
+  const activeX = num(p.clickGuiActiveX, 0);
+  const activeW = Math.max(1, num(p.clickGuiActiveWidth, 1));
+  const activePad = 4;
+  const activeH = Math.max(1, height - activePad * 2);
   const tabs = (() => {
     try { return Array.from(p.clickGuiTabs || []); } catch (_) { return []; }
   })();
-  const nodes = [];
+  const nodes = [
+    // Match the regular ClickGUI rail: one moving active pill, not one color wash per category.
+    ui.shape({
+      key: "clickgui:active",
+      shape: "rounded-gradient",
+      class: abs(mainX + activeX + activePad, activePad, Math.max(1, activeW - activePad * 2), activeH),
+      radius: activeH * 0.5,
+      startColor: colorAlpha(p.phosphorDim, 0.82 * alpha),
+      endColor: colorAlpha(p.phosphor, 0.30 * alpha),
+      angle: 0,
+      stroke: colorAlpha(p.phosphor, 0.22 * alpha),
+      strokeWidth: 0.75,
+    }),
+  ];
   tabs.forEach((tab, index) => {
     const active = tab && tab.active === true;
     const hovered = tab && tab.hovered === true;
     const tabX = mainX + num(tab && tab.x, 0);
     const tabW = Math.max(1, num(tab && tab.width, 1));
-    const localAlpha = active ? 1 : (hovered ? 0.86 : 0.58);
-    const categoryColor = tab && tab.color ? String(tab.color) : p.phosphor;
-    nodes.push(ui.shape({
-      key: `clickgui:wash:${index}`,
-      shape: "box",
-      class: abs(tabX + 2.5, 3, Math.max(1, tabW - 5), Math.max(1, height - 6)),
-      corners: ui.corner.mixed(
-        ui.corner.rounded(2.2),
-        ui.corner.rounded(2.2),
-        ui.corner.chamfered(2.2),
-        ui.corner.chamfered(2.2),
-      ),
-      startColor: colorAlpha(categoryColor, (active ? 0.24 : (hovered ? 0.10 : 0)) * alpha),
-      endColor: colorAlpha(p.phosphorDim, (active ? 0.10 : (hovered ? 0.035 : 0)) * alpha),
-      angle: 0,
-    }));
+    const localAlpha = active ? 1 : (hovered ? 0.88 : 0.62);
+    if (index > 0) {
+      const sepH = Math.max(1, height - 13.6);
+      nodes.push(ui.shape({
+        key: `clickgui:separator:${index}`,
+        shape: "rect",
+        class: abs(tabX, (height - sepH) * 0.5, 0.75, sepH),
+        fill: colorAlpha(p.matrixOff, 0.34 * alpha),
+      }));
+    }
     nodes.push(ui.text({
       key: `clickgui:tab:${index}`,
       text: tab && tab.label ? String(tab.label) : "",
-      color: colorAlpha(active || hovered ? categoryColor : p.textSecondary, localAlpha * alpha),
-      textGlowColor: colorAlpha(categoryColor, alpha),
-      textGlowWidth: active || hovered ? 1.7 : 0,
-      textGlowStrength: active ? 0.24 : (hovered ? 0.14 : 0),
+      color: colorAlpha(active || hovered ? p.textPrimary : p.textSecondary, localAlpha * alpha),
       interactive: false,
       class: cls(abs(tabX, (height - 17) * 0.5 - 1, tabW, 17), "font-OnestMedium font-size-14.4 text-align-center"),
-    }));
-    nodes.push(ui.shape({
-      key: `clickgui:underline:${index}`,
-      shape: "rounded",
-      class: abs(tabX + tabW * 0.28, height - 6, tabW * 0.44, active ? 1.6 : 1.0),
-      radius: 0.8,
-      fill: colorAlpha(active || hovered ? categoryColor : p.matrixOff, (active ? 1 : (hovered ? 0.62 : 0.34)) * alpha),
     }));
   });
   return nodes;

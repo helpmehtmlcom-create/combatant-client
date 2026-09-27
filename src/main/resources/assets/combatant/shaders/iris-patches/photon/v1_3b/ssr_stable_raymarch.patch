@@ -1,0 +1,63 @@
+@patch 2
+@require_function raymarch_depth_buffer
+@require_call view_to_screen_space
+@require_hash b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b
+@require_hash 1bdb2b5b61e2cbfd880843a249d8904fd50d4786039b208edf6b74b296d67d9a
+@require_hash 4d3ef413ad5a2e3d09b49a244a6109c6662a07c1c8238b08815428abad4f54f7
+@require_hash d04973eb0a2997e8378bd3dfbab167e646f17d6c6afda68a4d30352789b6bc05
+
+@insert_before_function raymarch_depth_buffer
+vec2 combatantSsrRasterJitterUv() {
+    // Photon applies taa_offset * 0.66 in NDC. Screen UV is half NDC,
+    // therefore the raster-space displacement is taa_offset * 0.33.
+    return combatantAaOwner == 2 ? taa_offset * 0.33 : vec2(0.0);
+}
+
+ivec2 combatantSsrDepthTexel(vec2 stableUv) {
+    vec2 sampleUv = stableUv + combatantSsrRasterJitterUv();
+    ivec2 depthSize = textureSize(SSRT_DEPTH_SAMPLER, 0);
+    ivec2 texel = ivec2(sampleUv * view_res * taau_render_scale);
+    return clamp(texel, ivec2(0), depthSize - ivec2(1));
+}
+
+@end
+
+@insert_after_function_open raymarch_depth_buffer
+    // Object SSR must march in a stable projection when Combatant owns TAA.
+    // The depth buffer itself is still raster-jittered, so its lookup is shifted
+    // back to the current raster sample in combatantSsrDepthTexel().
+    if (combatantAaOwner == 2) {
+        screen_pos.xy -= combatantSsrRasterJitterUv();
+    }
+
+@end
+
+@replace_line_hash b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b
+            combatantAaOwner != 2
+@end
+
+@replace_line_hash 1bdb2b5b61e2cbfd880843a249d8904fd50d4786039b208edf6b74b296d67d9a 1
+                          combatantSsrDepthTexel(ray_pos.xy),
+@end
+
+@replace_line_hash 1bdb2b5b61e2cbfd880843a249d8904fd50d4786039b208edf6b74b296d67d9a 2
+                          combatantSsrDepthTexel(ray_pos.xy),
+@end
+
+@replace_line_hash 4d3ef413ad5a2e3d09b49a244a6109c6662a07c1c8238b08815428abad4f54f7
+    float final_depth = texelFetch(
+        SSRT_DEPTH_SAMPLER,
+        combatantSsrDepthTexel(ray_pos.xy),
+        0
+    ).x;
+@end
+
+@insert_before_hash d04973eb0a2997e8378bd3dfbab167e646f17d6c6afda68a4d30352789b6bc05
+    // The refined ray Z is only an approximation of the surface. Once the hit
+    // is accepted, reconstruct the reflected object from the actual depth
+    // surface so the previous-frame lookup cannot move with the subpixel ray.
+    if (combatantAaOwner == 2) {
+        ray_pos.z = final_depth;
+    }
+
+@end

@@ -33,6 +33,7 @@ import combatant.client.events.impl.SprintControlEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.movement.Flight;
 import combatant.client.features.module.modules.movement.Timer;
@@ -43,7 +44,7 @@ import combatant.client.util.target.TargetManager;
 @ModuleInfo(
         id = "criticals",
         displayName = "Criticals",
-        category = ModuleCategory.COMBAT,
+        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.ATTACK,
         description = "module.criticals.description")
 public final class Criticals extends Module {
 

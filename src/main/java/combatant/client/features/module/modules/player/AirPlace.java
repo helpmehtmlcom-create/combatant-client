@@ -26,6 +26,7 @@ import combatant.client.config.values.RGBAColorValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.renderer.Renderer3D;
@@ -33,7 +34,7 @@ import combatant.client.render.engine.renderer.Renderer3D;
 @ModuleInfo(
         id = "airplace",
         displayName = "AirPlace",
-        category = ModuleCategory.PLAYER,
+        category = ModuleCategory.PLAYER, subcategory = ModuleSubcategory.EXPLOIT,
         description = "module.airplace.description")
 public class AirPlace extends Module {
 

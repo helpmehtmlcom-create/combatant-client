@@ -54,6 +54,7 @@ import combatant.client.events.impl.EventSync;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.movement.NoFall;
 import combatant.client.features.module.modules.player.AutoTotem;
@@ -73,7 +74,7 @@ import java.util.concurrent.ThreadLocalRandom;
 @ModuleInfo(
         id = "attributeswap",
         displayName = "AttributeSwap",
-        category = ModuleCategory.COMBAT,
+        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.ATTACK,
         description = "module.attributeswap.description")
 public class AttributeSwap extends Module {
 

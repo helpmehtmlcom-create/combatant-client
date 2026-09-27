@@ -30,6 +30,7 @@ import combatant.client.events.impl.*;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.combat.ElytraTarget;
 import combatant.client.mixins.accessors.InputAccessor;
@@ -44,7 +45,7 @@ import combatant.client.util.player.inventory.InventorySwap;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
-@ModuleInfo(id = "elytrafly", displayName = "ElytraFly", aliases = {"elytra", "efly", "elytraflight"}, category = ModuleCategory.MOVEMENT,
+@ModuleInfo(id = "elytrafly", displayName = "ElytraFly", aliases = {"elytra", "efly", "elytraflight"}, category = ModuleCategory.MOVEMENT, subcategory = ModuleSubcategory.RAGE,
         description = "module.elytrafly.description")
 public class ElytraFly extends Module {
 

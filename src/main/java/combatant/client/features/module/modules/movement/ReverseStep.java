@@ -29,6 +29,7 @@ import combatant.client.events.impl.PlayerJumpEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -37,7 +38,7 @@ import java.util.Set;
 @ModuleInfo(
         id = "reversestep",
         displayName = "ReverseStep",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MOVEMENT, subcategory = ModuleSubcategory.RAGE,
         description = "module.reversestep.description")
 public final class ReverseStep extends Module {
 

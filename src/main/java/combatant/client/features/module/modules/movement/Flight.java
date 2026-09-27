@@ -30,6 +30,7 @@ import combatant.client.events.impl.*;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.mixins.accessors.LocalPlayerAccessor;
 import combatant.client.mixins.accessors.ServerboundMovePlayerPacketAccessor;
 import combatant.client.util.player.MovementUtil;
@@ -37,7 +38,7 @@ import combatant.client.util.player.MovementUtil;
 @ModuleInfo(
         id = "flight",
         displayName = "Flight",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MOVEMENT, subcategory = ModuleSubcategory.RAGE,
         description = "module.flight.description")
 public class Flight extends Module {
 

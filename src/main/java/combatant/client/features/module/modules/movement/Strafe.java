@@ -27,6 +27,7 @@ import combatant.client.events.impl.GameTickEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.combat.KillAura;
 import combatant.client.features.module.modules.visuals.Freecam;
@@ -42,7 +43,7 @@ import java.util.List;
 @ModuleInfo(
         id = "strafe",
         displayName = "Strafe",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MOVEMENT, subcategory = ModuleSubcategory.BASIC,
         description = "module.strafe.description")
 public final class Strafe extends Module {
 

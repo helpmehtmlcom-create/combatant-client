@@ -8,6 +8,7 @@ package combatant.client.render.iris;
 import com.google.common.collect.ImmutableSet;
 import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.opengl.GlTextureView;
+import com.mojang.blaze3d.textures.GpuTextureView;
 import combatant.client.config.MainConfig;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.postprocess.TemporalAntiAliasingPass;
@@ -139,9 +140,21 @@ public enum IrisShaderpackTemporalIntegration {
             }
             int resolvedTexture = glId(resolvedOutput);
             copyRawTexture(resolvedTexture, sceneTexture, w, h);
+
+            // Photon colortex5 is not a presentation buffer. It is the canonical temporal
+            // history consumed by the next frame's object SSR and by Photon's later HDR passes.
+            // Keep it bit-for-bit on the same temporal branch as Combatant's own history instead
+            // of feeding post-TAA FXAA/CAS back into SSR. Its alpha also carries per-pixel history
+            // age, except for the origin texel where Photon stores exposure.
+            GpuTextureView canonicalHistory = TemporalAntiAliasingPass.INSTANCE.currentHistoryColorView();
+            if (canonicalHistory == null) {
+                fail("Combatant TAA canonical history unavailable at shaderpack temporal boundary");
+                return;
+            }
+            int canonicalHistoryTexture = glId(canonicalHistory);
             float historyOriginAlpha = adapter.preserveHistoryAlphaOrigin()
                     ? readOriginAlpha(historyTexture) : 0.0f;
-            copyRawTexture(resolvedTexture, historyTexture, w, h);
+            copyRawTexture(canonicalHistoryTexture, historyTexture, w, h);
             if (adapter.preserveHistoryAlphaOrigin()) {
                 restoreOriginAlpha(historyTexture, historyOriginAlpha);
             }
@@ -178,8 +191,15 @@ public enum IrisShaderpackTemporalIntegration {
     }
 
     private static int glId(RhiStorageImage image) {
-        if (image == null || !(image.view() instanceof GlTextureView view) || view.isClosed()) {
+        if (image == null) {
             throw new IllegalStateException("shaderpack integration requires live OpenGL storage images");
+        }
+        return glId(image.view());
+    }
+
+    private static int glId(GpuTextureView image) {
+        if (!(image instanceof GlTextureView view) || view.isClosed()) {
+            throw new IllegalStateException("shaderpack integration requires live OpenGL texture views");
         }
         return view.glId();
     }

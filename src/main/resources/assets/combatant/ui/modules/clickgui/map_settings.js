@@ -70,17 +70,19 @@ export function buildTemplate(ctx) {
     layout,
     accent,
     appearance: "liquid-glass",
-    glassTint: "#7615121B",
+    // Keep the map readable through the liquid material.  The previous tint effectively
+    // turned the browser into an opaque charcoal slab on dark biomes.
+    glassTint: "#3815121B",
     glassAlpha: 1.0,
     blurAlpha: 1.0,
     glassPreset: "balanced",
-    glassInnerGlow: 0.014,
+    glassInnerGlow: 0.020,
     glassInnerGlowSize: 4.0,
     uiUnderlay: "auto",
     palette: {
-      surface: "#A815121B",
-      surfaceWeak: "#4618151D",
-      separator: "#24FFFFFF",
+      surface: "#5C15121B",
+      surfaceWeak: "#2418151D",
+      separator: "#2CFFFFFF",
     },
     tokens: {
       rootRadius: 20,

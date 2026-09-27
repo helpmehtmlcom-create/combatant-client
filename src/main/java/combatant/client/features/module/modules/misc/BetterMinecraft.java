@@ -11,12 +11,13 @@ import combatant.client.config.values.BooleanValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.runtime.RuntimeGate;
 
 @ModuleInfo(
         id = "betterminecraft",
         displayName = "BetterMinecraft",
-        category = ModuleCategory.MISC,
+        category = ModuleCategory.MISC, subcategory = ModuleSubcategory.UTILITY,
         description = "module.betterminecraft.description")
 public final class BetterMinecraft extends Module {
 

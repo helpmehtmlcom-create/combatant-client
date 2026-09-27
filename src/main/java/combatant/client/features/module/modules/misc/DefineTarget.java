@@ -23,6 +23,7 @@ import combatant.client.features.gui.clickgui.settings.TextListSetting;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Notifier;
 import combatant.client.features.relations.CategoryRules;
 import combatant.client.features.relations.CategoryType;
@@ -35,7 +36,7 @@ import combatant.client.util.text.ChatNameUtil;
  * - Players: friend/enemy/staff
  * - Non-players: toggle ignored entities (EntityFilters)
  */
-@ModuleInfo(id = "definetarget", displayName = "DefineTarget", aliases = {"clickfriend"}, category = ModuleCategory.MISC,
+@ModuleInfo(id = "definetarget", displayName = "DefineTarget", aliases = {"clickfriend"}, category = ModuleCategory.MISC, subcategory = ModuleSubcategory.UTILITY,
         description = "module.definetarget.description")
 public class DefineTarget extends Module {
 

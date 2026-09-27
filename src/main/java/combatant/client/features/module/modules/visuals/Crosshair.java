@@ -62,7 +62,7 @@ import java.util.Locale;
 @ModuleInfo(
         id = "crosshair",
         displayName = "Crosshair",
-        category = ModuleCategory.VISUALS,
+        category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.COSMETIC,
         description = "module.crosshair.description")
 public class Crosshair extends Module {
 

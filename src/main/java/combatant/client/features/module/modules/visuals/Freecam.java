@@ -20,12 +20,13 @@ import combatant.client.events.impl.LightmapModifyEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Notifier;
 import combatant.client.util.entity.FreecamEntity;
 
 import java.util.Map;
 
-@ModuleInfo(id = "freecam", displayName = "Freecam", aliases = {"camera", "spectator"}, category = ModuleCategory.VISUALS,
+@ModuleInfo(id = "freecam", displayName = "Freecam", aliases = {"camera", "spectator"}, category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.COSMETIC,
         description = "module.freecam.description")
 public class Freecam extends Module {
 

@@ -38,6 +38,7 @@ import combatant.client.features.module.HudPhase;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.relations.CategoryRules;
 import combatant.client.features.relations.CategoryType;
 import combatant.client.features.relations.EntityFilters;
@@ -64,7 +65,7 @@ import java.util.concurrent.ThreadLocalRandom;
 @ModuleInfo(
         id = "autobow",
         displayName = "AutoBow",
-        category = ModuleCategory.COMBAT,
+        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.ATTACK,
         description = "module.autobow.description")
 public class AutoBow extends Module {
 

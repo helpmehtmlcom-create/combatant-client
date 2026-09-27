@@ -17,6 +17,7 @@ import combatant.client.features.gui.clickgui.ClickGuiScreen;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.util.screen.ClientScreen;
 import combatant.client.features.gui.clickgui.sound.GuiSound;
 import net.minecraft.client.Minecraft;
@@ -24,7 +25,7 @@ import net.minecraft.client.Minecraft;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-@ModuleInfo(id = "clickgui", displayName = "ClickGUI", aliases = {"menu", "settings"}, category = ModuleCategory.MISC,
+@ModuleInfo(id = "clickgui", displayName = "ClickGUI", aliases = {"menu", "settings"}, category = ModuleCategory.MISC, subcategory = ModuleSubcategory.CLIENT,
         description = "module.clickgui.description")
 public class ClickGui extends Module {
     private static boolean suppressScreenClose = false;

@@ -40,6 +40,7 @@ import combatant.client.events.impl.EventSync;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.mixins.accessors.PlayerInventoryAccessor;
 import combatant.client.util.player.InteractionUtil;
 import combatant.client.util.player.MovementUtil;
@@ -50,7 +51,7 @@ import combatant.client.util.player.inventory.InventorySwap;
 @ModuleInfo(
         id = "phase",
         displayName = "Phase",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MOVEMENT, subcategory = ModuleSubcategory.RAGE,
         description = "module.phase.description")
 public class Phase extends Module {
 

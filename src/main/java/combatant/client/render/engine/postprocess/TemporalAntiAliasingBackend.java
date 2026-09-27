@@ -80,6 +80,13 @@ public final class TemporalAntiAliasingBackend implements AutoCloseable {
         historyReady = false;
     }
 
+    /** Canonical temporal history from the most recent resolve, before FXAA/CAS presentation. */
+    public GpuTextureView currentHistoryColorView() {
+        if (!historyReady) return null;
+        RhiStorageImage current = historyAIsRead ? historyColorA : historyColorB;
+        return current == null ? null : current.view();
+    }
+
     public void render(CombatantRhi rhi,
                        RhiStorageImage destination,
                        GpuTextureView currentColor,

@@ -17,6 +17,7 @@ import combatant.client.events.impl.GameTickEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.mixins.accessors.MultiPlayerGameModeAccessor;
 import combatant.client.mixins.accessors.PlayerInventoryAccessor;
 import combatant.client.util.player.inventory.InventorySwap;
@@ -24,7 +25,7 @@ import combatant.client.util.player.inventory.InventorySwap;
 @ModuleInfo(
         id = "autotool",
         displayName = "AutoTool",
-        category = ModuleCategory.PLAYER,
+        category = ModuleCategory.PLAYER, subcategory = ModuleSubcategory.AUTOMATION,
         description = "module.autotool.description")
 public class AutoTool extends Module {
 

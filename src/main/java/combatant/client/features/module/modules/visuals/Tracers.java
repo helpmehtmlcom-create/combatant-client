@@ -40,7 +40,7 @@ import combatant.client.render.engine.uniform.MeshBuilder;
 
 import java.util.List;
 
-@ModuleInfo(id = "tracers", displayName = "Tracers", aliases = {"arrows", "lines"}, category = ModuleCategory.VISUALS,
+@ModuleInfo(id = "tracers", displayName = "Tracers", aliases = {"arrows", "lines"}, category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.ESP,
         description = "module.tracers.description")
 public class Tracers extends Module {
 

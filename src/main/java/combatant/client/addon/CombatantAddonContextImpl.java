@@ -22,6 +22,8 @@ import combatant.client.features.gui.hud.draggable.DraggableHudElement;
 import combatant.client.features.gui.hud.draggable.DraggableHudElementRegistry;
 import combatant.client.features.gui.hud.nondraggable.StaticHudElementRegistry;
 import combatant.client.features.module.Module;
+import combatant.client.features.module.ModuleCategory;
+import combatant.client.features.module.ModuleSubcategoryRegistry;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessPass;
 import combatant.client.render.iris.patch.ShaderPatchEngine;
@@ -68,11 +70,38 @@ final class CombatantAddonContextImpl implements CombatantAddonContext {
     }
 
     @Override
+    public boolean registerModuleSubcategory(ModuleCategory category, String subcategoryId, String displayName) {
+        boolean registered = ModuleSubcategoryRegistry.registerAddon(addonId(), category, subcategoryId, displayName);
+        if (!registered) {
+            registration.issue(AddonIssue.Severity.WARNING,
+                    "Module subcategory registration failed",
+                    String.valueOf(subcategoryId));
+        }
+        return registered;
+    }
+
+    @Override
     public void registerModule(Module module) {
+        registerModuleInternal(module, module != null ? module.getSubcategoryId() : "");
+    }
+
+    @Override
+    public void registerModule(Module module, String subcategoryId) {
+        registerModuleInternal(module, subcategoryId);
+    }
+
+    private void registerModuleInternal(Module module, String subcategoryId) {
         if (module == null) return;
         module.postInit();
         registration.modules.add(module.name());
         AddonManager.noteModuleOwner(addonId(), module.name());
+
+        if (subcategoryId != null && !subcategoryId.isBlank()
+                && !ModuleSubcategoryRegistry.assignAddonModule(addonId(), module, subcategoryId)) {
+            registration.issue(AddonIssue.Severity.WARNING,
+                    "Module subcategory assignment failed",
+                    module.name() + " -> " + subcategoryId);
+        }
     }
 
     @Override

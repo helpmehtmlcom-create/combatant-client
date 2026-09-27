@@ -21,6 +21,7 @@ import combatant.client.config.values.NumberValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.util.network.FakeLagController;
 
 import java.util.EnumSet;
@@ -31,7 +32,7 @@ import java.util.EnumSet;
 @ModuleInfo(
         id = "fakelag",
         displayName = "FakeLag",
-        category = ModuleCategory.PLAYER,
+        category = ModuleCategory.PLAYER, subcategory = ModuleSubcategory.EXPLOIT,
         description = "module.fakelag.description")
 public final class FakeLag extends Module {
     private final NumberValue<Float> minRange = numCommon(

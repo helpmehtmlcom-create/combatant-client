@@ -8,26 +8,34 @@
 package combatant.client.features.gui.clickgui.layout.screen.modules;
 
 import combatant.client.features.module.ModuleCategory;
+import combatant.client.features.module.ModuleSubcategoryDefinition;
+import combatant.client.features.module.ModuleSubcategoryRegistry;
 
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
 public enum ModulesMenuCategory {
-    COMBAT("Combat", "swords", "combat"),
-    MOVEMENT("Movement", "accessibility", "movement"),
-    PLAYER("Player", "user", "player"),
-    VISUALS("Visuals", "tree-pine", "visual", "render", "visuals"),
-    OTHER("Other", "ellipsis", "other", "misc", "miscellaneous", "exploit", "world");
+    COMBAT(ModuleCategory.COMBAT, "Combat", "swords", "combat"),
+    MOVEMENT(ModuleCategory.MOVEMENT, "Movement", "accessibility", "movement"),
+    PLAYER(ModuleCategory.PLAYER, "Player", "user", "player"),
+    VISUALS(ModuleCategory.VISUALS, "Visuals", "tree-pine", "visual", "render", "visuals"),
+    OTHER(ModuleCategory.MISC, "Other", "ellipsis", "other", "misc", "miscellaneous", "exploit", "world");
 
+    private final ModuleCategory moduleCategory;
     private final String title;
     private final String icon;
     private final List<String> aliases;
 
-    ModulesMenuCategory(String title, String icon, String... aliases) {
+    ModulesMenuCategory(ModuleCategory moduleCategory, String title, String icon, String... aliases) {
+        this.moduleCategory = moduleCategory;
         this.title = title;
         this.icon = icon;
         this.aliases = Arrays.asList(aliases);
+    }
+
+    public ModuleCategory moduleCategory() {
+        return moduleCategory;
     }
 
     public String title() {
@@ -38,7 +46,12 @@ public enum ModulesMenuCategory {
         return icon;
     }
 
+    public List<ModuleSubcategoryDefinition> subcategories() {
+        return ModuleSubcategoryRegistry.forCategory(moduleCategory);
+    }
+
     boolean matches(ModuleCategory category) {
+        if (category == moduleCategory) return true;
         if (category == null) return this == OTHER;
 
         String name = category.name().toLowerCase(Locale.ROOT);

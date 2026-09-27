@@ -15,11 +15,12 @@ import combatant.client.config.values.NumberValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 
 @ModuleInfo(
         id = "seeinvisibles",
         displayName = "SeeInvisibles",
-        category = ModuleCategory.VISUALS,
+        category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.ESP,
         description = "module.seeinvisibles.description")
 public class SeeInvisibles extends Module {
 

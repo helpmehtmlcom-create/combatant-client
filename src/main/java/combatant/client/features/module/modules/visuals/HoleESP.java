@@ -13,6 +13,7 @@ import combatant.client.config.values.RGBAColorValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
@@ -37,7 +38,7 @@ import java.util.List;
         id = "holeesp",
         displayName = "HoleESP",
         aliases = {"holes"},
-        category = ModuleCategory.VISUALS,
+        category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.ESP,
         description = "module.holeesp.description")
 public final class HoleESP extends Module {
     private static final Direction[] HORIZONTAL = {

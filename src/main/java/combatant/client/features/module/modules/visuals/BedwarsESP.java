@@ -41,7 +41,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @ModuleInfo(
         id = "bedwarsesp",
         displayName = "BedwarsESP",
-        category = ModuleCategory.VISUALS,
+        category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.ESP,
         description = "module.bedwarsesp.description")
 public class BedwarsESP extends Module {
 //todo не доделан

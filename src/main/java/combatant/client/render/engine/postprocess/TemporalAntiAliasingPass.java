@@ -167,6 +167,11 @@ public final class TemporalAntiAliasingPass implements PostProcessPass, PostProc
         historyValid = true;
     }
 
+    /** Latest canonical TAA history, before optional presentation filtering. */
+    public GpuTextureView currentHistoryColorView() {
+        return backend.currentHistoryColorView();
+    }
+
     public void invalidateHistory() {
         previousView = null;
         previousProjection = null;

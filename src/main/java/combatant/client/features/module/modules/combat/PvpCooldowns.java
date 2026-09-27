@@ -20,6 +20,7 @@ import combatant.client.features.gui.clickgui.settings.TextListSetting;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.util.pvp.ItemCooldownSnapshot;
 import combatant.client.util.pvp.PvpChatParser;
 import combatant.client.util.pvp.PvpOverlayParser;
@@ -34,7 +35,7 @@ import java.util.*;
 @ModuleInfo(
         id = "pvpcooldowns",
         displayName = "PvpCooldowns",
-        category = ModuleCategory.MISC,
+        category = ModuleCategory.MISC, subcategory = ModuleSubcategory.UTILITY,
         description = "module.pvpcooldowns.description")
 public class PvpCooldowns extends Module {
 

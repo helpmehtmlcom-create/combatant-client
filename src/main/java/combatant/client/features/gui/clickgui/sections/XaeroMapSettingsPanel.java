@@ -28,6 +28,7 @@ import combatant.client.features.gui.clickgui.settings.ColorSetting;
 import combatant.client.features.gui.clickgui.settings.ModeSetting;
 import combatant.client.features.gui.clickgui.settings.Setting;
 import combatant.client.features.gui.clickgui.settings.SettingFactory;
+import combatant.client.features.gui.clickgui.settings.SettingOverlayHost;
 import combatant.client.features.gui.clickgui.settings.TextListSetting;
 import combatant.client.features.gui.clickgui.settings.SettingRenderContext;
 import combatant.client.features.gui.clickgui.settings.SettingRenderSurface;
@@ -122,6 +123,7 @@ import java.util.function.UnaryOperator;
 final class XaeroMapSettingsPanel {
     private static final float DESIGN_WIDTH = 1120.0f;
     private static final float DESIGN_HEIGHT = 720.0f;
+    private static final float MAP_SETTING_SCALE = 1.12f;
     private static final float MIN_WIDTH = 820.0f;
     private static final float MIN_HEIGHT = 540.0f;
     private static final float SCREEN_INSET = 24.0f;
@@ -140,6 +142,7 @@ final class XaeroMapSettingsPanel {
     private final List<CategoryHit> categoryHits = new ArrayList<>();
     private final Set<ConfigOption<?>> boundXaeroOptions = Collections.newSetFromMap(new IdentityHashMap<>());
     private final SearchComponent searchComponent = new SearchComponent();
+    private final SettingOverlayHost overlayHost = new SettingOverlayHost();
 
     private Category selectedCategory = Category.DISPLAY;
     private boolean open;
@@ -279,11 +282,13 @@ final class XaeroMapSettingsPanel {
 
     void toggle() {
         open = !open;
+        overlayHost.closeImmediately();
         if (open) contentAnim = 0.0f;
         else searchFocused = false;
     }
 
     void openCave() {
+        overlayHost.closeImmediately();
         selectedCategory = Category.CAVE;
         resetScroll();
         open = true;
@@ -292,6 +297,7 @@ final class XaeroMapSettingsPanel {
     }
 
     void close() {
+        overlayHost.closeImmediately();
         open = false;
         searchFocused = false;
         flushXaeroSaves();
@@ -447,14 +453,20 @@ final class XaeroMapSettingsPanel {
         float contentY = y + layout.contentY + (1.0f - contentEase) * 8.0f;
         float contentW = layout.contentWidth;
         float contentH = layout.contentHeight;
+        // Expensive authors these controls inside ~280px module frames.  In the much wider Map
+        // detail pane, letting selects/sliders stretch through the entire 800px viewport destroys
+        // their proportions.  Keep a generous single settings column while leaving the browser
+        // itself at its original 1120x720 size.
+        // Use the detail pane instead of leaving a dead third on the right.  Keep a modest
+        // gutter so long sliders/inputs still read as controls rather than full-window rules.
+        float settingsW = Math.min(contentW, Math.max(660.0f, contentW * 0.90f));
         contentViewportY = contentY;
         contentViewportBottom = contentY + contentH;
+        overlayHost.setViewport(contentX, contentY, contentW, contentH);
         renderFrameId++;
         float cursorY = contentY + scroll;
         float total = 0.0f;
-        float columnGap = 12.0f;
-        float columnWidth = Math.max(1.0f, (contentW - columnGap) * 0.5f);
-        float rowGap = 10.0f;
+        float rowGap = 15.0f;
         float revealOffset = Float.NaN;
         float revealHeight = 0.0f;
 
@@ -463,51 +475,26 @@ final class XaeroMapSettingsPanel {
         float previousGuiAlpha = ClickGuiRenderer.getRenderAlphaMultiplier();
         Renderer2D.COLOR.setAlpha(previousRendererAlpha * contentAlpha);
         ClickGuiRenderer.setRenderAlphaMultiplier(previousGuiAlpha * contentAlpha);
-        try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.SETTINGS, 1.12f)) {
-            // Keep matching entries in their original slots for the whole visibility transition.
-            // Removing a compact entry at the tail of its fade changes the two-column pairing and
-            // makes its neighbour jump from the right column to the left in a single frame.
+        try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.MAP_SETTINGS, MAP_SETTING_SCALE, overlayHost)) {
             List<Entry> visible = entries.stream().filter(this::matches).toList();
-            for (int index = 0; index < visible.size();) {
-                Entry left = visible.get(index);
-                float leftVis = clamp(left.setting.updateVisibilitySafely(), 0.0f, 1.0f);
-                Entry right = isCompact(left.setting)
-                        && index + 1 < visible.size()
-                        && isCompact(visible.get(index + 1).setting)
-                        ? visible.get(index + 1)
-                        : null;
-                float rightVis = right == null ? 0.0f
-                        : clamp(right.setting.updateVisibilitySafely(), 0.0f, 1.0f);
-                float leftBaseHeight = left.setting.getHeightSafely();
-                float rightBaseHeight = right == null ? 0.0f : right.setting.getHeightSafely();
-                float leftHeight = leftBaseHeight * leftVis;
-                float rightHeight = rightBaseHeight * rightVis;
-                float rowHeight = Math.max(leftHeight, rightHeight);
-                float rowVisibility = Math.max(leftVis, rightVis);
-                float animatedGap = rowGap * smootherStep(rowVisibility);
-                if (pendingRevealSetting != null && rowHeight > 1.0f
-                        && (left.setting == pendingRevealSetting || (right != null && right.setting == pendingRevealSetting))) {
+            for (Entry entry : visible) {
+                Setting setting = entry.setting;
+                float vis = clamp(setting.updateVisibilitySafely(), 0.0f, 1.0f);
+                float baseHeight = setting.getHeightSafely();
+                float animatedHeight = baseHeight * vis;
+                float animatedGap = rowGap * smootherStep(vis);
+                if (pendingRevealSetting == setting && animatedHeight > 1.0f) {
                     revealOffset = total;
-                    revealHeight = rowHeight;
+                    revealHeight = animatedHeight;
                 }
-
-                if (rowHeight > 0.2f && cursorY + rowHeight >= contentY && cursorY <= contentY + contentH) {
-                    float leftWidth = right == null ? preferredWidth(left.setting, contentW) : columnWidth;
-                    renderAnimatedSetting(left.setting, contentX, cursorY, leftWidth, leftBaseHeight, leftHeight, leftVis, mouseX, mouseY);
-                    if (left.setting.isVisibilityTargetVisibleSafely() && leftVis > 0.45f) {
-                        hits.add(new Hit(left.setting, contentX, cursorY, leftWidth, leftHeight));
-                    }
-                    if (right != null) {
-                        float rightX = contentX + columnWidth + columnGap;
-                        renderAnimatedSetting(right.setting, rightX, cursorY, columnWidth, rightBaseHeight, rightHeight, rightVis, mouseX, mouseY);
-                        if (right.setting.isVisibilityTargetVisibleSafely() && rightVis > 0.45f) {
-                            hits.add(new Hit(right.setting, rightX, cursorY, columnWidth, rightHeight));
-                        }
+                if (animatedHeight > 0.2f && cursorY + animatedHeight >= contentY && cursorY <= contentY + contentH) {
+                    renderAnimatedSetting(setting, contentX, cursorY, settingsW, baseHeight, animatedHeight, vis, mouseX, mouseY);
+                    if (setting.isVisibilityTargetVisibleSafely() && vis > 0.45f) {
+                        hits.add(new Hit(setting, contentX, cursorY, settingsW, animatedHeight));
                     }
                 }
-                cursorY += rowHeight + animatedGap;
-                total += rowHeight + animatedGap;
-                index += right == null ? 1 : 2;
+                cursorY += animatedHeight + animatedGap;
+                total += animatedHeight + animatedGap;
             }
         } finally {
             ClickGuiRenderer.restoreRenderAlphaMultiplier(previousGuiAlpha);
@@ -534,6 +521,17 @@ final class XaeroMapSettingsPanel {
             pendingRevealSetting = null;
         }
         renderScrollbar(contentX, contentY, contentW, contentH, mouseX, mouseY);
+
+        double overlayRendererAlpha = Renderer2D.COLOR.getAlpha();
+        float overlayGuiAlpha = ClickGuiRenderer.getRenderAlphaMultiplier();
+        Renderer2D.COLOR.setAlpha(overlayRendererAlpha * contentAlpha);
+        ClickGuiRenderer.setRenderAlphaMultiplier(overlayGuiAlpha * contentAlpha);
+        try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.MAP_SETTINGS, MAP_SETTING_SCALE, overlayHost)) {
+            overlayHost.render(mouseX, mouseY);
+        } finally {
+            ClickGuiRenderer.restoreRenderAlphaMultiplier(overlayGuiAlpha);
+            Renderer2D.COLOR.setAlpha(overlayRendererAlpha);
+        }
     }
 
     private void renderAnimatedSetting(Setting setting, float sx, float sy, float sw,
@@ -546,7 +544,13 @@ final class XaeroMapSettingsPanel {
         float previousGuiAlpha = ClickGuiRenderer.getRenderAlphaMultiplier();
         Renderer2D.COLOR.setAlpha(previousRendererAlpha * alpha);
         ClickGuiRenderer.setRenderAlphaMultiplier(previousGuiAlpha * alpha);
-        boolean clip = ScissorFunction.pushRaw(sx, sy, sw, Math.max(0.5f, animatedHeight));
+        boolean partialReveal = visibility < 0.985f && animatedHeight < baseHeight - 0.75f;
+        boolean clip = false;
+        if (partialReveal) {
+            float bleed = Math.min(2.0f, Math.max(0.25f, animatedHeight * 0.10f));
+            clip = ScissorFunction.pushRaw(sx - bleed, sy - bleed, sw + bleed * 2f,
+                    Math.max(0.5f, animatedHeight + bleed * 2f));
+        }
         try {
             setting.renderSafely(sx, sy + offsetY, sw, mouseX, mouseY);
         } finally {
@@ -578,11 +582,14 @@ final class XaeroMapSettingsPanel {
 
     boolean mousePressed(float mouseX, float mouseY, int button) {
         if (!open) return isVisible();
+        try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.MAP_SETTINGS, MAP_SETTING_SCALE, overlayHost)) {
+            if (overlayHost.hasActiveOverlay() && overlayHost.mouseClicked(mouseX, mouseY, button)) return true;
+        }
         if (!inside(mouseX, mouseY, x, y, width, height)) {
             close();
             return true;
         }
-        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && scrollbarVisible
+        if (!overlayHost.hasActiveOverlay() && button == GLFW.GLFW_MOUSE_BUTTON_LEFT && scrollbarVisible
                 && inside(mouseX, mouseY, scrollbarX - 4.0f, scrollbarY,
                 scrollbarW + 8.0f, scrollbarH)) {
             scrollbarDragging = true;
@@ -610,7 +617,7 @@ final class XaeroMapSettingsPanel {
                 return true;
             }
         }
-        try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.SETTINGS, 1.12f)) {
+        try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.MAP_SETTINGS, MAP_SETTING_SCALE, overlayHost)) {
             for (Hit hit : hits) {
                 if (inside(mouseX, mouseY, hit.x, hit.y, hit.width, hit.height)) {
                     hit.setting.mouseClickedSafely(mouseX, mouseY, button, hit.x, hit.y, hit.width);
@@ -625,7 +632,11 @@ final class XaeroMapSettingsPanel {
     void mouseReleased(float mouseX, float mouseY, int button) {
         if (!open) return;
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) scrollbarDragging = false;
-        try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.SETTINGS, 1.12f)) {
+        try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.MAP_SETTINGS, MAP_SETTING_SCALE, overlayHost)) {
+            if (overlayHost.hasActiveOverlay()) {
+                overlayHost.mouseReleased(mouseX, mouseY, button);
+                return;
+            }
             for (Entry entry : entries) entry.setting.mouseReleasedSafely(mouseX, mouseY, button);
         }
     }
@@ -633,7 +644,8 @@ final class XaeroMapSettingsPanel {
     boolean mouseScrolled(float mouseX, float mouseY, double amount) {
         if (!isVisible()) return false;
         if (!open || !inside(mouseX, mouseY, x, y, width, height)) return true;
-        try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.SETTINGS, 1.12f)) {
+        try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.MAP_SETTINGS, MAP_SETTING_SCALE, overlayHost)) {
+            if (overlayHost.hasActiveOverlay() && overlayHost.mouseScrolled(mouseX, mouseY, amount)) return true;
             for (Hit hit : hits) {
                 if (inside(mouseX, mouseY, hit.x, hit.y, hit.width, hit.height)
                         && hit.setting.mouseScrolledSafely(mouseX, mouseY, amount)) return true;
@@ -645,6 +657,9 @@ final class XaeroMapSettingsPanel {
 
     boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (!open) return false;
+        try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.MAP_SETTINGS, MAP_SETTING_SCALE, overlayHost)) {
+            if (overlayHost.hasActiveOverlay() && overlayHost.keyPressed(keyCode, scanCode, modifiers)) return true;
+        }
         if (searchFocused) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 if (!search.isEmpty()) {
@@ -662,7 +677,7 @@ final class XaeroMapSettingsPanel {
             close();
             return true;
         }
-        try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.SETTINGS, 1.12f)) {
+        try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.MAP_SETTINGS, MAP_SETTING_SCALE, overlayHost)) {
             for (Entry entry : entries) {
                 if (matches(entry) && entry.setting.keyPressedSafely(keyCode, scanCode, modifiers)) return true;
             }
@@ -672,12 +687,15 @@ final class XaeroMapSettingsPanel {
 
     boolean charTyped(char chr, int modifiers) {
         if (!open) return false;
+        try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.MAP_SETTINGS, MAP_SETTING_SCALE, overlayHost)) {
+            if (overlayHost.hasActiveOverlay() && overlayHost.charTyped(chr, modifiers)) return true;
+        }
         if (searchFocused && !Character.isISOControl(chr) && search.length() < 64) {
             search += chr;
             resetScroll();
             return true;
         }
-        try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.SETTINGS, 1.12f)) {
+        try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.MAP_SETTINGS, MAP_SETTING_SCALE, overlayHost)) {
             for (Entry entry : entries) {
                 if (matches(entry) && entry.setting.charTypedSafely(chr, modifiers)) return true;
             }
@@ -1557,6 +1575,7 @@ final class XaeroMapSettingsPanel {
     }
 
     private void resetScroll() {
+        overlayHost.closeImmediately();
         scroll = 0.0f;
         scrollTarget = 0.0f;
         scrollVelocity = 0.0f;

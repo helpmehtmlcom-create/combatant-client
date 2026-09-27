@@ -16,6 +16,7 @@ import combatant.client.events.impl.RotationUpdateEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.features.module.modules.combat.autoanchor.*;
 import combatant.client.render.engine.RenderState;
@@ -65,7 +66,7 @@ import java.util.concurrent.ConcurrentHashMap;
         id = "autoanchor",
         displayName = "AutoAnchor",
         aliases = {"AnchorAura", "Anchor"},
-        category = ModuleCategory.COMBAT,
+        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.ATTACK,
         description = "module.autoanchor.description")
 public class AutoAnchor extends Module {
     private static final int ROTATION_PRIORITY = 34;

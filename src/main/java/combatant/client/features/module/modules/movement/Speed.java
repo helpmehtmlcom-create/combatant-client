@@ -23,13 +23,14 @@ import combatant.client.events.impl.PlayerMoveEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.mixins.accessors.ServerboundMovePlayerPacketAccessor;
 import combatant.client.util.player.MovementUtil;
 
 @ModuleInfo(
         id = "speed",
         displayName = "Speed",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MOVEMENT, subcategory = ModuleSubcategory.RAGE,
         description = "module.speed.description")
 public final class Speed extends Module {
 

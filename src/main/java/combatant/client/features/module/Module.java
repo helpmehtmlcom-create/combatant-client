@@ -48,6 +48,8 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
     private final List<String> aliases;
     private final String description;
     private final ModuleCategory category;
+    private final ModuleSubcategory subcategory;
+    private final String subcategoryId;
     private final BooleanValue enabledValue;
     private final EnumValue<ModuleActivationSource> activationSourceValue =
             new EnumValue<>("activation_source", ModuleActivationSource.NONE, ModuleActivationSource.class);
@@ -72,6 +74,8 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
         this.aliases = normalizeAliases(info.aliases());
         this.description = info.description();
         this.category = info.category();
+        this.subcategory = info.subcategory();
+        this.subcategoryId = info.subcategoryId() == null ? "" : info.subcategoryId().trim();
         this.enabledValue = new BooleanValue("enabled", info.enabledByDefault());
         this.keyBindSetting = createKeyBindSetting();
 
@@ -90,6 +94,8 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
         this.aliases = List.of();
         this.description = description == null ? "" : description;
         this.category = category;
+        this.subcategory = ModuleSubcategory.UNSPECIFIED;
+        this.subcategoryId = "";
         this.enabledValue = new BooleanValue("enabled", false);
         this.keyBindSetting = createKeyBindSetting();
 
@@ -921,6 +927,19 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
 
     public ModuleCategory getCategory() {
         return category;
+    }
+
+    public ModuleSubcategory getSubcategory() {
+        return subcategory;
+    }
+
+    public ModuleSubcategory getEffectiveSubcategory() {
+        return ModuleSubcategory.effective(category, subcategory);
+    }
+
+    /** Addon-local custom subcategory id declared through {@link ModuleInfo#subcategoryId()}. */
+    public String getSubcategoryId() {
+        return subcategoryId;
     }
 
     private static String translateFirst(String fallback, String... keys) {

@@ -14,11 +14,12 @@ import combatant.client.events.impl.MovementInputEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 
 @ModuleInfo(
         id = "parkour",
         displayName = "Parkour",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MOVEMENT, subcategory = ModuleSubcategory.BASIC,
         description = "module.parkour.description")
 public final class Parkour extends Module {
 

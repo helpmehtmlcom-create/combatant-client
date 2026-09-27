@@ -10,5 +10,7 @@ package combatant.client.features.gui.clickgui.settings;
 public enum SettingRenderSurface {
     MODULES,
     SETTINGS,
+    MAIN_SETTINGS,
+    MAP_SETTINGS,
     VISUAL_PREVIEW
 }

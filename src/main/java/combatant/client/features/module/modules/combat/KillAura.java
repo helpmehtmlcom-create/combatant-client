@@ -25,6 +25,7 @@ import combatant.client.events.impl.SprintControlEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.movement.TargetStrafe;
 import combatant.client.util.aiming.RotationManager;
@@ -61,7 +62,7 @@ import java.util.List;
 @ModuleInfo(
         id = "killaura",
         displayName = "KillAura",
-        category = ModuleCategory.COMBAT,
+        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.ATTACK,
         description = "module.killaura.description")
 public class KillAura extends Module {
 

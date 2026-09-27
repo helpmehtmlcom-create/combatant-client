@@ -17,6 +17,7 @@ import combatant.client.config.values.NumberValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.relations.CategoryRules;
 import combatant.client.features.relations.CategoryType;
 import combatant.client.features.relations.EntityFilters;
@@ -28,7 +29,7 @@ import combatant.client.util.sound.SoundOptions;
 @ModuleInfo(
         id = "hitsounds",
         displayName = "HitSounds",
-        category = ModuleCategory.MISC,
+        category = ModuleCategory.MISC, subcategory = ModuleSubcategory.CLIENT,
         description = "module.hitsounds.description")
 public class HitSounds extends Module {
 

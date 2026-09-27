@@ -13,11 +13,12 @@ import combatant.client.config.values.BooleanMapValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 
 @ModuleInfo(
         id = "spearassist",
         displayName = "SpearAssist",
-        category = ModuleCategory.COMBAT,
+        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.LEGIT,
         description = "module.spearassist.description")
 public class SpearAssist extends Module {
 

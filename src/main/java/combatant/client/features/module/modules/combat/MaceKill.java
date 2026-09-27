@@ -27,13 +27,14 @@ import combatant.client.events.impl.PacketEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 
 //Такая хуйня на более менее ач работать не будет
 // thx liquidbounce
 @ModuleInfo(
         id = "macekill",
         displayName = "MaceKill",
-        category = ModuleCategory.COMBAT,
+        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.ATTACK,
         description = "module.macekill.description")
 public final class MaceKill extends Module {
     public static boolean cancelCrit;

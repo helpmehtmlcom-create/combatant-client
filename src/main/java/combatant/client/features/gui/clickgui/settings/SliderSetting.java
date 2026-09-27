@@ -127,7 +127,9 @@ public class SliderSetting<N extends Number> extends Setting {
         float inputHoverAnim = 0f;
         float inputFocusGlowAnim = 0f;
         float inputPressAnim = 0f;
+        float trackX, trackY, trackW, trackH;
         float valueX, valueY, valueW, valueH;
         float valueTextX, valueTextY, valueTextSize, valueTextPad;
+        float editScrollX;
     }
 }

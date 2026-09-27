@@ -29,6 +29,7 @@ import combatant.client.config.values.RGBAColorValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.mixins.accessors.ClientLevelAccessor;
 import combatant.client.render.engine.RenderState;
@@ -57,7 +58,7 @@ import java.awt.*;
 import java.util.*;
 import java.util.List;
 
-@ModuleInfo(id = "killeffect", displayName = "KillEffect", category = ModuleCategory.VISUALS,
+@ModuleInfo(id = "killeffect", displayName = "KillEffect", category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.COSMETIC,
         description = "module.killeffect.description")
 public class KillEffect extends Module implements PostProcessPass {
     private static final int MAX_EMBERS = 26;

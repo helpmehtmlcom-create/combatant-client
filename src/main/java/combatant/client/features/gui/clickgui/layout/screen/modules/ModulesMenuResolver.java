@@ -16,6 +16,8 @@ import combatant.client.features.gui.clickgui.settings.SettingErrorView;
 import combatant.client.runtime.error.ErrorHandler;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleManager;
+import combatant.client.features.module.ModuleSubcategoryDefinition;
+import combatant.client.features.module.ModuleSubcategoryRegistry;
 import combatant.client.features.gui.preview.VisualPreviewRegistry;
 
 import java.util.ArrayList;
@@ -26,12 +28,19 @@ enum ModulesMenuResolver {
     ;
 
     static List<ModuleComponent.CardEntry> buildCards(ModulesMenuCategory category) {
+        return buildCards(category, null);
+    }
+
+    static List<ModuleComponent.CardEntry> buildCards(ModulesMenuCategory category, ModuleSubcategoryDefinition subcategory) {
         List<ModuleComponent.CardEntry> out = new ArrayList<>();
         if (category == null) return out;
 
         for (Module module : ModuleManager.getModules()) {
             if (module == null) continue;
             if (!category.matches(module.getCategory())) continue;
+            ModuleSubcategoryDefinition resolvedSubcategory = ModuleSubcategoryRegistry.resolve(module);
+            if (subcategory != null
+                    && (resolvedSubcategory == null || !resolvedSubcategory.key().equals(subcategory.key()))) continue;
             String bind = module.getKeyBindSetting() != null && module.getKeyBindSetting().getValue() != null
                     ? module.getKeyBindSetting().getValue().get()
                     : "";

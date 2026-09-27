@@ -113,6 +113,12 @@ public class ModeSetting extends Setting {
         float baseX, baseY, baseW;
         float cachedHeight = 64f;
         float selectX, selectY, selectW;
+        float selectH;
+        float popupScroll;
+        float popupMaxScroll;
+        float popupContentY;
+        float popupContentH;
+        float openAnim;
         boolean selectInit = false;
         float lastLayoutW = Float.NaN;
         int layoutOptionCount = -1;

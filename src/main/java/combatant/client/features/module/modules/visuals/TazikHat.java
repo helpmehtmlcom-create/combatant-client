@@ -23,6 +23,7 @@ import combatant.client.config.values.RGBAColorValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.features.relations.CategoryService;
 import combatant.client.render.engine.animation.AnimationUtility;
@@ -40,7 +41,7 @@ import java.util.Random;
 @ModuleInfo(
         id = "tazikhat",
         displayName = "TazikHat",
-        category = ModuleCategory.VISUALS,
+        category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.COSMETIC,
         description = "module.tazikhat.description")
 public final class TazikHat extends Module {
 

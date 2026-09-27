@@ -25,6 +25,7 @@ import combatant.client.compat.sodiumextra.SodiumExtraNoRenderCompat;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.gui.clickgui.settings.TextListSetting;
 
 import java.util.Optional;
@@ -32,7 +33,7 @@ import java.util.Optional;
 @ModuleInfo(
         id = "norender",
         displayName = "NoRender",
-        category = ModuleCategory.VISUALS,
+        category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.COSMETIC,
         description = "module.norender.description")
 public class NoRender extends Module {
 

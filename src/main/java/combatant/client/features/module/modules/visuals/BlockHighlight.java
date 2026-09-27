@@ -27,6 +27,7 @@ import combatant.client.config.values.RGBAColorValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.mixins.accessors.MultiPlayerGameModeAccessor;
 import combatant.client.render.engine.RenderState;
@@ -39,7 +40,7 @@ import combatant.client.render.engine.uniform.MeshBuilder;
 @ModuleInfo(
         id = "blockhighlight",
         displayName = "BlockHighlight",
-        category = ModuleCategory.VISUALS,
+        category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.ESP,
         description = "module.blockhighlight.description")
 public class BlockHighlight extends Module {
 

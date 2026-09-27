@@ -42,6 +42,7 @@ import combatant.client.events.impl.PacketEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Modules;
 import combatant.client.features.relations.CategoryRules;
 import combatant.client.features.relations.CategoryType;
@@ -61,7 +62,7 @@ import java.util.LinkedHashMap;
 @ModuleInfo(
         id = "triggerbot",
         displayName = "TriggerBot",
-        category = ModuleCategory.COMBAT,
+        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.LEGIT,
         description = "module.triggerbot.description")
 public class AutoAttack extends Module {
 

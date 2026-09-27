@@ -15,12 +15,13 @@ import combatant.client.features.gui.clickgui.settings.FunctionBindSetting;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.render.engine.animation.AnimationUtility;
 
 @ModuleInfo(
         id = "zoom",
         displayName = "Zoom",
-        category = ModuleCategory.VISUALS,
+        category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.COSMETIC,
         description = "module.zoom.description")
 public final class Zoom extends Module {
     private static final String ACTION_ZOOM_HOLD = "zoom_hold";

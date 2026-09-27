@@ -19,12 +19,13 @@ import combatant.client.events.impl.PlayerSafeWalkEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.util.entity.EagleUtil;
 
 @ModuleInfo(
         id = "safewalk",
         displayName = "SafeWalk",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MOVEMENT, subcategory = ModuleSubcategory.BASIC,
         description = "module.safewalk.description")
 public final class SafeWalk extends Module {
 

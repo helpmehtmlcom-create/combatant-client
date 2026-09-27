@@ -20,6 +20,7 @@ import combatant.client.features.gui.hud.draggable.impl.Itemizer;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.util.player.inventory.InventorySwap;
 
 import java.util.function.Predicate;
@@ -27,7 +28,7 @@ import java.util.function.Predicate;
 @ModuleInfo(
         id = "autototem",
         displayName = "AutoTotem",
-        category = ModuleCategory.PLAYER,
+        category = ModuleCategory.PLAYER, subcategory = ModuleSubcategory.AUTOMATION,
         description = "module.autototem.description")
 public class AutoTotem extends Module {
     private final Minecraft mc = Minecraft.getInstance();

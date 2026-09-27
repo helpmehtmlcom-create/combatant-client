@@ -85,7 +85,7 @@ import combatant.client.util.text.TextRenderUtil;
 import java.util.*;
 
 
-@ModuleInfo(id = "nametags", displayName = "NameTags", aliases = {"nametag", "tags", "names"}, category = ModuleCategory.VISUALS,
+@ModuleInfo(id = "nametags", displayName = "NameTags", aliases = {"nametag", "tags", "names"}, category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.ESP,
         description = "module.nametags.description")
 public class NameTags extends Module {
 

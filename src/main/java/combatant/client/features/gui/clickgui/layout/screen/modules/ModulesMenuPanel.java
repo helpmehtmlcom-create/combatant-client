@@ -15,6 +15,7 @@ import combatant.client.runtime.error.ErrorHandler;
 import combatant.client.features.gui.clickgui.settings.SettingRenderContext;
 import combatant.client.features.gui.clickgui.settings.SettingRenderSurface;
 import combatant.client.render.engine.animation.AnimationUtility;
+import combatant.client.features.module.ModuleSubcategoryDefinition;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -26,7 +27,9 @@ final class ModulesMenuPanel {
     final int index;
     final List<ModuleHit> hits = new ArrayList<>();
     final List<SettingHit> settingHits = new ArrayList<>();
+    final List<SubcategoryHit> subcategoryHits = new ArrayList<>();
     final Map<String, Float> enabledAnim = new HashMap<>();
+    final Map<String, Float> subcategoryHoverAnim = new HashMap<>();
     final Map<String, Float> hoverAnim = new HashMap<>();
     final List<Setting> selectedSettings = new ArrayList<>();
 
@@ -55,6 +58,22 @@ final class ModulesMenuPanel {
     float swap;
     float anim;
 
+    ModuleSubcategoryDefinition selectedSubcategory;
+    float subcategoryScroll;
+    float subcategorySmoothScroll;
+    float maxSubcategoryScroll;
+    float subcategoryViewportX, subcategoryViewportY, subcategoryViewportW, subcategoryViewportH;
+    float subcategoryIndicatorX;
+    float subcategoryIndicatorW;
+    float subcategoryIndicatorStartX;
+    float subcategoryIndicatorStartW;
+    float subcategoryIndicatorTargetX;
+    float subcategoryIndicatorTargetW;
+    float subcategoryIndicatorProgress = 1.0f;
+    boolean subcategoryIndicatorReady;
+    float subcategoryContentAnim = 1.0f;
+    int subcategoryDirection = 1;
+
     String selected;
     String selectedTitle;
     String bindingId;
@@ -62,6 +81,7 @@ final class ModulesMenuPanel {
     ModulesMenuPanel(ModulesMenuCategory category, int index) {
         this.category = category;
         this.index = index;
+        this.selectedSubcategory = defaultSubcategory();
     }
 
     void reset() {
@@ -72,9 +92,19 @@ final class ModulesMenuPanel {
         settingsSmoothScroll = 0.0f;
         modulesScroll = 0.0f;
         modulesSmoothScroll = 0.0f;
+        subcategoryScroll = 0.0f;
+        subcategorySmoothScroll = 0.0f;
+        maxSubcategoryScroll = 0.0f;
+        subcategoryViewportX = subcategoryViewportY = subcategoryViewportW = subcategoryViewportH = 0.0f;
         swap = 0.0f;
         hits.clear();
         settingHits.clear();
+        subcategoryHits.clear();
+        selectedSubcategory = defaultSubcategory();
+        subcategoryIndicatorReady = false;
+        subcategoryIndicatorProgress = 1.0f;
+        subcategoryContentAnim = 1.0f;
+        subcategoryDirection = 1;
         previewX = previewY = previewW = previewH = 0.0f;
     }
 
@@ -84,6 +114,108 @@ final class ModulesMenuPanel {
 
         swap = AnimationUtility.approach(swap, target, dt, 7.2f);
         swap = AnimationUtility.snap(swap, target, 0.0015f);
+
+        subcategoryContentAnim = AnimationUtility.approach(subcategoryContentAnim, 1.0f, dt, 8.4f);
+        subcategoryContentAnim = AnimationUtility.snap(subcategoryContentAnim, 1.0f, 0.0008f);
+
+        subcategoryScroll = AnimationUtility.clamp(subcategoryScroll, 0.0f, maxSubcategoryScroll);
+        subcategorySmoothScroll = AnimationUtility.approach(
+                subcategorySmoothScroll, subcategoryScroll, dt, 14.0f);
+        subcategorySmoothScroll = AnimationUtility.snap(subcategorySmoothScroll, subcategoryScroll, 0.02f);
+    }
+
+    ModuleSubcategoryDefinition activeSubcategory() {
+        List<ModuleSubcategoryDefinition> available = category.subcategories();
+        if (available.isEmpty()) {
+            selectedSubcategory = null;
+            return null;
+        }
+        if (selectedSubcategory != null) {
+            for (ModuleSubcategoryDefinition candidate : available) {
+                if (candidate.key().equals(selectedSubcategory.key())) {
+                    selectedSubcategory = candidate;
+                    return candidate;
+                }
+            }
+        }
+        selectedSubcategory = available.get(0);
+        return selectedSubcategory;
+    }
+
+    void animateSubcategoryIndicator(float targetX, float targetW) {
+        if (!Float.isFinite(targetX) || !Float.isFinite(targetW) || targetW <= 0.0f) return;
+        if (!subcategoryIndicatorReady) {
+            subcategoryIndicatorX = targetX;
+            subcategoryIndicatorW = targetW;
+            subcategoryIndicatorStartX = targetX;
+            subcategoryIndicatorStartW = targetW;
+            subcategoryIndicatorTargetX = targetX;
+            subcategoryIndicatorTargetW = targetW;
+            subcategoryIndicatorProgress = 1.0f;
+            subcategoryIndicatorReady = true;
+            return;
+        }
+
+        boolean targetChanged = Math.abs(targetX - subcategoryIndicatorTargetX) > 0.05f
+                || Math.abs(targetW - subcategoryIndicatorTargetW) > 0.05f;
+        if (targetChanged) {
+            subcategoryIndicatorStartX = subcategoryIndicatorX;
+            subcategoryIndicatorStartW = subcategoryIndicatorW;
+            subcategoryIndicatorTargetX = targetX;
+            subcategoryIndicatorTargetW = targetW;
+            subcategoryIndicatorProgress = 0.0f;
+        }
+
+        if (subcategoryIndicatorProgress < 1.0f) {
+            float dt = AnimationUtility.deltaTime();
+            subcategoryIndicatorProgress = Math.min(1.0f, subcategoryIndicatorProgress + dt / 0.15f);
+            float eased = AnimationUtility.easeOutCubic(subcategoryIndicatorProgress);
+            subcategoryIndicatorX = AnimationUtility.lerp(subcategoryIndicatorStartX, subcategoryIndicatorTargetX, eased);
+            subcategoryIndicatorW = AnimationUtility.lerp(subcategoryIndicatorStartW, subcategoryIndicatorTargetW, eased);
+        } else {
+            subcategoryIndicatorX = subcategoryIndicatorTargetX;
+            subcategoryIndicatorW = subcategoryIndicatorTargetW;
+        }
+    }
+
+    float subcategoryHoverAnim(ModuleSubcategoryDefinition subcategory, boolean hover) {
+        if (subcategory == null) return 0.0f;
+        String key = subcategory.key();
+        Float prev = subcategoryHoverAnim.get(key);
+        float next = AnimationUtility.approach(prev == null ? 0.0f : prev, hover ? 1.0f : 0.0f, 0.20f);
+        subcategoryHoverAnim.put(key, next);
+        return next;
+    }
+
+    private ModuleSubcategoryDefinition defaultSubcategory() {
+        List<ModuleSubcategoryDefinition> subcategories = category.subcategories();
+        return subcategories.isEmpty() ? null : subcategories.get(0);
+    }
+
+    private void selectSubcategory(ModuleSubcategoryDefinition subcategory) {
+        if (subcategory == null || subcategory.category() != category.moduleCategory()) return;
+        List<ModuleSubcategoryDefinition> available = category.subcategories();
+        int nextIndex = -1;
+        for (int i = 0; i < available.size(); i++) {
+            if (available.get(i).key().equals(subcategory.key())) {
+                nextIndex = i;
+                subcategory = available.get(i);
+                break;
+            }
+        }
+        if (nextIndex < 0) return;
+
+        ModuleSubcategoryDefinition previous = activeSubcategory();
+        if (previous != null && previous.key().equals(subcategory.key())) return;
+
+        int previousIndex = previous == null ? 0 : available.indexOf(previous);
+        subcategoryDirection = nextIndex >= previousIndex ? 1 : -1;
+        selectedSubcategory = subcategory;
+        subcategoryContentAnim = 0.08f;
+        modulesScroll = 0.0f;
+        modulesSmoothScroll = 0.0f;
+        maxModulesScroll = 0.0f;
+        modulesScrollbarX = modulesScrollbarY = modulesScrollbarW = modulesScrollbarH = 0.0f;
     }
 
     float enabledAnim(String id, boolean enabled) {
@@ -154,6 +286,16 @@ final class ModulesMenuPanel {
             return true;
         }
 
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT
+                && ModulesMenuScreen.inside(mx, my, subcategoryViewportX, subcategoryViewportY,
+                subcategoryViewportW, subcategoryViewportH)) {
+            for (SubcategoryHit hit : subcategoryHits) {
+                if (!ModulesMenuScreen.inside(mx, my, hit.x, hit.y, hit.w, hit.h)) continue;
+                selectSubcategory(hit.subcategory);
+                return true;
+            }
+        }
+
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && modulesScrollbarHit(mx, my)) {
             modulesScrollbarDragging = true;
             modulesScrollbarDragOffset = my - modulesScrollbarHandleY;
@@ -215,6 +357,14 @@ final class ModulesMenuPanel {
 
     void scroll(float mx, float my, double amount) {
         float delta = (float) (-amount * 20.0f * ModulesMenuScreen.computePortScale());
+
+        if (selected == null && maxSubcategoryScroll > 0.5f
+                && ModulesMenuScreen.inside(mx, my, subcategoryViewportX, subcategoryViewportY,
+                subcategoryViewportW, subcategoryViewportH)) {
+            subcategoryScroll = AnimationUtility.clamp(
+                    subcategoryScroll + delta, 0.0f, maxSubcategoryScroll);
+            return;
+        }
 
         if (selected != null) {
             try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.MODULES, ModulesMenuScreen.computePortScale())) {
@@ -320,6 +470,9 @@ final class ModulesMenuPanel {
         selectedSettings.clear();
         settingsScroll = 0.0f;
         settingsSmoothScroll = 0.0f;
+    }
+
+    record SubcategoryHit(ModuleSubcategoryDefinition subcategory, float x, float y, float w, float h) {
     }
 
     record ModuleHit(String id, float x, float y, float w, float h, boolean hasSettings, boolean toggleable) {

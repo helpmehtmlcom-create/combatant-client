@@ -36,6 +36,7 @@ import combatant.client.features.theme.Themes;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Modules;
 import combatant.client.mixins.accessors.GameRendererAccessor;
 import combatant.client.mixins.iris.IrisHandRendererAccessor;
@@ -61,7 +62,7 @@ import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.rhi.CombatantRhi;
 
-@ModuleInfo(id = "chams", displayName = "Chams", category = ModuleCategory.VISUALS,
+@ModuleInfo(id = "chams", displayName = "Chams", category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.ESP,
         description = "module.chams.description")
 public class Chams extends Module {
 

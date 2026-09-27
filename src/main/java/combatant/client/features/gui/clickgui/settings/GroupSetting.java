@@ -88,6 +88,12 @@ public class GroupSetting extends Setting {
         float lastLayoutW = Float.NaN;
         int layoutOptionCount = -1;
         float cachedHeight = 34f;
+        float selectX, selectY, selectW, selectH;
+        float popupScroll;
+        float popupMaxScroll;
+        float popupContentY;
+        float popupContentH;
+        float openAnim;
     }
 
     record OptionLayout(String id, String label, float x, float y, float w) {

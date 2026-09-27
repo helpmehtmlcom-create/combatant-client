@@ -22,13 +22,14 @@ import combatant.client.events.impl.PostPlayerUpdateEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.util.input.KeyManager;
 import combatant.client.util.player.MovementUtil;
 
 @ModuleInfo(
         id = "timer",
         displayName = "Timer",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MOVEMENT, subcategory = ModuleSubcategory.RAGE,
         description = "module.timer.description")
 public class Timer extends Module {
 

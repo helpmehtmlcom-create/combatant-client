@@ -42,6 +42,7 @@ import combatant.client.features.gui.clickgui.layout.screen.settings.implement.r
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.mixins.accessors.InputAccessor;
 import combatant.client.util.screen.ScreenCatalog;
 
@@ -59,7 +60,7 @@ import java.util.Set;
 @ModuleInfo(
         id = "inventorymove",
         displayName = "InventoryMove",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MOVEMENT, subcategory = ModuleSubcategory.BASIC,
         description = "module.inventorymove.description")
 public class InventoryMove extends Module {
 

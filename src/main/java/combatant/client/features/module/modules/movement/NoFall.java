@@ -34,6 +34,7 @@ import combatant.client.events.impl.RotationUpdateEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.mixins.accessors.PlayerInventoryAccessor;
 import combatant.client.mixins.accessors.ServerboundMovePlayerPacketAccessor;
 import combatant.client.util.aiming.RotationManager;
@@ -55,7 +56,7 @@ import java.util.Set;
 @ModuleInfo(
         id = "nofall",
         displayName = "NoFall",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MOVEMENT, subcategory = ModuleSubcategory.BASIC,
         description = "module.nofall.description")
 public class NoFall extends Module {
 

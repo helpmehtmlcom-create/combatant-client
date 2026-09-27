@@ -370,16 +370,10 @@ export class SolidBrowserSurface {
           stateSource: "parent",
           interactive: false,
         }),
-        ...(liquidCategory ? [ui.roundedRect({
-          key: `${key}:indicator`, x: 3, y: height * 0.5 - 1.5, w: 3, h: 3,
-          radius: 1.5, fill: p.accent,
-          fillReactive: {
-            base: p.accent,
-            alphaBase: 0.0,
-            alphaTerms: { hover: 0.16, selected: 0.92 },
-          },
-          stateSource: "parent", interactive: false,
-        })] : []),
+        // No detached accent pill/dot beside the icon. Selection already has a reactive
+        // surface + accent icon/text, which is cleaner inside the liquid navigation plane.
+        // The Java MainSettings host uses a clipped edge strip where a stronger locator is useful.
+
         ...(icon ? [SolidBrowserSurface._placeVisual(icon, t.navItemPadding, (height - t.navIconSize) * 0.5, t.navIconSize, t.navIconSize, {
           tintReactive: {
             base: p.foreground,

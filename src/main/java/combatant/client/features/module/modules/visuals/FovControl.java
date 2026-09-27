@@ -13,13 +13,14 @@ import combatant.client.config.values.NumberValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 
 import java.util.LinkedHashMap;
 
 @ModuleInfo(
         id = "fovcontrol",
         displayName = "FovControl",
-        category = ModuleCategory.VISUALS,
+        category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.COSMETIC,
         description = "module.fovcontrol.description")
 public class FovControl extends Module {
     private static final String SETTING_USE_CUSTOM_FOV = "use_custom_fov";

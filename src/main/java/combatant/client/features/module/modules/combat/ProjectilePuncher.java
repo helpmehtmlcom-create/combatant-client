@@ -25,6 +25,7 @@ import combatant.client.events.impl.RotationUpdateEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.util.aiming.RotationManager;
 import combatant.client.util.aiming.RotationTarget;
 import combatant.client.util.aiming.data.Rotation;
@@ -50,7 +51,7 @@ import java.util.Map;
 @ModuleInfo(
         id = "projectilepuncher",
         displayName = "ProjectilePuncher",
-        category = ModuleCategory.COMBAT,
+        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.PROTECT,
         description = "module.projectilepuncher.description")
 public final class ProjectilePuncher extends Module {
 

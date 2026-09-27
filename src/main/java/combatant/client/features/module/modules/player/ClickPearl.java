@@ -16,6 +16,7 @@ import net.minecraft.world.item.Items;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.mixins.accessors.PlayerInventoryAccessor;
 import combatant.client.util.player.ResetAttackCooldown;
 import combatant.client.util.player.inventory.InventorySwap;
@@ -23,7 +24,7 @@ import combatant.client.util.player.inventory.InventorySwap;
 @ModuleInfo(
         id = "clickpearl",
         displayName = "ClickPearl",
-        category = ModuleCategory.PLAYER,
+        category = ModuleCategory.PLAYER, subcategory = ModuleSubcategory.AUTOMATION,
         description = "module.clickpearl.description")
 public class ClickPearl extends Module {
     private static final String ACTION_CLICKPEARL = "clickpearl";

@@ -13,6 +13,7 @@ import combatant.client.api.v0.clickgui.CombatantClickGuiSection;
 import combatant.client.features.gui.hud.AbstractHudElement;
 import combatant.client.features.gui.hud.draggable.DraggableHudElement;
 import combatant.client.features.module.Module;
+import combatant.client.features.module.ModuleCategory;
 import combatant.client.api.v0.module.CombatantModuleExtension;
 import combatant.client.api.v0.render.CombatantPostProcessCallback;
 import combatant.client.api.v0.render.CombatantRenderCallback;
@@ -32,8 +33,19 @@ public interface CombatantAddonContext extends CombatantAddonRuntimeContext {
     Path configDir();
     @UsedImplicitly
     Path addonConfigDir();
+    /**
+     * Registers an addon-owned second-level module category. The id is local to this addon and
+     * primary module category; Combatant namespaces it internally, so ids may be reused safely.
+     */
+    @UsedImplicitly
+    boolean registerModuleSubcategory(ModuleCategory category, String subcategoryId, String displayName);
+
     @UsedImplicitly
     void registerModule(Module module);
+
+    /** Registers a module and explicitly assigns it to an addon-owned subcategory. */
+    @UsedImplicitly
+    void registerModule(Module module, String subcategoryId);
     @UsedImplicitly
     void registerDraggableHudElement(DraggableHudElement element);
     @UsedImplicitly

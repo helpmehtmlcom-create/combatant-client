@@ -12,6 +12,7 @@ import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.ModeValue;
 import combatant.client.config.values.NumberValue;
 import combatant.client.config.values.RGBColorValue;
+import combatant.client.features.theme.Theme;
 
 import java.util.List;
 
@@ -52,6 +53,15 @@ public final class MapUiConfig extends SubsystemConfig {
 
     public int customArrowColorArgb() {
         return arrowCustomColor.getArgb();
+    }
+
+    /**
+     * Canonical player-arrow color used by both Combatant's world-map arrow and Xaero's native minimap arrow.
+     * RGB is controlled by Theme/Custom here; renderer-specific opacity remains owned by the renderer.
+     */
+    public int resolvedArrowColorArgb() {
+        int color = isCustomArrowColor() ? arrowCustomColor.getArgb() : Theme.theme().accent();
+        return 0xFF000000 | (color & 0x00FFFFFF);
     }
 
     public boolean advancedPlayerMarkers() {

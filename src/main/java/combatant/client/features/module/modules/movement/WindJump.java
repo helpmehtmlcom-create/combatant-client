@@ -28,6 +28,7 @@ import combatant.client.events.impl.PlayerJumpEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.combat.TPSSync;
 import combatant.client.mixins.accessors.PlayerInventoryAccessor;
@@ -39,7 +40,7 @@ import combatant.client.util.player.simulation.PlayerSimulationCache;
 @ModuleInfo(
         id = "windjump",
         displayName = "WindJump",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MOVEMENT, subcategory = ModuleSubcategory.BASIC,
         description = "module.windjump.description")
 public class WindJump extends Module {
 

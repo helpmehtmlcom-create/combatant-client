@@ -59,6 +59,7 @@ import combatant.client.events.impl.*;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.mixins.accessors.ClientboundExplodePacketAccessor;
 import combatant.client.mixins.accessors.ClientboundSetEntityMotionPacketAccessor;
 import combatant.client.util.aiming.RotationManager;
@@ -76,7 +77,7 @@ import java.util.concurrent.ThreadLocalRandom;
 @ModuleInfo(
         id = "velocity",
         displayName = "Velocity",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MOVEMENT, subcategory = ModuleSubcategory.RAGE,
         description = "module.velocity.description")
 public final class Velocity extends Module {
 

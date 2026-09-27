@@ -31,6 +31,7 @@ import combatant.client.events.impl.PlayerStepSuccessEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.util.player.MovementUtil;
 
 import java.util.LinkedHashMap;
@@ -40,7 +41,7 @@ import java.util.Map;
 @ModuleInfo(
         id = "step",
         displayName = "Step",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MOVEMENT, subcategory = ModuleSubcategory.RAGE,
         description = "module.step.description")
 public final class Step extends Module {
 

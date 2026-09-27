@@ -14,11 +14,12 @@ import combatant.client.events.impl.LightmapModifyEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 
 @ModuleInfo(
         id = "fullbright",
         displayName = "FullBright",
-        category = ModuleCategory.VISUALS,
+        category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.COSMETIC,
         description = "module.fullbright.description")
 public class FullBright extends Module {
 

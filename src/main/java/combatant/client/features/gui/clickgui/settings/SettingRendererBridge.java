@@ -228,6 +228,34 @@ enum SettingRendererBridge {
             SystemCursor.set(SystemCursor.CursorType.NOT_ALLOWED);
         }
 
+        if (UnifiedSettingsSkin.modernSettings()) {
+            float inset = UnifiedSettingsSkin.modernMetric(1.0f, 1.0f);
+            float radius = UnifiedSettingsSkin.controlRadius();
+            float veilX = x + inset;
+            float veilY = y + inset;
+            float veilW = Math.max(1.0f, w - inset * 2.0f);
+            float veilH = Math.max(1.0f, h - inset * 2.0f);
+            ClickGuiRenderer.drawRoundedRect(veilX, veilY, veilW, veilH, radius, hovered ? 0x71070809 : 0x59070809);
+
+            TextRenderer textFont = UnifiedSettingsSkin.fontMedium();
+            float textSize = UnifiedSettingsSkin.modernMetric(11.0f, 11.0f);
+            float iconSize = UnifiedSettingsSkin.modernMetric(13.0f, 13.0f);
+            TextRenderer iconFont = BuiltinFontCatalog.ICONS.renderer(textFont);
+            float rightPad = UnifiedSettingsSkin.modernMetric(7.0f, 7.0f);
+            float iconW = ClickGuiRenderer.textWidth(iconFont, ICON_WARN, iconSize);
+            float reasonMax = Math.max(24.0f, Math.min(w * 0.42f, w - iconW - rightPad * 3.0f));
+            String fitted = UnifiedSettingsSkin.fit(textFont, reason, textSize, reasonMax);
+            float tw = ClickGuiRenderer.textWidth(textFont, fitted, textSize);
+            float ty = y + (h - ClickGuiRenderer.textHeight(textFont, textSize)) * 0.5f;
+            float tx = x + w - rightPad - tw;
+            float iy = y + (h - ClickGuiRenderer.textHeight(iconFont, iconSize)) * 0.5f;
+            float ix = tx - iconW - UnifiedSettingsSkin.modernMetric(4.0f, 4.0f);
+            int color = UnifiedSettingsSkin.withAlpha(UnifiedSettingsSkin.TEXT_MUTED, hovered ? 245 : 205);
+            ClickGuiRenderer.drawText(iconFont, ICON_WARN, ix, iy, iconSize, color, false);
+            ClickGuiRenderer.drawText(textFont, fitted, tx, ty, textSize, color, false);
+            return;
+        }
+
         float inset = UnifiedSettingsSkin.metric(2.0f, 2.0f);
         float radius = UnifiedSettingsSkin.metric(7.0f, 4.5f);
         int veil = hovered ? 0x7A050607 : 0x63050607;

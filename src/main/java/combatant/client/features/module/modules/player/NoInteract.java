@@ -11,13 +11,14 @@ import combatant.client.config.values.BooleanValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.combat.KillAura;
 
 @ModuleInfo(
         id = "nointeract",
         displayName = "NoInteract",
-        category = ModuleCategory.PLAYER,
+        category = ModuleCategory.PLAYER, subcategory = ModuleSubcategory.AUTOMATION,
         description = "module.nointeract.description")
 public final class NoInteract extends Module {
     private final BooleanValue onlyKillAura = bool("only_kill_aura", true);

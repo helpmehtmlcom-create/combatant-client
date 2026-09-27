@@ -19,6 +19,7 @@ import combatant.client.events.impl.EventSync;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.util.combat.AttackUtil;
 import combatant.client.util.item.FoodUtil;
 
@@ -28,7 +29,7 @@ import java.util.LinkedHashMap;
         id = "rubberhand",
         displayName = "RubberHand",
         aliases = "MultiActions",
-        category = ModuleCategory.COMBAT,
+        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.ATTACK,
         description = "module.rubberhand.description")
 public class RubberHand extends Module {
 

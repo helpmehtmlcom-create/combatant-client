@@ -13,12 +13,13 @@ import combatant.client.config.values.NumberValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Modules;
 
 @ModuleInfo(
         id = "aspectratio",
         displayName = "AspectRatio",
-        category = ModuleCategory.VISUALS,
+        category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.COSMETIC,
         description = "module.aspectratio.description")
 public final class AspectRatio extends Module {
     private static final float EPSILON = 1.0e-4f;

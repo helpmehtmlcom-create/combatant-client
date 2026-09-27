@@ -25,7 +25,6 @@
       "underwater_fog",
       "shaderpack_motion_blur_suppression",
       "combatant_taa_replacement",
-      "combatant_taa_ssr_stabilization",
       "combatant_msaa_replacement",
       "aa_option_policy",
       "custom_geometry_gbuffer",
@@ -137,9 +136,14 @@
       "marker": "combatantAaReprojectionOffset"
     },
     {
+      "path": "/include/misc/raytracer.glsl",
+      "patch": "ssr_stable_raymarch.patch",
+      "marker": "combatantSsrDepthTexel"
+    },
+    {
       "path": "/include/lighting/specular_lighting.glsl",
-      "patch": "ssr_reprojection.patch",
-      "marker": "combatantAaSsrStableHitReprojection"
+      "patch": "ssr_temporal_sampling.patch",
+      "marker": "COMBATANT_SSR_TEMPORAL_STABILITY"
     },
     {
       "path": "/program/gbuffers_all_solid.vsh",

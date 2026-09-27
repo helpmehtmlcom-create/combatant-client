@@ -22,6 +22,7 @@ import combatant.client.events.impl.PacketEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.modules.visuals.damage.DamageFeedbackState;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
@@ -30,7 +31,7 @@ import combatant.client.render.engine.postprocess.PostProcessPass;
 import combatant.client.render.engine.renderer.FullScreenRenderer;
 import combatant.client.render.engine.uniform.impl.DamageTintUniforms;
 
-@ModuleInfo(id = "damagetint", displayName = "DamageTint", category = ModuleCategory.VISUALS,
+@ModuleInfo(id = "damagetint", displayName = "DamageTint", category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.COSMETIC,
         description = "module.damagetint.description")
 public class DamageTint extends Module implements PostProcessPass {
 

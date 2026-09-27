@@ -25,11 +25,12 @@ import combatant.client.features.playeranimator.PlayerAnimator;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 
 /**
  * ViewModel: mini items + custom swing animations
  */
-@ModuleInfo(id = "viewmodel", displayName = "ViewModel", category = ModuleCategory.VISUALS,
+@ModuleInfo(id = "viewmodel", displayName = "ViewModel", category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.COSMETIC,
         description = "module.viewmodel.description")
 public class ViewModel extends Module {
 

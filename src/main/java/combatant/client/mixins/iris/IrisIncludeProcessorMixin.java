@@ -12,18 +12,24 @@ import com.llamalad7.mixinextras.injector.ModifyReturnValue;
 import net.irisshaders.iris.Iris;
 import net.irisshaders.iris.shaderpack.include.AbsolutePackPath;
 import net.irisshaders.iris.shaderpack.include.IncludeProcessor;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import combatant.client.render.iris.patch.ShaderPatchEngine;
 import combatant.client.util.logging.DebugLog;
 
+import java.util.Map;
 import java.util.Objects;
 
 @Pseudo
 @Mixin(value = IncludeProcessor.class, remap = false)
 public abstract class IrisIncludeProcessorMixin {
+    @Shadow
+    @Final
+    private Map<AbsolutePackPath, ImmutableList<String>> cache;
     @Unique
     private ShaderPatchEngine.Session combatant$patchSession;
     @Unique
@@ -67,7 +73,22 @@ public abstract class IrisIncludeProcessorMixin {
         return combatant$patchSession.patch(
                 path.getPathString(),
                 lines,
-                candidate -> processor.getIncludedFile(AbsolutePackPath.fromAbsolutePath(candidate))
+                candidate -> combatant$loadPreflightSource(processor, candidate)
         );
+    }
+
+    @Unique
+    private ImmutableList<String> combatant$loadPreflightSource(IncludeProcessor processor, String candidate) {
+        try {
+            return processor.getIncludedFile(AbsolutePackPath.fromAbsolutePath(candidate));
+        } finally {
+            // Session preflight intentionally suppresses patch application while it expands every
+            // declared target. IncludeProcessor caches that expanded source before our RETURN hook.
+            // Leaving those entries alive makes a cached parent permanently embed pristine nested
+            // includes, so targets such as Photon raytracer.glsl are never visited during the real
+            // shader compile. Preflight is observational: discard all cache entries it populated so
+            // the actual compile traverses the include graph again with patch application enabled.
+            cache.clear();
+        }
     }
 }

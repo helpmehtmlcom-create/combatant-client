@@ -23,6 +23,7 @@ import combatant.client.config.values.NumberValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Notifier;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.player.AutoTotem;
@@ -32,7 +33,7 @@ import combatant.client.util.pvp.client.CooldownsState;
 @ModuleInfo(
         id = "ktleave",
         displayName = "KTLeave",
-        category = ModuleCategory.COMBAT,
+        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.PROTECT,
         description = "module.ktleave.description")
 public final class KTLeave extends Module {
     private static final String ACTION_LEAVE = "leave";

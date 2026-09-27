@@ -20,6 +20,7 @@ import combatant.client.config.values.*;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.mixininterface.IEntity;
 import combatant.client.mixins.accessors.PersistentProjectileEntityAccessor;
@@ -39,7 +40,7 @@ import java.awt.*;
 import java.util.*;
 import java.util.List;
 
-@ModuleInfo(id = "trails", displayName = "Trails", category = ModuleCategory.VISUALS,
+@ModuleInfo(id = "trails", displayName = "Trails", category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.COSMETIC,
         description = "module.trails.description")
 public class Trails extends Module {
     private static final String SETTING_ONLY_SELF = "only_self";

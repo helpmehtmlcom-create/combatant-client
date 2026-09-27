@@ -19,13 +19,14 @@ import combatant.client.events.impl.FireworkEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.util.aiming.RotationManager;
 import combatant.client.util.aiming.data.Rotation;
 
 @ModuleInfo(
         id = "superfirework",
         displayName = "SuperFirework",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MOVEMENT, subcategory = ModuleSubcategory.RAGE,
         description = "module.superfirework.description")
 public class SuperFirework extends Module {
 

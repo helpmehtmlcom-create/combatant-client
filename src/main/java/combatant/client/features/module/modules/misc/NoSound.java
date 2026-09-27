@@ -12,6 +12,7 @@ import combatant.client.features.gui.clickgui.settings.TextListSetting;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 
 import java.util.Locale;
 import java.util.Set;
@@ -19,7 +20,7 @@ import java.util.Set;
 @ModuleInfo(
         id = "nosound",
         displayName = "NoSound",
-        category = ModuleCategory.MISC,
+        category = ModuleCategory.MISC, subcategory = ModuleSubcategory.CLIENT,
         description = "module.nosound.description")
 public class NoSound extends Module {
     private static final String SETTING_SOUND_IDS = "sound_ids";

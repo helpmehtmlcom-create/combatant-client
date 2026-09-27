@@ -15,6 +15,7 @@ import combatant.client.features.gui.clickgui.settings.TextListSetting;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.util.player.inventory.InventorySwap;
 
 import java.util.ArrayList;
@@ -23,7 +24,7 @@ import java.util.List;
 @ModuleInfo(
         id = "shitdropper",
         displayName = "ShitDropper",
-        category = ModuleCategory.PLAYER,
+        category = ModuleCategory.PLAYER, subcategory = ModuleSubcategory.AUTOMATION,
         description = "module.shitdropper.description")
 public class ShitDropper extends Module {
 

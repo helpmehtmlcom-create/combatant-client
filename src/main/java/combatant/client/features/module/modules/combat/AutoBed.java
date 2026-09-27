@@ -16,6 +16,7 @@ import combatant.client.events.impl.RotationUpdateEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.features.module.modules.combat.autobed.*;
 import combatant.client.render.engine.RenderState;
@@ -64,7 +65,7 @@ import java.util.concurrent.ConcurrentHashMap;
         id = "autobed",
         displayName = "AutoBed",
         aliases = {"BedAura", "Bed"},
-        category = ModuleCategory.COMBAT,
+        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.ATTACK,
         description = "module.autobed.description")
 public class AutoBed extends Module {
     private static final int ROTATION_PRIORITY = 33;

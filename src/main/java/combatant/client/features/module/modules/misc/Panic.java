@@ -13,6 +13,7 @@ import combatant.client.features.gui.clickgui.settings.FunctionBindSetting;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.RuntimeControlModule;
 import combatant.client.runtime.ClientRuntime;
 import combatant.client.runtime.ClientRuntimeState;
@@ -21,7 +22,7 @@ import combatant.client.runtime.RuntimeDiagnostics;
 @ModuleInfo(
         id = "panic",
         displayName = "Panic", aliases = {"selfdestruct"},
-        category = ModuleCategory.MISC,
+        category = ModuleCategory.MISC, subcategory = ModuleSubcategory.UTILITY,
         enabledByDefault = true,
         description = "module.panic.description")
 public final class Panic extends Module implements RuntimeControlModule {

@@ -24,6 +24,7 @@ import combatant.client.config.values.RGBAColorValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
@@ -37,7 +38,7 @@ import combatant.client.util.network.BacktrackController;
 @ModuleInfo(
         id = "backtrack",
         displayName = "Backtrack",
-        category = ModuleCategory.COMBAT,
+        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.LEGIT,
         description = "module.backtrack.description")
 public final class Backtrack extends Module {
 

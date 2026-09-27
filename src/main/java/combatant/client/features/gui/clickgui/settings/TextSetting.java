@@ -81,7 +81,9 @@ public class TextSetting extends Setting implements TextEditorOwner {
     static final class UiState {
         final TextSelection editSelection = new TextSelection();
         float fieldX, fieldY, fieldW, fieldH;
+        float lastW;
         float textX, textY, textSize;
+        float textVisibleW;
         float textScroll;
         float hoverAnim;
         float focusAnim;

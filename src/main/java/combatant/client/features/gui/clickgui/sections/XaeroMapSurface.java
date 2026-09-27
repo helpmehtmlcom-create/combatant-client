@@ -15,7 +15,6 @@ import combatant.client.features.map.location.PlayerLocationSource;
 import combatant.client.features.relations.CategoryService;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.gui.clickgui.layout.screen.settings.SettingsGuiPalette;
-import combatant.client.features.theme.Theme;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.ui.UiBlurResources;
 import combatant.client.render.engine.renderer.ui.UiDeferredScheduler;
@@ -1040,8 +1039,7 @@ final class XaeroMapSurface {
     }
 
     private static int arrowColor() {
-        MapUiConfig config = MapUiConfig.get();
-        return config.isCustomArrowColor() ? config.customArrowColorArgb() : Theme.theme().accent();
+        return MapUiConfig.get().resolvedArrowColorArgb();
     }
 
     private XaeroMapSettingsPanel ensureSettings() {

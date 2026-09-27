@@ -10,6 +10,7 @@ package combatant.client.features.module.modules.player;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 
 /**
  * Keeps items in the 2x2 crafting grid or cursor when closing inventory (no drops).
@@ -17,7 +18,7 @@ import combatant.client.features.module.ModuleInfo;
 @ModuleInfo(
         id = "xcarry",
         displayName = "XCarry",
-        category = ModuleCategory.PLAYER,
+        category = ModuleCategory.PLAYER, subcategory = ModuleSubcategory.EXPLOIT,
         description = "module.xcarry.description")
 public class XCarry extends Module {
 }

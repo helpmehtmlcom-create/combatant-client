@@ -214,6 +214,7 @@
     "WaterFogEnvironmentMixin",
     "WeatherEffectRendererMixin",
     "xaero.minimap.AbstractWaypointRenderProviderMixin",
+    "xaero.minimap.MinimapRendererMixin",
     "xaero.worldmap.WaypointRenderProviderMixin",
     "xaero.worldmap.WorldMapWaypointAccessor"
   ],

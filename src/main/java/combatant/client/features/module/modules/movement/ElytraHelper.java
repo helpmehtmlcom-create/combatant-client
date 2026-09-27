@@ -30,6 +30,7 @@ import combatant.client.events.impl.MovementInputEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Notifier;
 import combatant.client.util.player.ElytraRecastUtil;
 import combatant.client.util.player.inventory.FireworkUseController;
@@ -39,7 +40,7 @@ import combatant.client.util.pvp.client.CooldownsState;
 @ModuleInfo(
         id = "elytrahelper",
         displayName = "ElytraHelper",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MOVEMENT, subcategory = ModuleSubcategory.BASIC,
         description = "module.elytrahelper.description")
 public class ElytraHelper extends Module {
 

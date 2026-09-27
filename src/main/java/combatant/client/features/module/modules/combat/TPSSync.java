@@ -13,12 +13,13 @@ import combatant.client.config.values.NumberValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.util.player.NetworkStatsUtil;
 
 @ModuleInfo(
         id = "tpssync",
         displayName = "TPSSync",
-        category = ModuleCategory.COMBAT,
+        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.LEGIT,
         description = "module.tpssync.description")
 public class TPSSync extends Module {
 

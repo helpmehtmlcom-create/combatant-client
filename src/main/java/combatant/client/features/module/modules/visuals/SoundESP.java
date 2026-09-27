@@ -19,6 +19,7 @@ import combatant.client.features.module.HudPhase;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.text.RuntimeTextLayout;
@@ -29,7 +30,7 @@ import combatant.client.render.helpers.ScreenProjection;
 import java.util.ArrayList;
 import java.util.List;
 
-@ModuleInfo(id = "soundesp", displayName = "SoundESP", category = ModuleCategory.VISUALS,
+@ModuleInfo(id = "soundesp", displayName = "SoundESP", category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.ESP,
         description = "module.soundesp.description")
 public class SoundESP extends Module {
     private static final String SETTING_NAME_MODE = "name_mode";

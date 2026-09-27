@@ -6,8 +6,8 @@
 @require_hash 9223d9964b40b5bd14e158f2a258762d6bb585a0bd40293426c68b3324e9838a
 
 @insert_before_function main
-#ifndef COMBATANT_FULLBRIGHT_DEFERRED_UNIFORMS_DECLARED
-#define COMBATANT_FULLBRIGHT_DEFERRED_UNIFORMS_DECLARED
+#ifndef COMBATANT_FULLBRIGHT_UNIFORMS_DECLARED
+#define COMBATANT_FULLBRIGHT_UNIFORMS_DECLARED
 uniform bool combatantFullbrightEnabled;
 uniform float combatantFullbrightMinLight;
 uniform float combatantOverrideAmbientLight;

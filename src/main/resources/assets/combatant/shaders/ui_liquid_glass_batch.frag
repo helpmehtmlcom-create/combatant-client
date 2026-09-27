@@ -652,5 +652,6 @@ void main() {
             uBlendTone1
     );
 
+
     fragColor = vec4(clamp(finalColor, 0.0, 1.0), finalAlpha);
 }

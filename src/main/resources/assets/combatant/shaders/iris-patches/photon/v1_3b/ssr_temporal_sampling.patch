@@ -1,0 +1,16 @@
+@patch 2
+@require_function get_specular_reflections
+@require_ident frameCounter
+@require_hash fe81db9c7252db65cd24cf31b352ee8a2d22fab213dbc1b0b55ccbc0cc951006
+
+@insert_after_hash fe81db9c7252db65cd24cf31b352ee8a2d22fab213dbc1b0b55ccbc0cc951006
+    // COMBATANT_SSR_TEMPORAL_STABILITY
+    // Photon rotates the mirror/water SSR march origin every frame. Native Photon
+    // resolves that stochastic motion inside its own temporal contract; Combatant
+    // owns the temporal resolve here, so keep the spatial blue-noise sample but
+    // remove the independent frameCounter rotation from object SSR.
+    if (combatantAaOwner == 2) {
+        dither = texelFetch(noisetex, ivec2(gl_FragCoord.xy) & 511, 0).b;
+    }
+
+@end

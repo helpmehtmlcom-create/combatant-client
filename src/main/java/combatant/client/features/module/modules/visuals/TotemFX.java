@@ -14,6 +14,7 @@ import combatant.client.config.values.NumberValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
@@ -29,7 +30,7 @@ import combatant.client.render.effects.area.WorldAreaPreviewDescriptor;
 import combatant.client.render.effects.kernels.TransientAttackKernels;
 import net.minecraft.world.phys.Vec3;
 
-@ModuleInfo(id = "totemfx", displayName = "TotemFX", category = ModuleCategory.VISUALS,
+@ModuleInfo(id = "totemfx", displayName = "TotemFX", category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.COSMETIC,
         description = "module.totemfx.description")
 public class TotemFX extends Module implements PostProcessPass {
 

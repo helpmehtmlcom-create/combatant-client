@@ -24,13 +24,14 @@ import combatant.client.events.impl.KeyInputEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.visuals.Freecam;
 
 @ModuleInfo(
         id = "airjump",
         displayName = "AirJump",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MOVEMENT, subcategory = ModuleSubcategory.RAGE,
         description = "module.airjump.description")
 public class AirJump extends Module {
 

@@ -81,7 +81,7 @@ import combatant.client.util.player.PlayerHealthResolver;
 
 import java.util.*;
 
-@ModuleInfo(id = "esp", displayName = "ESP", aliases = {"wallhack", "wh", "outline"}, category = ModuleCategory.VISUALS,
+@ModuleInfo(id = "esp", displayName = "ESP", aliases = {"wallhack", "wh", "outline"}, category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.ESP,
         description = "module.esp.description")
 public class ESP extends Module {
 

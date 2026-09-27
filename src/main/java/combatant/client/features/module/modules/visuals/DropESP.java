@@ -30,6 +30,7 @@ import combatant.client.features.module.HudPhase;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.mixininterface.IEntity;
 import combatant.client.render.engine.color.RenderColor;
@@ -52,7 +53,7 @@ import combatant.client.util.item.RarityColorUtil;
 import combatant.client.util.item.TopEnchantUtil;
 import combatant.client.util.text.TextRenderUtil;
 
-@ModuleInfo(id = "dropesp", displayName = "DropESP", category = ModuleCategory.VISUALS,
+@ModuleInfo(id = "dropesp", displayName = "DropESP", category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.ESP,
         description = "module.dropesp.description")
 public class DropESP extends Module {
 

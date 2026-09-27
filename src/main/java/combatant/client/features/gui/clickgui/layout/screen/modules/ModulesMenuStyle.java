@@ -80,6 +80,14 @@ enum ModulesMenuStyle {
         return panelBgGlassDark;
     }
 
+    static int themeAccent() {
+        return themeAccent;
+    }
+
+    static int themeAccentSoft() {
+        return themeAccentSoft;
+    }
+
     static int panelStroke() {
         return panelStroke;
     }

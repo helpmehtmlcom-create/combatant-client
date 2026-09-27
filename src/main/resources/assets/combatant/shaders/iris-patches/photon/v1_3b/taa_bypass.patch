@@ -5,7 +5,11 @@
 @require_ident result
 
 @insert_zone declarations
+#ifndef COMBATANT_AA_UNIFORMS
+#define COMBATANT_AA_UNIFORMS
 uniform int combatantAaOwner;
+uniform vec2 combatantTaaOffset;
+#endif
 
 @end
 

@@ -20,6 +20,7 @@ import combatant.client.config.values.RGBAColorValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.render.engine.TextureStorage;
 import combatant.client.render.engine.animation.AnimatedRenderColors;
@@ -36,7 +37,7 @@ import java.util.List;
 @ModuleInfo(
         id = "jumpcircles",
         displayName = "JumpCircles",
-        category = ModuleCategory.VISUALS,
+        category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.COSMETIC,
         description = "module.jumpcircles.description")
 public class JumpCircles extends Module {
     private final Minecraft mc = Minecraft.getInstance();

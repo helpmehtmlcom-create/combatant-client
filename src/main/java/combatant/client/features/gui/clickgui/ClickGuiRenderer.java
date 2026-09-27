@@ -892,10 +892,14 @@ public enum ClickGuiRenderer {
         float innerH = Math.max(1.0f, tabBarH - outerPad * 2.0f);
         float innerRadius = innerH * 0.5f;
 
-        int outerLeft = scaleAlpha(mixColor(theme().surface(), theme().windowBg(), 0.34f), eased);
-        int outerRight = scaleAlpha(mixColor(theme().surfaceHover(), theme().windowBg(), 0.22f), eased);
-        int outerStrokeLeft = scaleAlpha(mixColor(theme().strokeSoft(), theme().accentSoft(), 0.18f), 0.72f * eased);
-        int outerStrokeRight = scaleAlpha(mixColor(theme().strokeSoft(), theme().textPrimary(), 0.08f), 0.58f * eased);
+        // The category rail is intentionally a translucent glass substrate rather than
+        // another opaque panel. Keep the paint near ~185/255 and let the backdrop blur
+        // carry most of the separation from the world behind it.
+        float outerSurfaceAlpha = 185.0f / 255.0f;
+        int outerLeft = scaleAlpha(mixColor(theme().surface(), theme().windowBg(), 0.34f), outerSurfaceAlpha * eased);
+        int outerRight = scaleAlpha(mixColor(theme().surfaceHover(), theme().windowBg(), 0.22f), outerSurfaceAlpha * eased);
+        int outerStrokeLeft = scaleAlpha(mixColor(theme().strokeSoft(), theme().accentSoft(), 0.18f), 0.50f * eased);
+        int outerStrokeRight = scaleAlpha(mixColor(theme().strokeSoft(), theme().textPrimary(), 0.08f), 0.42f * eased);
 
         int activeLeft = scaleAlpha(mixColor(theme().accentSoft(), theme().accent(), 0.18f), eased);
         int activeRight = scaleAlpha(mixColor(theme().accent(), theme().textPrimary(), 0.08f), eased);
@@ -915,6 +919,16 @@ public enum ClickGuiRenderer {
                 0.965f + 0.035f * eased
         )) {
             if (!islandShell) {
+                // Match the outer shell exactly and drive the ClickGUI blur at full strength.
+                // drawBlur() multiplies by the ClickGUI density scale (1.16) and clamps to 1, so
+                // eased == 1.0 resolves to a true 255/255 blur alpha.
+                flushRenderer();
+                drawBlur(
+                        tabBarX, y, tabBarW, tabBarH, outerRadius,
+                        0xFFFFFFFF,
+                        (255.0f / 255.0f) * eased
+                );
+                flushRenderer();
                 drawRoundedRectShadow(
                         tabBarX,
                         y,
@@ -923,7 +937,7 @@ public enum ClickGuiRenderer {
                         outerRadius,
                         10.0f,
                         1.5f,
-                        scaleAlpha(0xCC000000, 0.34f * eased)
+                        scaleAlpha(0xCC000000, 0.23f * eased)
                 );
                 drawRoundedRectGradient(tabBarX, y, tabBarW, tabBarH, outerRadius, outerLeft, outerRight, 0.0f);
                 drawRoundedRectStrokeGradient(tabBarX, y, tabBarW, tabBarH, outerRadius, 1.0f, outerStrokeLeft, outerStrokeRight, 0.0f);

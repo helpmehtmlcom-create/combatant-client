@@ -37,7 +37,7 @@ import java.util.concurrent.ConcurrentHashMap;
         id = "blockesp",
         displayName = "BlockESP",
         aliases = {"xray", "oreesp", "blocks"},
-        category = ModuleCategory.VISUALS,
+        category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.ESP,
         description = "module.blockesp.description")
 public class BlockESP extends Module {
 

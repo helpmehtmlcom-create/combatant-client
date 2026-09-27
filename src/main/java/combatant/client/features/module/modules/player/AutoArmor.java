@@ -32,6 +32,7 @@ import combatant.client.features.gui.clickgui.settings.TextListSetting;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.util.player.inventory.InventorySwap;
 
 import java.util.Set;
@@ -39,7 +40,7 @@ import java.util.Set;
 @ModuleInfo(
         id = "autoarmor",
         displayName = "AutoArmor",
-        category = ModuleCategory.PLAYER,
+        category = ModuleCategory.PLAYER, subcategory = ModuleSubcategory.AUTOMATION,
         description = "module.autoarmor.description")
 public class AutoArmor extends Module {
 

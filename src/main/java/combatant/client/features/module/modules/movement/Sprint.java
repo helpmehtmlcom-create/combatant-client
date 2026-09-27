@@ -29,6 +29,7 @@ import combatant.client.events.impl.SprintControlEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.player.Scaffold;
 import combatant.client.features.module.modules.visuals.Freecam;
@@ -39,7 +40,7 @@ import combatant.client.util.player.MovementUtil;
 @ModuleInfo(
         id = "sprint",
         displayName = "Sprint",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MOVEMENT, subcategory = ModuleSubcategory.BASIC,
         description = "module.sprint.description")
 public final class Sprint extends Module {
 

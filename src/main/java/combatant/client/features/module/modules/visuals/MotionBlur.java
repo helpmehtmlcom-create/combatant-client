@@ -10,6 +10,7 @@ import combatant.client.config.values.NumberValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Modules;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.core.CombatantWorldMatrices;
@@ -21,7 +22,7 @@ import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 
 /** Motion-vector compute blur extracted from the latest ReimaginedVisual camera-post path. */
-@ModuleInfo(id = "motionblur", displayName = "MotionBlur", category = ModuleCategory.VISUALS,
+@ModuleInfo(id = "motionblur", displayName = "MotionBlur", category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.COSMETIC,
         description = "module.motionblur.description")
 public final class MotionBlur extends Module implements PostProcessPass, PostProcessBackendResourceOwner {
     private final Minecraft mc = Minecraft.getInstance();

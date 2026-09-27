@@ -20,6 +20,7 @@ import combatant.client.config.common.CommonSettingSchemas;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.TextureStorage;
@@ -42,7 +43,7 @@ import java.util.concurrent.ThreadLocalRandom;
 @ModuleInfo(
         id = "worldparticles",
         displayName = "WorldParticles",
-        category = ModuleCategory.VISUALS,
+        category = ModuleCategory.VISUALS, subcategory = ModuleSubcategory.COSMETIC,
         description = "module.worldparticles.description")
 public class WorldParticles extends Module {
     private static final float SPRITE_SIZE_MULTIPLIER = 4.0f;

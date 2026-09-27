@@ -1,17 +1,38 @@
 @patch 2
+@require_function raymarch_depth_buffer
 @require_function trace_specular_ray
+@require_hash d04973eb0a2997e8378bd3dfbab167e646f17d6c6afda68a4d30352789b6bc05
+@require_hash 8d1c02044bd8759b75b866fc9c2cf9a8f8516e622c8461d0560bd62db1572a71
 @require_hash fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa
+
+@insert_before_hash d04973eb0a2997e8378bd3dfbab167e646f17d6c6afda68a4d30352789b6bc05
+    // The ray position carries the ray's approximate Z, while reprojection needs
+    // the actual surface depth selected by the final refinement sample.
+    if (combatantAaOwner == 2) {
+        ray_pos.z = final_depth;
+    }
+@end
 
 @insert_before_function trace_specular_ray 1
 bool combatantAaSsrStableHitReprojection() {
-    // colortex5 contains Combatant's resolved, presentation-aligned history.
-    // Undo the current raster jitter before converting an SSR hit back to view space,
-    // otherwise static geometry is reprojected to a different history UV every frame.
+    // colortex5 is presentation-aligned history when Combatant owns TAA.
     return combatantAaOwner == 2;
+}
+
+float combatantAaSsrRayDither(float spatialNoise) {
+    // Photon normally rotates the SSR raymarch offset every frame. With an
+    // independently resolved TAA history this makes an otherwise static mirror
+    // reflection select a different depth hit each frame. Keep the spatial
+    // distribution, but remove only the temporal rotation for Combatant TAA.
+    return combatantAaOwner == 2 ? spatialNoise : r1(frameCounter, spatialNoise);
 }
 
 @end
 
-@replace_line_hash fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa
+@replace_line_hash 8d1c02044bd8759b75b866fc9c2cf9a8f8516e622c8461d0560bd62db1572a71
+        combatantAaSsrRayDither(
+@end
+
+@replace_line_hash fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa 2
             combatantAaSsrStableHitReprojection()
 @end

@@ -32,6 +32,7 @@ import combatant.client.events.impl.PlayerJumpEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleSubcategory;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -39,7 +40,7 @@ import java.util.Map;
 @ModuleInfo(
         id = "nostun",
         displayName = "NoStun",
-        category = ModuleCategory.MOVEMENT,
+        category = ModuleCategory.MOVEMENT, subcategory = ModuleSubcategory.BASIC,
         description = "module.nostun.description")
 public class NoStun extends Module {
 

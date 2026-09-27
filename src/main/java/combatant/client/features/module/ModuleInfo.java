@@ -27,6 +27,19 @@ public @interface ModuleInfo {
     ModuleCategory category();
 
     /**
+     * Optional second-level grouping for module browsers. Browsers fall back to the default
+     * subcategory of {@link #category()} when this value is omitted or incompatible.
+     */
+    ModuleSubcategory subcategory() default ModuleSubcategory.UNSPECIFIED;
+
+    /**
+     * Optional addon-owned subcategory id. Addons register the id through
+     * {@code CombatantAddonContext.registerModuleSubcategory(...)}. When present on an addon
+     * module it takes precedence over {@link #subcategory()} for ClickGUI grouping.
+     */
+    String subcategoryId() default "";
+
+    /**
      * i18n key for the module description.
      */
     String description() default "";
