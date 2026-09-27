@@ -24,7 +24,9 @@ public final class TemporalAntiAliasingBackend implements AutoCloseable {
     private static final int LOCAL_SIZE = 8;
     private static final float CONTRACT_VERSION = 3.0f;
     private static final Identifier RESOLVE_SHADER = id("temporal/taa_resolve");
+    private static final Identifier RESOLVE_HDR_SHADER = id("temporal/taa_resolve_hdr");
     private static final Identifier PRESENT_SHADER = id("temporal/taa_present");
+    private static final Identifier PRESENT_HDR_SHADER = id("temporal/taa_present_hdr");
 
     private static final Std430StructLayout PARAMS_LAYOUT = Std430StructLayout.builder()
             .member("currentInverseProjection", Std430Type.MAT4)
@@ -58,7 +60,9 @@ public final class TemporalAntiAliasingBackend implements AutoCloseable {
 
     private CombatantRhi owner;
     private RhiComputePipeline resolvePipeline;
+    private RhiComputePipeline resolveHdrPipeline;
     private RhiComputePipeline presentPipeline;
+    private RhiComputePipeline presentHdrPipeline;
     private RhiStorageBuffer paramsBuffer;
     private RhiStorageImage historyColorA;
     private RhiStorageImage historyColorB;
@@ -86,10 +90,18 @@ public final class TemporalAntiAliasingBackend implements AutoCloseable {
                        Matrix4fc previousProjection,
                        Vec3 cameraDelta,
                        boolean externalHistoryValid,
+                       float depthNdcScale,
+                       float depthNdcBias,
+                       float backgroundDepth,
+                       boolean greaterDepthIsCloser,
                        boolean fxaaEnabled,
                        boolean sharpeningEnabled,
                        float sharpeningIntensity) {
         if (!supported(rhi, destination)) throw new IllegalStateException("TAA compute path is unavailable");
+        GpuFormat outputFormat = destination.descriptor().format();
+        if (!supportedOutputFormat(outputFormat)) {
+            throw new IllegalArgumentException("Unsupported TAA output format: " + outputFormat);
+        }
         if (currentColor == null || currentDepth == null || currentView == null || currentProjection == null
                 || previousView == null || previousProjection == null || cameraDelta == null) {
             throw new IllegalArgumentException("TAA bindings are incomplete");
@@ -102,7 +114,6 @@ public final class TemporalAntiAliasingBackend implements AutoCloseable {
         if (resized) historyReady = false;
 
         boolean useHistory = historyReady && externalHistoryValid;
-        boolean zeroToOne = rhi.capabilities().zeroToOneDepth();
         Matrix4f inverseProjection = new Matrix4f(currentProjection).invert();
         Std430Writer writer = new Std430Writer(PARAMS_LAYOUT, 1)
                 .putMat4(0, "currentInverseProjection", inverseProjection)
@@ -111,8 +122,8 @@ public final class TemporalAntiAliasingBackend implements AutoCloseable {
                 .putMat4(0, "previousProjection", previousProjection)
                 .putVec4(0, "cameraDelta", (float) cameraDelta.x, (float) cameraDelta.y, (float) cameraDelta.z, 0.0f)
                 .putVec4(0, "extentAndPolicy", width, height, useHistory ? 1.0f : 0.0f, CONTRACT_VERSION)
-                .putVec4(0, "depthPolicy", zeroToOne ? 1.0f : 2.0f, zeroToOne ? 0.0f : -1.0f,
-                        0.015f, 0.0f)
+                .putVec4(0, "depthPolicy", depthNdcScale, depthNdcBias, backgroundDepth,
+                        greaterDepthIsCloser ? 1.0f : 0.0f)
                 .putVec4(0, "temporalPolicy", 0.35f, 0.10f, 0.25f, 0.0f)
                 .putVec4(0, "presentationPolicy", fxaaEnabled ? 1.0f : 0.0f,
                         sharpeningEnabled ? 1.0f : 0.0f,
@@ -133,7 +144,7 @@ public final class TemporalAntiAliasingBackend implements AutoCloseable {
         GpuSampler nearest = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
         owner.advancedShaders().dispatch(new ComputeDispatchCommand(
                 "Combatant temporal anti-aliasing",
-                resolvePipeline(), groups(width), groups(height), 1,
+                resolvePipeline(outputFormat), groups(width), groups(height), 1,
                 List.of(new StorageBinding(7, paramsBuffer(), 0L, writer.byteSize(), StorageAccess.READ_ONLY)),
                 List.of(
                         new SampledTextureBinding(0, currentColor, linear),
@@ -157,13 +168,13 @@ public final class TemporalAntiAliasingBackend implements AutoCloseable {
                     List.of(), List.of(destination, historyColorWrite)));
 
             if (fxaaEnabled && sharpenActive) {
-                ensurePresentationIntermediate(width, height);
+                ensurePresentationIntermediate(width, height, outputFormat);
 
                 writer.putVec4(0, "presentationPolicy", 1.0f, 1.0f,
                         Math.max(0.0f, Math.min(1.0f, sharpeningIntensity)), 1.0f);
                 paramsBuffer().upload(writer.buffer(), 0L);
                 dispatchPresentation("Combatant TAA FXAA", historyColorWrite.view(), currentColor,
-                        presentationIntermediate, width, height, writer.byteSize(), linear, nearest);
+                        presentationIntermediate, width, height, writer.byteSize(), linear, nearest, outputFormat);
 
                 owner.advancedShaders().barrier(new RhiResourceBarrier(
                         RhiResourceBarrier.Stage.COMPUTE, RhiResourceBarrier.Access.WRITE,
@@ -174,7 +185,7 @@ public final class TemporalAntiAliasingBackend implements AutoCloseable {
                         Math.max(0.0f, Math.min(1.0f, sharpeningIntensity)), 2.0f);
                 paramsBuffer().upload(writer.buffer(), 0L);
                 dispatchPresentation("Combatant TAA CAS", presentationIntermediate.view(), currentColor,
-                        destination, width, height, writer.byteSize(), linear, nearest);
+                        destination, width, height, writer.byteSize(), linear, nearest, outputFormat);
             } else {
                 float mode = fxaaEnabled ? 1.0f : 2.0f;
                 writer.putVec4(0, "presentationPolicy", fxaaEnabled ? 1.0f : 0.0f,
@@ -183,7 +194,7 @@ public final class TemporalAntiAliasingBackend implements AutoCloseable {
                 paramsBuffer().upload(writer.buffer(), 0L);
                 dispatchPresentation(fxaaEnabled ? "Combatant TAA FXAA" : "Combatant TAA CAS",
                         historyColorWrite.view(), currentColor, destination,
-                        width, height, writer.byteSize(), linear, nearest);
+                        width, height, writer.byteSize(), linear, nearest, outputFormat);
             }
         }
         owner.advancedShaders().barrier(new RhiResourceBarrier(
@@ -203,10 +214,11 @@ public final class TemporalAntiAliasingBackend implements AutoCloseable {
                                       int height,
                                       int paramsBytes,
                                       GpuSampler linear,
-                                      GpuSampler nearest) {
+                                      GpuSampler nearest,
+                                      GpuFormat outputFormat) {
         owner.advancedShaders().dispatch(new ComputeDispatchCommand(
                 label,
-                presentPipeline(), groups(width), groups(height), 1,
+                presentPipeline(outputFormat), groups(width), groups(height), 1,
                 List.of(new StorageBinding(7, paramsBuffer(), 0L, paramsBytes, StorageAccess.READ_ONLY)),
                 List.of(
                         new SampledTextureBinding(0, resolvedColor, linear),
@@ -216,15 +228,15 @@ public final class TemporalAntiAliasingBackend implements AutoCloseable {
         ));
     }
 
-    private void ensurePresentationIntermediate(int width, int height) {
+    private void ensurePresentationIntermediate(int width, int height, GpuFormat format) {
         if (presentationIntermediate != null
                 && presentationIntermediate.descriptor().width() == width
-                && presentationIntermediate.descriptor().height() == height) {
+                && presentationIntermediate.descriptor().height() == height
+                && presentationIntermediate.descriptor().format() == format) {
             return;
         }
         presentationIntermediate = close(presentationIntermediate);
-        presentationIntermediate = image("combatant-taa-presentation-intermediate",
-                width, height, GpuFormat.RGBA8_UNORM);
+        presentationIntermediate = image("combatant-taa-presentation-intermediate", width, height, format);
     }
 
     private boolean ensureHistoryImages(int width, int height) {
@@ -253,7 +265,14 @@ public final class TemporalAntiAliasingBackend implements AutoCloseable {
         return paramsBuffer;
     }
 
-    private RhiComputePipeline resolvePipeline() {
+    private RhiComputePipeline resolvePipeline(GpuFormat outputFormat) {
+        if (outputFormat == GpuFormat.RGBA16_FLOAT) {
+            if (resolveHdrPipeline == null) {
+                resolveHdrPipeline = owner.advancedShaders().createComputePipeline(new ComputePipelineDescriptor(
+                        "combatant-temporal-aa-hdr", RESOLVE_HDR_SHADER, RESOLVE_LAYOUT));
+            }
+            return resolveHdrPipeline;
+        }
         if (resolvePipeline == null) {
             resolvePipeline = owner.advancedShaders().createComputePipeline(new ComputePipelineDescriptor(
                     "combatant-temporal-aa", RESOLVE_SHADER, RESOLVE_LAYOUT));
@@ -261,12 +280,23 @@ public final class TemporalAntiAliasingBackend implements AutoCloseable {
         return resolvePipeline;
     }
 
-    private RhiComputePipeline presentPipeline() {
+    private RhiComputePipeline presentPipeline(GpuFormat outputFormat) {
+        if (outputFormat == GpuFormat.RGBA16_FLOAT) {
+            if (presentHdrPipeline == null) {
+                presentHdrPipeline = owner.advancedShaders().createComputePipeline(new ComputePipelineDescriptor(
+                        "combatant-temporal-aa-present-hdr", PRESENT_HDR_SHADER, PRESENT_LAYOUT));
+            }
+            return presentHdrPipeline;
+        }
         if (presentPipeline == null) {
             presentPipeline = owner.advancedShaders().createComputePipeline(new ComputePipelineDescriptor(
                     "combatant-temporal-aa-present", PRESENT_SHADER, PRESENT_LAYOUT));
         }
         return presentPipeline;
+    }
+
+    private static boolean supportedOutputFormat(GpuFormat format) {
+        return format == GpuFormat.RGBA8_UNORM || format == GpuFormat.RGBA16_FLOAT;
     }
 
     private void ensureOwner(CombatantRhi rhi) {
@@ -291,7 +321,9 @@ public final class TemporalAntiAliasingBackend implements AutoCloseable {
 
     private void closeOwned() {
         resolvePipeline = close(resolvePipeline);
+        resolveHdrPipeline = close(resolveHdrPipeline);
         presentPipeline = close(presentPipeline);
+        presentHdrPipeline = close(presentHdrPipeline);
         paramsBuffer = close(paramsBuffer);
         presentationIntermediate = close(presentationIntermediate);
         closeHistoryImages();

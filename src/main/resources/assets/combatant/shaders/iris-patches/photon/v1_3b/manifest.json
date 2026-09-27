@@ -40,9 +40,24 @@
       "msaaReplacement": true
     },
     "options": {
-      "aa": ["TAA", "TAAU", "TAAU_RENDER_SCALE", "FXAA", "CAS", "CAS_INTENSITY"],
-      "motionBlur": ["MOTION_BLUR", "MOTION_BLUR_INTENSITY"],
-      "depthOfField": ["DOF", "DOF_INTENSITY", "DOF_SAMPLES", "DOF_FOCUS"]
+      "aa": [
+        "TAA",
+        "TAAU",
+        "TAAU_RENDER_SCALE",
+        "FXAA",
+        "CAS",
+        "CAS_INTENSITY"
+      ],
+      "motionBlur": [
+        "MOTION_BLUR",
+        "MOTION_BLUR_INTENSITY"
+      ],
+      "depthOfField": [
+        "DOF",
+        "DOF_INTENSITY",
+        "DOF_SAMPLES",
+        "DOF_FOCUS"
+      ]
     }
   },
   "targets": [
@@ -82,6 +97,11 @@
       "path": "/include/utility/space_conversion.glsl",
       "patch": "space_conversion.patch",
       "marker": "combatantAaReprojectionOffset"
+    },
+    {
+      "path": "/include/lighting/specular_lighting.glsl",
+      "patch": "ssr_history.patch",
+      "marker": "combatantAaOwner == 2"
     },
     {
       "path": "/program/gbuffers_all_solid.vsh",

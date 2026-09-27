@@ -27,5 +27,5 @@ uniform vec2 combatantTaaOffset;
 @end
 
 @insert_before_ident gl_Position 1
-    if (combatantAaOwner == 2) position_clip.xy += combatantTaaOffset * position_clip.w * 0.66;
+    if (combatantAaOwner == 2) position_clip.xy += taa_offset * position_clip.w * 0.66;
 @end

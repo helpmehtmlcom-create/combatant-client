@@ -74,46 +74,53 @@ void main() {
 
     // Keep the body optically calm; most displacement belongs to the rim, as with a thin glass
     // surface. This avoids fuzzy letter interiors while retaining visible refraction at the edge.
-    float refractPx = 0.28 + rim * 1.66 + hairline * 0.52;
+    float refractPx = 0.34 + rim * 1.84 + hairline * 0.60;
     vec2 refractedUv = clamp(uv + normal * (refractPx / fbSize), vec2(0.001), vec2(0.999));
 
     vec3 cleanScene = texture(u_SceneTexture, refractedUv).rgb;
     vec3 blurredScene = texture(u_BlurTexture, refractedUv).rgb;
-    float clarity = 0.08 + body * 0.07;
+    float clarity = 0.05 + body * 0.05;
     vec3 glass = mix(blurredScene, cleanScene, clarity);
 
-    // Retain source chroma after blur and add only a restrained theme tint. v_Color is animated by
-    // the caller, so the color flow moves through the material without changing glyph geometry.
+    // Keep the optical body neutral. Blend modes must operate on the actual refracted/blurred
+    // material, not on a white-painted source, otherwise NEGATIVE loses the glass information.
     float glassLuma = max(luminance(glass), 1e-4);
-    glass *= mix(1.0, 0.72 / glassLuma, smoothstep(0.72, 1.0, glassLuma) * 0.12);
+    glass *= mix(1.0, 0.72 / glassLuma, smoothstep(0.72, 1.0, glassLuma) * 0.08);
     vec3 tint = clamp(v_Color.rgb, 0.0, 1.0);
-    glass = mix(glass, tint, 0.06 + rim * 0.06);
-
-    float directional = clamp(dot(normal, safeNormalize(vec2(-0.42, 0.91))) * 0.5 + 0.5, 0.0, 1.0);
-    float rimLight = rim * (0.16 + 0.28 * directional);
-    float specular = hairline * (0.13 + 0.24 * directional);
-    glass += mix(vec3(1.0), tint, 0.18) * rimLight;
-    glass += vec3(1.0) * specular;
-
-    // Slight interior haze is sampled from the prepared blur. The blend operator itself is
-    // evaluated against the exact, un-refracted destination sample; refraction belongs to the
-    // source material, not to the destination color used by Photoshop-style blend semantics.
-    glass = mix(glass, blurredScene, 0.08 + (1.0 - body) * 0.12);
+    glass = mix(glass, tint, 0.025 + rim * 0.025);
+    glass = mix(glass, blurredScene, 0.10 + (1.0 - body) * 0.14);
     glass = clamp(glass, 0.0, 1.0);
 
     vec3 backdrop = texture(u_SceneTexture, uv).rgb;
     vec3 blended = combatantResolveBackdropBlend(
             backdrop,
             glass,
-            clamp(v_Color.rgb, 0.0, 1.0),
+            tint,
             uBlendParams,
             uBlendTone0,
             uBlendTone1
     );
 
-    // Alpha is coverage only. Densify the MSDF transition slightly so the negative material reads
-    // as a solid glass glyph while preserving subpixel antialiasing and the original SDF boundary.
-    float denseGlyphAlpha = 1.0 - pow(max(1.0 - glyphAlpha, 0.0), 1.16);
-    float coverage = clamp(denseGlyphAlpha * v_Color.a * (0.84 + rim * 0.10 + hairline * 0.03), 0.0, 1.0);
+    // Glass cues are layered after the color operator. This avoids the gray c <-> (1-c) mix while
+    // keeping a bright SDF rim/specular and a visible refractive edge on top of the negative body.
+    float directional = clamp(dot(normal, safeNormalize(vec2(-0.42, 0.91))) * 0.5 + 0.5, 0.0, 1.0);
+    float rimLight = rim * (0.17 + 0.30 * directional);
+    float specular = hairline * (0.12 + 0.24 * directional);
+    vec3 rimColor = mix(vec3(0.78), vec3(1.0), directional);
+    blended += rimColor * rimLight;
+    blended += vec3(1.0) * specular;
+
+    // A tiny edge-only chromatic split makes refraction legible without tinting the glyph body.
+    vec2 chromaOffset = normal * ((0.42 + rim * 0.66) / fbSize);
+    float chromaMask = rim * 0.16;
+    if (chromaMask > 0.001) {
+        float r = 1.0 - texture(u_SceneTexture, clamp(refractedUv + chromaOffset, vec2(0.001), vec2(0.999))).r;
+        float b = 1.0 - texture(u_SceneTexture, clamp(refractedUv - chromaOffset, vec2(0.001), vec2(0.999))).b;
+        vec3 chroma = vec3(r, blended.g, b);
+        blended = mix(blended, chroma, chromaMask);
+    }
+
+    float denseGlyphAlpha = 1.0 - pow(max(1.0 - glyphAlpha, 0.0), 1.18);
+    float coverage = clamp(denseGlyphAlpha * v_Color.a * (0.84 + rim * 0.12 + hairline * 0.04), 0.0, 0.94);
     color = vec4(clamp(blended, 0.0, 1.0), coverage);
 }

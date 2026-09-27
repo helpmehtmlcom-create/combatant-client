@@ -17,6 +17,7 @@ public record GltfMaterialBinding(
         MaterialSurfaceDescriptor surface,
         float[] baseColorFactor,
         float[] emissiveFactor,
+        float emissiveStrength,
         float normalScale,
         float occlusionStrength,
         AlphaMode alphaMode,

@@ -37,6 +37,10 @@ import combatant.client.render.engine.rhi.resource.RenderResourceManager;
 import combatant.client.render.engine.rhi.resource.RenderResourceStatsSnapshot;
 import combatant.client.render.engine.rhi.uniform.CombatantUniformAllocator;
 import combatant.client.render.engine.scene.spatial.SceneSpatialRegistry;
+import combatant.client.render.engine.scene.instance.SceneInstanceRegistry;
+import combatant.client.render.engine.scene.instance.SceneInstanceStatsSnapshot;
+import combatant.client.render.engine.asset.gltf.gpu.GltfGpuResidencyManager;
+import combatant.client.render.engine.asset.gltf.gpu.GltfGpuResidencyStats;
 import combatant.client.render.engine.scene.spatial.SceneSpatialStatsSnapshot;
 import combatant.client.render.engine.scene.visibility.SceneViewContext;
 import combatant.client.render.engine.scene.visibility.SceneVisibilityService;
@@ -69,6 +73,7 @@ public enum CombatantRenderSystem {
     private static final CombatantUniformAllocator UNIFORMS = new CombatantUniformAllocator();
     private static final SceneSpatialRegistry SCENE_SPATIAL = new SceneSpatialRegistry();
     private static final SceneVisibilityService SCENE_VISIBILITY = new SceneVisibilityService(SCENE_SPATIAL);
+    private static final SceneInstanceRegistry SCENE_INSTANCES = new SceneInstanceRegistry(SCENE_SPATIAL, SCENE_VISIBILITY);
 
     private static CombatantRhi rhi;
     private static BackendKind backendKind = BackendKind.UNKNOWN;
@@ -143,6 +148,7 @@ public enum CombatantRenderSystem {
         try {
             UiBlurResources.onBackendChanged();
             PostProcessManager.releaseBackendResources(previous);
+            GltfGpuResidencyManager.global().releaseBackend(previous);
             previous.close();
         } catch (Throwable t) {
             DebugLog.warnOnChange(
@@ -267,7 +273,8 @@ public enum CombatantRenderSystem {
         if (!frameOpen) {
             frameId++;
             net.minecraft.client.Minecraft minecraft = net.minecraft.client.Minecraft.getInstance();
-            SCENE_SPATIAL.beginWorld(minecraft != null ? minecraft.level : null);
+            SCENE_INSTANCES.beginWorld(minecraft != null ? minecraft.level : null);
+            SCENE_INSTANCES.beginFrame(frameId);
             SCENE_VISIBILITY.beginFrame(frameId);
             UiPipelineTelemetry.beginFrame(frameId);
             activeRhi.stats().setDetailedPipelineStats(TracyProfiler.isEnabled());
@@ -382,6 +389,7 @@ public enum CombatantRenderSystem {
             RenderFrameProfiler.endFrame(rhiSnapshot, uniformStatsSnapshot());
             lifecycle = FrameLifecycle.PRESENTED;
         } finally {
+            SCENE_INSTANCES.endFrame(frameId);
             currentContext = null;
             currentSceneView = null;
             frameOpen = false;
@@ -431,6 +439,18 @@ public enum CombatantRenderSystem {
         return SCENE_SPATIAL;
     }
 
+    public static SceneInstanceRegistry sceneInstances() {
+        return SCENE_INSTANCES;
+    }
+
+    public static SceneInstanceStatsSnapshot sceneInstanceStatsSnapshot() {
+        return SCENE_INSTANCES.statsSnapshot();
+    }
+
+    public static GltfGpuResidencyStats gltfGpuResidencyStatsSnapshot() {
+        return GltfGpuResidencyManager.global().statsSnapshot();
+    }
+
     public static SceneVisibilityService sceneVisibility() {
         return SCENE_VISIBILITY;
     }
@@ -465,6 +485,7 @@ public enum CombatantRenderSystem {
             UiMsaaClipLayer.shutdown();
             UiBlurResources.onBackendChanged();
             PostProcessManager.releaseBackendResources(rhi);
+            GltfGpuResidencyManager.global().releaseBackend(rhi);
             UNIFORMS.close();
             rhi.close();
         } finally {
@@ -475,6 +496,7 @@ public enum CombatantRenderSystem {
             submissionEnded = false;
             lifecycle = FrameLifecycle.IDLE;
             rhi = null;
+            SCENE_INSTANCES.clear();
             SCENE_SPATIAL.clear();
             RenderState.clearContextBackedState();
         }

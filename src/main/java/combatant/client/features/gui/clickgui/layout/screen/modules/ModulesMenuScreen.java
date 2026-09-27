@@ -798,14 +798,14 @@ public final class ModulesMenuScreen {
                 + (1.0f - motionProgress) * 5.5f * scale;
         y = Math.max(areaY + 2.0f * scale, y);
 
-        int negativeGlassColor = withAlpha(0xFFFFFFFF, Math.min(1.0f, alpha * 0.82f));
+        int negativeGlassColor = withAlpha(0xFFFFFFFF, Math.min(1.0f, alpha * 0.84f));
 
         float blendBoundsX = x - 3.0f * scale;
         float blendBoundsY = y - 3.0f * scale;
         float blendBoundsW = textW + 6.0f * scale;
         float blendBoundsH = textH + 6.0f * scale;
         UiRect blendBounds = UiRect.of(blendBoundsX, blendBoundsY, blendBoundsW, blendBoundsH);
-        UiBackdropBlendSpec blend = UiBackdropBlendSpec.negative(0.64f);
+        UiBackdropBlendSpec blend = UiBackdropBlendSpec.negative(1.0f);
         UiBackdropRequest backdrop = UiBackdropRequest.currentTargetGlass(
                 blendBounds,
                 UiBlurQuality.LIQUID_GLASS,

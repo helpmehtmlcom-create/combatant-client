@@ -40,15 +40,10 @@ vec3 combatantBlendMode(vec3 backdrop,
         return backdrop + source - 2.0 * backdrop * source;
     }
     if (mode == 6) { // NEGATIVE
-        // Keep the operator visibly negative, but preserve the optical source strongly enough that
-        // the result still reads as liquid glass instead of a flat painted fill.
-        vec3 invertedGlass = vec3(1.0) - source;
-        vec3 invertedBackdrop = vec3(1.0) - backdrop;
-        vec3 lensEnergy = abs(source - backdrop);
-        vec3 negativeCore = mix(invertedGlass, invertedBackdrop, 0.30);
-        negativeCore += lensEnergy * 0.11;
-        vec3 negative = mix(source, negativeCore, 0.72);
-        return clamp(negative, 0.0, 1.0);
+        // Invert the optical source itself. Do not mix source with its complement: that collapses
+        // toward neutral gray. Blur/refraction remain visible because they are already encoded in
+        // source before the inversion is applied.
+        return vec3(1.0) - source;
     }
     if (mode == 7) { // MONOCHROME
         vec3 opticalBackdrop = mix(backdrop, source, 0.12);

@@ -74,6 +74,8 @@ public enum CombatantRenderPipelines {
     public static final Identifier SHADER_POS_TEX_COLOR_PREMULTIPLIED_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_tex_color_premultiplied.frag");
     public static final Identifier SHADER_POS_TEX_COLOR_PREMULTIPLIED_ANALYTIC_CLIP_FRAG = CombatantShaderSources.analyticClipVariantId(SHADER_POS_TEX_COLOR_PREMULTIPLIED_FRAG);
     public static final Identifier SHADER_RIG_TEXTURED_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/rig_textured.vert");
+    public static final Identifier SHADER_ASSET_COMPAT_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/asset_compat.vert");
+    public static final Identifier SHADER_ASSET_COMPAT_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/asset_compat.frag");
     public static final Identifier SHADER_RIG_ENTITY_CUTOUT_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/rig_entity_cutout.frag");
     public static final Identifier SHADER_RIG_ENTITY_TRANSLUCENT_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/rig_entity_translucent.frag");
     public static final Identifier SHADER_GUI_TEXTURE_LOOKUP_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/gui_texture_lookup.frag");
@@ -206,6 +208,14 @@ public enum CombatantRenderPipelines {
     ));
     public static final RenderPipeline RIG_ENTITY_TRANSLUCENT_NO_DEPTH_WRITE_CULL = add(rigEntityPipeline(
             "rig_entity_translucent_no_depth_write_cull", SHADER_RIG_ENTITY_TRANSLUCENT_FRAG, true, false, true
+    ));
+
+    /** Shaderpack-off/dev correctness path for static imported PBR geometry. */
+    public static final RenderPipeline ASSET_COMPATIBILITY_CULL = add(assetCompatibilityPipeline(
+            "asset_compatibility_cull", true
+    ));
+    public static final RenderPipeline ASSET_COMPATIBILITY_DOUBLE_SIDED = add(assetCompatibilityPipeline(
+            "asset_compatibility_double_sided", false
     ));
 
 
@@ -1923,6 +1933,26 @@ public enum CombatantRenderPipelines {
     public static boolean isRigPipeline(RenderPipeline pipeline) {
         return pipeline != null
                 && pipeline.getVertexFormatBinding(0) == CombatantVertexFormats.RIG_POSITION_TEXTURE_NORMAL_COLOR_BONES_DEFORM;
+    }
+
+    private static RenderPipeline assetCompatibilityPipeline(String path, boolean cull) {
+        return new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
+                .withUniform("AssetMaterial", UniformType.UNIFORM_BUFFER)
+                .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/" + path))
+                .withDomain(PipelineDomain.WORLD)
+                .withVertexFormat(CombatantVertexFormats.ASSET_PBR_STATIC,
+                        com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+                .withVertexShader(SHADER_ASSET_COMPAT_VERT)
+                .withFragmentShader(SHADER_ASSET_COMPAT_FRAG)
+                .withSampler("u_BaseColor")
+                .withSampler("u_MetallicRoughness")
+                .withSampler("u_Normal")
+                .withSampler("u_Occlusion")
+                .withSampler("u_Emissive")
+                .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
+                .withDepthWrite(true)
+                .withCull(cull)
+                .build();
     }
 
     private static RenderPipeline rigEntityPipeline(String path, Identifier fragmentShader, boolean cull,

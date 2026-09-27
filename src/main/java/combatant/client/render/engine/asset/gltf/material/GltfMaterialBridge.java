@@ -91,6 +91,7 @@ public final class GltfMaterialBridge {
                 surface,
                 material.baseColor(),
                 material.emissive(),
+                material.emissiveStrength(),
                 material.normalScale(),
                 material.occlusionStrength(),
                 material.alphaMode(),

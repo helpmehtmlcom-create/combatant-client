@@ -16,6 +16,7 @@ import com.mojang.blaze3d.textures.GpuTextureView;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
+import org.joml.Matrix4fc;
 
 /** Canonical production TAA pass. MSAA/TAA exclusivity is owned by VisualConfig.
  *  Native-resolution reprojection intentionally reconstructs the current jittered screen sample
@@ -71,31 +72,53 @@ public final class TemporalAntiAliasingPass implements PostProcessPass, PostProc
             return false;
         }
 
-        return renderResources(execution.rhi(), execution.destinationStorage(), execution.source(),
-                execution.context().mainDepth());
+        CombatantRhi rhi = execution.rhi();
+        boolean zeroToOne = rhi.capabilities().zeroToOneDepth();
+        return renderResources(rhi, execution.destinationStorage(), execution.source(),
+                execution.context().mainDepth(),
+                CombatantWorldMatrices.positionMatrix(),
+                CombatantWorldMatrices.unjitteredRenderProjectionMatrix(),
+                CombatantWorldMatrices.cameraPosition(),
+                zeroToOne ? 1.0f : 2.0f, zeroToOne ? 0.0f : -1.0f,
+                0.0f, true);
     }
 
     /** Runs the canonical TAA backend at a shaderpack-owned HDR stage. */
     public boolean renderShaderpack(CombatantRhi rhi,
                                     RhiStorageImage destination,
                                     GpuTextureView currentColor,
-                                    GpuTextureView currentDepth) {
+                                    GpuTextureView currentDepth,
+                                    Matrix4fc currentView,
+                                    Matrix4fc currentProjection,
+                                    Vec3 currentCamera) {
         if (!MainConfig.get().isTaaRuntimeActive() || !IrisRuntime.isShaderpackRendererActive()
                 || !computeSupported || rhi == null || destination == null
                 || currentColor == null || currentDepth == null) {
             invalidateHistory();
             return false;
         }
-        return renderResources(rhi, destination, currentColor, currentDepth);
+        // Iris presents depthtex* to shaderpacks as forward depth by rewriting depth reads to
+        // (1 - rawDepth), while the physical GPU depth texture remains Minecraft reverse-Z.
+        // CapturedRenderingState.gbufferProjection has reverse-Z already undone and therefore
+        // expects forward [-1, 1] NDC. Convert raw reverse-Z depth with: z = 1 - 2 * rawDepth.
+        return renderResources(rhi, destination, currentColor, currentDepth,
+                currentView, currentProjection, currentCamera,
+                -2.0f, 1.0f, 0.0f, true);
     }
 
     private boolean renderResources(CombatantRhi rhi,
                                     RhiStorageImage destination,
                                     GpuTextureView currentColor,
-                                    GpuTextureView currentDepth) {
-        Matrix4f currentView = CombatantWorldMatrices.positionMatrix();
-        Matrix4f currentProjection = CombatantWorldMatrices.unjitteredRenderProjectionMatrix();
-        Vec3 currentCamera = CombatantWorldMatrices.cameraPosition();
+                                    GpuTextureView currentDepth,
+                                    Matrix4fc currentViewSource,
+                                    Matrix4fc currentProjectionSource,
+                                    Vec3 currentCamera,
+                                    float depthNdcScale,
+                                    float depthNdcBias,
+                                    float backgroundDepth,
+                                    boolean greaterDepthIsCloser) {
+        Matrix4f currentView = currentViewSource == null ? null : new Matrix4f(currentViewSource);
+        Matrix4f currentProjection = currentProjectionSource == null ? null : new Matrix4f(currentProjectionSource);
         if (currentView == null || currentProjection == null
                 || currentCamera == null || currentDepth == null) {
             capture(currentView, currentProjection, currentCamera);
@@ -116,6 +139,7 @@ public final class TemporalAntiAliasingPass implements PostProcessPass, PostProc
                     rhi, destination, currentColor, currentDepth,
                     currentView, currentProjection, reprojectionView, reprojectionProjection,
                     cameraDelta, usableHistory,
+                    depthNdcScale, depthNdcBias, backgroundDepth, greaterDepthIsCloser,
                     config.isTaaFxaaEnabled(), config.isTaaSharpenEnabled(),
                     config.getTaaSharpeningIntensity());
             capture(currentView, currentProjection, currentCamera);

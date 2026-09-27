@@ -42,11 +42,15 @@ public final class GltfAssetRepository {
     public GltfRuntimeAsset load(ResourceManager resources, Identifier id) throws IOException {
         Objects.requireNonNull(resources, "resources");
         Objects.requireNonNull(id, "id");
+        long loadEpoch = epoch.get();
         GltfRuntimeAsset cached = cache.get(id);
-        if (cached != null) return cached;
+        if (cached != null && (cached.sourceEpoch() == 0L || cached.sourceEpoch() == loadEpoch)) return cached;
 
         GltfAsset imported = ModelImporters.load(id, new MinecraftGltfResolver(resources));
-        GltfRuntimeAsset prepared = new GltfRuntimeAsset(imported, GltfMaterialBridge.build(imported));
+        if (epoch.get() != loadEpoch) {
+            throw new IOException("Resource epoch changed while loading imported asset " + id);
+        }
+        GltfRuntimeAsset prepared = new GltfRuntimeAsset(imported, GltfMaterialBridge.build(imported), loadEpoch);
         GltfRuntimeAsset raced = cache.putIfAbsent(id, prepared);
         return raced == null ? prepared : raced;
     }

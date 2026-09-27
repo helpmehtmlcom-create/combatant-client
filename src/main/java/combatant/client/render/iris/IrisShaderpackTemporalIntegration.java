@@ -19,13 +19,18 @@ import combatant.client.render.iris.patch.ShaderPatchEngine;
 import combatant.client.util.logging.DebugLog;
 import net.irisshaders.iris.targets.RenderTarget;
 import net.irisshaders.iris.targets.RenderTargets;
+import net.irisshaders.iris.uniforms.CameraUniforms;
+import net.irisshaders.iris.uniforms.CapturedRenderingState;
 import org.lwjgl.opengl.GL11C;
 import org.lwjgl.opengl.GL30C;
+import org.joml.Matrix4fc;
+import org.joml.Vector3d;
 import org.lwjgl.system.MemoryStack;
 
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
+import net.minecraft.world.phys.Vec3;
 
 /** Shaderpack-agnostic temporal runtime. All pass/resource mappings come from the active manifest adapter. */
 public enum IrisShaderpackTemporalIntegration {
@@ -116,8 +121,18 @@ public enum IrisShaderpackTemporalIntegration {
             ensureImages(w, h);
             copyRawTexture(sceneTexture, glId(sceneInput), w, h);
 
+            CapturedRenderingState irisState = CapturedRenderingState.INSTANCE;
+            Matrix4fc irisView = irisState.getGbufferModelView();
+            Matrix4fc irisProjection = irisState.getGbufferProjection();
+            Vector3d irisCamera = CameraUniforms.getUnshiftedCameraPosition();
+            if (irisView == null || irisProjection == null || irisCamera == null) {
+                fail("Iris shaderpack temporal matrices unavailable");
+                return;
+            }
+
             boolean rendered = TemporalAntiAliasingPass.INSTANCE.renderShaderpack(
-                    resourceOwner, resolvedOutput, sceneInput.view(), IrisSceneDepth.mainDepthView());
+                    resourceOwner, resolvedOutput, sceneInput.view(), IrisSceneDepth.mainDepthView(),
+                    irisView, irisProjection, new Vec3(irisCamera.x, irisCamera.y, irisCamera.z));
             if (!rendered) {
                 fail("Combatant TAA backend rejected shaderpack composite resources");
                 return;
