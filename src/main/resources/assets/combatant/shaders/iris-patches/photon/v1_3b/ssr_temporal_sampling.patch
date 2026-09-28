@@ -1,7 +1,10 @@
 @patch 2
 @require_function get_specular_reflections
+@require_function get_sky_reflection
 @require_ident frameCounter
 @require_hash fe81db9c7252db65cd24cf31b352ee8a2d22fab213dbc1b0b55ccbc0cc951006
+@require_hash bea66c491f63390d650b5e366596951aa003e47d9a90f798c220bc022787232d
+@require_hash aeeccda85e865151a7e698991987ee48d719598d9d937a8343fbc9256f48d568
 
 @insert_after_hash fe81db9c7252db65cd24cf31b352ee8a2d22fab213dbc1b0b55ccbc0cc951006
     // COMBATANT_SSR_TEMPORAL_STABILITY
@@ -13,4 +16,22 @@
         dither = texelFetch(noisetex, ivec2(gl_FragCoord.xy) & 511, 0).b;
     }
 
+@end
+
+@insert_after_function_open get_sky_reflection 1
+    // Negative skylight is Combatant's private reflection sentinel: -(1 + skyVisibility).
+    // It only controls the sky fallback. A valid screen-space hit remains visible.
+    bool combatant_custom_sky = skylight < 0.0;
+    float combatant_sky_visibility = combatant_custom_sky
+        ? clamp01(-skylight - 1.0)
+        : 1.0;
+    if (combatant_custom_sky) skylight = combatant_sky_visibility;
+@end
+
+@replace_line_hash bea66c491f63390d650b5e366596951aa003e47d9a90f798c220bc022787232d
+        skylight_falloff * combatant_sky_visibility;
+@end
+
+@replace_line_hash aeeccda85e865151a7e698991987ee48d719598d9d937a8343fbc9256f48d568
+    return texture(colortex4, project_sky(ray_dir)).rgb * combatant_sky_visibility;
 @end

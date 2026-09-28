@@ -19,7 +19,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import combatant.client.render.iris.IrisCompatibilityGuards;
-import combatant.client.render.iris.IrisSecondHandScene;
 
 @Pseudo
 @Mixin(value = HandRenderer.class, remap = false)
@@ -32,7 +31,7 @@ public abstract class IrisHandRendererMixin {
                                                 GameRenderer gameRenderer,
                                                 WorldRenderingPipeline pipeline,
                                                 CallbackInfo ci) {
-        if (IrisCompatibilityGuards.suppressIrisHandRendering() && !IrisSecondHandScene.isRendering()) {
+        if (IrisCompatibilityGuards.suppressIrisHandRendering()) {
             ci.cancel();
         }
     }
@@ -45,7 +44,7 @@ public abstract class IrisHandRendererMixin {
                                                       GameRenderer gameRenderer,
                                                       WorldRenderingPipeline pipeline,
                                                       CallbackInfo ci) {
-        if (IrisCompatibilityGuards.suppressIrisHandRendering() && !IrisSecondHandScene.isRendering()) {
+        if (IrisCompatibilityGuards.suppressIrisHandRendering()) {
             ci.cancel();
         }
     }

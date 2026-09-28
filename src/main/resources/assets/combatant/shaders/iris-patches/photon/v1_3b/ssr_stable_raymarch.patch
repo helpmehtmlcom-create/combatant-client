@@ -20,6 +20,16 @@ ivec2 combatantSsrDepthTexel(vec2 stableUv) {
     return clamp(texel, ivec2(0), depthSize - ivec2(1));
 }
 
+float combatantSsrFetchDepth(vec2 stableUv) {
+    ivec2 texel = combatantSsrDepthTexel(stableUv);
+#if defined(COMBATANT_MSAA_DEFERRED_INPUTS) && !defined(SSRT_LOD) && !defined(LOD_MOD_ACTIVE)
+    if (combatantAaOwner == 1 && combatantMsaaDeferredActive) {
+        return combatant_msaa_depth_at(texel);
+    }
+#endif
+    return texelFetch(SSRT_DEPTH_SAMPLER, texel, 0).x;
+}
+
 @end
 
 @insert_after_function_open raymarch_depth_buffer
@@ -36,20 +46,16 @@ ivec2 combatantSsrDepthTexel(vec2 stableUv) {
             combatantAaOwner != 2
 @end
 
-@replace_line_hash 1bdb2b5b61e2cbfd880843a249d8904fd50d4786039b208edf6b74b296d67d9a 1
-                          combatantSsrDepthTexel(ray_pos.xy),
+@replace_range 39f9ca356eea68280e2a543a2b0b3b319e8c8b313f419345ed831c6a2e558221 c223f23ad30dce674c0f8223b7f8c4f112de63d01888c179fa8502a2f49f4eb4 1 1 true
+        float depth = combatantSsrFetchDepth(ray_pos.xy);
 @end
 
-@replace_line_hash 1bdb2b5b61e2cbfd880843a249d8904fd50d4786039b208edf6b74b296d67d9a 2
-                          combatantSsrDepthTexel(ray_pos.xy),
+@replace_range 39f9ca356eea68280e2a543a2b0b3b319e8c8b313f419345ed831c6a2e558221 c223f23ad30dce674c0f8223b7f8c4f112de63d01888c179fa8502a2f49f4eb4 2 2 true
+        float depth = combatantSsrFetchDepth(ray_pos.xy);
 @end
 
 @replace_line_hash 4d3ef413ad5a2e3d09b49a244a6109c6662a07c1c8238b08815428abad4f54f7
-    float final_depth = texelFetch(
-        SSRT_DEPTH_SAMPLER,
-        combatantSsrDepthTexel(ray_pos.xy),
-        0
-    ).x;
+    float final_depth = combatantSsrFetchDepth(ray_pos.xy);
 @end
 
 @insert_before_hash d04973eb0a2997e8378bd3dfbab167e646f17d6c6afda68a4d30352789b6bc05

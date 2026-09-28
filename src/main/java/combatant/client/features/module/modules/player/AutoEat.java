@@ -25,6 +25,7 @@ import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.ModuleSubcategory;
+import combatant.client.features.module.Modules;
 import combatant.client.mixins.accessors.PlayerInventoryAccessor;
 import combatant.client.util.item.FoodUtil;
 import combatant.client.util.player.inventory.InventorySwap;
@@ -81,6 +82,17 @@ public class AutoEat extends Module {
         LocalPlayer player = mc.player;
 
         if (player.isSpectator() || player.getAbilities().instabuild) {
+            stopAutoUse(player);
+            return;
+        }
+
+        Offhand offhandManager = Modules.get(Offhand.class);
+        boolean offhandPriority = offhandManager != null && offhandManager.isEnabled() && offhandManager.isTotemPriorityActive(player);
+        if (offhandPriority
+                && player.isUsingItem()
+                && player.getUsedItemHand() == InteractionHand.OFF_HAND
+                && FoodUtil.isFood(player.getUseItem())) {
+            player.releaseUsingItem();
             stopAutoUse(player);
             return;
         }
@@ -165,7 +177,9 @@ public class AutoEat extends Module {
     }
 
     private InteractionHand resolveDesiredHand(LocalPlayer player) {
-        boolean offhandBlocked = player.getOffhandItem().is(Items.TOTEM_OF_UNDYING);
+        Offhand offhand = Modules.get(Offhand.class);
+        boolean offhandBlocked = player.getOffhandItem().is(Items.TOTEM_OF_UNDYING)
+                || (offhand != null && offhand.isEnabled() && offhand.isTotemPriorityActive(player));
         if (handMode.get() == HandMode.OFFHAND && !offhandBlocked) {
             return InteractionHand.OFF_HAND;
         }

@@ -34,6 +34,7 @@ public final class VisualConfig extends SubsystemConfig {
             number("taaSharpeningIntensity", 0.50, 0.0, 1.0);
     private final BooleanValue clickGuiModulesHints = bool("clickGuiModulesHints", true);
     private final BooleanValue clickGuiHudEditorHints = bool("clickGuiHudEditorHints", true);
+    private final BooleanValue modernSodiumGui = bool("modernSodiumGui", true);
 
     private VisualConfig() {
         loadConfig();
@@ -127,6 +128,10 @@ public final class VisualConfig extends SubsystemConfig {
         saveConfig();
     }
 
+    public boolean isModernSodiumGuiEnabled() {
+        return modernSodiumGui.get();
+    }
+
     @Override
     protected void afterLoad() {
         String legacy = legacyMsaa3d.get();
@@ -149,7 +154,8 @@ public final class VisualConfig extends SubsystemConfig {
                         .visibleWhen(() -> isTaaSelected() && taaSharpen.get()),
                 SettingDef.bool(combatantMainMenu),
                 SettingDef.mode(menuBackground).visibleWhen(combatantMainMenu::get),
-                SettingDef.bool(menuClockShowSeconds)
+                SettingDef.bool(menuClockShowSeconds),
+                SettingDef.bool(modernSodiumGui)
         );
     }
 

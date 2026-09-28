@@ -9,6 +9,37 @@
 uniform int combatantAaOwner;
 uniform vec2 combatantTaaOffset;
 #endif
+#ifdef COMBATANT_MSAA_DEFERRED_INPUTS
+uniform sampler2DMS combatantMsaaGbuffer0;
+uniform sampler2DMS combatantMsaaGbuffer1;
+#ifndef USE_SEPARATE_ENTITY_DRAWS
+uniform sampler2DMS combatantMsaaOverlay;
+#endif
+uniform sampler2DMS combatantMsaaDepth;
+uniform int combatantMsaaSampleIndex;
+uniform int combatantMsaaSampleCount;
+uniform bool combatantMsaaDeferredActive;
+int combatant_msaa_sample_index() {
+    return clamp(combatantMsaaSampleIndex, 0, max(combatantMsaaSampleCount - 1, 0));
+}
+float combatant_msaa_depth_at(ivec2 texel) {
+    // Iris' DepthTransformer rewrites reads from depthtex0/1/2/gdepthtex to 1.0-depth
+    // for shaderpack code. combatantMsaaDepth is an injected sampler and is not recognized by
+    // that transformer, so convert the raw Minecraft reverse-Z sample at this boundary.
+    return 1.0 - texelFetch(combatantMsaaDepth, texel, combatant_msaa_sample_index()).x;
+}
+vec4 combatant_msaa_gbuffer0_at(ivec2 texel) {
+    return texelFetch(combatantMsaaGbuffer0, texel, combatant_msaa_sample_index());
+}
+vec4 combatant_msaa_gbuffer1_at(ivec2 texel) {
+    return texelFetch(combatantMsaaGbuffer1, texel, combatant_msaa_sample_index());
+}
+#ifndef USE_SEPARATE_ENTITY_DRAWS
+vec4 combatant_msaa_overlay_at(ivec2 texel) {
+    return texelFetch(combatantMsaaOverlay, texel, combatant_msaa_sample_index());
+}
+#endif
+#endif
 
 @end
 

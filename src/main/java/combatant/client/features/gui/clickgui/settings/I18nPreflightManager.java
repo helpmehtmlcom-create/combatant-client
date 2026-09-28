@@ -48,9 +48,9 @@ public enum I18nPreflightManager {
         }
 
         if (root.hasProblems()) {
-            DebugLog.warn("I18n preflight missing keys (reason=%s, settings=%d):%n%s", reason, checked, root.render());
+            DebugLog.warn("I18n preflight translation problems (reason=%s, settings=%d):%n%s", reason, checked, root.render());
         } else {
-            DebugLog.config("I18n preflight complete: reason=%s settings=%d missing=0", reason, checked);
+            DebugLog.config("I18n preflight complete: reason=%s settings=%d problems=0", reason, checked);
         }
     }
 

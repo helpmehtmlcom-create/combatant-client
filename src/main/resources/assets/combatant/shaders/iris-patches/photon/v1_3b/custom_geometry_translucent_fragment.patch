@@ -6,10 +6,13 @@
 @require_hash 909ebd3217a244bd18df4397f192636be52fb87fdd33bd0ad64480159ae7aa4c
 @require_hash 21c7fc2937e9400d6a3714206a384156deca12697edbf9ea1fc13a83935b6082
 @require_hash 3132fd2d46968a699ec7d757d0a4318742e9f0ca4248bb9e13c273f6f12a4768
+@require_hash d050712864f96d4b0a8e0fd6720ac18b0220fbb755685f987ab5dfc56967162e
+@require_hash 0ccf32fb3c5ac0827a6228d0cb3ca6a178d0a57f4e443ca364c56c3c69bc26a6
 
 @insert_zone declarations
 in vec2 combatant_uv1;
 in mat3 combatant_smooth_tbn;
+in float combatant_sky_visibility;
 flat in uint combatant_geometry_marker;
 
 @end
@@ -68,6 +71,7 @@ mat3 combatant_translucent_tbn(mat3 basis) {
 
 @replace_line_hash 909ebd3217a244bd18df4397f192636be52fb87fdd33bd0ad64480159ae7aa4c 1
     bool combatant_custom_geometry = combatant_geometry_marker != 0u;
+    if (combatant_custom_geometry) is_water = false;
     float combatant_forward_ao = 1.0;
     bool combatant_forward_unlit = false;
     vec3 combatant_forward_unlit_color = vec3(0.0);
@@ -87,7 +91,7 @@ mat3 combatant_translucent_tbn(mat3 basis) {
         if (combatant_alpha_mode < 1.5) fragment_color.a = 1.0;
         mat3 combatant_tbn = combatant_translucent_tbn(combatant_smooth_tbn);
         combatant_tbn = gl_FrontFacing ? combatant_tbn : -combatant_tbn;
-        material = material_from(fragment_color.rgb, 255u, world_pos,
+        material = material_from(fragment_color.rgb, 0u, world_pos,
             combatant_tbn[2], adjusted_light_levels);
         vec3 tangent_normal = combatant_translucent_map(1).xyz * 2.0 - 1.0;
         tangent_normal.xy *= combatant_translucent_param(9);
@@ -98,8 +102,12 @@ mat3 combatant_translucent_tbn(mat3 basis) {
         vec3 base_material_color = material.albedo;
         material.roughness = max(roughness, 0.002);
         material.f0 = mix(vec3(clamp01(combatant_translucent_param(13))), base_material_color, metallic);
-        material.albedo = base_material_color * (1.0 - metallic);
         material.is_metal = metallic >= 0.5;
+        // Photon reads material.albedo for metallic Fresnel tint. Keep the glTF
+        // base color on metals instead of zeroing it at metallic == 1.
+        material.albedo = material.is_metal
+            ? base_material_color
+            : base_material_color * (1.0 - metallic);
         material.is_hardcoded_metal = false;
         material.f82 = vec3(0.0);
         material.sss_amount = 0.0;
@@ -125,4 +133,15 @@ mat3 combatant_translucent_tbn(mat3 basis) {
         fragment_color.rgb = combatant_forward_unlit_color * fragment_color.a;
     }
 
+@end
+
+@replace_line_hash d050712864f96d4b0a8e0fd6720ac18b0220fbb755685f987ab5dfc56967162e
+        light_color * shadows * cloud_shadows *
+        (combatant_custom_geometry ? combatant_forward_ao : 1.0);
+@end
+
+@replace_line_hash 0ccf32fb3c5ac0827a6228d0cb3ca6a178d0a57f4e443ca364c56c3c69bc26a6 2
+            combatant_custom_geometry
+                ? -(1.0 + clamp(combatant_sky_visibility, 0.0, 1.0))
+                : light_levels.y,
 @end

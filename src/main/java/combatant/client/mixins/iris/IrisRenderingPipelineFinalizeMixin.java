@@ -33,40 +33,52 @@ public abstract class IrisRenderingPipelineFinalizeMixin {
     @Inject(method = "beginLevelRendering", at = @At("HEAD"), remap = false)
     private void combatant$resetIrisSceneDepth(CallbackInfo ci) {
         IrisRuntime.observePipeline(this);
+        IrisShaderpackMsaaIntegration.beforeFrameClear();
         IrisSceneDepth.resetFrame();
     }
 
-    @Inject(method = "beginLevelRendering", at = @At("TAIL"), remap = false)
-    private void combatant$seedMsaaAtFrameStart(CallbackInfo ci) {
+    @Inject(method = "onBeginClear", at = @At("HEAD"), remap = false)
+    private void combatant$seedMsaaAfterMainClear(CallbackInfo ci) {
+        // Iris calls beginLevelRendering while LevelRenderer is only building the frame graph.
+        // The actual main color/depth clear executes later, immediately before onBeginClear().
+        // Activating the multisample twins at beginLevelRendering TAIL therefore let that real
+        // clear hit only Minecraft's single-sample main target while the MS depth/color images
+        // retained the previous world. Photon then classified those stale depth samples as
+        // geometry instead of sky, which leaked the old world across the whole sky/deferred pass.
+        // Seed/activate at the post-clear boundary, before Iris starts the SKY phase/horizon pass.
         IrisShaderpackMsaaIntegration.beginFrame(IrisRuntime.integrationEpoch());
     }
 
-    @Inject(method = "renderShadows", at = @At("TAIL"), remap = false)
-    private void combatant$seedMsaaAfterPrepare(CallbackInfo ci) {
-        IrisShaderpackMsaaIntegration.seedWorld();
+    @Inject(method = "beginHand", at = @At("HEAD"), remap = false)
+    private void combatant$renderImportedOpaqueBeforeHand(CallbackInfo ci) {
+        // This is the final opaque-world boundary before Iris snapshots depthtex2/no-hand.
+        // The first-person hand itself is suppressed in Iris and submitted only after finalization.
+        IrisSceneDepth.capture(renderTargets);
+        IrisRuntime.renderImportedGeometryPrimary();
+        IrisShaderpackMsaaIntegration.resolveDepth();
     }
 
     @Inject(method = "beginTranslucents", at = @At("HEAD"), remap = false)
     private void combatant$capturePreTranslucentDepth(CallbackInfo ci) {
-        // Imported opaque geometry is submitted while Iris still owns the pre-translucent
-        // G-buffer. Publish Iris' physical depth attachment first so the Combatant render pass
-        // tests and writes the same image later exposed to depthtex0 / depthtex1. Relying on
-        // Minecraft.mainRenderTarget here only happened to alias this texture on some backends.
-        IrisSceneDepth.capture(renderTargets);
-        IrisRuntime.renderImportedGeometryPrimary();
+        // Publish a valid single-sample representative for Iris' depth copies and pre-deferred
+        // helper passes. Packed colortex1/2 use sample-0 resolve; d4 shades every real MSAA sample.
         IrisShaderpackMsaaIntegration.resolveWorld();
+        IrisSceneDepth.capture(renderTargets);
         PreTranslucentDepth.capture();
     }
 
     @Inject(method = "beginTranslucents", at = @At("TAIL"), remap = false)
     private void combatant$seedMsaaAfterDeferred(CallbackInfo ci) {
-        IrisShaderpackMsaaIntegration.seedWorld();
+        // Deferred shading has already consumed the opaque multisample G-buffer. Only initialize
+        // the targets written by the upcoming forward pass; reseeding all targets here flattened
+        // per-sample depth/coverage and reintroduced stale scene data.
+        IrisShaderpackMsaaIntegration.seedForward();
         IrisRuntime.renderImportedGeometryTranslucent();
     }
 
     @Inject(method = "finalizeLevelRendering", at = @At("HEAD"), remap = false)
     private void combatant$captureIrisSceneBeforeFinalPass(CallbackInfo ci) {
-        IrisShaderpackMsaaIntegration.resolveWorld();
+        IrisShaderpackMsaaIntegration.resolveForward();
         IrisSceneDepth.capture(renderTargets);
         IrisShaderpackTemporalIntegration.beginFrame(renderTargets, IrisRuntime.integrationEpoch());
     }

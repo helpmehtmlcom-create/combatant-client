@@ -1,9 +1,20 @@
 @patch 2
 @require_function main
+@require_hash c4986765e11026aeebf554cfedc5574b050f1977ed8d65928c6a527e7fddbdab
+@require_hash 3a297cd64863dd0e815c4f8cca7bc5fcfce4b3f8d75382809c5c4fb35c6ac017
 @require_ident material_from
 @require_ident ambient_upscaled
 @require_ident weight_sum
-@require_hash 9223d9964b40b5bd14e158f2a258762d6bb585a0bd40293426c68b3324e9838a
+@require_hash 0ccf32fb3c5ac0827a6228d0cb3ca6a178d0a57f4e443ca364c56c3c69bc26a6
+@require_hash 828fea97da3184d89f7a3a5092c4ed3aae28c085fd60cbe6337581634ece7b8a
+@require_hash 5f3e32c9199629a5c5eb7295972d77e3bb77153cbb92bbfc31daed19d44ed9b0
+@require_hash 41686cfab692e07374190778477b11541146a02d5dd02db5b111d414e7d346f6
+@require_hash e298e2506eaf597883002f2d3a213bf02ce6286d0409d3ad460752d494939b1a
+@require_hash 607ae615db31656242ba66b01526b7e222bbaada31104a2abeb33e1a78f3a0cb
+
+@insert_after_hash ed9623369ff082abe9b1df1fb3a161857bab3bfccda2886b31d526248a676201 1
+#define COMBATANT_MSAA_DEFERRED_INPUTS
+@end
 
 @insert_before_function main
 #ifndef COMBATANT_FULLBRIGHT_UNIFORMS_DECLARED
@@ -22,6 +33,38 @@ vec3 combatant_decode_emission(float packed, out bool unlit) {
     return encoded * scale;
 }
 
+vec4 combatant_fetch_gbuffer0(ivec2 texel) {
+    return combatantAaOwner == 1 && combatantMsaaDeferredActive
+        ? combatant_msaa_gbuffer0_at(texel)
+        : texelFetch(colortex1, texel, 0);
+}
+
+vec4 combatant_fetch_gbuffer1(ivec2 texel) {
+    return combatantAaOwner == 1 && combatantMsaaDeferredActive
+        ? combatant_msaa_gbuffer1_at(texel)
+        : texelFetch(colortex2, texel, 0);
+}
+
+#if !defined USE_SEPARATE_ENTITY_DRAWS
+vec4 combatant_fetch_overlay(ivec2 texel) {
+    return combatantAaOwner == 1 && combatantMsaaDeferredActive
+        ? combatant_msaa_overlay_at(texel)
+        : texelFetch(colortex3, texel, 0);
+}
+#endif
+
+float combatant_fetch_depth(ivec2 texel) {
+#ifdef LOD_MOD_ACTIVE
+    // Iris' native LoD combined depth is not owned by the gbuffer FBO capture. Keep its native
+    // path rather than sampling an unrelated multisample depth image.
+    return texelFetch(combined_depth_tex, texel, 0).x;
+#else
+    return combatantAaOwner == 1 && combatantMsaaDeferredActive
+        ? combatant_msaa_depth_at(texel)
+        : texelFetch(combined_depth_tex, texel, 0).x;
+#endif
+}
+
 @end
 
 @insert_after_hash 508fd96f7ebdedb81c660b83c31314670cb2d152e011c2fc6ef3efff8d865607
@@ -30,7 +73,11 @@ vec3 combatant_decode_emission(float packed, out bool unlit) {
             clamp(combatantOverrideAmbientLight, 0.0, 1.0)
         );
         light_levels = max(light_levels, vec2(combatant_deferred_fullbright));
-        bool combatant_custom_geometry = material_mask == 255u;
+        bool combatant_custom_geometry = material_mask >= 240u;
+        float combatant_sky_visibility = combatant_custom_geometry
+            ? clamp01(float(material_mask - 240u) * rcp(15.0))
+            : 1.0;
+        uint combatant_photon_material_mask = combatant_custom_geometry ? 0u : material_mask;
         float combatant_material_ao = 1.0;
         bool combatant_unlit = false;
         vec3 combatant_unlit_color = vec3(0.0);
@@ -43,15 +90,20 @@ vec3 combatant_decode_emission(float packed, out bool unlit) {
             // NORMAL_MAPPING or SPECULAR_MAPPING option is enabled. Combatant
             // custom materials always populate colortex2, so sample it directly
             // here instead of depending on that compile-time local.
-            vec4 combatant_gbuffer_data_1 = texelFetch(colortex2, texel, 0);
+            vec4 combatant_gbuffer_data_1 = combatant_fetch_gbuffer1(texel);
             normal = decode_unit_vector(unpack_unorm_2x8(combatant_gbuffer_data_1.x));
             vec2 roughness_metallic = unpack_unorm_2x8(combatant_gbuffer_data_1.y);
             vec2 ao_f0 = unpack_unorm_2x8(combatant_gbuffer_data_1.z);
             vec3 base_material_color = material.albedo;
             material.roughness = max(roughness_metallic.x, 0.002);
             material.f0 = mix(vec3(ao_f0.y), base_material_color, roughness_metallic.y);
-            material.albedo = base_material_color * (1.0 - roughness_metallic.y);
             material.is_metal = roughness_metallic.y >= 0.5;
+            // Photon uses material.albedo as the Fresnel tint for albedo metals.
+            // Preserve the glTF base color for metals; only attenuate diffuse albedo
+            // for the dielectric side of the continuous metallic transition.
+            material.albedo = material.is_metal
+                ? base_material_color
+                : base_material_color * (1.0 - roughness_metallic.y);
             material.is_hardcoded_metal = false;
             material.f82 = vec3(0.0);
             material.sss_amount = 0.0;
@@ -81,11 +133,34 @@ vec3 combatant_decode_emission(float packed, out bool unlit) {
 
 @end
 
-@replace_line_hash 9223d9964b40b5bd14e158f2a258762d6bb585a0bd40293426c68b3324e9838a
-            // Imported geometry is submitted after Photon's ambient pass, so it cannot reuse
-            // ambient_00 when none of the depth-aware taps match. Preserve Photon's original
-            // fallback for every native pixel; changing it globally corrupts native entities.
-            ambient_upscaled = combatant_custom_geometry
-                ? vec4(1.0, 0.0, 0.0, 0.0)
-                : ambient_00;
+@replace_line_hash 41686cfab692e07374190778477b11541146a02d5dd02db5b111d414e7d346f6
+    float depth = combatant_fetch_depth(texel);
+@end
+
+@replace_line_hash e298e2506eaf597883002f2d3a213bf02ce6286d0409d3ad460752d494939b1a
+    vec4 gbuffer_data_0 = combatant_fetch_gbuffer0(texel);
+@end
+
+@replace_line_hash 607ae615db31656242ba66b01526b7e222bbaada31104a2abeb33e1a78f3a0cb
+    vec4 gbuffer_data_1 = combatant_fetch_gbuffer1(texel);
+@end
+
+@replace_line_hash 0ccf32fb3c5ac0827a6228d0cb3ca6a178d0a57f4e443ca364c56c3c69bc26a6 3
+                combatant_custom_geometry ? -(1.0 + combatant_sky_visibility) : light_levels.y,
+@end
+
+@replace_line_hash 828fea97da3184d89f7a3a5092c4ed3aae28c085fd60cbe6337581634ece7b8a 1
+            combatant_photon_material_mask,
+@end
+
+@replace_line_hash 828fea97da3184d89f7a3a5092c4ed3aae28c085fd60cbe6337581634ece7b8a 2
+                combatant_photon_material_mask,
+@end
+
+@replace_line_hash 5f3e32c9199629a5c5eb7295972d77e3bb77153cbb92bbfc31daed19d44ed9b0
+                    combatant_photon_material_mask
+@end
+
+@replace_line_hash 3a297cd64863dd0e815c4f8cca7bc5fcfce4b3f8d75382809c5c4fb35c6ac017
+    vec4 overlays = combatant_fetch_overlay(texel);
 @end

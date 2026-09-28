@@ -236,7 +236,7 @@ public final class VulcanReachController {
 
     @EventHandler
     private void onPacketSendPost(PacketEvent.SendPost event) {
-        if (event.getPacket() instanceof ServerboundInteractPacket packet) {
+        if (event.getPacket() instanceof ServerboundAttackPacket packet) {
             onAttackPacket(packet);
             return;
         }
@@ -265,8 +265,8 @@ public final class VulcanReachController {
         }
     }
 
-    private void onAttackPacket(ServerboundInteractPacket packet) {
-        if (!isAttack(packet) || mc.level == null) {
+    private void onAttackPacket(ServerboundAttackPacket packet) {
+        if (mc.level == null) {
             return;
         }
 
@@ -611,9 +611,6 @@ public final class VulcanReachController {
         return entity != null && entity.getType().toString().toLowerCase().contains("boat");
     }
 
-    private boolean isAttack(ServerboundInteractPacket packet) {
-        return packet.hand() == null && packet.location() == null;
-    }
 
     private boolean isAtPreAlert(double buffer, double max) {
         return buffer + 1.0 > max + BUFFER_EPSILON;

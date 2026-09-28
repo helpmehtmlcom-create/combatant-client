@@ -575,7 +575,8 @@ public final class Velocity extends Module {
     }
 
     private void handleGrim2371Packet(PacketEvent event, Packet<?> packet) {
-        if (packet instanceof ServerboundInteractPacket || packet instanceof ServerboundUseItemOnPacket) {
+        if (event.isCancelled()) return;
+        if (packet instanceof ServerboundAttackPacket || packet instanceof ServerboundInteractPacket || packet instanceof ServerboundUseItemOnPacket) {
             grim2371ShouldSkip = true;
         } else if (packet instanceof ServerboundMovePlayerPacket move && move.hasPosition() && grim2371WaitForUpdate) {
             event.cancel();

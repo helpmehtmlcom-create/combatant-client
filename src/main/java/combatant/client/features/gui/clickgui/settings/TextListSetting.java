@@ -128,6 +128,7 @@ public class TextListSetting extends Setting implements TextEditorOwner {
         SCREENS,
         BLOCKS,
         ITEMS,
+        POTIONS,
         EQUIPPABLE_ARMOR,
         ENCHANTMENTS,
         ALL,

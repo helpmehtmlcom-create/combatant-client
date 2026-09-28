@@ -14,9 +14,12 @@ import net.minecraft.network.Connection;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.common.ServerboundPongPacket;
 import net.minecraft.util.Util;
+import net.minecraft.world.entity.boss.enderdragon.EndCrystal;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Items;
 import combatant.client.config.common.CommonSettingSchemas;
 import combatant.client.config.values.BindMode;
+import combatant.client.config.values.BooleanMapValue;
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.EnumValue;
 import combatant.client.config.values.NumberValue;
@@ -26,8 +29,11 @@ import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Notifier;
 import combatant.client.features.module.Modules;
-import combatant.client.features.module.modules.player.AutoTotem;
+import combatant.client.features.module.modules.player.Offhand;
+import combatant.client.features.relations.CategoryRules;
+import combatant.client.features.relations.CategoryType;
 import combatant.client.util.network.BlinkManager;
+import combatant.client.util.target.TargetingUtil;
 import combatant.client.util.pvp.client.CooldownsState;
 
 @ModuleInfo(
@@ -37,18 +43,35 @@ import combatant.client.util.pvp.client.CooldownsState;
         description = "module.ktleave.description")
 public final class KTLeave extends Module {
     private static final String ACTION_LEAVE = "leave";
+    private static final String CONDITION_LOW_HEALTH = "low_health";
+    private static final String CONDITION_NO_TOTEMS = "no_totems";
+    private static final String CONDITION_NEARBY_CRYSTAL = "nearby_crystal";
+    private static final String CONDITION_STAFF = "staff";
+    private static final String CONDITION_NEARBY_PLAYER = "nearby_player";
 
-    private final NumberValue<Integer> hpThreshold = numCommon(
+    private final BooleanMapValue conditions = group("ktLeaveConditions", "conditions", defaultConditions());
+    private final NumberValue<Integer> hpThreshold = visibleWhen(numCommon(
             "ktLeaveHpThreshold",
             "hp_threshold",
             CommonSettingSchemas.PLAYER_HEALTH_THRESHOLD,
             6,
             1,
             20
+    ), () -> conditions.get(CONDITION_LOW_HEALTH));
+    private final BooleanValue includeAbsorption = visibleWhen(
+            bool("ktLeaveIncludeAbsorption", "include_absorption", true),
+            () -> conditions.get(CONDITION_LOW_HEALTH)
     );
-    private final BooleanValue includeAbsorption = bool("ktLeaveIncludeAbsorption", "include_absorption", true);
+    private final NumberValue<Float> nearbyPlayerRange = visibleWhen(
+            num("ktLeaveNearbyPlayerRange", "nearby_player_range", 10.0F, 1.0F, 100.0F),
+            () -> conditions.get(CONDITION_NEARBY_PLAYER)
+    );
+    private final NumberValue<Float> crystalRange = visibleWhen(
+            num("ktLeaveCrystalRange", "crystal_range", 6.0F, 1.0F, 16.0F),
+            () -> conditions.get(CONDITION_NEARBY_CRYSTAL)
+    );
     private final EnumValue<Mode> mode = enumSetting("ktLeaveMode", "mode", Mode.LEGIT);
-    private final EnumValue<TotemMode> totemMode = enumSetting("ktLeaveTotemMode", "totem_mode", TotemMode.AUTO_TOTEM);
+    private final EnumValue<TotemMode> totemMode = enumSetting("ktLeaveTotemMode", "totem_mode", TotemMode.OFFHAND);
     private final NumberValue<Integer> leaveDelayMs = num("ktLeaveDelayMs", "leave_delay_ms", 250, 0, 5000);
     private final NumberValue<Integer> packetFallbackMs = visibleWhen(
             num("ktLeavePacketFallbackMs", "packet_fallback_ms", 1500, 0, 5000),
@@ -59,7 +82,7 @@ public final class KTLeave extends Module {
 
     private final Minecraft mc = Minecraft.getInstance();
     private ClientLevel lastWorld;
-    private boolean pendingLowHealth;
+    private boolean pendingTrigger;
     private boolean leaveScheduled;
     private boolean packetKickSent;
     private boolean manualLeaveScheduled;
@@ -119,32 +142,83 @@ public final class KTLeave extends Module {
             return;
         }
 
-        if (currentHealth(mc.player) > hpThreshold.get()) {
-            clearLowHealthState();
+        TriggerState trigger = evaluateTriggers(mc.player);
+        if (!trigger.any()) {
+            clearTriggerState();
             return;
         }
 
-        if (shouldHoldForTotem(mc.player)) {
-            clearLowHealthState();
+        if (trigger.lowHealthOnly() && shouldHoldForTotem(mc.player)) {
+            clearTriggerState();
             return;
         }
 
         if (CooldownsState.MANAGER.isInPvp()) {
-            pendingLowHealth = true;
+            pendingTrigger = true;
             armedInPvp = true;
             leaveScheduled = false;
             return;
         }
-        if (!armedInPvp) {
+        if (!armedInPvp && trigger.lowHealthOnly()) {
             return;
         }
 
-        pendingLowHealth = true;
+        pendingTrigger = true;
         executeLeave(now);
     }
 
+    private TriggerState evaluateTriggers(LocalPlayer player) {
+        boolean lowHealth = conditions.get(CONDITION_LOW_HEALTH) && currentHealth(player) <= hpThreshold.get();
+        boolean noTotems = conditions.get(CONDITION_NO_TOTEMS) && !hasAnyTotem(player);
+        boolean nearbyCrystal = conditions.get(CONDITION_NEARBY_CRYSTAL) && hasNearbyCrystal(player);
+        boolean staff = conditions.get(CONDITION_STAFF) && hasStaffNearby(player);
+        boolean nearbyPlayer = conditions.get(CONDITION_NEARBY_PLAYER) && hasNearbyTargetPlayer();
+        return new TriggerState(lowHealth, noTotems, nearbyCrystal, staff, nearbyPlayer);
+    }
+
+    private boolean hasAnyTotem(LocalPlayer player) {
+        return isTotemHeld(player) || hasTotemInInventory(player);
+    }
+
+    private boolean hasNearbyCrystal(LocalPlayer player) {
+        if (mc.level == null || player == null) return false;
+        double range = crystalRange.get();
+        return !mc.level.getEntitiesOfClass(
+                EndCrystal.class,
+                player.getBoundingBox().inflate(range),
+                crystal -> crystal != null && !crystal.isRemoved()
+        ).isEmpty();
+    }
+
+    private boolean hasStaffNearby(LocalPlayer player) {
+        if (mc.level == null || player == null) return false;
+        for (Player other : mc.level.players()) {
+            if (other == null || other == player || !other.isAlive() || other.isRemoved()) continue;
+            if (CategoryRules.determine(other.getGameProfile().name()) == CategoryType.STAFF) return true;
+        }
+        return false;
+    }
+
+    private boolean hasNearbyTargetPlayer() {
+        return TargetingUtil.findBestTarget(
+                mc,
+                new TargetingUtil.TargetingSettings(
+                        nearbyPlayerRange.get(),
+                        180.0F,
+                        true,
+                        true,
+                        true,
+                        false,
+                        false,
+                        false,
+                        false,
+                        TargetingUtil.TargetPriority.DISTANCE
+                )
+        ) != null;
+    }
+
     private void executeLeave(long now) {
-        if (!pendingLowHealth || mc.getConnection() == null) {
+        if (!pendingTrigger || mc.getConnection() == null) {
             return;
         }
 
@@ -178,27 +252,27 @@ public final class KTLeave extends Module {
         }
 
         if (isTotemHeld(player)) {
-            return guardMode == TotemMode.AUTO_TOTEM
+            return guardMode == TotemMode.OFFHAND
                     || guardMode == TotemMode.HELD
                     || guardMode == TotemMode.INVENTORY;
         }
 
         return switch (guardMode) {
-            case AUTO_TOTEM -> canAutoTotemHandleNow(player);
+            case OFFHAND -> canOffhandHandleNow(player);
             case INVENTORY -> hasTotemInInventory(player);
             case HELD, OFF -> false;
         };
     }
 
-    private boolean canAutoTotemHandleNow(LocalPlayer player) {
-        AutoTotem autoTotem = Modules.get(AutoTotem.class);
-        if (autoTotem == null || !autoTotem.isEnabled()) {
+    private boolean canOffhandHandleNow(LocalPlayer player) {
+        Offhand offhand = Modules.get(Offhand.class);
+        if (offhand == null || !offhand.isEnabled()) {
             return false;
         }
-        if (autoTotem.isTotemSwapPending()) {
+        if (offhand.isTotemSwapPending()) {
             return true;
         }
-        return autoTotem.shouldHoldTotemNow(player) && autoTotem.canProvideTotemNow(player);
+        return offhand.shouldHoldTotemNow(player) && offhand.canProvideTotemNow(player);
     }
 
     private boolean isTotemHeld(LocalPlayer player) {
@@ -215,8 +289,8 @@ public final class KTLeave extends Module {
         return false;
     }
 
-    private void clearLowHealthState() {
-        pendingLowHealth = false;
+    private void clearTriggerState() {
+        pendingTrigger = false;
         armedInPvp = false;
         leaveScheduled = false;
     }
@@ -253,7 +327,7 @@ public final class KTLeave extends Module {
     }
 
     private void resetState() {
-        pendingLowHealth = false;
+        pendingTrigger = false;
         armedInPvp = false;
         leaveScheduled = false;
         packetKickSent = false;
@@ -261,6 +335,32 @@ public final class KTLeave extends Module {
         leaveAtMs = 0L;
         manualLeaveAtMs = 0L;
         packetFallbackAtMs = 0L;
+    }
+
+    private static java.util.Map<String, Boolean> defaultConditions() {
+        java.util.LinkedHashMap<String, Boolean> defaults = new java.util.LinkedHashMap<>();
+        defaults.put(CONDITION_LOW_HEALTH, true);
+        defaults.put(CONDITION_NO_TOTEMS, false);
+        defaults.put(CONDITION_NEARBY_CRYSTAL, false);
+        defaults.put(CONDITION_STAFF, false);
+        defaults.put(CONDITION_NEARBY_PLAYER, false);
+        return defaults;
+    }
+
+    private record TriggerState(
+            boolean lowHealth,
+            boolean noTotems,
+            boolean nearbyCrystal,
+            boolean staff,
+            boolean nearbyPlayer
+    ) {
+        private boolean any() {
+            return lowHealth || noTotems || nearbyCrystal || staff || nearbyPlayer;
+        }
+
+        private boolean lowHealthOnly() {
+            return lowHealth && !noTotems && !nearbyCrystal && !staff && !nearbyPlayer;
+        }
     }
 
     public enum Mode implements EnumValue.IdProvider {
@@ -279,21 +379,28 @@ public final class KTLeave extends Module {
         }
     }
 
-    public enum TotemMode implements EnumValue.IdProvider {
+    public enum TotemMode implements EnumValue.IdProvider, EnumValue.AliasProvider {
         OFF("off"),
-        AUTO_TOTEM("auto_totem"),
+        OFFHAND("offhand", "auto_totem"),
         HELD("held"),
         INVENTORY("inventory");
 
         private final String id;
+        private final java.util.List<String> aliases;
 
-        TotemMode(String id) {
+        TotemMode(String id, String... aliases) {
             this.id = id;
+            this.aliases = java.util.List.of(aliases);
         }
 
         @Override
         public String id() {
             return id;
+        }
+
+        @Override
+        public java.util.List<String> aliases() {
+            return aliases;
         }
     }
 }

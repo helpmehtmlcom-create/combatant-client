@@ -68,10 +68,9 @@ public enum IrisCompatibilityGuards {
     }
 
     public static boolean suppressIrisHandRendering() {
-        // Do not cancel Iris' own hand renderer. Iris redirects vanilla hand submit to a no-op
-        // while a shaderpack is active, so suppressing HandRenderer removes the visible hand entirely.
-        // Chams builds its mask as an extra pass and must not own the visible hand path.
-        return false;
+        // The visible first-person scene is submitted natively after shaderpack finalization.
+        // Keeping either Iris hand phase would draw it into Photon's world G-buffer as well.
+        return RuntimeGate.canRunShaderBridge() && IrisRuntime.isShaderpackRendererActive();
     }
 
     public static boolean deferIrisFinalizationForSecondHandScene() {

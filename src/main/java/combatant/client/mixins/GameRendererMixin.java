@@ -9,6 +9,7 @@ package combatant.client.mixins;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.llamalad7.mixinextras.sugar.Local;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -59,6 +60,7 @@ import combatant.client.features.module.modules.visuals.*;
 import combatant.client.mixins.accessors.GameRendererAccessor;
 import combatant.client.mixins.accessors.LocalPlayerAccessor;
 import combatant.client.render.engine.RenderState;
+import combatant.client.render.engine.asset.gltf.render.ImportedAssetCompatibilityRenderer;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.core.CombatantWorldMatrices;
 import combatant.client.render.engine.temporal.TemporalJitterSequence;
@@ -800,12 +802,30 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
                                                         Operation<Void> original,
                                                         CameraRenderState cameraRenderState,
                                                         float tickDelta,
-                                                        Matrix4fc positionMatrix) {
+                                                        Matrix4fc positionMatrix,
+                                                        @Local(ordinal = 0) PoseStack handPoseStack) {
+        boolean nativeIrisHand = IrisCompatibilityGuards.suppressIrisHandRendering()
+                && IrisRuntime.submitNativeHandScene(tickDelta, handPoseStack, storage);
+
         Chams module = Modules.get(Chams.class);
         SubmitNodeStorage snapshot = module != null ? module.snapshotPreparedHandScene(storage) : null;
 
         // Render Minecraft's live hand storage first. renderAllFeatures() consumes it in 26.2.
-        original.call(dispatcher, storage);
+        if (nativeIrisHand) {
+            IrisRuntime.runWithNativeShaderBypass(() -> original.call(dispatcher, storage));
+        } else {
+            original.call(dispatcher, storage);
+        }
+
+        // Imported HAND scenes share the actual first-person phase. They are deliberately submitted
+        // after the world/post chain (and after the vanilla hand storage draw) so they can be used as
+        // first-person model replacements/overlays without ever leaking into the world instance pass.
+        if (minecraft != null && minecraft.gameRenderer != null && cameraRenderState != null) {
+            ImportedAssetCompatibilityRenderer.renderHand(
+                    minecraft.gameRenderer.mainRenderTarget(),
+                    handPoseStack.last().pose(),
+                    cameraRenderState.projectionMatrix);
+        }
 
         // Chams renders only the isolated snapshot afterwards; it must never consume the live storage.
         if (module != null && snapshot != null) {

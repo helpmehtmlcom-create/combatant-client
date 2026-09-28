@@ -9,7 +9,9 @@ package combatant.client.render.iris;
 
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.systems.RenderPass;
+import com.mojang.blaze3d.vertex.PoseStack;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.renderer.SubmitNodeStorage;
 import net.minecraft.world.item.ItemStack;
 import combatant.client.util.logging.DebugLog;
 
@@ -101,6 +103,18 @@ public enum IrisRuntime {
         }
         try {
             return IrisRuntimeBridge.hasAnySolidHand();
+        } catch (LinkageError | RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    /** Builds the complete first-person hand scene for the native post-shaderpack pass. */
+    public static boolean submitNativeHandScene(float tickDelta,
+                                                PoseStack poseStack,
+                                                SubmitNodeStorage storage) {
+        if (!MOD_LOADED || poseStack == null || storage == null) return false;
+        try {
+            return IrisRuntimeBridge.submitNativeHandScene(tickDelta, poseStack, storage);
         } catch (LinkageError | RuntimeException ignored) {
             return false;
         }
@@ -219,6 +233,16 @@ public enum IrisRuntime {
             IrisRuntimeBridge.invalidateImportedGeometryResidency();
         } catch (LinkageError | RuntimeException ignored) {
             // The optional Iris adapter may not be linkable during reload or teardown.
+        }
+    }
+
+    /** Applies draw-scoped imported geometry uniforms after Iris has bound the real GL program. */
+    public static void applyImportedGeometryDrawUniforms() {
+        if (!MOD_LOADED) return;
+        try {
+            IrisRuntimeBridge.applyImportedGeometryDrawUniforms();
+        } catch (LinkageError | RuntimeException ignored) {
+            // Optional Iris adapter may be unavailable during reload/teardown.
         }
     }
 

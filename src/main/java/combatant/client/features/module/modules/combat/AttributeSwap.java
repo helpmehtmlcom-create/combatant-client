@@ -57,7 +57,7 @@ import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.movement.NoFall;
-import combatant.client.features.module.modules.player.AutoTotem;
+import combatant.client.features.module.modules.player.Offhand;
 import combatant.client.mixins.accessors.PlayerInventoryAccessor;
 import combatant.client.util.combat.AttackUtil;
 import combatant.client.util.combat.protocol.CombatProtocolHeuristics;
@@ -1535,7 +1535,7 @@ public class AttributeSwap extends Module {
             return false;
         }
 
-        requestAutoTotemForWindBurst(player);
+        requestOffhandTotemForWindBurst(player);
         boolean unsafe = !hasTotemInOffhand(player);
         logWindBurstDecision(player, windBurstLevel, impulse, fall, damage, unsafe ? "BLOCK_PREDICTED_HP_LOW" : "ALLOW_OFFHAND_TOTEM", unsafe);
         return unsafe;
@@ -1545,10 +1545,10 @@ public class AttributeSwap extends Module {
         return player != null && player.getOffhandItem().is(Items.TOTEM_OF_UNDYING);
     }
 
-    private void requestAutoTotemForWindBurst(LocalPlayer player) {
-        AutoTotem autoTotem = Modules.get(AutoTotem.class);
-        if (autoTotem != null) {
-            autoTotem.ensureTotemForDanger(player);
+    private void requestOffhandTotemForWindBurst(LocalPlayer player) {
+        Offhand offhand = Modules.get(Offhand.class);
+        if (offhand != null) {
+            offhand.ensureTotemForDanger(player);
         }
     }
 

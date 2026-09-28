@@ -7,12 +7,23 @@
 @require_hash 376fb533e19024ee9646ce493759f0fe673852f810e1d76ec1d0f2eee2af7e51
 @require_hash 14a02d3e954222afcd7fc99f34d467f0597d9afb1d17b3a0a8e685379a1c7814
 @require_hash fad71d3e91aaddde2d201ec96d096ab4382c998ac8e96a0dc2f43eea9b83a88c
+@require_hash 19aa70534ef810189936a01c97f702052075a7d2927368b3eb039de72991f945
+@require_hash 017c0ecec96d975ca45b9882168e6d79a440a43b3e71e92a58611f0f2d500107
 
 @insert_zone declarations
 out vec2 combatant_uv1;
 out mat3 combatant_smooth_tbn;
+out float combatant_sky_visibility;
 flat out uint combatant_geometry_marker;
 uniform bool combatantCustomGeometry;
+uniform vec3 combatantCustomLightBoundsMin;
+uniform vec3 combatantCustomLightBoundsMax;
+uniform vec4 combatantCustomBlockLightCornersA;
+uniform vec4 combatantCustomBlockLightCornersB;
+uniform vec4 combatantCustomSkyLightCornersA;
+uniform vec4 combatantCustomSkyLightCornersB;
+uniform vec4 combatantCustomSkyVisibilityCornersA;
+uniform vec4 combatantCustomSkyVisibilityCornersB;
 
 @end
 
@@ -31,27 +42,77 @@ uniform float combatantOverrideAmbientLight;
 
 @end
 
+@insert_before_function main
+float combatant_trilinear_light(vec4 z0, vec4 z1, vec3 t) {
+    float y0 = mix(mix(z0.x, z0.y, t.x), mix(z0.z, z0.w, t.x), t.y);
+    float y1 = mix(mix(z1.x, z1.y, t.x), mix(z1.z, z1.w, t.x), t.y);
+    return mix(y0, y1, t.z);
+}
 
-@insert_after_function_open main
-    // Keep Photon authoritative for entity transforms, TBN construction, lightmap handling and
-    // projection. Combatant's ENTITY-format marker isolates the adapter material branch from
-    // every native entity texture and material id.
-    combatant_uv1 = mc_midTexCoord;
-    combatant_geometry_marker = combatantCustomGeometry ? 1u : 0u;
+float combatant_fullbright_floor() {
+    return max(
+        combatantFullbrightEnabled ? clamp(combatantFullbrightMinLight, 0.0, 1.0) : 0.0,
+        clamp(combatantOverrideAmbientLight, 0.0, 1.0)
+    );
+}
 
 @end
 
+@insert_after_function_open main
+    // Keep Photon authoritative for entity transforms, TBN construction and projection. Combatant
+    // only supplies glTF UV1 plus an explicit adapter selector.
+    combatant_uv1 = mc_midTexCoord;
+    combatant_geometry_marker = combatantCustomGeometry ? 1u : 0u;
+    combatant_sky_visibility = 1.0;
 
+@end
 
 @insert_after_hash fad71d3e91aaddde2d201ec96d096ab4382c998ac8e96a0dc2f43eea9b83a88c
-    // Photon intentionally declares its entity TBN as flat for Minecraft's faceted meshes.
-    // glTF vertex normals and tangents are smooth, so carry a separate interpolated basis for
-    // imported materials instead of inheriting the provoking vertex across each triangle.
+    // Preserve the native path exactly: its lightmap/fullbright values are available before any
+    // Photon vertex animation. Imported geometry gets spatial light after its world position is
+    // known below.
+    if (!combatantCustomGeometry) {
+        light_levels = max(light_levels, vec2(combatant_fullbright_floor()));
+    }
+@end
+
+@insert_after_hash 19aa70534ef810189936a01c97f702052075a7d2927368b3eb039de72991f945
+    // Photon declares entity TBN flat because Minecraft meshes are faceted. glTF normals/tangents
+    // are smooth. Critically, copy the basis only after get_tbn_matrix() initialized it; the old
+    // adapter copied uninitialized tbn immediately after light_levels and produced split normals.
     combatant_smooth_tbn = tbn;
-    light_levels = max(light_levels, vec2(max(
-        combatantFullbrightEnabled ? clamp(combatantFullbrightMinLight, 0.0, 1.0) : 0.0,
-        clamp(combatantOverrideAmbientLight, 0.0, 1.0)
-    )));
+@end
+
+@insert_after_hash 017c0ecec96d975ca45b9882168e6d79a440a43b3e71e92a58611f0f2d500107
+    if (combatantCustomGeometry) {
+        vec3 combatant_world_pos = scene_pos + cameraPosition;
+        vec3 combatant_light_extent = max(
+            combatantCustomLightBoundsMax - combatantCustomLightBoundsMin,
+            vec3(1e-4)
+        );
+        vec3 combatant_light_t = clamp(
+            (combatant_world_pos - combatantCustomLightBoundsMin) / combatant_light_extent,
+            vec3(0.0), vec3(1.0)
+        );
+        light_levels = vec2(
+            combatant_trilinear_light(
+                combatantCustomBlockLightCornersA,
+                combatantCustomBlockLightCornersB,
+                combatant_light_t
+            ),
+            combatant_trilinear_light(
+                combatantCustomSkyLightCornersA,
+                combatantCustomSkyLightCornersB,
+                combatant_light_t
+            )
+        );
+        combatant_sky_visibility = combatant_trilinear_light(
+            combatantCustomSkyVisibilityCornersA,
+            combatantCustomSkyVisibilityCornersB,
+            combatant_light_t
+        );
+        light_levels = max(light_levels, vec2(combatant_fullbright_floor()));
+    }
 @end
 
 @replace_line_hash bafe73feb89322395db4d01b8bc47fd6563b2729262c4eb07a04447ad4abc6c5

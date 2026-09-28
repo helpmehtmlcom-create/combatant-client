@@ -42,7 +42,9 @@
       "colorFormat": "rgba16f",
       "preserveHistoryAlphaOrigin": true,
       "taaReplacement": true,
-      "msaaReplacement": true
+      "msaaReplacement": true,
+      "packedTargets": [1, 2],
+      "forwardTargets": [3, 13]
     },
     "options": {
       "aa": [
@@ -141,6 +143,11 @@
       "marker": "combatantSsrDepthTexel"
     },
     {
+      "path": "/include/surface/edge_highlight.glsl",
+      "patch": "edge_highlight_msaa.patch",
+      "marker": "combatant_msaa_edge_depth"
+    },
+    {
       "path": "/include/lighting/specular_lighting.glsl",
       "patch": "ssr_temporal_sampling.patch",
       "marker": "COMBATANT_SSR_TEMPORAL_STABILITY"
@@ -222,6 +229,12 @@
       "patch": "jitter_sky.patch",
       "marker": "combatantTaaOffset",
       "stage": "vertex"
+    },
+    {
+      "path": "/program/d3_ao.fsh",
+      "patch": "custom_geometry_ao.patch",
+      "marker": "combatant_material_mask",
+      "stage": "fragment"
     },
     {
       "path": "/program/d4_deferred_shading.fsh",

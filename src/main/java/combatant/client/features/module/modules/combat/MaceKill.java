@@ -14,7 +14,7 @@
 package combatant.client.features.module.modules.combat;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.network.protocol.game.ServerboundInteractPacket;
+import net.minecraft.network.protocol.game.ServerboundAttackPacket;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
@@ -45,9 +45,8 @@ public final class MaceKill extends Module {
 
     @EventHandler
     public void onPacketSend(PacketEvent.Send event) {
-        if (!isEnabled()) return;
-        if (!(event.getPacket() instanceof ServerboundInteractPacket packet)) return;
-        if (!isAttack(packet)) return;
+        if (!isEnabled() || event.isCancelled()) return;
+        if (!(event.getPacket() instanceof ServerboundAttackPacket packet)) return;
 
         Entity ent = getEntity(packet);
         if (ent == null || cancelCrit) return;
@@ -125,14 +124,11 @@ public final class MaceKill extends Module {
         return mainHand != null && mainHand.getItem() == Items.MACE;
     }
 
-    private Entity getEntity(ServerboundInteractPacket packet) {
+    private Entity getEntity(ServerboundAttackPacket packet) {
         if (mc == null || mc.level == null) return null;
         int id = packet.entityId();
         return mc.level.getEntity(id);
     }
 
-    private boolean isAttack(ServerboundInteractPacket packet) {
-        return packet.hand() == null && packet.location() == null;
-    }
 
 }

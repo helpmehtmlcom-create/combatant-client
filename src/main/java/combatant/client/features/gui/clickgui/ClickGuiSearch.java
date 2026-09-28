@@ -69,12 +69,42 @@ public enum ClickGuiSearch {
     public static boolean matches(String moduleName, Iterable<String> aliases) {
         if (text.isEmpty()) return true;
         if (matchesCandidate(moduleName)) return true;
-        if (aliases == null) return false;
+        return matchingAlias(aliases) != null;
+    }
 
+    /**
+     * Returns the alias that best explains why the current query matched a module.
+     * The original spelling is preserved for presentation in search results.
+     */
+    public static String matchingAlias(Iterable<String> aliases) {
+        if (text.isBlank() || aliases == null) return null;
+
+        String best = null;
+        int bestRank = Integer.MAX_VALUE;
+        int bestLength = Integer.MAX_VALUE;
         for (String alias : aliases) {
-            if (matchesCandidate(alias)) return true;
+            if (!matchesCandidate(alias)) continue;
+
+            int rank = matchRank(alias);
+            int length = alias == null ? Integer.MAX_VALUE : alias.length();
+            if (rank < bestRank || (rank == bestRank && length < bestLength)) {
+                best = alias;
+                bestRank = rank;
+                bestLength = length;
+            }
         }
-        return false;
+        return best;
+    }
+
+    private static int matchRank(String candidate) {
+        if (candidate == null || candidate.isBlank()) return Integer.MAX_VALUE;
+
+        String normalized = candidate.toLowerCase(Locale.ROOT);
+        String compactCandidate = compact(normalized);
+        String compactQuery = compact(textLower);
+        if (normalized.equals(textLower) || compactCandidate.equals(compactQuery)) return 0;
+        if (normalized.startsWith(textLower) || compactCandidate.startsWith(compactQuery)) return 1;
+        return 2;
     }
 
     private static boolean matchesCandidate(String candidate) {

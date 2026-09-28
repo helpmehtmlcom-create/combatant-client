@@ -30,7 +30,7 @@ import java.util.Optional;
 @ModuleInfo(
         id = "reach",
         displayName = "Reach",
-        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.LEGIT,
+        category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.ATTACK,
         description = "module.reach.description")
 public class Reach extends Module {
 

@@ -17,7 +17,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.network.protocol.game.ServerboundInteractPacket;
+import net.minecraft.network.protocol.game.ServerboundAttackPacket;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -383,7 +383,7 @@ public class Crosshair extends Module {
         if (!isVulcanReachActive() || mc.level == null) {
             return;
         }
-        if (!(event.getPacket() instanceof ServerboundInteractPacket packet) || !isAttackPacket(packet)) {
+        if (!(event.getPacket() instanceof ServerboundAttackPacket packet)) {
             return;
         }
 
@@ -705,9 +705,6 @@ public class Crosshair extends Module {
         return recentLook || recentAttack ? lastVulcanReachTarget : null;
     }
 
-    private boolean isAttackPacket(ServerboundInteractPacket packet) {
-        return packet.hand() == null && packet.location() == null;
-    }
 
     private int smoothCrosshairColor(int targetColor) {
         if (!colorInitialized) {

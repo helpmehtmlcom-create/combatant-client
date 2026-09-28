@@ -40,10 +40,23 @@ public final class CombatantMixinPlugin implements IMixinConfigPlugin {
             "combatant.client.mixins.sodium.SodiumRenderSectionManagerOcclusionMixin",
             "combatant.client.mixins.sodium.SodiumSortedRenderListsInvoker",
             "combatant.client.mixins.sodium.SodiumShaderChunkRendererMixin",
-            "combatant.client.mixins.sodium.SodiumVertexConsumerTrackerMixin"
+            "combatant.client.mixins.sodium.SodiumVertexConsumerTrackerMixin",
+            "combatant.client.mixins.sodium.gui.SodiumFlatButtonAccessorMixin",
+            "combatant.client.mixins.sodium.gui.SodiumCenteredWidgetAccessorMixin",
+            "combatant.client.mixins.sodium.gui.SodiumSearchWidgetAccessorMixin",
+            "combatant.client.mixins.sodium.gui.SodiumHeaderWidgetAccessorMixin",
+            "combatant.client.mixins.sodium.gui.SodiumStatefulControlAccessorMixin",
+            "combatant.client.mixins.sodium.gui.SodiumTooltipAccessorMixin",
+            "combatant.client.mixins.sodium.gui.SodiumPromptAccessorMixin",
+            "combatant.client.mixins.sodium.gui.SodiumScrollbarAccessorMixin",
+            "combatant.client.mixins.sodium.gui.SodiumPageModHeaderIconAccessorMixin",
+            "combatant.client.mixins.sodium.gui.SodiumOptionModHeaderIconAccessorMixin",
+            "combatant.client.mixins.sodium.gui.SodiumVideoSettingsScreenMixin"
     );
     private static final Set<String> OPTIONAL_IRIS_MIXINS = Set.of(
+            "combatant.client.mixins.iris.IrisClearPassMsaaMixin",
             "combatant.client.mixins.iris.IrisCommonUniformsMixin",
+            "combatant.client.mixins.iris.IrisCustomUniformsMixin",
             "combatant.client.mixins.iris.IrisCompositePassMixin",
             "combatant.client.mixins.iris.IrisCompositeRendererMixin",
             "combatant.client.mixins.iris.IrisExtendedShaderGeometryMixin",
@@ -53,6 +66,7 @@ public final class CombatantMixinPlugin implements IMixinConfigPlugin {
             "combatant.client.mixins.iris.IrisHandRendererMixin",
             "combatant.client.mixins.iris.IrisIncludeProcessorMixin",
             "combatant.client.mixins.iris.IrisOptionMenuMixin",
+            "combatant.client.mixins.iris.IrisProgramUniformsMixin",
             "combatant.client.mixins.iris.IrisRenderTargetsMsaaMixin",
             "combatant.client.mixins.iris.IrisShaderPackLoadMixin",
             "combatant.client.mixins.iris.IrisRenderingPipelineFinalizeMixin",

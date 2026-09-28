@@ -20,6 +20,8 @@ public interface TransientWorldEffectSystem {
 
     List<TransientEffectDescriptor> snapshot();
 
+    List<TransientEffectDescriptor> snapshot(EffectParticipation participation);
+
     int activeCount();
 
     EffectBudget budget();

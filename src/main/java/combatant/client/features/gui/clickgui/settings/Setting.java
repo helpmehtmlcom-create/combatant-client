@@ -78,6 +78,13 @@ public abstract class Setting {
             }
 
             String translated = I18n.get(key);
+            if (translated.startsWith("Format error:")) {
+                MissingI18nReporter reporter = MISSING_REPORTER.get();
+                if (reporter != null) {
+                    reporter.malformed(key);
+                }
+                continue;
+            }
             if (!translated.equals(key)) {
                 return translated;
             }
@@ -565,5 +572,11 @@ public abstract class Setting {
     @FunctionalInterface
     public interface MissingI18nReporter {
         void missing(java.util.List<String> keyChain);
+
+        default void malformed(String key) {
+            if (key != null && !key.isBlank()) {
+                missing(java.util.List.of(key + " [format error]"));
+            }
+        }
     }
 }

@@ -9,6 +9,7 @@
 @insert_zone declarations
 in vec2 combatant_uv1;
 in mat3 combatant_smooth_tbn;
+in float combatant_sky_visibility;
 flat in uint combatant_geometry_marker;
 
 @end
@@ -116,8 +117,15 @@ float combatant_pack_emission(vec3 emission, bool unlit) {
             combatant_material_param(8);
         bool unlit = combatant_material_param(16) > 0.5;
 
+        uint combatant_sky_visibility_mask = 240u + uint(round(
+            clamp(combatant_sky_visibility, 0.0, 1.0) * 15.0
+        ));
         gbuffer_data_0.x = pack_unorm_2x8(base_color.rg);
-        gbuffer_data_0.y = pack_unorm_2x8(base_color.b, 1.0);
+        // Combatant reserves the alpha byte for the custom material/sky-visibility mask.
+        gbuffer_data_0.y = pack_unorm_2x8(
+            base_color.b,
+            float(combatant_sky_visibility_mask) * rcp(255.0)
+        );
         gbuffer_data_0.z = pack_unorm_2x8(encode_unit_vector(combatant_tbn[2]));
         gbuffer_data_0.w = pack_unorm_2x8(light_levels);
         gbuffer_data_1.x = pack_unorm_2x8(encode_unit_vector(detailed_normal));
@@ -131,9 +139,9 @@ float combatant_pack_emission(vec3 emission, bool unlit) {
 @end
 
 @insert_after_hash 06197be98c2e4b3ccd64a8357fbce8277f4c2e83fbebe322af5d55c932e9cc22
-#if defined PROGRAM_GBUFFERS_ENTITIES
-    // G-buffer mask 255 is the adapter-owned custom material discriminator.
-    // Keep unmapped/high native Iris entity ids on Photon's ordinary fallback path.
-    new_material_mask = min(new_material_mask, 254u);
+#if defined PROGRAM_GBUFFERS_ENTITIES || defined PROGRAM_GBUFFERS_HAND
+    // G-buffer masks 240..255 are reserved for Combatant custom material + 4-bit sky visibility.
+    // Keep every native Iris entity/hand id below that adapter-owned range.
+    new_material_mask = min(new_material_mask, 239u);
 #endif
 @end

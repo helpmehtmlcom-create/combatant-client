@@ -188,16 +188,21 @@ public enum ShaderPatchEngine {
                                         boolean preserveHistoryAlphaOrigin,
                                         boolean taaReplacement,
                                         boolean msaaReplacement,
+                                        Set<Integer> msaaPackedTargets,
+                                        Set<Integer> msaaForwardTargets,
                                         Set<String> aaOptions,
                                         Set<String> motionBlurOptions,
                                         Set<String> depthOfFieldOptions,
                                         Set<String> postFxOptions) {
         public static final ShaderpackIntegration NONE = new ShaderpackIntegration(
-                "", -1, -1, "rgba16f", false, false, false, Set.of(), Set.of(), Set.of(), Set.of());
+                "", -1, -1, "rgba16f", false, false, false,
+                Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), Set.of());
 
         public ShaderpackIntegration {
             temporalPass = temporalPass == null ? "" : temporalPass;
             colorFormat = colorFormat == null ? "rgba16f" : colorFormat;
+            msaaPackedTargets = msaaPackedTargets == null ? Set.of() : Set.copyOf(msaaPackedTargets);
+            msaaForwardTargets = msaaForwardTargets == null ? Set.of() : Set.copyOf(msaaForwardTargets);
             aaOptions = aaOptions == null ? Set.of() : Set.copyOf(aaOptions);
             motionBlurOptions = motionBlurOptions == null ? Set.of() : Set.copyOf(motionBlurOptions);
             depthOfFieldOptions = depthOfFieldOptions == null ? Set.of() : Set.copyOf(depthOfFieldOptions);
@@ -576,6 +581,8 @@ public enum ShaderPatchEngine {
                     optionalBoolean(aa, "preserveHistoryAlphaOrigin", false),
                     optionalBoolean(aa, "taaReplacement", false),
                     optionalBoolean(aa, "msaaReplacement", false),
+                    intSet(aa, "packedTargets"),
+                    intSet(aa, "forwardTargets"),
                     stringSet(options, "aa"),
                     stringSet(options, "motionBlur"),
                     stringSet(options, "depthOfField"),
@@ -588,6 +595,17 @@ public enum ShaderPatchEngine {
             LinkedHashSet<String> result = new LinkedHashSet<>();
             for (JsonElement element : object.getAsJsonArray(key)) {
                 if (element.isJsonPrimitive()) result.add(element.getAsString());
+            }
+            return Set.copyOf(result);
+        }
+
+        private static Set<Integer> intSet(JsonObject object, String key) {
+            if (!object.has(key) || !object.get(key).isJsonArray()) return Set.of();
+            LinkedHashSet<Integer> result = new LinkedHashSet<>();
+            for (JsonElement element : object.getAsJsonArray(key)) {
+                if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isNumber()) {
+                    result.add(element.getAsInt());
+                }
             }
             return Set.copyOf(result);
         }

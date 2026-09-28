@@ -72,6 +72,7 @@ public final class BlockPlacer {
     private final BooleanSupplier constructFailResultSupplier;
     private final BooleanSupplier ignoreOpenInventorySupplier;
     private final BooleanSupplier ignoreUsingItemSupplier;
+    private final BooleanSupplier ignoreEntityCollisionSupplier;
     private final Supplier<RotationMode> rotationModeSupplier;
     private final Supplier<MovementCorrection> movementCorrectionSupplier;
     private final int rotationPriority;
@@ -103,6 +104,31 @@ public final class BlockPlacer {
             Supplier<RotationMode> rotationModeSupplier,
             Supplier<MovementCorrection> movementCorrectionSupplier
     ) {
+        this(module, requester, rotationPriority, slotFinder, rangeSupplier, wallRangeSupplier,
+                cooldownMinSupplier, cooldownMaxSupplier, slotResetDelayMinSupplier, slotResetDelayMaxSupplier,
+                sneakTicksSupplier, constructFailResultSupplier, ignoreOpenInventorySupplier,
+                ignoreUsingItemSupplier, () -> false, rotationModeSupplier, movementCorrectionSupplier);
+    }
+
+    public BlockPlacer(
+            Module module,
+            Object requester,
+            int rotationPriority,
+            SlotFinder slotFinder,
+            DoubleSupplier rangeSupplier,
+            DoubleSupplier wallRangeSupplier,
+            IntSupplier cooldownMinSupplier,
+            IntSupplier cooldownMaxSupplier,
+            IntSupplier slotResetDelayMinSupplier,
+            IntSupplier slotResetDelayMaxSupplier,
+            IntSupplier sneakTicksSupplier,
+            BooleanSupplier constructFailResultSupplier,
+            BooleanSupplier ignoreOpenInventorySupplier,
+            BooleanSupplier ignoreUsingItemSupplier,
+            BooleanSupplier ignoreEntityCollisionSupplier,
+            Supplier<RotationMode> rotationModeSupplier,
+            Supplier<MovementCorrection> movementCorrectionSupplier
+    ) {
         this.module = module;
         this.requester = requester;
         this.rotationPriority = rotationPriority;
@@ -117,6 +143,7 @@ public final class BlockPlacer {
         this.constructFailResultSupplier = constructFailResultSupplier;
         this.ignoreOpenInventorySupplier = ignoreOpenInventorySupplier;
         this.ignoreUsingItemSupplier = ignoreUsingItemSupplier;
+        this.ignoreEntityCollisionSupplier = ignoreEntityCollisionSupplier;
         this.rotationModeSupplier = rotationModeSupplier;
         this.movementCorrectionSupplier = movementCorrectionSupplier;
     }
@@ -361,14 +388,16 @@ public final class BlockPlacer {
             return true;
         }
 
-        List<Entity> entities = player.level().getEntities(
-                player,
-                new AABB(pos),
-                entity -> entity != null && !entity.isRemoved() && !entity.isSpectator()
-        );
-        if (!entities.isEmpty()) {
-            inaccessible.add(pos);
-            return true;
+        if (!ignoreEntityCollisionSupplier.getAsBoolean()) {
+            List<Entity> entities = player.level().getEntities(
+                    player,
+                    new AABB(pos),
+                    entity -> entity != null && !entity.isRemoved() && !entity.isSpectator()
+            );
+            if (!entities.isEmpty()) {
+                inaccessible.add(pos);
+                return true;
+            }
         }
 
         return false;

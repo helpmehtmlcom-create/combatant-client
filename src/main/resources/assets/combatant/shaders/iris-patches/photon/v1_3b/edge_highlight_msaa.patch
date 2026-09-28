@@ -1,0 +1,34 @@
+@patch 2
+@require_function edge_highlight_check
+@require_hash 1f0406f2e029a6460a9829a194e6653208765ea80b669ae8bd7e4a66f88b7cda
+@require_hash 83f6cfbb2df82f7a99dfe2a10d938989cc93a0656261d9713d4d2b13f1984da2
+@require_hash c27bd18936b885011804815c7acda02113bc8e99e8453f12586b7dd877016763
+
+@insert_before_hash 1f0406f2e029a6460a9829a194e6653208765ea80b669ae8bd7e4a66f88b7cda
+float combatant_msaa_edge_depth(ivec2 texel) {
+#if defined(COMBATANT_MSAA_DEFERRED_INPUTS) && !defined(LOD_MOD_ACTIVE)
+    if (combatantAaOwner == 1 && combatantMsaaDeferredActive) {
+        return combatant_msaa_depth_at(texel);
+    }
+#endif
+    return texelFetch(combined_depth_tex, texel, 0).x;
+}
+
+float combatant_msaa_edge_gbuffer0(ivec2 texel) {
+#if defined(COMBATANT_MSAA_DEFERRED_INPUTS) && !defined(LOD_MOD_ACTIVE)
+    if (combatantAaOwner == 1 && combatantMsaaDeferredActive) {
+        return combatant_msaa_gbuffer0_at(texel).z;
+    }
+#endif
+    return texelFetch(colortex1, texel, 0).z;
+}
+
+@end
+
+@replace_line_hash 83f6cfbb2df82f7a99dfe2a10d938989cc93a0656261d9713d4d2b13f1984da2
+    float sample_depth = combatant_msaa_edge_depth(texel);
+@end
+
+@replace_line_hash c27bd18936b885011804815c7acda02113bc8e99e8453f12586b7dd877016763
+    float sample_data = combatant_msaa_edge_gbuffer0(texel);
+@end

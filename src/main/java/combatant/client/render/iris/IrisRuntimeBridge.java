@@ -9,6 +9,8 @@ package combatant.client.render.iris;
 
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.PoseStack;
+import combatant.client.mixins.iris.IrisHandRendererAccessor;
 import net.irisshaders.iris.Iris;
 import net.irisshaders.iris.api.v0.IrisApi;
 import net.irisshaders.iris.api.v0.IrisProgram;
@@ -16,6 +18,7 @@ import net.irisshaders.iris.api.v0.IrisShadowProgram;
 import net.irisshaders.iris.pathways.HandRenderer;
 import net.irisshaders.iris.vertices.ImmediateState;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.SubmitNodeStorage;
 import net.minecraft.world.item.ItemStack;
 import combatant.client.render.CombatantEntityRenderTypes;
 import combatant.client.render.iris.geometry.IrisImportedGeometryPipelines;
@@ -60,8 +63,8 @@ enum IrisRuntimeBridge {
         }
         assignImportedGeometry(api, IrisImportedGeometryPipelines.GBUFFER_CULL);
         assignImportedGeometry(api, IrisImportedGeometryPipelines.GBUFFER_DOUBLE_SIDED);
-        assignImportedTranslucent(api, IrisImportedGeometryPipelines.TRANSLUCENT_CULL);
-        assignImportedTranslucent(api, IrisImportedGeometryPipelines.TRANSLUCENT_DOUBLE_SIDED);
+        assignImportedGeometry(api, IrisImportedGeometryPipelines.GBUFFER_NO_DEPTH_CULL);
+        assignImportedGeometry(api, IrisImportedGeometryPipelines.GBUFFER_NO_DEPTH_DOUBLE_SIDED);
         assignImportedTranslucent(api, IrisImportedGeometryPipelines.TRANSLUCENT_BLEND_CULL);
         assignImportedTranslucent(api, IrisImportedGeometryPipelines.TRANSLUCENT_BLEND_DOUBLE_SIDED);
         assignImportedTranslucent(api, IrisImportedGeometryPipelines.TRANSLUCENT_NO_DEPTH_CULL);
@@ -87,6 +90,32 @@ enum IrisRuntimeBridge {
         if (client.player == null) return false;
         return !HandRenderer.INSTANCE.isHandTranslucent(client.player.getMainHandItem())
                 || !HandRenderer.INSTANCE.isHandTranslucent(client.player.getOffhandItem());
+    }
+
+    static boolean submitNativeHandScene(float tickDelta,
+                                         PoseStack poseStack,
+                                         SubmitNodeStorage storage) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null || client.gameRenderer == null) return false;
+
+        HandRenderer handRenderer = HandRenderer.INSTANCE;
+        IrisHandRendererAccessor accessor = (IrisHandRendererAccessor) handRenderer;
+        boolean previousSolid = handRenderer.isRenderingSolid();
+        int light = client.getEntityRenderDispatcher().getPackedLightCoords(client.player, tickDelta);
+        try {
+            // Iris normally submits these into two Photon phases. Build both subsets into one
+            // vanilla storage instead; the existing Iris item filter still selects each subset,
+            // while no draw occurs until the native post-world pass.
+            accessor.combatant$setRenderingSolid(true);
+            client.gameRenderer.itemInHandRenderer.submitHandsWithItems(
+                    tickDelta, poseStack, storage, client.player, light);
+            accessor.combatant$setRenderingSolid(false);
+            client.gameRenderer.itemInHandRenderer.submitHandsWithItems(
+                    tickDelta, poseStack, storage, client.player, light);
+            return true;
+        } finally {
+            accessor.combatant$setRenderingSolid(previousSolid);
+        }
     }
 
     static boolean beginNativeShaderBypass() {
@@ -129,6 +158,10 @@ enum IrisRuntimeBridge {
 
     static void invalidateImportedGeometryResidency() {
         IrisImportedGeometryResidency.invalidateImportedIrisResidency();
+    }
+
+    static void applyImportedGeometryDrawUniforms() {
+        IrisImportedGeometryRenderer.applyCurrentDrawUniforms();
     }
 
     private static void assignImportedGeometry(IrisApi api, RenderPipeline pipeline) {

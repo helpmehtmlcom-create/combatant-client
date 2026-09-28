@@ -168,7 +168,7 @@ public final class InventorySwap {
             lastUseItemTick = packetTick;
         } else if (packet instanceof ServerboundSwingPacket) {
             // MultiActionsE checks animation while using item; the safety gate uses player.isUsingItem().
-        } else if (packet instanceof ServerboundInteractPacket) {
+        } else if (packet instanceof ServerboundAttackPacket || packet instanceof ServerboundInteractPacket) {
             lastEntityActionTick = packetTick;
         } else if (packet instanceof ServerboundUseItemOnPacket) {
             lastBlockActionTick = packetTick;

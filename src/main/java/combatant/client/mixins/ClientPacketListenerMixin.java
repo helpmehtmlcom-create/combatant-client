@@ -28,6 +28,7 @@ import combatant.client.events.impl.PvpTabEvent;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.combat.PvpCooldowns;
 import combatant.client.features.module.modules.misc.NoSound;
+import combatant.client.features.module.modules.player.NoRotate;
 import combatant.client.features.module.modules.movement.Flight;
 import combatant.client.features.module.modules.visuals.SoundESP;
 import combatant.client.features.module.modules.visuals.TotemFX;
@@ -47,6 +48,44 @@ import java.util.regex.Pattern;
 
 @Mixin(ClientPacketListener.class)
 public abstract class ClientPacketListenerMixin {
+
+    @Unique
+    private boolean combatant$restoreServerRotation;
+    @Unique
+    private float combatant$restoreYRot;
+    @Unique
+    private float combatant$restoreXRot;
+    @Unique
+    private float combatant$restoreYRotO;
+    @Unique
+    private float combatant$restoreXRotO;
+
+    @Inject(method = {"handleMovePlayer", "handleRotatePlayer"}, at = @At("HEAD"))
+    private void combatant$captureRotationBeforeServerCorrection(CallbackInfo ci) {
+        NoRotate noRotate = Modules.get(NoRotate.class);
+        Player player = Minecraft.getInstance().player;
+        if (noRotate == null || !noRotate.isEnabled() || player == null) {
+            combatant$restoreServerRotation = false;
+            return;
+        }
+        combatant$restoreServerRotation = true;
+        combatant$restoreYRot = player.getYRot();
+        combatant$restoreXRot = player.getXRot();
+        combatant$restoreYRotO = player.yRotO;
+        combatant$restoreXRotO = player.xRotO;
+    }
+
+    @Inject(method = {"handleMovePlayer", "handleRotatePlayer"}, at = @At("TAIL"))
+    private void combatant$restoreRotationAfterServerCorrection(CallbackInfo ci) {
+        if (!combatant$restoreServerRotation) return;
+        combatant$restoreServerRotation = false;
+        Player player = Minecraft.getInstance().player;
+        if (player == null) return;
+        player.setYRot(combatant$restoreYRot);
+        player.setXRot(combatant$restoreXRot);
+        player.yRotO = combatant$restoreYRotO;
+        player.xRotO = combatant$restoreXRotO;
+    }
 
     // "TPS: 20.0" или "TPS: *20.0"
     @Unique
@@ -414,6 +453,10 @@ public abstract class ClientPacketListenerMixin {
                 return;
             }
             if (entity instanceof Player player) {
+                TotemFX fx = Modules.get(TotemFX.class);
+                if (fx != null) {
+                    fx.onOpponentTotemPop(player);
+                }
                 TotemPopCounter.recordPop(player);
                 if (CooldownsState.shouldTrackOpponents()) {
                     OpponentCooldownManager.recordUse(player.getUUID(), Items.TOTEM_OF_UNDYING);

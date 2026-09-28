@@ -64,6 +64,7 @@ final class OnlineRelationPlayerPickerComponent {
     private final List<PlayerRow> rows = new ArrayList<>();
     private final List<RowHit> rowHits = new ArrayList<>();
     private final Map<UUID, Identifier> skinCache = new HashMap<>();
+    private final Map<String, Float> rowHoverAnim = new HashMap<>();
 
     private boolean openTarget;
     private boolean searchOpen;
@@ -233,16 +234,72 @@ final class OnlineRelationPlayerPickerComponent {
     }
 
     private void renderHeader(float x, float y, float w, float h, float mx, float my, float scale, SettingsGuiPalette palette, float opacity) {
-        float titleSize = 8.2f * scale;
-        String title = tr("title", "Online players");
+        int accent = modeColor();
+        float iconBox = 18f * scale;
+        int iconA = fade(SettingsGuiPalette.withAlpha(SettingsGuiPalette.mix(palette.controlSurface(), accent, 0.09f), 116), opacity);
+        int iconB = fade(SettingsGuiPalette.withAlpha(SettingsGuiPalette.mix(palette.controlSurfaceHover(), accent, 0.15f), 126), opacity);
+        LayoutRender2D.roundedQuad(x, y, iconBox, iconBox, 4.8f * scale, iconA, iconB, iconB, iconA);
+        LayoutRender2D.roundedStroke(
+                x, y, iconBox, iconBox, 4.8f * scale, 0.45f * scale,
+                fade(SettingsGuiPalette.withAlpha(SettingsGuiPalette.mix(palette.glassEdgeSoft(), accent, 0.22f), 96), opacity)
+        );
+        Renderer2D.COLOR.svg(
+                "users-round",
+                x + 4.7f * scale,
+                y + 4.7f * scale,
+                iconBox - 9.4f * scale,
+                iconBox - 9.4f * scale,
+                SvgRenderOptions.overrideColor(fade(SettingsGuiPalette.mix(palette.panelText(), accent, 0.24f), opacity))
+        );
+
+        float textX = x + iconBox + 6f * scale;
+        float badgeH = 12f * scale;
+        String badgeText = modeDisplayName(mode) + " · " + filteredRows().size();
+        float badgeSize = 5.2f * scale;
+        float badgeW = Math.min(69f * scale,
+                ClickGuiRenderer.textWidth(ClickGuiRenderer.getInterMedium(), badgeText, badgeSize) + 13f * scale);
+        float badgeX = x + w - badgeW;
+        float badgeY = y + 2.5f * scale;
+        int badgeA = fade(SettingsGuiPalette.withAlpha(SettingsGuiPalette.mix(palette.controlSurface(), accent, 0.10f), 110), opacity);
+        int badgeB = fade(SettingsGuiPalette.withAlpha(SettingsGuiPalette.mix(palette.controlSurfaceHover(), accent, 0.16f), 120), opacity);
+        LayoutRender2D.roundedQuad(badgeX, badgeY, badgeW, badgeH, badgeH * 0.5f, badgeA, badgeB, badgeB, badgeA);
+        float dot = 3.8f * scale;
+        Renderer2D.COLOR.roundedRect(
+                badgeX + 4f * scale,
+                badgeY + (badgeH - dot) * 0.5f,
+                dot, dot, dot * 0.5f, 1f,
+                fade(SettingsGuiPalette.withAlpha(accent, 238), opacity)
+        );
+        String fittedBadge = ClickGuiRenderer.fitText(
+                ClickGuiRenderer.getInterMedium(), badgeText, badgeSize,
+                Math.max(1f, badgeW - 12f * scale)
+        );
+        ClickGuiRenderer.drawText(
+                ClickGuiRenderer.getInterMedium(), fittedBadge,
+                badgeX + 9.5f * scale,
+                badgeY + (badgeH - ClickGuiRenderer.textHeight(ClickGuiRenderer.getInterMedium(), badgeSize)) * 0.5f,
+                badgeSize,
+                fade(palette.panelText(), opacity),
+                false
+        );
+
+        float titleMaxW = Math.max(1f, badgeX - 7f * scale - textX);
+        float titleSize = 7.8f * scale;
+        String title = ClickGuiRenderer.fitText(ClickGuiRenderer.getInterMedium(), tr("title", "Online players"), titleSize, titleMaxW);
         String subtitle = search == null || search.isBlank()
                 ? tr("subtitle", "Pick from current tab list")
                 : tr("subtitle_search", "%s / %s visible", filteredRows().size(), rows.size());
-        ClickGuiRenderer.drawText(ClickGuiRenderer.getInterMedium(), title, x, y + 1.5f * scale, titleSize, fade(palette.panelText(), opacity), false);
-        ClickGuiRenderer.drawText(ClickGuiRenderer.getInterRegular(), subtitle, x, y + 13.0f * scale, 6.15f * scale, fade(palette.panelMuted(), opacity), false);
+        ClickGuiRenderer.drawText(ClickGuiRenderer.getInterMedium(), title, textX, y + 1f * scale, titleSize, fade(palette.panelText(), opacity), false);
+        ClickGuiRenderer.drawText(
+                ClickGuiRenderer.getInterRegular(),
+                ClickGuiRenderer.fitText(ClickGuiRenderer.getInterRegular(), subtitle, 5.65f * scale, titleMaxW),
+                textX,
+                y + 11.6f * scale,
+                5.65f * scale,
+                fade(palette.panelMuted(), opacity),
+                false
+        );
 
-        // The global Relations toolbar owns search/clear/close actions. Keep the
-        // embedded picker header informational instead of duplicating controls.
         closeButton = Rect.ZERO;
         searchButton = Rect.ZERO;
         searchField = Rect.ZERO;
@@ -252,7 +309,23 @@ final class OnlineRelationPlayerPickerComponent {
         List<PlayerRow> filtered = filteredRows();
         if (filtered.isEmpty()) {
             String text = search.isBlank() ? tr("empty", "No online players.") : tr("empty_search", "No matching online players.");
-            ClickGuiRenderer.drawText(ClickGuiRenderer.getInterRegular(), text, x + 5f * scale, y + 5f * scale, 7.2f * scale, fade(palette.panelMuted(), opacity), false);
+            float iconBox = 28f * scale;
+            float centerX = x + w * 0.5f;
+            float centerY = y + Math.min(h * 0.40f, 62f * scale);
+            int bg = fade(SettingsGuiPalette.withAlpha(SettingsGuiPalette.mix(palette.controlSurface(), modeColor(), 0.05f), 88), opacity);
+            LayoutRender2D.roundedQuad(centerX - iconBox * 0.5f, centerY - iconBox * 0.5f, iconBox, iconBox, 7f * scale, bg, bg, bg, bg);
+            Renderer2D.COLOR.svg(
+                    search.isBlank() ? "users-round" : "circle-question-mark",
+                    centerX - 6f * scale,
+                    centerY - 6f * scale,
+                    12f * scale,
+                    12f * scale,
+                    SvgRenderOptions.overrideColor(fade(SettingsGuiPalette.mix(palette.panelMuted(), modeColor(), 0.18f), opacity))
+            );
+            float size = 6.7f * scale;
+            String fitted = ClickGuiRenderer.fitText(ClickGuiRenderer.getInterMedium(), text, size, w - 24f * scale);
+            float tw = ClickGuiRenderer.textWidth(ClickGuiRenderer.getInterMedium(), fitted, size);
+            ClickGuiRenderer.drawText(ClickGuiRenderer.getInterMedium(), fitted, x + (w - tw) * 0.5f, centerY + 20f * scale, size, fade(palette.panelMuted(), opacity), false);
             updateScrollbarMetrics(x, y, w, h, 0f, scale);
             return;
         }
@@ -287,23 +360,49 @@ final class OnlineRelationPlayerPickerComponent {
     }
 
     private void renderRow(PlayerRow player, float x, float y, float w, float h, float mx, float my, float scale, SettingsGuiPalette palette, float opacity) {
-        // Rows no longer cascade in from below; the panel-level fade is enough.
         boolean hover = openTarget && ClickGuiMath.insideRect(mx, my, x, y, w, h);
+        String hoverKey = player.name() == null ? "" : player.name().toLowerCase(Locale.ROOT);
+        float hoverValue = rowHoverAnim.getOrDefault(hoverKey, 0f);
+        float hoverTarget = hover ? 1f : 0f;
+        hoverValue = AnimationUtility.snap(
+                AnimationUtility.approach(hoverValue, hoverTarget, AnimationUtility.deltaTime(), 11f),
+                hoverTarget,
+                0.006f
+        );
+        rowHoverAnim.put(hoverKey, hoverValue);
         boolean selected = DefineTarget.isPlayerInRelationMode(mode, player.name());
         int relationColor = player.relationColor() != 0 ? player.relationColor() : modeColor();
         float radius = 4.5f * scale;
+        if (selected) {
+            LayoutRender2D.roundedSoftShadow(
+                    x + 0.3f * scale, y + 0.5f * scale, w - 0.6f * scale, h,
+                    radius, 4f * scale, 0.018f,
+                    fade(SettingsGuiPalette.withAlpha(relationColor, 54), opacity)
+            );
+        }
         int rowA = SettingsGuiPalette.withAlpha(
-                SettingsGuiPalette.mix(palette.controlSurface(), relationColor, selected ? 0.12f : (hover ? 0.035f : 0.0f)),
-                selected ? 162 : (hover ? 134 : 98));
+                SettingsGuiPalette.mix(palette.controlSurface(), relationColor, selected ? 0.12f : hoverValue * 0.035f),
+                selected ? 162 : Math.round(98f + hoverValue * 36f));
         int rowB = SettingsGuiPalette.withAlpha(
-                SettingsGuiPalette.mix(palette.controlSurfaceHover(), relationColor, selected ? 0.18f : (hover ? 0.08f : 0.015f)),
-                selected ? 170 : (hover ? 142 : 102));
+                SettingsGuiPalette.mix(palette.controlSurfaceHover(), relationColor, selected ? 0.18f : 0.015f + hoverValue * 0.065f),
+                selected ? 170 : Math.round(102f + hoverValue * 40f));
         LayoutRender2D.roundedQuad(x, y, w, h, radius, fade(rowA, opacity), fade(rowB, opacity), fade(rowB, opacity), fade(rowA, opacity));
         LayoutRender2D.roundedStroke(
                 x, y, w, h, radius, 0.5f * scale,
                 fade(selected
                         ? SettingsGuiPalette.withAlpha(SettingsGuiPalette.mix(palette.panelStroke(), relationColor, 0.55f), 198)
-                        : SettingsGuiPalette.withAlpha(palette.glassEdgeSoft(), hover ? 108 : 68), opacity));
+                        : SettingsGuiPalette.withAlpha(palette.glassEdgeSoft(), Math.round(68f + hoverValue * 40f)), opacity));
+        if (selected) {
+            float stripW = 1.8f * scale;
+            float stripH = Math.max(4f * scale, h - 10f * scale);
+            LayoutRender2D.roundedQuad(
+                    x + 1.0f * scale, y + (h - stripH) * 0.5f, stripW, stripH, stripW * 0.5f,
+                    fade(SettingsGuiPalette.withAlpha(relationColor, 198), opacity),
+                    fade(SettingsGuiPalette.withAlpha(relationColor, 228), opacity),
+                    fade(SettingsGuiPalette.withAlpha(relationColor, 206), opacity),
+                    fade(SettingsGuiPalette.withAlpha(relationColor, 176), opacity)
+            );
+        }
 
         float head = 17.0f * scale;
         float headX = x + 6f * scale;

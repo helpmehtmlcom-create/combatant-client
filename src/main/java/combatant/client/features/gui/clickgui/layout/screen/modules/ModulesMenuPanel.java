@@ -71,6 +71,8 @@ final class ModulesMenuPanel {
     float subcategoryIndicatorTargetW;
     float subcategoryIndicatorProgress = 1.0f;
     boolean subcategoryIndicatorReady;
+    float subcategoryLeftHintAnim;
+    float subcategoryRightHintAnim;
     float subcategoryContentAnim = 1.0f;
     int subcategoryDirection = 1;
 
@@ -92,17 +94,15 @@ final class ModulesMenuPanel {
         settingsSmoothScroll = 0.0f;
         modulesScroll = 0.0f;
         modulesSmoothScroll = 0.0f;
-        subcategoryScroll = 0.0f;
-        subcategorySmoothScroll = 0.0f;
-        maxSubcategoryScroll = 0.0f;
         subcategoryViewportX = subcategoryViewportY = subcategoryViewportW = subcategoryViewportH = 0.0f;
         swap = 0.0f;
         hits.clear();
         settingHits.clear();
         subcategoryHits.clear();
-        selectedSubcategory = defaultSubcategory();
         subcategoryIndicatorReady = false;
         subcategoryIndicatorProgress = 1.0f;
+        subcategoryLeftHintAnim = 0.0f;
+        subcategoryRightHintAnim = 0.0f;
         subcategoryContentAnim = 1.0f;
         subcategoryDirection = 1;
         previewX = previewY = previewW = previewH = 0.0f;
@@ -176,6 +176,18 @@ final class ModulesMenuPanel {
             subcategoryIndicatorX = subcategoryIndicatorTargetX;
             subcategoryIndicatorW = subcategoryIndicatorTargetW;
         }
+    }
+
+    void animateSubcategoryScrollHints(float leftTarget, float rightTarget) {
+        float dt = AnimationUtility.deltaTime();
+        subcategoryLeftHintAnim = AnimationUtility.approach(
+                subcategoryLeftHintAnim, AnimationUtility.clamp01(leftTarget), dt, 12.5f);
+        subcategoryRightHintAnim = AnimationUtility.approach(
+                subcategoryRightHintAnim, AnimationUtility.clamp01(rightTarget), dt, 12.5f);
+        subcategoryLeftHintAnim = AnimationUtility.snap(
+                subcategoryLeftHintAnim, AnimationUtility.clamp01(leftTarget), 0.002f);
+        subcategoryRightHintAnim = AnimationUtility.snap(
+                subcategoryRightHintAnim, AnimationUtility.clamp01(rightTarget), 0.002f);
     }
 
     float subcategoryHoverAnim(ModuleSubcategoryDefinition subcategory, boolean hover) {

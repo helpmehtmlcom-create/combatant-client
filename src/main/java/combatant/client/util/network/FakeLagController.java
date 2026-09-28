@@ -219,7 +219,8 @@ public final class FakeLagController {
 
         boolean test(Packet<?> packet) {
             return switch (this) {
-                case ENTITY_INTERACT -> packet instanceof ServerboundInteractPacket
+                case ENTITY_INTERACT -> packet instanceof ServerboundAttackPacket
+                        || packet instanceof ServerboundInteractPacket
                         || packet instanceof ServerboundSwingPacket;
                 case BLOCK_INTERACT -> packet instanceof ServerboundUseItemOnPacket
                         || packet instanceof ServerboundSignUpdatePacket;

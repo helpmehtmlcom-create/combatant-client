@@ -46,6 +46,18 @@ public abstract class GlCommandEncoderMixin {
         }
     }
 
+    /**
+     * trySetup is shared by ordinary draws, direct multi-draw and indirect draws. At RETURN the
+     * concrete Iris/Blaze3D program is selected. ExtendedShader also has a dedicated RETURN hook
+     * so injection ordering cannot leave its later custom-uniform push as the final writer.
+     */
+    @Inject(method = "trySetup", at = @At("RETURN"))
+    private void combatant$applyImportedGeometryDrawUniforms(CallbackInfoReturnable<Boolean> cir) {
+        if (Boolean.TRUE.equals(cir.getReturnValue())) {
+            IrisRuntime.applyImportedGeometryDrawUniforms();
+        }
+    }
+
     @WrapOperation(
             method = "trySetup",
             at = @At(

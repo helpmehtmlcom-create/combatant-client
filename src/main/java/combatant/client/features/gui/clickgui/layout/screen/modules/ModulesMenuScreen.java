@@ -67,6 +67,10 @@ public final class ModulesMenuScreen {
     private static final float TEXT_LEFT_PADDING = 10.0f;
     private static final float HOVER_DESCRIPTION_MAX_W = 290.0f;
     private static final float HOVER_DESCRIPTION_FONT = 11.0f;
+    private static final float HOVER_DESCRIPTION_MARQUEE_SPEED = 24.0f;
+    private static final float HOVER_DESCRIPTION_MARQUEE_GAP = 34.0f;
+    private static final float HOVER_DESCRIPTION_MARQUEE_PAUSE_SEC = 0.85f;
+    private static final float HOVER_DESCRIPTION_FADE_W = 13.0f;
 
     private static final float LIQUID_GLASS_LOGICAL_SCALE = 3.0f;
     private static float ACTIVE_PORT_SCALE = LIQUID_GLASS_LOGICAL_SCALE;
@@ -83,6 +87,7 @@ public final class ModulesMenuScreen {
     private boolean openTarget = false;
 
     private float searchAnim = 0.0f;
+    private boolean lastSearchMode;
     private float searchX;
     private float searchY;
     private float searchW;
@@ -101,6 +106,7 @@ public final class ModulesMenuScreen {
     private String activeHoverDescription;
     private ModulesMenuCategory activeHoverDescriptionCategory;
     private float hoverDescriptionAnim;
+    private long hoverDescriptionMarqueeStartNanos;
 
     public ModulesMenuScreen() {
         ModulesMenuCategory[] values = ModulesMenuCategory.values();
@@ -266,8 +272,18 @@ public final class ModulesMenuScreen {
             return;
         }
 
-        searchAnim = AnimationUtility.approach(searchAnim, ClickGuiSearch.isActive() ? 1.0f : 0.0f, dt, 10.0f);
-        searchAnim = AnimationUtility.snap(searchAnim, ClickGuiSearch.isActive() ? 1.0f : 0.0f, 0.01f);
+        boolean searchMode = ClickGuiSearch.isActive() || ClickGuiSearch.hasQuery();
+        if (searchMode != lastSearchMode) {
+            for (ModulesMenuPanel panel : panels) {
+                panel.modulesScroll = 0.0f;
+                panel.modulesSmoothScroll = 0.0f;
+                panel.maxModulesScroll = 0.0f;
+                panel.subcategoryContentAnim = 0.08f;
+            }
+            lastSearchMode = searchMode;
+        }
+        searchAnim = AnimationUtility.approach(searchAnim, searchMode ? 1.0f : 0.0f, dt, 10.0f);
+        searchAnim = AnimationUtility.snap(searchAnim, searchMode ? 1.0f : 0.0f, 0.01f);
 
         layout(areaX, areaY, areaW, areaH);
 
@@ -445,6 +461,7 @@ public final class ModulesMenuScreen {
         activeHoverDescriptionId = null;
         activeHoverDescription = null;
         hoverDescriptionAnim = 0.0f;
+        lastSearchMode = false;
         for (ModulesMenuPanel panel : panels) {
             panel.selected = null;
             panel.selectedTitle = null;
@@ -454,12 +471,6 @@ public final class ModulesMenuScreen {
             panel.modulesScroll = 0.0f;
             panel.modulesSmoothScroll = 0.0f;
             panel.swap = 0.0f;
-            panel.selectedSubcategory = panel.category.subcategories().isEmpty()
-                    ? null
-                    : panel.category.subcategories().get(0);
-            panel.subcategoryScroll = 0.0f;
-            panel.subcategorySmoothScroll = 0.0f;
-            panel.maxSubcategoryScroll = 0.0f;
             panel.subcategoryIndicatorReady = false;
             panel.subcategoryContentAnim = 1.0f;
             panel.subcategoryDirection = 1;
@@ -507,7 +518,8 @@ public final class ModulesMenuScreen {
 
         if (panel.swap < 0.999f) {
             float modulePageAlpha = alpha * (1.0f - panel.swap);
-            renderSubcategoryBar(panel, mouseX, mouseY, modulePageAlpha);
+            float subcategoryVisibility = 1.0f - AnimationUtility.easeOutCubic(searchAnim);
+            renderSubcategoryBar(panel, mouseX, mouseY, modulePageAlpha * subcategoryVisibility);
             renderModulePage(panel, mouseX, mouseY, modulePageAlpha);
         }
 
@@ -515,7 +527,9 @@ public final class ModulesMenuScreen {
             renderSettingsPage(panel, mouseX, mouseY, alpha * panel.swap);
         }
 
-        float headerH = MODULE_HEADER_H + (BASE_HEADER_H - MODULE_HEADER_H) * panel.swap;
+        float searchCollapse = AnimationUtility.easeOutCubic(searchAnim);
+        float moduleHeaderH = AnimationUtility.lerp(MODULE_HEADER_H, BASE_HEADER_H, searchCollapse);
+        float headerH = moduleHeaderH + (BASE_HEADER_H - moduleHeaderH) * panel.swap;
         LayoutRender2D.rect(
                 panel.x + 8.0f * scale,
                 panel.y + headerH * scale,
@@ -526,7 +540,11 @@ public final class ModulesMenuScreen {
     }
 
     private void renderSubcategoryBar(ModulesMenuPanel panel, float mouseX, float mouseY, float alpha) {
-        if (alpha <= 0.001f) return;
+        if (alpha <= 0.001f) {
+            panel.subcategoryViewportX = panel.subcategoryViewportY = 0.0f;
+            panel.subcategoryViewportW = panel.subcategoryViewportH = 0.0f;
+            return;
+        }
         List<ModuleSubcategoryDefinition> subcategories = panel.category.subcategories();
         if (subcategories.isEmpty()) return;
 
@@ -562,10 +580,16 @@ public final class ModulesMenuScreen {
                 panel.subcategoryScroll, 0.0f, panel.maxSubcategoryScroll);
         panel.subcategorySmoothScroll = AnimationUtility.clamp(
                 panel.subcategorySmoothScroll, 0.0f, panel.maxSubcategoryScroll);
-        panel.subcategoryViewportX = rowX;
-        panel.subcategoryViewportY = rowY - 1.6f * scale;
-        panel.subcategoryViewportW = rowW;
-        panel.subcategoryViewportH = rowH + 3.2f * scale;
+        boolean searchMode = ClickGuiSearch.isActive() || ClickGuiSearch.hasQuery();
+        if (searchMode) {
+            panel.subcategoryViewportX = panel.subcategoryViewportY = 0.0f;
+            panel.subcategoryViewportW = panel.subcategoryViewportH = 0.0f;
+        } else {
+            panel.subcategoryViewportX = rowX;
+            panel.subcategoryViewportY = rowY - 1.6f * scale;
+            panel.subcategoryViewportW = rowW;
+            panel.subcategoryViewportH = rowH + 3.2f * scale;
+        }
 
         ModuleSubcategoryDefinition active = panel.activeSubcategory();
         float selectedTargetX = rowX;
@@ -590,6 +614,18 @@ public final class ModulesMenuScreen {
         float scroll = panel.subcategorySmoothScroll;
         boolean viewportHover = inside(mouseX, mouseY, rowX, rowY, rowW, rowH);
 
+        // Edge affordances are intentionally derived from the smooth position, not the target
+        // scroll. That keeps the chevrons visually coupled to the strip while wheel inertia is
+        // still settling. Near either end the corresponding hint fades away instead of popping.
+        float hintFadeDistance = 7.5f * scale;
+        float leftHintTarget = panel.maxSubcategoryScroll > 0.5f
+                ? AnimationUtility.clamp01(scroll / Math.max(0.001f, hintFadeDistance))
+                : 0.0f;
+        float rightHintTarget = panel.maxSubcategoryScroll > 0.5f
+                ? AnimationUtility.clamp01((panel.maxSubcategoryScroll - scroll) / Math.max(0.001f, hintFadeDistance))
+                : 0.0f;
+        panel.animateSubcategoryScrollHints(leftHintTarget, rightHintTarget);
+
         // The optical/stroke footprint is wider than the logical hit area. Keep the scroll viewport
         // strict for input, but give the renderer enough guard band so the first/last pill is not
         // visibly cut by scissor.
@@ -603,11 +639,13 @@ public final class ModulesMenuScreen {
                 ModuleSubcategoryDefinition subcategory = subcategories.get(i);
                 float x = contentXs[i] - scroll;
                 float itemW = itemWidths[i];
-                boolean hovered = viewportHover && inside(mouseX, mouseY, x, rowY, itemW, rowH);
+                boolean hovered = !searchMode && viewportHover && inside(mouseX, mouseY, x, rowY, itemW, rowH);
                 float hover = panel.subcategoryHoverAnim(subcategory, hovered);
                 hoverValues[i] = hover;
                 if (hovered) SystemCursor.set(SystemCursor.CursorType.HAND);
-                panel.subcategoryHits.add(new ModulesMenuPanel.SubcategoryHit(subcategory, x, rowY, itemW, rowH));
+                if (!searchMode) {
+                    panel.subcategoryHits.add(new ModulesMenuPanel.SubcategoryHit(subcategory, x, rowY, itemW, rowH));
+                }
 
                 UiBoxShape shape = UiBoxShape.rounded(x, rowY, itemW, rowH, radius);
 
@@ -722,6 +760,57 @@ public final class ModulesMenuScreen {
         } finally {
             if (clipped) ScissorFunction.pop();
         }
+
+        renderSubcategoryScrollHints(panel, rowX, rowY, rowW, rowH, alpha);
+    }
+
+    private void renderSubcategoryScrollHints(ModulesMenuPanel panel,
+                                              float rowX,
+                                              float rowY,
+                                              float rowW,
+                                              float rowH,
+                                              float alpha) {
+        float left = AnimationUtility.easeOutCubic(panel.subcategoryLeftHintAnim);
+        float right = AnimationUtility.easeOutCubic(panel.subcategoryRightHintAnim);
+        if (Math.max(left, right) <= 0.002f || alpha <= 0.002f) return;
+
+        // A short edge scrim keeps the SVG readable over both selected and idle glass pills while
+        // still letting the underlying strip remain visible. It also makes clipped labels read as
+        // continuation rather than accidental scissor damage.
+        float fadeW = 10.5f * scale;
+        int edgeRgb = ModulesMenuStyle.panelBgGlassDark();
+        if (left > 0.002f) {
+            int edge = withAlpha(edgeRgb, Math.round(alpha * left * 176.0f));
+            int clear = withAlpha(edgeRgb, 0);
+            LayoutRender2D.rectQuad(rowX - 0.15f * scale, rowY - 0.55f * scale,
+                    fadeW, rowH + 1.10f * scale, edge, clear, clear, edge);
+            drawSubcategoryScrollChevron("chevron-left",
+                    rowX + 1.25f * scale, rowY, rowH, alpha * left, -1.0f);
+        }
+        if (right > 0.002f) {
+            int edge = withAlpha(edgeRgb, Math.round(alpha * right * 176.0f));
+            int clear = withAlpha(edgeRgb, 0);
+            LayoutRender2D.rectQuad(rowX + rowW - fadeW + 0.15f * scale, rowY - 0.55f * scale,
+                    fadeW, rowH + 1.10f * scale, clear, edge, edge, clear);
+            drawSubcategoryScrollChevron("chevron-right",
+                    rowX + rowW - 6.45f * scale, rowY, rowH, alpha * right, 1.0f);
+        }
+    }
+
+    private void drawSubcategoryScrollChevron(String icon,
+                                               float x,
+                                               float rowY,
+                                               float rowH,
+                                               float alpha,
+                                               float direction) {
+        float iconSize = 5.15f * scale;
+        float iconY = rowY + (rowH - iconSize) * 0.5f;
+        // Tiny motion keeps the hint perceptible without turning it into a pulsing CTA.
+        float pulse = (float) Math.sin(AnimationUtility.time(0.0045f, AnimationUtility.Mode.NANOS));
+        float travel = pulse * 0.28f * scale * direction * AnimationUtility.clamp01(alpha);
+        int iconColor = withAlpha(ModulesMenuStyle.text(), Math.round(alpha * 216.0f));
+        Renderer2D.COLOR.svg(icon, x + travel, iconY, iconSize, iconSize,
+                SvgRenderOptions.overrideColor(iconColor));
     }
 
     private void renderModulePage(ModulesMenuPanel panel, float mouseX, float mouseY, float alpha) {
@@ -734,9 +823,11 @@ public final class ModulesMenuScreen {
 
         float switchOffset = (1.0f - categorySwitch) * 4.0f * scale * panel.subcategoryDirection;
         float pageX = panel.x - panel.w * panel.swap + switchOffset;
-        float listY = panel.y + (MODULE_HEADER_H + SEPARATOR_H - 1.0f) * scale;
-        float clipY = panel.y + (MODULE_HEADER_H + SEPARATOR_H) * scale;
-        float clipH = panel.h - (MODULE_HEADER_H + SEPARATOR_H) * scale - 0.5f * scale;
+        float searchCollapse = AnimationUtility.easeOutCubic(searchAnim);
+        float moduleHeaderH = AnimationUtility.lerp(MODULE_HEADER_H, BASE_HEADER_H, searchCollapse);
+        float listY = panel.y + (moduleHeaderH + SEPARATOR_H - 1.0f) * scale;
+        float clipY = panel.y + (moduleHeaderH + SEPARATOR_H) * scale;
+        float clipH = panel.h - (moduleHeaderH + SEPARATOR_H) * scale - 0.5f * scale;
 
         boolean clipped = ScissorFunction.pushRaw(panel.x, clipY, panel.w, clipH);
         ClickGuiRenderer.flushRenderer();
@@ -745,7 +836,8 @@ public final class ModulesMenuScreen {
         float y = listY - panel.modulesSmoothScroll;
         float total = 0.0f;
 
-        ModuleSubcategoryDefinition subcategoryFilter = ClickGuiSearch.isActive() ? null : panel.activeSubcategory();
+        boolean globalSearch = ClickGuiSearch.isActive() || ClickGuiSearch.hasQuery();
+        ModuleSubcategoryDefinition subcategoryFilter = globalSearch ? null : panel.activeSubcategory();
         List<ModuleComponent.CardEntry> entries = ModulesMenuResolver.buildCards(panel.category, subcategoryFilter);
         boolean panelShapeClip = false;
         if (ClipFunction.usesMsaaStencilByDefault()) {
@@ -858,16 +950,23 @@ public final class ModulesMenuScreen {
         int nameColor = failed ? withAlpha(0xFFFF7777,alpha) : mix(withAlpha(ModulesMenuStyle.textMuted(), alpha), withAlpha(ModulesMenuStyle.text(), alpha), 0.25f + 0.75f * enabled + 0.20f * hoverAnim);
 
         float nameX = x + (TEXT_LEFT_PADDING + 2.0f * enabled) * scale;
-        float nameY = y + middle(textHeight(regular, 8.0f * scale), h) - 0.5f * scale;
+        float nameSize = 8.0f * scale;
+        float nameY = y + middle(textHeight(regular, nameSize), h) - 0.5f * scale;
         float nameMaxW = moduleListEdit
                 ? Math.max(12.0f * scale, moduleListX - nameX - 5.0f * scale)
                 : Math.max(12.0f * scale, rowW - (nameX - x) - 18.0f * scale);
-        String visibleLabel = ClickGuiRenderer.fitText(regular, label, 8.0f * scale, nameMaxW);
+
+        String matchedAlias = panel.bindingId == null || !panel.bindingId.equals(entry.getId())
+                ? ClickGuiSearch.matchingAlias(entry.searchAliases())
+                : null;
+        String aliasLabel = matchedAlias == null || matchedAlias.isBlank()
+                ? null
+                : "(aka " + matchedAlias + ")";
 
         if (failed) {
             SettingErrorView.warning(x+rowW-15f*scale,y+5f*scale,9f*scale,alpha);
         }
-        ClickGuiRenderer.drawText(regular, visibleLabel, nameX, nameY, 8.0f * scale, nameColor, false);
+        renderModuleSearchTitle(label, aliasLabel, nameX, nameY, nameMaxW, nameSize, nameColor, alpha, hoverAnim);
 
         if (moduleListEdit) {
             int listColor = entry.shownInModuleList() ? ModulesMenuStyle.MODULE_LIST_ON : ModulesMenuStyle.MODULE_LIST_OFF;
@@ -878,6 +977,67 @@ public final class ModulesMenuScreen {
         LayoutRender2D.rect(x + 3.0f * scale, y + h, Math.max(1f, rowW - 6.0f * scale), 0.5f * scale, divider);
 
         panel.hits.add(new ModulesMenuPanel.ModuleHit(entry.getId(), x, y, rowW, h, entry.hasSettings(), entry.toggleable()));
+    }
+
+    private void renderModuleSearchTitle(
+            String label,
+            String aliasLabel,
+            float x,
+            float y,
+            float maxW,
+            float nameSize,
+            int nameColor,
+            float alpha,
+            float hoverAnim
+    ) {
+        if (label == null) label = "";
+        if (aliasLabel == null || aliasLabel.isBlank() || !ClickGuiSearch.hasQuery()) {
+            String visible = ClickGuiRenderer.fitText(regular, label, nameSize, maxW);
+            ClickGuiRenderer.drawText(regular, visible, x, y, nameSize, nameColor, false);
+            return;
+        }
+
+        float gap = 3.0f * scale;
+        float aliasSize = 6.15f * scale;
+        float fullNameW = ClickGuiRenderer.textWidth(regular, label, nameSize);
+        float fullAliasW = ClickGuiRenderer.textWidth(medium, aliasLabel, aliasSize);
+
+        if (fullNameW + gap + fullAliasW <= maxW) {
+            ClickGuiRenderer.drawText(regular, label, x, y, nameSize, nameColor, false);
+            float aliasY = y + middle(textHeight(medium, aliasSize), textHeight(regular, nameSize)) + 0.15f * scale;
+            int aliasColor = mix(
+                    withAlpha(ModulesMenuStyle.textFaint(), alpha),
+                    withAlpha(ModulesMenuStyle.textMuted(), alpha),
+                    0.28f + 0.30f * hoverAnim
+            );
+            ClickGuiRenderer.drawText(medium, aliasLabel, x + fullNameW + gap, aliasY, aliasSize, aliasColor, false);
+            return;
+        }
+
+        // Preserve the module's primary name first. Alias metadata is search-only and
+        // receives a bounded share of the row so it cannot crowd the normal row affordances.
+        float minNameBudget = Math.min(fullNameW, Math.max(25.0f * scale, maxW * 0.56f));
+        float aliasBudget = Math.min(fullAliasW, Math.min(48.0f * scale, maxW - minNameBudget - gap));
+        float aliasMinUseful = ClickGuiRenderer.textWidth(medium, "(aka x)", aliasSize);
+        if (aliasBudget < aliasMinUseful) {
+            String visible = ClickGuiRenderer.fitText(regular, label, nameSize, maxW);
+            ClickGuiRenderer.drawText(regular, visible, x, y, nameSize, nameColor, false);
+            return;
+        }
+
+        float nameBudget = Math.max(12.0f * scale, maxW - gap - aliasBudget);
+        String visibleName = ClickGuiRenderer.fitText(regular, label, nameSize, nameBudget);
+        String visibleAlias = ClickGuiRenderer.fitText(medium, aliasLabel, aliasSize, aliasBudget);
+        float visibleNameW = ClickGuiRenderer.textWidth(regular, visibleName, nameSize);
+        float aliasY = y + middle(textHeight(medium, aliasSize), textHeight(regular, nameSize)) + 0.15f * scale;
+        int aliasColor = mix(
+                withAlpha(ModulesMenuStyle.textFaint(), alpha),
+                withAlpha(ModulesMenuStyle.textMuted(), alpha),
+                0.28f + 0.30f * hoverAnim
+        );
+
+        ClickGuiRenderer.drawText(regular, visibleName, x, y, nameSize, nameColor, false);
+        ClickGuiRenderer.drawText(medium, visibleAlias, x + visibleNameW + gap, aliasY, aliasSize, aliasColor, false);
     }
 
     private void renderModuleRowCheck(ModulesMenuPanel panel,
@@ -988,6 +1148,7 @@ public final class ModulesMenuScreen {
             activeHoverDescription = frameHoverDescription;
             activeHoverDescriptionCategory = frameHoverDescriptionCategory;
             hoverDescriptionAnim = Math.min(hoverDescriptionAnim, 0.32f);
+            hoverDescriptionMarqueeStartNanos = System.nanoTime();
         } else if (hasTarget) {
             activeHoverDescription = frameHoverDescription;
             activeHoverDescriptionCategory = frameHoverDescriptionCategory;
@@ -1006,6 +1167,7 @@ public final class ModulesMenuScreen {
             activeHoverDescriptionId = null;
             activeHoverDescription = null;
             activeHoverDescriptionCategory = null;
+            hoverDescriptionMarqueeStartNanos = 0L;
         }
     }
 
@@ -1022,25 +1184,26 @@ public final class ModulesMenuScreen {
         float sizeScale = 0.965f + 0.035f * Math.max(0.0f, motionProgress);
         float fontSize = HOVER_DESCRIPTION_FONT * scale * sizeScale;
         float maxWidth = HOVER_DESCRIPTION_MAX_W * scale;
-        String text = ClickGuiRenderer.fitText(comfortaa, activeHoverDescription, fontSize, maxWidth);
-        if (text == null || text.isBlank()) return;
+        String text = activeHoverDescription.trim();
+        if (text.isBlank()) return;
 
-        float textW = ClickGuiRenderer.textWidth(comfortaa, text, fontSize);
+        float fullTextW = ClickGuiRenderer.textWidth(comfortaa, text, fontSize);
         float textH = textHeight(comfortaa, fontSize);
+        float viewW = Math.min(maxWidth, fullTextW);
+        boolean marquee = fullTextW > maxWidth + 0.5f * scale;
         float minPanelY = Float.MAX_VALUE;
         for (ModulesMenuPanel panel : panels) minPanelY = Math.min(minPanelY, panel.y);
         if (!Float.isFinite(minPanelY)) return;
 
-        float x = areaX + areaW * 0.5f - textW * 0.5f;
+        float x = areaX + areaW * 0.5f - viewW * 0.5f;
         float y = minPanelY - textH - 10.0f * scale
                 + (1.0f - motionProgress) * 5.5f * scale;
         y = Math.max(areaY + 2.0f * scale, y);
 
         int negativeGlassColor = withAlpha(0xFFFFFFFF, Math.min(1.0f, alpha * 0.84f));
-
         float blendBoundsX = x - 3.0f * scale;
         float blendBoundsY = y - 3.0f * scale;
-        float blendBoundsW = textW + 6.0f * scale;
+        float blendBoundsW = viewW + 6.0f * scale;
         float blendBoundsH = textH + 6.0f * scale;
         UiRect blendBounds = UiRect.of(blendBoundsX, blendBoundsY, blendBoundsW, blendBoundsH);
         UiBackdropBlendSpec blend = UiBackdropBlendSpec.negative(1.0f);
@@ -1050,6 +1213,67 @@ public final class ModulesMenuScreen {
                 Renderer2D.LIQUID_GLASS_KAWASE_OFFSET_PX
         );
 
+        if (!marquee) {
+            renderHoverDescriptionGlassText(
+                    text, x, y, fontSize, negativeGlassColor,
+                    blendBoundsX, blendBoundsY, blendBoundsW, blendBoundsH, blend, backdrop,
+                    Float.NEGATIVE_INFINITY, Float.POSITIVE_INFINITY, 0.0f
+            );
+            return;
+        }
+
+        if (hoverDescriptionMarqueeStartNanos == 0L) {
+            hoverDescriptionMarqueeStartNanos = System.nanoTime();
+        }
+        float speed = HOVER_DESCRIPTION_MARQUEE_SPEED * scale;
+        float gap = HOVER_DESCRIPTION_MARQUEE_GAP * scale;
+        float cycleDistance = fullTextW + gap;
+        float moveDuration = speed <= 0.0f ? 0.0f : cycleDistance / speed;
+        float cycleDuration = HOVER_DESCRIPTION_MARQUEE_PAUSE_SEC + moveDuration;
+        float elapsed = (System.nanoTime() - hoverDescriptionMarqueeStartNanos) / 1_000_000_000.0f;
+        float t = cycleDuration > 0.0f ? elapsed % cycleDuration : 0.0f;
+        float offset = t <= HOVER_DESCRIPTION_MARQUEE_PAUSE_SEC
+                ? 0.0f
+                : -(t - HOVER_DESCRIPTION_MARQUEE_PAUSE_SEC) * speed;
+        float fade = Math.min(viewW * 0.22f, HOVER_DESCRIPTION_FADE_W * scale);
+        float clipLeft = x;
+        float clipRight = x + viewW;
+
+        boolean clipped = ScissorFunction.pushRaw(clipLeft, y, viewW, textH);
+        try {
+            renderHoverDescriptionGlassText(
+                    text, x + offset, y, fontSize, negativeGlassColor,
+                    blendBoundsX, blendBoundsY, blendBoundsW, blendBoundsH, blend, backdrop,
+                    clipLeft, clipRight, fade
+            );
+            if (cycleDistance > viewW * 0.5f) {
+                renderHoverDescriptionGlassText(
+                        text, x + offset + cycleDistance, y, fontSize, negativeGlassColor,
+                        blendBoundsX, blendBoundsY, blendBoundsW, blendBoundsH, blend, backdrop,
+                        clipLeft, clipRight, fade
+                );
+            }
+        } finally {
+            if (clipped) ScissorFunction.pop();
+        }
+    }
+
+    private void renderHoverDescriptionGlassText(
+            String text,
+            float x,
+            float y,
+            float fontSize,
+            int color,
+            float blendBoundsX,
+            float blendBoundsY,
+            float blendBoundsW,
+            float blendBoundsH,
+            UiBackdropBlendSpec blend,
+            UiBackdropRequest backdrop,
+            float clipLeft,
+            float clipRight,
+            float fadeWidth
+    ) {
         comfortaa.beginSize(fontSize, false, false);
         try {
             comfortaa.renderLiquidGlassBlendQuadGradient(
@@ -1057,10 +1281,20 @@ public final class ModulesMenuScreen {
                     x,
                     y,
                     (index, codePoint, x0, y0, x1, y1, out) -> {
-                        out[0] = negativeGlassColor;
-                        out[1] = negativeGlassColor;
-                        out[2] = negativeGlassColor;
-                        out[3] = negativeGlassColor;
+                        if (fadeWidth <= 0.0f || !Float.isFinite(clipLeft) || !Float.isFinite(clipRight)) {
+                            out[0] = color;
+                            out[1] = color;
+                            out[2] = color;
+                            out[3] = color;
+                            return;
+                        }
+
+                        int leftColor = withAlpha(color, horizontalMarqueeFade((float) x0, clipLeft, clipRight, fadeWidth));
+                        int rightColor = withAlpha(color, horizontalMarqueeFade((float) x1, clipLeft, clipRight, fadeWidth));
+                        out[0] = leftColor;
+                        out[1] = leftColor;
+                        out[2] = rightColor;
+                        out[3] = rightColor;
                     },
                     blendBoundsX,
                     blendBoundsY,
@@ -1072,6 +1306,13 @@ public final class ModulesMenuScreen {
         } finally {
             comfortaa.end();
         }
+    }
+
+    private static float horizontalMarqueeFade(float px, float left, float right, float fadeWidth) {
+        if (fadeWidth <= 0.0f) return 1.0f;
+        float leftAlpha = AnimationUtility.clamp01((px - left) / fadeWidth);
+        float rightAlpha = AnimationUtility.clamp01((right - px) / fadeWidth);
+        return Math.min(leftAlpha, rightAlpha);
     }
 
     private void renderSettingsPage(ModulesMenuPanel panel, float mouseX, float mouseY, float alpha) {

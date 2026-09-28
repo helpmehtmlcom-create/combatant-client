@@ -41,11 +41,13 @@ bool validRawDepth(float d) {
 float mergeDepth(float currentDepth, float candidateDepth) {
     if (!validRawDepth(candidateDepth)) return currentDepth;
     if (!validRawDepth(currentDepth)) return candidateDepth;
-    return min(currentDepth, candidateDepth);
+    // Minecraft/Iris scene depth is reversed-Z: larger values are closer.
+    return max(currentDepth, candidateDepth);
 }
 
 float readSceneDepth(vec2 uv) {
-    float d = 1.0;
+    // Reversed-Z clear/far is 0.0; merge keeps the nearest valid surface.
+    float d = 0.0;
     if (depthEnabled(u_DepthA.x)) d = mergeDepth(d, texture(u_MainDepth, uv).r);
     if (depthEnabled(u_DepthA.y)) d = mergeDepth(d, texture(u_TranslucentDepth, uv).r);
     if (depthEnabled(u_DepthA.z)) d = mergeDepth(d, texture(u_ItemEntityDepth, uv).r);

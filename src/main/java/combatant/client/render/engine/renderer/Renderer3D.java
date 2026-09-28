@@ -183,6 +183,93 @@ public final class Renderer3D {
         mesh.quad(i1, i2, i3, i4);
     }
 
+    public void filledBox(AABB box, int argb) {
+        filledBox(box, argb, DepthMode.MAIN);
+    }
+
+    public void filledBox(AABB box, int argb, DepthMode depthMode) {
+        if (box == null) return;
+        int a = (argb >>> 24) & 255;
+        if (a == 0) return;
+        int r = (argb >>> 16) & 255;
+        int g = (argb >>> 8) & 255;
+        int b = argb & 255;
+        MeshBuilder mesh = batch(trisPipeline, depthMode == null ? DepthMode.MAIN : depthMode);
+        if (mesh == null) return;
+
+        addQuad(mesh, box.minX, box.minY, box.minZ, box.maxX, box.minY, box.minZ, box.maxX, box.minY, box.maxZ, box.minX, box.minY, box.maxZ, r, g, b, a);
+        addQuad(mesh, box.minX, box.maxY, box.minZ, box.minX, box.maxY, box.maxZ, box.maxX, box.maxY, box.maxZ, box.maxX, box.maxY, box.minZ, r, g, b, a);
+        addQuad(mesh, box.minX, box.minY, box.maxZ, box.maxX, box.minY, box.maxZ, box.maxX, box.maxY, box.maxZ, box.minX, box.maxY, box.maxZ, r, g, b, a);
+        addQuad(mesh, box.minX, box.minY, box.minZ, box.minX, box.maxY, box.minZ, box.maxX, box.maxY, box.minZ, box.maxX, box.minY, box.minZ, r, g, b, a);
+        addQuad(mesh, box.maxX, box.minY, box.minZ, box.maxX, box.maxY, box.minZ, box.maxX, box.maxY, box.maxZ, box.maxX, box.minY, box.maxZ, r, g, b, a);
+        addQuad(mesh, box.minX, box.minY, box.minZ, box.minX, box.minY, box.maxZ, box.minX, box.maxY, box.maxZ, box.minX, box.maxY, box.minZ, r, g, b, a);
+    }
+
+    public void outlineBox(AABB box, int argb, float width) {
+        outlineBox(box, argb, width, DepthMode.MAIN);
+    }
+
+    public void outlineBox(AABB box, int argb, float width, DepthMode depthMode) {
+        if (box == null) return;
+        int a = (argb >>> 24) & 255;
+        if (a == 0) return;
+        int r = (argb >>> 16) & 255;
+        int g = (argb >>> 8) & 255;
+        int b = argb & 255;
+        MeshBuilder mesh = commands.batch(linesPipeline, depthMode == null ? DepthMode.MAIN : depthMode, Math.max(0.1f, width), BatchBindings.none());
+        if (mesh == null) return;
+
+        addLine(mesh, box.minX, box.minY, box.minZ, box.maxX, box.minY, box.minZ, r, g, b, a);
+        addLine(mesh, box.maxX, box.minY, box.minZ, box.maxX, box.minY, box.maxZ, r, g, b, a);
+        addLine(mesh, box.maxX, box.minY, box.maxZ, box.minX, box.minY, box.maxZ, r, g, b, a);
+        addLine(mesh, box.minX, box.minY, box.maxZ, box.minX, box.minY, box.minZ, r, g, b, a);
+        addLine(mesh, box.minX, box.maxY, box.minZ, box.maxX, box.maxY, box.minZ, r, g, b, a);
+        addLine(mesh, box.maxX, box.maxY, box.minZ, box.maxX, box.maxY, box.maxZ, r, g, b, a);
+        addLine(mesh, box.maxX, box.maxY, box.maxZ, box.minX, box.maxY, box.maxZ, r, g, b, a);
+        addLine(mesh, box.minX, box.maxY, box.maxZ, box.minX, box.maxY, box.minZ, r, g, b, a);
+        addLine(mesh, box.minX, box.minY, box.minZ, box.minX, box.maxY, box.minZ, r, g, b, a);
+        addLine(mesh, box.maxX, box.minY, box.minZ, box.maxX, box.maxY, box.minZ, r, g, b, a);
+        addLine(mesh, box.maxX, box.minY, box.maxZ, box.maxX, box.maxY, box.maxZ, r, g, b, a);
+        addLine(mesh, box.minX, box.minY, box.maxZ, box.minX, box.maxY, box.maxZ, r, g, b, a);
+    }
+
+    public void box(AABB box, BoxStyle style) {
+        if (style == null) return;
+        filledBox(box, style.fillArgb(), style.depthMode());
+        outlineBox(box, style.outlineArgb(), style.outlineWidth(), style.depthMode());
+    }
+
+    private static void addQuad(MeshBuilder mesh,
+                                double x1, double y1, double z1,
+                                double x2, double y2, double z2,
+                                double x3, double y3, double z3,
+                                double x4, double y4, double z4,
+                                int r, int g, int b, int a) {
+        mesh.ensureQuadCapacity();
+        int i1 = mesh.vec3(x1, y1, z1).color(r, g, b, a).next();
+        int i2 = mesh.vec3(x2, y2, z2).color(r, g, b, a).next();
+        int i3 = mesh.vec3(x3, y3, z3).color(r, g, b, a).next();
+        int i4 = mesh.vec3(x4, y4, z4).color(r, g, b, a).next();
+        mesh.quad(i1, i2, i3, i4);
+    }
+
+    private static void addLine(MeshBuilder mesh,
+                                double x1, double y1, double z1,
+                                double x2, double y2, double z2,
+                                int r, int g, int b, int a) {
+        mesh.ensureLineCapacity();
+        int i1 = mesh.vec3(x1, y1, z1).color(r, g, b, a).next();
+        int i2 = mesh.vec3(x2, y2, z2).color(r, g, b, a).next();
+        mesh.line(i1, i2);
+    }
+
+    public record BoxStyle(int fillArgb, int outlineArgb, float outlineWidth, DepthMode depthMode) {
+        public BoxStyle {
+            outlineWidth = Math.max(0.1f, outlineWidth);
+            depthMode = depthMode == null ? DepthMode.MAIN : depthMode;
+        }
+    }
+
     // -----------------------
     // Submit
     // -----------------------

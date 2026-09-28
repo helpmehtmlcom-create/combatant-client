@@ -87,6 +87,7 @@ public class InventoryMove extends Module {
     private boolean flushingPackets = false;
     private boolean allowClosePacket = false;
     private boolean movementBlocked = false;
+    private boolean closeOnMove = false;
 
     private static Set<String> defaultAllowedScreens() {
         LinkedHashSet<String> screens = new LinkedHashSet<>();
@@ -215,6 +216,9 @@ public class InventoryMove extends Module {
         Packet<?> packet = event.getPacket();
         if (packet instanceof ServerboundContainerClickPacket click) {
             if (flushingPackets) return;
+            if (shouldArmCloseOnMove(click)) {
+                closeOnMove = true;
+            }
             if (shouldBufferClickPacket(click)) {
                 heldPackets.add(click);
                 event.cancel();
@@ -254,6 +258,13 @@ public class InventoryMove extends Module {
     }
 
     private void tickGrim() {
+        if (closeOnMove && ClientScreen.current() instanceof InventoryScreen && hasGrimInventoryMovementRisk()) {
+            requestClose(syncId(ClientScreen.current()));
+            closeOnMove = false;
+        } else if (!(ClientScreen.current() instanceof InventoryScreen)) {
+            closeOnMove = false;
+        }
+
         boolean grimManaged = shouldManageCurrentHandledScreen();
 
         if (grimManaged) {
@@ -355,6 +366,17 @@ public class InventoryMove extends Module {
         pendingCloseSyncId = -1;
     }
 
+    private boolean shouldArmCloseOnMove(ServerboundContainerClickPacket packet) {
+        return ClientScreen.current() instanceof InventoryScreen
+                && shouldManageCurrentHandledScreen()
+                && packet.containerId() == syncId(ClientScreen.current())
+                && heldPackets.isEmpty()
+                && !hasGrimInventoryMovementRisk()
+                && grimPhase != GrimPhase.STOPPING
+                && grimPhase != GrimPhase.FLUSHING
+                && grimPhase != GrimPhase.CLOSING;
+    }
+
     private boolean shouldBufferClickPacket(ServerboundContainerClickPacket packet) {
         return shouldManageCurrentHandledScreen()
                 && packet.containerId() == syncId(ClientScreen.current())
@@ -414,6 +436,7 @@ public class InventoryMove extends Module {
         flushingPackets = false;
         allowClosePacket = false;
         movementBlocked = false;
+        closeOnMove = false;
     }
 
     private void applyMovementForCurrentScreen(boolean canMove) {

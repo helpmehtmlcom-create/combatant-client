@@ -45,6 +45,18 @@ public final class GltfSceneInstances {
         return spawn(registry, asset, sceneIndex, worldTransform, drawClass, lodProfile);
     }
 
+    /**
+     * Registers a first-person imported scene. The supplied transform is hand-local and is applied
+     * on top of the live Minecraft hand pose when {@code renderItemInHand} executes.
+     */
+    public static SceneAssetInstance<GltfSceneInstanceAsset> spawnHand(
+            SceneInstanceRegistry registry,
+            GltfRuntimeAsset asset,
+            Matrix4fc handTransform,
+            SceneLodProfile lodProfile) {
+        return spawnDefault(registry, asset, handTransform, SceneDrawClass.HAND, lodProfile);
+    }
+
     public static SceneAssetInstance<GltfSceneInstanceAsset> spawn(
             SceneInstanceRegistry registry,
             GltfRuntimeAsset asset,

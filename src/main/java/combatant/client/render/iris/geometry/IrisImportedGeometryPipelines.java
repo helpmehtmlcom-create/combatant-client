@@ -19,12 +19,10 @@ import net.minecraft.resources.Identifier;
 public final class IrisImportedGeometryPipelines {
     public static final RenderPipeline GBUFFER_CULL = pipeline("iris_imported_geometry_cull", true, false);
     public static final RenderPipeline GBUFFER_DOUBLE_SIDED = pipeline("iris_imported_geometry_double_sided", false, false);
+    public static final RenderPipeline GBUFFER_NO_DEPTH_CULL = gbufferNoDepth("iris_imported_geometry_no_depth_cull", true);
+    public static final RenderPipeline GBUFFER_NO_DEPTH_DOUBLE_SIDED = gbufferNoDepth("iris_imported_geometry_no_depth_double_sided", false);
     public static final RenderPipeline SHADOW_CULL = pipeline("iris_imported_shadow_cull", true, true);
     public static final RenderPipeline SHADOW_DOUBLE_SIDED = pipeline("iris_imported_shadow_double_sided", false, true);
-    public static final RenderPipeline TRANSLUCENT_CULL = translucent(
-            "iris_imported_translucent_cull", true, true, true);
-    public static final RenderPipeline TRANSLUCENT_DOUBLE_SIDED = translucent(
-            "iris_imported_translucent_double_sided", false, true, true);
     public static final RenderPipeline TRANSLUCENT_BLEND_CULL = translucent(
             "iris_imported_translucent_blend_cull", true, true, false);
     public static final RenderPipeline TRANSLUCENT_BLEND_DOUBLE_SIDED = translucent(
@@ -38,8 +36,8 @@ public final class IrisImportedGeometryPipelines {
 
     public static boolean owns(RenderPipeline pipeline) {
         return pipeline == GBUFFER_CULL || pipeline == GBUFFER_DOUBLE_SIDED
+                || pipeline == GBUFFER_NO_DEPTH_CULL || pipeline == GBUFFER_NO_DEPTH_DOUBLE_SIDED
                 || pipeline == SHADOW_CULL || pipeline == SHADOW_DOUBLE_SIDED
-                || pipeline == TRANSLUCENT_CULL || pipeline == TRANSLUCENT_DOUBLE_SIDED
                 || pipeline == TRANSLUCENT_BLEND_CULL
                 || pipeline == TRANSLUCENT_BLEND_DOUBLE_SIDED
                 || pipeline == TRANSLUCENT_NO_DEPTH_CULL
@@ -57,6 +55,21 @@ public final class IrisImportedGeometryPipelines {
                         ? DepthTestFunction.LEQUAL_DEPTH_TEST
                         : DepthTestFunction.GEQUAL_DEPTH_TEST)
                 .withDepthWrite(true)
+                .withCull(cull)
+                .build();
+        return CombatantRenderPipelines.registerAddonPipeline(pipeline);
+    }
+
+
+    private static RenderPipeline gbufferNoDepth(String path, boolean cull) {
+        RenderPipeline pipeline = entityBuilder()
+                .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/" + path))
+                .withDomain(PipelineDomain.WORLD)
+                .withVertexFormat(IrisVertexFormats.ENTITY, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+                .withVertexShader(Identifier.withDefaultNamespace("core/entity"))
+                .withFragmentShader(Identifier.withDefaultNamespace("core/entity"))
+                .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+                .withDepthWrite(false)
                 .withCull(cull)
                 .build();
         return CombatantRenderPipelines.registerAddonPipeline(pipeline);

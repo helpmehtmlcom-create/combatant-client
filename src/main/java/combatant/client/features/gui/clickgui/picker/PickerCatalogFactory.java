@@ -18,6 +18,8 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.equipment.Equippable;
+import net.minecraft.world.item.alchemy.Potion;
+import net.minecraft.world.item.alchemy.PotionContents;
 import net.minecraft.world.level.block.Block;
 import combatant.client.features.gui.clickgui.settings.TextListSetting;
 import combatant.client.util.item.EnchantMeta;
@@ -42,6 +44,7 @@ public enum PickerCatalogFactory {
     private static final EnumSet<TextListSetting.PickerMode> ASYNC_MODES = EnumSet.of(
             TextListSetting.PickerMode.BLOCKS,
             TextListSetting.PickerMode.ITEMS,
+            TextListSetting.PickerMode.POTIONS,
             TextListSetting.PickerMode.EQUIPPABLE_ARMOR,
             TextListSetting.PickerMode.ENCHANTMENTS,
             TextListSetting.PickerMode.ALL,
@@ -81,6 +84,7 @@ public enum PickerCatalogFactory {
 
         // Highest first-open value first; executor ordering intentionally prioritizes item-backed pickers.
         requestEntriesAsync(TextListSetting.PickerMode.ITEMS);
+        requestEntriesAsync(TextListSetting.PickerMode.POTIONS);
         requestEntriesAsync(TextListSetting.PickerMode.BLOCKS);
         requestEntriesAsync(TextListSetting.PickerMode.ALL);
         requestEntriesAsync(TextListSetting.PickerMode.EQUIPPABLE_ARMOR);
@@ -158,6 +162,10 @@ public enum PickerCatalogFactory {
     public static CompletableFuture<List<PickerEntryData>> requestEntriesAsync(
             TextListSetting.PickerMode mode, TextListSetting owner) {
         CompletableFuture<List<PickerEntryData>> base = requestEntriesAsync(mode);
+        if (mode == TextListSetting.PickerMode.POTIONS && owner != null) {
+            normalizePotionSelection(owner);
+            return base;
+        }
         if (mode != TextListSetting.PickerMode.PARTICLES || owner == null) return base;
         Set<String> selected = Set.copyOf(owner.getValueSet());
         if (selected.isEmpty()) return base;
@@ -180,6 +188,7 @@ public enum PickerCatalogFactory {
         return switch (mode) {
             case BLOCKS -> blockEntries();
             case ITEMS -> itemEntries();
+            case POTIONS -> potionEntries();
             case EQUIPPABLE_ARMOR -> equippableArmorEntries();
             case ENCHANTMENTS -> enchantmentEntries();
             case ALL -> allEntries();
@@ -197,6 +206,10 @@ public enum PickerCatalogFactory {
             case SCREENS -> PickerCatalogFactory::screenEntries;
             case BLOCKS -> owner -> blockEntries();
             case ITEMS -> owner -> itemEntries();
+            case POTIONS -> owner -> {
+                normalizePotionSelection(owner);
+                return potionEntries();
+            };
             case EQUIPPABLE_ARMOR -> owner -> equippableArmorEntries();
             case ENCHANTMENTS -> owner -> enchantmentEntries();
             case ALL -> owner -> allEntries();
@@ -240,6 +253,72 @@ public enum PickerCatalogFactory {
         }
         out.sort(ENTRY_ORDER);
         return out;
+    }
+
+
+    private static void normalizePotionSelection(TextListSetting owner) {
+        if (owner == null) return;
+        Set<String> selected = owner.getValueSet();
+        if (selected.isEmpty()) return;
+
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        boolean changed = false;
+        for (String raw : selected) {
+            String familyId = normalizePotionSelectionId(raw);
+            if (familyId == null) {
+                changed = true;
+                continue;
+            }
+            normalized.add(familyId);
+            if (!familyId.equals(raw)) changed = true;
+        }
+
+        if (changed && !normalized.equals(selected)) owner.setValueSet(normalized);
+    }
+
+    private static String normalizePotionSelectionId(String raw) {
+        Identifier id = Identifier.tryParse(raw);
+        if (id == null) return null;
+
+        if (BuiltInRegistries.POTION.get(id).isPresent()) return canonicalPotionId(id.toString());
+
+        var effect = BuiltInRegistries.MOB_EFFECT.get(id).orElse(null);
+        if (effect == null) return null;
+        for (Potion potion : BuiltInRegistries.POTION) {
+            Identifier potionId = BuiltInRegistries.POTION.getKey(potion);
+            if (potionId == null || potion.getEffects().isEmpty()) continue;
+            for (net.minecraft.world.effect.MobEffectInstance template : potion.getEffects()) {
+                if (template.getEffect().equals(effect)) return canonicalPotionId(potionId.toString());
+            }
+        }
+        return null;
+    }
+
+    private static List<PickerEntryData> potionEntries() {
+        LinkedHashMap<String, PickerEntryData> byFamily = new LinkedHashMap<>();
+        for (Potion potion : BuiltInRegistries.POTION) {
+            Identifier id = BuiltInRegistries.POTION.getKey(potion);
+            if (id == null || potion.getEffects().isEmpty()) continue;
+
+            String familyId = canonicalPotionId(id.toString());
+            ItemStack stack = PotionContents.createItemStack(Items.SPLASH_POTION, BuiltInRegistries.POTION.wrapAsHolder(potion));
+            PickerEntryData entry = new PickerEntryData(familyId, stack.getHoverName().getString(), stack);
+            if (!byFamily.containsKey(familyId) || familyId.equals(id.toString())) {
+                byFamily.put(familyId, entry);
+            }
+        }
+        List<PickerEntryData> out = new ArrayList<>(byFamily.values());
+        out.sort(ENTRY_ORDER);
+        return out;
+    }
+
+    private static String canonicalPotionId(String raw) {
+        Identifier id = Identifier.tryParse(raw);
+        if (id == null) return raw;
+        String path = id.getPath();
+        if (path.startsWith("long_")) path = path.substring(5);
+        if (path.startsWith("strong_")) path = path.substring(7);
+        return id.getNamespace() + ":" + path;
     }
 
     private static List<PickerEntryData> equippableArmorEntries() {

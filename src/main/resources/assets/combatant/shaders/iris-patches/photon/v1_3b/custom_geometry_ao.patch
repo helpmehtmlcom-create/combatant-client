@@ -1,0 +1,21 @@
+@patch 2
+@require_function main
+@require_ident world_normal
+@require_ident colortex1
+@require_ident colortex2
+@require_hash 34b5c53e954bf7b039436c9f8295ed6a7494f9ca71f261aba405127a61cef158
+@require_hash 36b3fbee3b6582951dba3e4e80acdfab641e978e5d3e97ffe8893adbc8875816
+
+@replace_line_hash 34b5c53e954bf7b039436c9f8295ed6a7494f9ca71f261aba405127a61cef158
+    vec4 gbuffer_data = texelFetch(colortex2, view_texel, 0);
+    vec4 combatant_gbuffer_data_0 = texelFetch(colortex1, view_texel, 0);
+@end
+
+@replace_line_hash 36b3fbee3b6582951dba3e4e80acdfab641e978e5d3e97ffe8893adbc8875816
+    uint combatant_material_mask = uint(round(
+        unpack_unorm_2x8(combatant_gbuffer_data_0.y).y * 255.0
+    ));
+    vec3 world_normal = combatant_material_mask >= 240u
+        ? decode_unit_vector(unpack_unorm_2x8(gbuffer_data.x))
+        : decode_unit_vector(gbuffer_data.xy);
+@end

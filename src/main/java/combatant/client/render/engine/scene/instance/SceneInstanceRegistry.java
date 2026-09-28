@@ -128,6 +128,16 @@ public final class SceneInstanceRegistry {
         return visibility.visitVisible(view, mode, record -> visitSpatialRecord(view, record, visitor));
     }
 
+    /** Traverses live instances of one semantic draw class without world-space culling. */
+    public boolean visitDrawClass(SceneDrawClass drawClass, SceneInstanceCandidateVisitor visitor) {
+        if (drawClass == null || visitor == null) return true;
+        for (SceneAssetInstance<?> instance : instances.values()) {
+            if (instance == null || instance.isClosed() || instance.drawClass() != drawClass) continue;
+            if (!visitor.visit(instance)) return false;
+        }
+        return true;
+    }
+
     public SceneAssetInstance<?> instance(long instanceId) {
         return instances.get(instanceId);
     }

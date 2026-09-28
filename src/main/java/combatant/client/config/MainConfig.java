@@ -131,6 +131,10 @@ public final class MainConfig implements ConfigAggregate, ConfigNameProvider, Se
         return visual.isClickGuiHudEditorHintsEnabled();
     }
 
+    public boolean isModernSodiumGuiEnabled() {
+        return visual.isModernSodiumGuiEnabled();
+    }
+
     public void setClickGuiHudEditorHintsEnabled(boolean enabled) {
         visual.setClickGuiHudEditorHintsEnabled(enabled);
     }

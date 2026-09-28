@@ -12,6 +12,8 @@ import net.irisshaders.iris.gl.uniform.UniformUpdateFrequency;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.material.FogType;
+import org.lwjgl.opengl.GL11C;
+import org.lwjgl.opengl.GL20C;
 import org.joml.Vector3f;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.visuals.FullBright;
@@ -21,17 +23,25 @@ import combatant.client.config.MainConfig;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.light.LightmapState;
 import combatant.client.render.engine.temporal.TemporalJitterSequence;
-import combatant.client.util.logging.DebugLog;
 import org.joml.Vector2f;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public enum CombatantIrisUniforms {
     ;
+    private static final Logger LOGGER = LoggerFactory.getLogger("Combatant");
+    private static final Map<AaProgramKey, AaUniformLocations> AA_UNIFORM_LOCATIONS = new ConcurrentHashMap<>();
+    private static final Set<AaDiagnosticKey> LOGGED_AA_PROGRAMS = ConcurrentHashMap.newKeySet();
     private static boolean loggedRegistration;
 
     public static void add(UniformHolder uniforms) {
         if (!loggedRegistration) {
             loggedRegistration = true;
-            DebugLog.renderThread("[IrisPatch] registering Combatant Iris uniforms");
+            LOGGER.info("[IrisPatch] registering Combatant Iris uniforms via CommonUniforms.addNonDynamicUniforms");
         }
         uniforms
                 .uniform1b(UniformUpdateFrequency.PER_FRAME, "combatantFullbrightEnabled", CombatantIrisUniforms::fullbrightEnabled)
@@ -54,6 +64,62 @@ public enum CombatantIrisUniforms {
                 .uniform1b(UniformUpdateFrequency.PER_FRAME, "combatantSuppressShaderpackPostFx", IrisCompatibilityGuards::suppressShaderpackPostFx)
                 .uniform1i(UniformUpdateFrequency.PER_FRAME, "combatantAaOwner", CombatantIrisUniforms::aaOwner)
                 .uniform2f(UniformUpdateFrequency.PER_FRAME, "combatantTaaOffset", CombatantIrisUniforms::taaOffset);
+    }
+
+    /** Writes AA ownership after Iris has bound the concrete shaderpack program. */
+    public static void applyAaToCurrentProgram() {
+        applyAaToCurrentProgram("ProgramUniforms.update");
+    }
+
+    /**
+     * Same write as {@link #applyAaToCurrentProgram()}, with a diagnostic source label.
+     * ExtendedShader has a custom-uniform push after ProgramUniforms.update(), so its RETURN hook
+     * calls this once more to make Combatant ownership the final value seen by the draw.
+     */
+    public static void applyAaToCurrentProgram(String source) {
+        int program = GL11C.glGetInteger(GL20C.GL_CURRENT_PROGRAM);
+        if (program <= 0) return;
+
+        long epoch = IrisRuntime.integrationEpoch();
+        AaProgramKey programKey = new AaProgramKey(epoch, program);
+        AaUniformLocations locations = AA_UNIFORM_LOCATIONS.computeIfAbsent(programKey, ignored ->
+                new AaUniformLocations(
+                        GL20C.glGetUniformLocation(program, "combatantAaOwner"),
+                        GL20C.glGetUniformLocation(program, "combatantTaaOffset"),
+                        GL20C.glGetUniformLocation(program, "taa_offset")
+                ));
+
+        int owner = aaOwner();
+        if (locations.owner() >= 0) {
+            GL20C.glUniform1i(locations.owner(), owner);
+        }
+        if (locations.taaOffset() >= 0) {
+            Vector2f offset = taaOffset(owner);
+            GL20C.glUniform2f(locations.taaOffset(), offset.x, offset.y);
+        }
+        if (owner == 1 && locations.owner() >= 0 && locations.shaderpackTaaOffset() >= 0) {
+            // Photon owns a separate custom uniform named taa_offset. Only touch it when this
+            // linked program also contains Combatant's AA-owner uniform; that keeps unrelated
+            // shaderpacks which happen to use the same taa_offset name out of this contract.
+            // CustomUniforms.push runs after ProgramUniforms.update(), so the RETURN hooks must
+            // zero the real linked-program value as well as combatantTaaOffset for MSAA.
+            GL20C.glUniform2f(locations.shaderpackTaaOffset(), 0.0f, 0.0f);
+        }
+
+        // Read back only once per concrete GL program/owner/epoch. glGetUniform* is a synchronous
+        // driver query, so doing it on every ProgramUniforms.update() would turn diagnostics into
+        // a render-thread stall. The direct glUniform* writes above still happen every update.
+        AaDiagnosticKey diagnosticKey = new AaDiagnosticKey(epoch, program, owner);
+        if (LOGGED_AA_PROGRAMS.add(diagnosticKey)) {
+            int readbackOwner = locations.owner() >= 0
+                    ? GL20C.glGetUniformi(program, locations.owner())
+                    : Integer.MIN_VALUE;
+            LOGGER.info(
+                    "[IrisAA/GL] source={} epoch={} program={} ownerLocation={} writtenOwner={} readbackOwner={} taaOffsetLocation={} shaderpackTaaOffsetLocation={}",
+                    source == null ? "unknown" : source, epoch, program, locations.owner(), owner, readbackOwner,
+                    locations.taaOffset(), locations.shaderpackTaaOffset()
+            );
+        }
     }
 
     private static boolean fullbrightEnabled() {
@@ -169,7 +235,11 @@ public enum CombatantIrisUniforms {
     }
 
     private static Vector2f taaOffset() {
-        if (aaOwner() != 2 || IrisRuntime.isRenderingShadowPass()) return new Vector2f();
+        return taaOffset(aaOwner());
+    }
+
+    private static Vector2f taaOffset(int owner) {
+        if (owner != 2 || IrisRuntime.isRenderingShadowPass()) return new Vector2f();
         var frame = CombatantRenderSystem.currentContext();
         if (frame == null) return new Vector2f();
         Minecraft client = Minecraft.getInstance();
@@ -181,4 +251,10 @@ public enum CombatantIrisUniforms {
         Vector2f uvOffset = TemporalJitterSequence.uvOffset(sample, width);
         return new Vector2f(uvOffset.x * 2.0f, uvOffset.y * 2.0f);
     }
+    private record AaProgramKey(long epoch, int program) {}
+
+    private record AaUniformLocations(int owner, int taaOffset, int shaderpackTaaOffset) {}
+
+    private record AaDiagnosticKey(long epoch, int program, int owner) {}
+
 }
