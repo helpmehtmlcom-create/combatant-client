@@ -12,6 +12,7 @@
 out vec2 combatant_uv1;
 out mat3 combatant_smooth_tbn;
 flat out uint combatant_geometry_marker;
+uniform bool combatantCustomGeometry;
 
 @end
 
@@ -36,8 +37,7 @@ uniform float combatantOverrideAmbientLight;
     // projection. Combatant's ENTITY-format marker isolates the adapter material branch from
     // every native entity texture and material id.
     combatant_uv1 = mc_midTexCoord;
-    combatant_geometry_marker = mc_Entity.x > 65000.0 &&
-        mc_Entity.y < 0.5 && mc_Entity.z < 0.5 ? 1u : 0u;
+    combatant_geometry_marker = combatantCustomGeometry ? 1u : 0u;
 
 @end
 

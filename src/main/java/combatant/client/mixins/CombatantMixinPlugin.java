@@ -46,6 +46,7 @@ public final class CombatantMixinPlugin implements IMixinConfigPlugin {
             "combatant.client.mixins.iris.IrisCommonUniformsMixin",
             "combatant.client.mixins.iris.IrisCompositePassMixin",
             "combatant.client.mixins.iris.IrisCompositeRendererMixin",
+            "combatant.client.mixins.iris.IrisExtendedShaderGeometryMixin",
             "combatant.client.mixins.iris.IrisGameRendererInteropMixin",
             "combatant.client.mixins.iris.IrisGlFramebufferMsaaMixin",
             "combatant.client.mixins.iris.IrisHandRendererAccessor",

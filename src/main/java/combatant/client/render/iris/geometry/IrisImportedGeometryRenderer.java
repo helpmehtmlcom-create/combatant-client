@@ -41,11 +41,16 @@ public final class IrisImportedGeometryRenderer {
     public static final String GBUFFER_CAPABILITY = "custom_geometry_gbuffer";
     public static final String TRANSLUCENT_CAPABILITY = "custom_geometry_translucent";
     public static final String SHADOW_CAPABILITY = "custom_geometry_shadows";
+    private static final ThreadLocal<Integer> DRAW_SCOPE_DEPTH = ThreadLocal.withInitial(() -> 0);
 
     private IrisImportedGeometryRenderer() {}
 
     public static boolean ownsPipeline(RenderPipeline pipeline) {
         return IrisImportedGeometryPipelines.owns(pipeline);
+    }
+
+    public static boolean isDrawingImportedGeometry() {
+        return DRAW_SCOPE_DEPTH.get() > 0;
     }
 
     public static void renderPrimary() {
@@ -135,7 +140,14 @@ public final class IrisImportedGeometryRenderer {
                 }
                 RenderState.rendering3D = true;
                 ImmediateState.safeToMultiply = true;
-                CombatantRenderSystem.rhi().drawMeshes(commands);
+                DRAW_SCOPE_DEPTH.set(DRAW_SCOPE_DEPTH.get() + 1);
+                try {
+                    CombatantRenderSystem.rhi().drawMeshes(commands);
+                } finally {
+                    int scopeDepth = DRAW_SCOPE_DEPTH.get() - 1;
+                    if (scopeDepth <= 0) DRAW_SCOPE_DEPTH.remove();
+                    else DRAW_SCOPE_DEPTH.set(scopeDepth);
+                }
             } finally {
                 ImmediateState.safeToMultiply = previousSafeToMultiply;
                 RenderState.rendering3D = previousRendering3D;

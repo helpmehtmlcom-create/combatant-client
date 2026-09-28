@@ -5,10 +5,14 @@
  */
 package combatant.client.mixins.iris;
 
+import com.google.common.collect.ImmutableSet;
+import com.mojang.blaze3d.textures.GpuTexture;
 import combatant.client.render.iris.IrisShaderpackMsaaIntegration;
+import net.irisshaders.iris.gl.framebuffer.GlFramebuffer;
 import net.irisshaders.iris.targets.RenderTargets;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
@@ -17,13 +21,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Pseudo
 @Mixin(value = RenderTargets.class, remap = false)
 public abstract class IrisRenderTargetsMsaaMixin {
-    @Inject(method = "createGbufferFramebuffer", at = @At("HEAD"), remap = false)
-    private void combatant$beginGbufferFramebuffer(CallbackInfoReturnable<?> cir) {
-        IrisShaderpackMsaaIntegration.beginGbufferFramebuffer();
-    }
+    @Shadow
+    private GpuTexture currentDepthTexture;
 
     @Inject(method = "createGbufferFramebuffer", at = @At("RETURN"), remap = false)
-    private void combatant$endGbufferFramebuffer(CallbackInfoReturnable<?> cir) {
-        IrisShaderpackMsaaIntegration.endGbufferFramebuffer();
+    private void combatant$captureGbufferFramebuffer(ImmutableSet<Integer> stageReadsFromAlt,
+                                                      int[] drawBuffers,
+                                                      CallbackInfoReturnable<GlFramebuffer> cir) {
+        IrisShaderpackMsaaIntegration.captureGbufferFramebuffer(
+                cir.getReturnValue(), drawBuffers, currentDepthTexture);
     }
 }

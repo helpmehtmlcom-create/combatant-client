@@ -8,7 +8,6 @@ package combatant.client.render.iris;
 import com.mojang.blaze3d.opengl.GlTexture;
 import com.mojang.blaze3d.textures.GpuTexture;
 import combatant.client.config.MainConfig;
-import combatant.client.render.iris.patch.ShaderPatchEngine;
 import combatant.client.util.logging.DebugLog;
 import net.irisshaders.iris.gl.framebuffer.GlFramebuffer;
 import org.lwjgl.opengl.GL11C;
@@ -30,66 +29,33 @@ import java.util.Set;
 /** Generic Iris gbuffer MSAA attachment/resolve bridge enabled by manifest capability. */
 public enum IrisShaderpackMsaaIntegration {
     ;
-    private static final ThreadLocal<Boolean> CREATING_GBUFFER = ThreadLocal.withInitial(() -> false);
     private static final Map<Integer, TexturePair> TEXTURES = new LinkedHashMap<>();
     private static final Map<Integer, FramebufferState> FRAMEBUFFERS = new HashMap<>();
-    private static long epoch = -1L;
     private static int colorSeedProgram;
     private static int depthSeedProgram;
     private static int seedVao;
 
-    public static void beginGbufferFramebuffer() {
-        // Capture Photon/Iris gbuffer attachment metadata for runtime AA switching, but do not
-        // mutate framebuffer topology merely because the adapter supports MSAA. The previous
-        // implementation replaced every gbuffer attachment even while Combatant TAA/OFF owned
-        // AA, which left Photon writing world geometry into multisample textures that its
-        // single-sample composite chain never consumed.
-        syncConstructionEpoch();
-        CREATING_GBUFFER.set(adapter().msaaReplacement());
-    }
-
-    public static void endGbufferFramebuffer() {
-        CREATING_GBUFFER.set(false);
-    }
-
-    public static boolean redirectColor(GlFramebuffer framebuffer, int attachmentIndex, int texture) {
-        if (!CREATING_GBUFFER.get() || framebuffer == null || texture <= 0) return false;
+    /** Captures exactly the framebuffer returned by Iris' createGbufferFramebuffer call. */
+    public static void captureGbufferFramebuffer(GlFramebuffer framebuffer,
+                                                 int[] drawBuffers,
+                                                 GpuTexture depthTexture) {
+        if (framebuffer == null || drawBuffers == null || drawBuffers.length == 0) return;
         try {
             FramebufferState state = framebuffer(framebuffer.getId());
-            state.colorTextures.put(attachmentIndex, texture);
-            if (!wantsMsaa()) return false;
-
-            TexturePair pair = pair(texture, false);
-            attach(state.msaaFbo, GL30C.GL_COLOR_ATTACHMENT0 + attachmentIndex,
-                    GL32C.GL_TEXTURE_2D_MULTISAMPLE, pair.multisampleTexture);
-            attach(state.singleSampleFbo, GL30C.GL_COLOR_ATTACHMENT0 + attachmentIndex,
-                    GL11C.GL_TEXTURE_2D, texture);
-            state.active = true;
-            return true;
+            state.colorTextures.clear();
+            for (int attachment = 0; attachment < drawBuffers.length; attachment++) {
+                int texture = framebuffer.getColorAttachment(attachment);
+                if (texture > 0) state.colorTextures.put(attachment, texture);
+            }
+            state.depthTexture = depthTexture instanceof GlTexture glTexture ? glTexture.glId() : 0;
+            state.drawBuffers = new int[drawBuffers.length];
+            for (int attachment = 0; attachment < drawBuffers.length; attachment++) {
+                state.drawBuffers[attachment] = attachment;
+            }
+            state.readBuffer = 0;
+            state.noDrawBuffers = false;
         } catch (Throwable throwable) {
-            fail("MSAA color attachment failed", throwable);
-            return false;
-        }
-    }
-
-    public static boolean redirectDepth(GlFramebuffer framebuffer, GpuTexture texture) {
-        if (!CREATING_GBUFFER.get() || framebuffer == null || !(texture instanceof GlTexture glTexture)) return false;
-        try {
-            int textureId = glTexture.glId();
-            FramebufferState state = framebuffer(framebuffer.getId());
-            state.depthTexture = textureId;
-            if (!wantsMsaa()) return false;
-
-            TexturePair pair = pair(textureId, true);
-            attach(state.msaaFbo, GL30C.GL_DEPTH_ATTACHMENT,
-                    GL32C.GL_TEXTURE_2D_MULTISAMPLE, pair.multisampleTexture);
-            attach(state.singleSampleFbo, GL30C.GL_DEPTH_ATTACHMENT,
-                    GL11C.GL_TEXTURE_2D, textureId);
-            state.active = true;
-            return true;
-        } catch (Throwable throwable) {
-            fail("MSAA depth attachment failed", throwable);
-            return false;
+            fail("MSAA gbuffer capture failed", throwable);
         }
     }
 
@@ -127,15 +93,24 @@ public enum IrisShaderpackMsaaIntegration {
         return true;
     }
 
-    public static void beginFrame(long integrationEpoch) {
-        if (epoch < 0L) {
-            epoch = integrationEpoch;
-        } else if (epoch != integrationEpoch) {
-            shutdown();
-            epoch = integrationEpoch;
-        }
+    public static void beginFrame(long ignoredIntegrationEpoch) {
+        // RenderTargets/GlFramebuffer destruction is the authoritative resource lifetime. Do not
+        // clear here: Iris can advance Combatant's logical epoch after constructing the new
+        // pipeline, which used to discard its captured FBOs before their first frame.
 
-        boolean requestedMsaa = wantsMsaa();
+        IrisAaIntegrationState ownership = IrisAaIntegration.resolve(MainConfig.get().getAntialiasing3dMode());
+        boolean requestedMsaa = ownership.owner() == IrisAaOwner.COMBATANT_MSAA;
+        int activeFramebuffers = 0;
+        for (FramebufferState state : FRAMEBUFFERS.values()) {
+            if (state.active) activeFramebuffers++;
+        }
+        DebugLog.infoOnChange(
+                "iris.shaderpack.msaa.state",
+                ownership.owner() + "|" + FRAMEBUFFERS.size() + "|" + activeFramebuffers + "|"
+                        + MainConfig.get().getConfiguredMsaa3dSamples(),
+                "[IrisCompat] shaderpack MSAA owner=%s capturedFbos=%d activeFbos=%d samples=%dx reason=%s",
+                ownership.owner(), FRAMEBUFFERS.size(), activeFramebuffers,
+                MainConfig.get().getConfiguredMsaa3dSamples(), ownership.reason());
         try {
             if (!requestedMsaa) {
                 deactivateAll(true);
@@ -181,9 +156,8 @@ public enum IrisShaderpackMsaaIntegration {
     }
 
     public static void shutdown() {
-        // An integration epoch can change while Iris still owns the framebuffer objects. Always
-        // put their original single-sample attachments back before deleting our multisample
-        // resources. Otherwise the Iris FBO keeps dangling/foreign attachments after teardown.
+        // Always put Iris' original single-sample attachments back before deleting our
+        // multisample resources. Otherwise the Iris FBO keeps dangling/foreign attachments.
         deactivateAll(false);
         for (FramebufferState state : FRAMEBUFFERS.values()) {
             if (state.singleSampleFbo > 0) GL30C.glDeleteFramebuffers(state.singleSampleFbo);
@@ -199,8 +173,6 @@ public enum IrisShaderpackMsaaIntegration {
         colorSeedProgram = 0;
         depthSeedProgram = 0;
         seedVao = 0;
-        CREATING_GBUFFER.remove();
-        epoch = -1L;
     }
 
     private static TexturePair pair(int singleTexture, boolean depth) {
@@ -214,18 +186,6 @@ public enum IrisShaderpackMsaaIntegration {
                 info.width, info.height, info.internalFormat);
         TEXTURES.put(singleTexture, created);
         return created;
-    }
-
-    private static void syncConstructionEpoch() {
-        long current = IrisRuntime.integrationEpoch();
-        if (epoch < 0L) {
-            epoch = current;
-            return;
-        }
-        if (epoch != current) {
-            shutdown();
-            epoch = current;
-        }
     }
 
     private static void activateAll() {
@@ -636,12 +596,6 @@ public enum IrisShaderpackMsaaIntegration {
     private static int samples() {
         int requested = Math.max(2, MainConfig.get().getConfiguredMsaa3dSamples());
         return Math.min(requested, Math.max(1, GL11C.glGetInteger(GL30C.GL_MAX_SAMPLES)));
-    }
-
-    private static ShaderPatchEngine.ShaderpackIntegration adapter() {
-        String pack = ShaderPatchEngine.loadingShaderPackName();
-        if (pack == null || pack.isBlank()) pack = IrisRuntime.snapshot().shaderpackName();
-        return ShaderPatchEngine.profile(pack).integration();
     }
 
     private static void fail(String action, Throwable throwable) {

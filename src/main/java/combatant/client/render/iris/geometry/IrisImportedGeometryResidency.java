@@ -23,7 +23,6 @@ import java.util.List;
 
 /** Backend-scoped persistent Iris copies of immutable imported mesh/material resources. */
 public final class IrisImportedGeometryResidency implements AutoCloseable {
-    private static final int COMBATANT_ENTITY_MARKER = 0xFFFF;
     private static final IdentityHashMap<GltfRuntimeAsset, IrisImportedGeometryResidency> CACHE = new IdentityHashMap<>();
     private static CombatantRhi owner;
     private static long sourceEpoch = Long.MIN_VALUE;
@@ -119,8 +118,10 @@ public final class IrisImportedGeometryResidency implements AutoCloseable {
             // dynamic per-instance light can later move to an explicit instance payload.
             vertices.putShort((short) 0).putShort((short) 240);
             putSnorm4(vertices, normals, vertex * 3, 0.0f, 1.0f, 0.0f, 0.0f);
-            vertices.putShort((short) COMBATANT_ENTITY_MARKER)
-                    .putShort((short) 0).putShort((short) 0).putShort((short) 0);
+            // Entity information remains neutral. Imported-material selection is an explicit
+            // draw-scoped Iris uniform and must never overload IDs shared by native entities.
+            vertices.putShort((short) 0).putShort((short) 0)
+                    .putShort((short) 0).putShort((short) 0);
             put2(vertices, uv1, vertex * 2, 0.0f, 0.0f);
             putIrisTangent(vertices, tangents, vertex * 4);
         }

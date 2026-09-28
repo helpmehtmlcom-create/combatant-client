@@ -124,6 +124,7 @@
     "iris.IrisCommonUniformsMixin",
     "iris.IrisCompositePassMixin",
     "iris.IrisCompositeRendererMixin",
+    "iris.IrisExtendedShaderGeometryMixin",
     "iris.IrisGameRendererInteropMixin",
     "iris.IrisGlFramebufferMsaaMixin",
     "iris.IrisHandRendererAccessor",

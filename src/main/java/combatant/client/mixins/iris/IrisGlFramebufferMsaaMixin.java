@@ -5,7 +5,6 @@
  */
 package combatant.client.mixins.iris;
 
-import com.mojang.blaze3d.textures.GpuTexture;
 import combatant.client.render.iris.IrisShaderpackMsaaIntegration;
 import net.irisshaders.iris.gl.framebuffer.GlFramebuffer;
 import org.lwjgl.opengl.GL30C;
@@ -18,16 +17,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Pseudo
 @Mixin(value = GlFramebuffer.class, remap = false)
 public abstract class IrisGlFramebufferMsaaMixin {
-    @Inject(method = "addColorAttachment", at = @At("TAIL"), remap = false)
-    private void combatant$attachMultisampleColor(int index, int texture, CallbackInfo ci) {
-        IrisShaderpackMsaaIntegration.redirectColor((GlFramebuffer) (Object) this, index, texture);
-    }
-
-    @Inject(method = "addDepthAttachment", at = @At("TAIL"), remap = false)
-    private void combatant$attachMultisampleDepth(GpuTexture texture, CallbackInfo ci) {
-        IrisShaderpackMsaaIntegration.redirectDepth((GlFramebuffer) (Object) this, texture);
-    }
-
     @Inject(method = "drawBuffers", at = @At("TAIL"), remap = false)
     private void combatant$configureSingleDrawBuffers(int[] buffers, CallbackInfo ci) {
         IrisShaderpackMsaaIntegration.configureDrawBuffers((GlFramebuffer) (Object) this, buffers);
