@@ -441,6 +441,9 @@ public abstract class ClientPacketListenerMixin {
 
             Entity entity = packet.getEntity(handler.getLevel());
             if (entity == null) return;
+            if (entity instanceof Player player) {
+                TotemPopCounter.recordPop(player);
+            }
             if (entity.equals(client.player)) {
                 PvpCooldowns cooldowns = Modules.get(PvpCooldowns.class);
                 if (cooldowns != null) {
@@ -457,7 +460,6 @@ public abstract class ClientPacketListenerMixin {
                 if (fx != null) {
                     fx.onOpponentTotemPop(player);
                 }
-                TotemPopCounter.recordPop(player);
                 if (CooldownsState.shouldTrackOpponents()) {
                     OpponentCooldownManager.recordUse(player.getUUID(), Items.TOTEM_OF_UNDYING);
                 }

@@ -1159,6 +1159,14 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
         onRenderWorldEngine(renderer, depthRenderer);
     }
 
+    /**
+     * Called immediately before PRE_HAND post-processing. Modules use this only to submit
+     * world-space post masks/requests that must be rasterized against the completed scene depth.
+     * Ordinary world geometry stays in {@link #onRenderWorldEngine(Renderer3D, Renderer3D, float)}.
+     */
+    public void onPrepareWorldPostProcess(float tickDelta) {
+    }
+
     public HudPhase getHudPhase() {
         return HudPhase.NONE;
     }

@@ -39,8 +39,6 @@ public final class CurrentTransientEffectBackend extends CpuTransientWorldEffect
         if (renderer == null) return;
         update(nowMs);
         for (TransientEffectDescriptor descriptor : snapshot()) {
-            // SCREEN_POST descriptors belong to PostProcessManager, not the world renderer.
-            if (descriptor.participation() == EffectParticipation.SCREEN_POST) continue;
             EffectRenderer adapter;
             synchronized (this) {
                 adapter = renderers.get(descriptor.type());

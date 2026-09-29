@@ -51,6 +51,7 @@ public final class CombatantMixinPlugin implements IMixinConfigPlugin {
             "combatant.client.mixins.sodium.gui.SodiumScrollbarAccessorMixin",
             "combatant.client.mixins.sodium.gui.SodiumPageModHeaderIconAccessorMixin",
             "combatant.client.mixins.sodium.gui.SodiumOptionModHeaderIconAccessorMixin",
+            "combatant.client.mixins.sodium.gui.SodiumOptionListInvokerMixin",
             "combatant.client.mixins.sodium.gui.SodiumVideoSettingsScreenMixin"
     );
     private static final Set<String> OPTIONAL_IRIS_MIXINS = Set.of(
@@ -66,6 +67,15 @@ public final class CombatantMixinPlugin implements IMixinConfigPlugin {
             "combatant.client.mixins.iris.IrisHandRendererMixin",
             "combatant.client.mixins.iris.IrisIncludeProcessorMixin",
             "combatant.client.mixins.iris.IrisOptionMenuMixin",
+            "combatant.client.mixins.iris.gui.IrisBaseOptionElementWidgetAccessorMixin",
+            "combatant.client.mixins.iris.gui.IrisElementRowAccessorMixin",
+            "combatant.client.mixins.iris.gui.IrisHeaderEntryAccessorMixin",
+            "combatant.client.mixins.iris.gui.IrisLinkElementWidgetAccessorMixin",
+            "combatant.client.mixins.iris.gui.IrisProfileElementWidgetAccessorMixin",
+            "combatant.client.mixins.iris.gui.IrisShaderPackScreenMixin",
+            "combatant.client.mixins.iris.gui.IrisShaderPackScreenScrollMixin",
+            "combatant.client.mixins.iris.gui.IrisSliderElementWidgetInvokerMixin",
+            "combatant.client.mixins.iris.gui.IrisStringElementWidgetAccessorMixin",
             "combatant.client.mixins.iris.IrisProgramUniformsMixin",
             "combatant.client.mixins.iris.IrisRenderTargetsMsaaMixin",
             "combatant.client.mixins.iris.IrisShaderPackLoadMixin",

@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
  * Standalone per-player totem pop counter utility.
@@ -26,6 +27,7 @@ import java.util.UUID;
 public enum TotemPopCounter {
     ;
     private static final Map<UUID, Entry> ENTRIES = new LinkedHashMap<>();
+    private static final CopyOnWriteArraySet<Listener> LISTENERS = new CopyOnWriteArraySet<>();
     private static final BooleanValue ENABLED =
             new BooleanValue("totem_pop_counter", true);
     private static final NumberValue<Integer> RESET_AFTER_SECONDS =
@@ -35,11 +37,8 @@ public enum TotemPopCounter {
     public static void configure(Options nextOptions) {
         options = nextOptions != null ? nextOptions : Options.DEFAULT;
         ENABLED.set(options.enabled());
-        if (!enabled()) {
-            clear();
-        } else {
-            prune(Util.getMillis());
-        }
+        if (!trackingRequired()) clear();
+        else prune(Util.getMillis());
     }
 
     public static Options options() {
@@ -104,7 +103,7 @@ public enum TotemPopCounter {
     }
 
     public static void recordPop(UUID playerId, String name) {
-        if (playerId == null || !enabled()) return;
+        if (playerId == null || !trackingRequired()) return;
         long now = Util.getMillis();
         prune(now);
 
@@ -112,7 +111,9 @@ public enum TotemPopCounter {
         int nextCount = current != null ? current.count + 1 : 1;
         String resolvedName = firstNonBlank(name, current != null ? current.name : null);
         long firstPopMs = current != null ? current.firstPopMs : now;
-        ENTRIES.put(playerId, new Entry(playerId, resolvedName, nextCount, firstPopMs, now));
+        Entry next = new Entry(playerId, resolvedName, nextCount, firstPopMs, now);
+        ENTRIES.put(playerId, next);
+        notifyPop(next.snapshot());
     }
 
     public static int getCount(UUID playerId) {
@@ -120,14 +121,14 @@ public enum TotemPopCounter {
     }
 
     public static TotemPopSnapshot snapshot(UUID playerId) {
-        if (playerId == null || !enabled()) return TotemPopSnapshot.empty(playerId);
+        if (playerId == null || !trackingRequired()) return TotemPopSnapshot.empty(playerId);
         prune(Util.getMillis());
         Entry entry = ENTRIES.get(playerId);
         return entry != null ? entry.snapshot() : TotemPopSnapshot.empty(playerId);
     }
 
     public static Map<UUID, TotemPopSnapshot> snapshots() {
-        if (!enabled()) return Collections.emptyMap();
+        if (!trackingRequired()) return Collections.emptyMap();
         prune(Util.getMillis());
         Map<UUID, TotemPopSnapshot> out = new LinkedHashMap<>();
         for (var entry : ENTRIES.entrySet()) {
@@ -141,30 +142,61 @@ public enum TotemPopCounter {
         ENTRIES.remove(playerId);
     }
 
+    public static void addListener(Listener listener) {
+        if (listener != null) LISTENERS.add(listener);
+    }
+
+    public static void removeListener(Listener listener) {
+        if (listener != null) LISTENERS.remove(listener);
+        if (!trackingRequired()) clear();
+    }
+
     public static void clear() {
         ENTRIES.clear();
     }
 
     public static void onPlayerDeath(UUID playerId) {
         if (playerId == null) return;
-        if (options.resetOnDeath()) {
-            reset(playerId);
-        }
+        TotemPopSnapshot snapshot = snapshot(playerId);
+        notifyReset(playerId, snapshot, ResetReason.DEATH);
+        if (options.resetOnDeath()) reset(playerId);
     }
 
     public static void onPlayerLogout(UUID playerId) {
         if (playerId == null) return;
-        if (options.resetOnLogout()) {
-            reset(playerId);
-        }
+        TotemPopSnapshot snapshot = snapshot(playerId);
+        notifyReset(playerId, snapshot, ResetReason.LOGOUT);
+        if (options.resetOnLogout()) reset(playerId);
     }
 
     public static void tick() {
-        if (!enabled()) {
+        if (!trackingRequired()) {
             clear();
             return;
         }
         prune(Util.getMillis());
+    }
+
+    private static boolean trackingRequired() {
+        return enabled() || !LISTENERS.isEmpty();
+    }
+
+    private static void notifyPop(TotemPopSnapshot snapshot) {
+        for (Listener listener : LISTENERS) {
+            try {
+                listener.onPop(snapshot);
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    private static void notifyReset(UUID playerId, TotemPopSnapshot snapshot, ResetReason reason) {
+        for (Listener listener : LISTENERS) {
+            try {
+                listener.onReset(playerId, snapshot, reason);
+            } catch (Throwable ignored) {
+            }
+        }
     }
 
     private static void prune(long now) {
@@ -209,6 +241,18 @@ public enum TotemPopCounter {
         public Options withResetAfterMs(long resetAfterMs) {
             return new Options(enabled, resetOnDeath, resetOnLogout, resetAfterMs);
         }
+    }
+
+    public interface Listener {
+        void onPop(TotemPopSnapshot snapshot);
+
+        default void onReset(UUID playerId, TotemPopSnapshot snapshot, ResetReason reason) {
+        }
+    }
+
+    public enum ResetReason {
+        DEATH,
+        LOGOUT
     }
 
     private record Entry(UUID playerId, String name, int count, long firstPopMs, long lastPopMs) {

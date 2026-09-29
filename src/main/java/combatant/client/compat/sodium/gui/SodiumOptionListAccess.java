@@ -6,10 +6,6 @@
  */
 package combatant.client.compat.sodium.gui;
 
-import net.minecraft.client.gui.components.EditBox;
-
-public interface SodiumSearchWidgetAccess {
-    String combatant$getQuery();
-
-    EditBox combatant$getSearchBox();
+public interface SodiumOptionListAccess {
+    void combatant$updateSectionFocus(int scrollAmount);
 }

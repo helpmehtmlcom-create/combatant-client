@@ -31,6 +31,7 @@ import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.visuals.CameraClip;
 import combatant.client.features.module.modules.visuals.FovControl;
 import combatant.client.features.module.modules.visuals.Freecam;
+import combatant.client.features.module.modules.visuals.FreeLook;
 import combatant.client.features.module.modules.visuals.Zoom;
 import combatant.client.util.render.CameraOcclusionPolicy;
 
@@ -44,6 +45,8 @@ public abstract class CameraMixin {
     private Level level;
     @Shadow
     private Entity entity;
+    @Shadow
+    private boolean detached;
 
     @Unique
     private static float combatant$getGameFov() {
@@ -61,6 +64,29 @@ public abstract class CameraMixin {
 
     @Shadow
     protected abstract void move(float surge, float heave, float sway);
+
+
+    @Inject(
+            method = "alignWithEntity",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/CameraType;isFirstPerson()Z"),
+            cancellable = true
+    )
+    private void combatant$freeLookCamera(float tickDelta, CallbackInfo ci) {
+        FreeLook freeLook = Modules.get(FreeLook.class);
+        Freecam freecam = Modules.get(Freecam.class);
+        if (freeLook == null || !freeLook.isCameraActive() || (freecam != null && freecam.isEnabled())) return;
+
+        CameraType cameraType = Minecraft.getInstance().options.getCameraType();
+        if (cameraType.isFirstPerson()) return;
+
+        boolean mirrored = cameraType.isMirrored();
+        float yaw = freeLook.cameraYaw() - (mirrored ? 180.0F : 0.0F);
+        float pitch = mirrored ? -freeLook.cameraPitch() : freeLook.cameraPitch();
+        this.detached = true;
+        this.setRotation(yaw, pitch);
+        this.move(-combatant$getMaxZoom(4.0F), 0.0F, 0.0F);
+        ci.cancel();
+    }
 
     @Inject(method = "getMaxZoom(F)F", at = @At("HEAD"), cancellable = true)
     private void combatant$disableCameraCollision(float desiredDistance, CallbackInfoReturnable<Float> cir) {
@@ -156,6 +182,9 @@ public abstract class CameraMixin {
 
     @Shadow
     public abstract Matrix4f getViewRotationMatrix(Matrix4f matrix);
+
+    @Invoker("getMaxZoom")
+    protected abstract float combatant$getMaxZoom(float desiredDistance);
 
     @Invoker("createProjectionMatrixForCulling")
     protected abstract Matrix4f combatant$createProjectionMatrixForCulling();

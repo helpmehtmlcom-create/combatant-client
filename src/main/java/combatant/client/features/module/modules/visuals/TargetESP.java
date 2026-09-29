@@ -38,6 +38,7 @@ import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.effects.particle.ParticleLayoutDescriptor;
 import combatant.client.render.effects.particle.ParticleLayoutEvaluator;
 import combatant.client.render.effects.particle.ParticleLayoutSample;
+import combatant.client.render.effects.lens.WorldTargetLenses;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import combatant.client.util.target.TargetingUtil;
 
@@ -71,10 +72,13 @@ public class TargetESP extends Module {
     private static final String SETTING_LAYOUT_SCALE = "layout_scale";
     private static final String SETTING_LAYOUT_SPEED = "layout_speed";
     private static final String SETTING_LAYOUT_RADIUS_SCALE = "layout_radius_scale";
+    private static final String SETTING_DISTORTION = "distortion";
+    private static final String SETTING_DISTORTION_STRENGTH = "distortion_strength";
+    private static final String SETTING_DISTORTION_DEPTH_TEST = "distortion_depth_test";
     private static final Identifier GHOST_PARTICLE_TEXTURE = TextureStorage.FIRE_FLY;
     private static final Identifier CAPTURE_MARK_TEXTURE = TextureStorage.CAPTURE;
     private static final Identifier CRYSTAL_BLOOM = TextureStorage.BLOOM;
-    private static final float CRYSTAL_BASE_SIZE = 0.05f;
+    private static final float CRYSTAL_BASE_SIZE = 0.075f;
     private static final int CRYSTAL_SIDES = 8;
     private static final float ALPHA_TICK_DT = 1.0f / 20.0f;
     private static final float ALPHA_SNAP_EPSILON = 0.02f;
@@ -130,13 +134,21 @@ public class TargetESP extends Module {
     private final BooleanValue crystalHitRed =
             visibleWhen(bool("targetEspCrystalHitRed", SETTING_CRYSTAL_HIT_RED, true), this::isCrystalsMode);
     private final NumberValue<Integer> layoutDensity =
-            visibleWhen(num("targetEspLayoutDensity", SETTING_LAYOUT_DENSITY, 72, 24, 192), this::isProceduralLayoutMode);
+            visibleWhen(num("targetEspLayoutDensity", SETTING_LAYOUT_DENSITY, 180, 24, 256), this::isProceduralLayoutMode);
     private final NumberValue<Float> layoutScale =
-            visibleWhen(num("targetEspLayoutScale", SETTING_LAYOUT_SCALE, 0.095f, 0.03f, 0.24f), this::isProceduralLayoutMode);
+            visibleWhen(num("targetEspLayoutScale", SETTING_LAYOUT_SCALE, 0.14f, 0.03f, 0.30f), this::isProceduralLayoutMode);
     private final NumberValue<Float> layoutSpeed =
             visibleWhen(num("targetEspLayoutSpeed", SETTING_LAYOUT_SPEED, 1.0f, 0.1f, 4.0f), this::isProceduralLayoutMode);
     private final NumberValue<Float> layoutRadiusScale =
-            visibleWhen(num("targetEspLayoutRadiusScale", SETTING_LAYOUT_RADIUS_SCALE, 1.45f, 0.6f, 2.8f), this::isProceduralLayoutMode);
+            visibleWhen(num("targetEspLayoutRadiusScale", SETTING_LAYOUT_RADIUS_SCALE, 0.8f, 0.4f, 2.0f), this::isProceduralLayoutMode);
+    private final BooleanValue distortion =
+            visibleWhen(bool("targetEspDistortion", SETTING_DISTORTION, true), this::isCrystalsMode);
+    private final NumberValue<Float> distortionStrength =
+            visibleWhen(num("targetEspDistortionStrength", SETTING_DISTORTION_STRENGTH, 0.05f, 0.01f, 0.15f),
+                    () -> isCrystalsMode() && distortion.get());
+    private final BooleanValue distortionDepthTest =
+            visibleWhen(bool("targetEspDistortionDepthTest", SETTING_DISTORTION_DEPTH_TEST, true),
+                    () -> isCrystalsMode() && distortion.get());
     private final List<CrystalInstance> crystalList = new ArrayList<>();
     private LivingEntity target;
     private LivingEntity renderTarget;
@@ -364,7 +376,7 @@ public class TargetESP extends Module {
         float size = CRYSTAL_BASE_SIZE * 13.0f;
         Quaternionf camRot = RenderState.cameraRotation;
         float yaw = orbitYawRad;
-        int bloomColor = applyOpacity(argb, (0.4f * 25.0f) / 255.0f);
+        int bloomColor = applyOpacity(argb, 0.16f);
 
         for (int i = 0; i < 6; i++) {
             float angle = (360.0f / 6.0f) * i;
@@ -516,6 +528,7 @@ public class TargetESP extends Module {
         targetAlpha = 0.0f;
         crystalList.clear();
         lastCrystalTarget = null;
+        WorldTargetLenses.clear();
     }
 
     @Override
@@ -544,6 +557,37 @@ public class TargetESP extends Module {
     @Override
     public WorldPhase getWorldPhase() {
         return WorldPhase.AFTER_POST_PROCESS;
+    }
+
+    @Override
+    public void onPrepareWorldPostProcess(float tickDelta) {
+        if (!isEnabled() || !isCrystalsMode() || !distortion.get() || renderTarget == null || targetAlpha <= 0.01f) {
+            return;
+        }
+        Renderer3D.CullOptions cull = resolveCullOptions(renderTarget);
+        if (!Renderer3D.Culling.shouldRender(renderTarget, tickDelta, cull)) return;
+
+        float strength = distortionStrength.get() * targetAlpha;
+        if (strength <= 0.001f) return;
+
+        Vec3 center = RenderMath.getLerpedPos(renderTarget, tickDelta);
+        float radiusXz = renderTarget.getBbWidth() * 1.5f;
+        float height = renderTarget.getBbHeight();
+        float spread = 1.2f - 0.5f * targetAlpha;
+        float spin = (renderTarget.tickCount - 1 + tickDelta) * 18.0f;
+
+        for (int angle = 0; angle < 360; angle += 20) {
+            double radians = Math.toRadians(angle + spin);
+            double x = Math.sin(radians) * radiusXz * spread;
+            double z = Math.cos(radians) * radiusXz * spread;
+            double y = 0.1 + height * Math.abs(Math.sin(Math.toRadians(angle)));
+            WorldTargetLenses.submit(
+                    center.add(x, y, z),
+                    0.45f,
+                    strength,
+                    distortionDepthTest.get()
+            );
+        }
     }
 
     @Override
@@ -648,92 +692,120 @@ public class TargetESP extends Module {
                                         String mode) {
         if (renderer == null || target == null || palette == null) return;
 
-        int count = Math.max(8, layoutDensity.get());
+        int count = Math.max(24, layoutDensity.get());
         float baseScale = Math.max(0.01f, layoutScale.get());
         float speed = Math.max(0.01f, layoutSpeed.get());
-        float radius = Math.max(0.42f, target.getBbWidth() * layoutRadiusScale.get());
-        float height = Math.max(0.75f, target.getBbHeight() * 0.94f);
+        float radius = Math.max(0.32f, target.getBbWidth() * layoutRadiusScale.get());
+        float height = Math.max(0.75f, target.getBbHeight());
         float time = (target.tickCount - 1 + tickDelta) / 20.0f;
         long seed = ((long) target.getId() * 0x9E3779B97F4A7C15L) ^ mode.hashCode();
 
         ParticleLayoutDescriptor descriptor = switch (mode) {
             case "helix" -> new ParticleLayoutDescriptor.Helix(
-                    radius,
-                    height,
-                    2.15f,
-                    2,
-                    speed * 2.15f,
-                    height * 0.035f
+                    radius, height, 2.2f, 2, speed * 2.1f, height * 0.035f
             );
             case "orbit" -> new ParticleLayoutDescriptor.Orbit(
-                    radius,
-                    height * 0.48f,
-                    3,
-                    0.72f,
-                    speed * 1.8f
+                    radius * 1.2f, radius * 1.2f, 3, 0.95f, speed * 1.45f
             );
             case "runes" -> new ParticleLayoutDescriptor.Runes(
-                    radius * 1.06f,
-                    height,
-                    8,
-                    Math.max(0.15f, radius * 0.28f),
-                    speed * 0.52f
+                    radius * 1.25f, height, Math.max(3, count / 24),
+                    Math.max(0.14f, radius * 0.34f), speed * 0.3f
             );
             case "pulse" -> new ParticleLayoutDescriptor.Pulse(
-                    radius * 0.72f,
-                    radius * 0.31f,
-                    height * 0.45f,
-                    3,
-                    speed * 2.35f
+                    radius * 0.3f, radius * 1.6f, height * 0.15f, 3, speed * 2.25f
             );
             default -> new ParticleLayoutDescriptor.LightningPath(
-                    radius * 0.86f,
-                    height,
-                    3,
-                    0.58f,
-                    2.1f,
-                    speed * 0.72f
+                    radius * 1.05f, height, 6, 0.32f, 3.0f, speed * 1.15f
             );
         };
 
-        if (descriptor instanceof ParticleLayoutDescriptor.Runes runes) {
-            count = Math.max(count, runes.runeCount() * 8);
-        }
-        if (descriptor instanceof ParticleLayoutDescriptor.LightningPath lightning) {
-            count = Math.max(count, lightning.branches() * 12);
-        }
+        if (descriptor instanceof ParticleLayoutDescriptor.Helix) count = Math.max(count, 112);
+        if (descriptor instanceof ParticleLayoutDescriptor.Orbit) count = Math.max(count, 168);
+        if (descriptor instanceof ParticleLayoutDescriptor.Runes runes) count = Math.max(count, runes.runeCount() * 16);
+        if (descriptor instanceof ParticleLayoutDescriptor.LightningPath) count = Math.max(count, 90);
 
         Vec3 center = RenderMath.getLerpedPos(target, tickDelta).add(0.0, target.getBbHeight() * 0.5, 0.0);
+        Renderer3D.DepthMode depthMode = Renderer3D.DepthMode.PRE_DEPTH;
         MeshBuilder particleMesh = renderer.batchTextured(
-                CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE,
+                CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH,
                 GHOST_PARTICLE_TEXTURE,
-                Renderer3D.DepthMode.MAIN
+                depthMode
         );
-        if (particleMesh == null) return;
+        MeshBuilder bloomMesh = renderer.batchTextured(
+                CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH,
+                CRYSTAL_BLOOM,
+                depthMode
+        );
+        if (particleMesh == null || bloomMesh == null) return;
 
-        Vec3[] previous = descriptor instanceof ParticleLayoutDescriptor.LightningPath lightning
-                ? new Vec3[lightning.branches()]
-                : null;
-        int[] previousColor = previous != null ? new int[previous.length] : null;
+        int tracks;
+        int runePoints = 0;
+        if (descriptor instanceof ParticleLayoutDescriptor.Helix helix) {
+            tracks = helix.strands();
+        } else if (descriptor instanceof ParticleLayoutDescriptor.Orbit orbit) {
+            tracks = orbit.planes();
+        } else if (descriptor instanceof ParticleLayoutDescriptor.Runes runes) {
+            tracks = runes.runeCount();
+            runePoints = Math.max(5, count / tracks);
+        } else if (descriptor instanceof ParticleLayoutDescriptor.Pulse pulse) {
+            tracks = pulse.rings();
+        } else {
+            tracks = ((ParticleLayoutDescriptor.LightningPath) descriptor).branches();
+        }
 
-        for (int i = 0; i < count; i++) {
-            ParticleLayoutSample sample = ParticleLayoutEvaluator.sample(descriptor, i, count, time, seed);
-            Vec3 world = center.add(sample.offset());
-            int color = applyOpacity(palette.apply(sample.colorPhase()), sample.alpha());
-            float sampleScale = baseScale * Math.max(0.25f, sample.scale());
-            addBillboardQuad(particleMesh, world.x, world.y, world.z, sampleScale, color);
+        Vec3[] first = new Vec3[tracks];
+        Vec3[] previous = new Vec3[tracks];
+        int[] firstColor = new int[tracks];
+        int[] previousColor = new int[tracks];
+        float prevWidth = RenderState.lineWidth;
+        RenderState.lineWidth = 1.35f;
+        try {
+            for (int i = 0; i < count; i++) {
+                ParticleLayoutSample sample = ParticleLayoutEvaluator.sample(descriptor, i, count, time, seed);
+                Vec3 world = center.add(sample.offset());
+                float alpha = Mth.clamp(sample.alpha(), 0.0f, 1.0f);
+                int color = applyOpacity(palette.apply(sample.colorPhase()), alpha);
+                float sampleScale = baseScale * Math.max(0.3f, sample.scale());
 
-            if (previous != null) {
-                int branch = i % previous.length;
-                Vec3 prev = previous[branch];
-                if (prev != null) {
-                    renderer.lineGradient(prev.x, prev.y, prev.z, world.x, world.y, world.z,
-                            applyOpacity(previousColor[branch], 0.72f),
-                            applyOpacity(color, 0.72f));
+                addBillboardQuad(bloomMesh, world.x, world.y, world.z, sampleScale * 2.45f, applyOpacity(color, 0.22f));
+                addBillboardQuad(particleMesh, world.x, world.y, world.z, sampleScale * 0.72f, color);
+
+                int track = descriptor instanceof ParticleLayoutDescriptor.Runes
+                        ? Math.min(tracks - 1, i / runePoints)
+                        : i % tracks;
+                if (first[track] == null) {
+                    first[track] = world;
+                    firstColor[track] = color;
                 }
-                previous[branch] = world;
-                previousColor[branch] = color;
+                Vec3 prev = previous[track];
+                if (prev != null && prev.distanceToSqr(world) < radius * radius * 2.8) {
+                    renderer.lineGradient(
+                            prev.x, prev.y, prev.z,
+                            world.x, world.y, world.z,
+                            applyOpacity(previousColor[track], 0.62f),
+                            applyOpacity(color, 0.62f)
+                    );
+                }
+                previous[track] = world;
+                previousColor[track] = color;
             }
+
+            boolean closeTracks = descriptor instanceof ParticleLayoutDescriptor.Orbit
+                    || descriptor instanceof ParticleLayoutDescriptor.Runes
+                    || descriptor instanceof ParticleLayoutDescriptor.Pulse;
+            if (closeTracks) {
+                for (int i = 0; i < tracks; i++) {
+                    if (first[i] == null || previous[i] == null) continue;
+                    renderer.lineGradient(
+                            previous[i].x, previous[i].y, previous[i].z,
+                            first[i].x, first[i].y, first[i].z,
+                            applyOpacity(previousColor[i], 0.55f),
+                            applyOpacity(firstColor[i], 0.55f)
+                    );
+                }
+            }
+        } finally {
+            RenderState.lineWidth = prevWidth;
         }
     }
 
@@ -749,7 +821,7 @@ public class TargetESP extends Module {
             return;
         }
 
-        crystalRotationAngle = (crystalRotationAngle + 0.5f) % 360.0f;
+        crystalRotationAngle = ((target.tickCount - 1 + tickDelta) * 2.5f) % 360.0f;
         float orbitYawRad = (float) Math.toRadians(crystalRotationAngle);
         float red = crystalHitRed.get()
                 ? Mth.clamp((target.hurtTime - tickDelta) / 20.0f, 0.0f, 1.0f)
@@ -805,23 +877,20 @@ public class TargetESP extends Module {
 
     private void createCrystals(Entity target) {
         crystalList.clear();
-        if (target == null) {
-            return;
+        if (target == null) return;
+        double radius = target.getBbWidth() * 1.5;
+        double height = target.getBbHeight();
+        for (int angle = 0; angle < 360; angle += 20) {
+            double radians = Math.toRadians(angle);
+            double x = Math.sin(radians) * radius;
+            double z = Math.cos(radians) * radius;
+            double y = 0.1 + height * Math.abs(Math.sin(radians));
+            double tilt = 58.0 + 10.0 * Math.sin(radians * 2.0);
+            crystalList.add(new CrystalInstance(
+                    new Vec3(x, y, z),
+                    new Vec3(tilt, angle + 90.0, angle * 0.35)
+            ));
         }
-        crystalList.add(new CrystalInstance(new Vec3(0, 0.85, 0.8), new Vec3(-49, 0, 40)));
-        crystalList.add(new CrystalInstance(new Vec3(0.2, 0.85, -0.675), new Vec3(35, 0, -30)));
-        crystalList.add(new CrystalInstance(new Vec3(0.6, 1.35, 0.6), new Vec3(-30, 0, 35)));
-        crystalList.add(new CrystalInstance(new Vec3(-0.74, 1.05, 0.4), new Vec3(-25, 0, -30)));
-        crystalList.add(new CrystalInstance(new Vec3(0.74, 0.95, -0.4), new Vec3(0, 0, 0)));
-        crystalList.add(new CrystalInstance(new Vec3(-0.475, 0.85, -0.375), new Vec3(30, 0, -25)));
-        crystalList.add(new CrystalInstance(new Vec3(0, 1.35, -0.6), new Vec3(45, 0, 0)));
-        crystalList.add(new CrystalInstance(new Vec3(0.85, 0.7, 0.1), new Vec3(-30, 0, 30)));
-        crystalList.add(new CrystalInstance(new Vec3(-0.7, 1.35, -0.3), new Vec3(0, 0, 0)));
-        crystalList.add(new CrystalInstance(new Vec3(-0.3, 1.35, 0.55), new Vec3(0, 0, 0)));
-        crystalList.add(new CrystalInstance(new Vec3(-0.5, 0.7, 0.7), new Vec3(0, 0, 0)));
-        crystalList.add(new CrystalInstance(new Vec3(0.5, 0.7, 0.7), new Vec3(0, 0, 0)));
-        crystalList.add(new CrystalInstance(new Vec3(-0.7, 0.75, 0), new Vec3(0, 0, 0)));
-        crystalList.add(new CrystalInstance(new Vec3(-0.2, 0.65, -0.7), new Vec3(0, 0, 0)));
     }
 
     private boolean isGhostMode() {
@@ -921,10 +990,10 @@ public class TargetESP extends Module {
                             Vec3 targetPos,
                             float orbitYawRad,
                             int baseColor) {
-            appendCrystalGeometry(additiveMesh, targetPos, this, orbitYawRad, 1.0f, applyOpacity(baseColor, 0.2f), true);
-            appendCrystalGeometry(fillMesh, targetPos, this, orbitYawRad, 1.0f, applyOpacity(baseColor, 0.3f), true);
-            appendCrystalGeometry(lineMesh, targetPos, this, orbitYawRad, 1.0f, applyOpacity(baseColor, 0.8f), false);
-            appendCrystalGeometry(additiveMesh, targetPos, this, orbitYawRad, 1.2f, applyOpacity(baseColor, 0.3f), true);
+            appendCrystalGeometry(additiveMesh, targetPos, this, orbitYawRad, 1.0f, applyOpacity(baseColor, 0.34f), true);
+            appendCrystalGeometry(fillMesh, targetPos, this, orbitYawRad, 1.0f, applyOpacity(baseColor, 0.42f), true);
+            appendCrystalGeometry(lineMesh, targetPos, this, orbitYawRad, 1.0f, applyOpacity(baseColor, 0.95f), false);
+            appendCrystalGeometry(additiveMesh, targetPos, this, orbitYawRad, 1.28f, applyOpacity(baseColor, 0.42f), true);
             appendBloomSphere(bloomMesh, targetPos, this, orbitYawRad, baseColor);
         }
     }

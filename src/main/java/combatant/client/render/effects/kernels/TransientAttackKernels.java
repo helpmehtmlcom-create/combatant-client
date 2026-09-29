@@ -11,7 +11,6 @@ import combatant.client.render.effects.CurrentTransientEffectBackend;
 import combatant.client.render.effects.EffectDomain;
 import combatant.client.render.effects.EffectMaterial;
 import combatant.client.render.effects.EffectParameters;
-import combatant.client.render.effects.EffectParticipation;
 import combatant.client.render.effects.TransientEffectDescriptor;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.TextureStorage;
@@ -19,11 +18,11 @@ import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import net.minecraft.util.Mth;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
-/** Reusable current-renderer kernels for short combat/transient events. */
 public final class TransientAttackKernels {
     public static final String PLASMA_PINCH = "combatant:plasma_pinch";
     public static final String SPARKS = "combatant:attack_sparks";
@@ -48,10 +47,19 @@ public final class TransientAttackKernels {
             int sourceEntityId, int primaryColor, int secondaryColor,
             float radius, float intensity, int priority
     ) {
+        return plasma(id, position, nowMs, lifetimeMs, seed, sourceEntityId, primaryColor, secondaryColor,
+                radius, intensity, priority, true);
+    }
+
+    public static TransientEffectDescriptor plasma(
+            long id, Vec3 position, long nowMs, long lifetimeMs, long seed,
+            int sourceEntityId, int primaryColor, int secondaryColor,
+            float radius, float intensity, int priority, boolean depthTest
+    ) {
         return new TransientEffectDescriptor(
-                id, PLASMA_PINCH, EffectDomain.BILLBOARD, EffectParticipation.EMISSIVE, position, nowMs, lifetimeMs,
+                id, PLASMA_PINCH, EffectDomain.BILLBOARD, position, nowMs, lifetimeMs,
                 sourceEntityId, seed, 0, priority,
-                material(primaryColor, secondaryColor, intensity),
+                material(primaryColor, secondaryColor, intensity, depthTest),
                 new EffectParameters(Math.max(0.05f, radius), Math.max(0.0f, intensity), 18.0f, 1.0f,
                         0, 0, 0, 0)
         );
@@ -62,10 +70,19 @@ public final class TransientAttackKernels {
             int sourceEntityId, int primaryColor, int secondaryColor,
             float radius, int rayCount, float intensity, int priority
     ) {
+        return sparks(id, position, nowMs, lifetimeMs, seed, sourceEntityId, primaryColor, secondaryColor,
+                radius, rayCount, intensity, priority, true);
+    }
+
+    public static TransientEffectDescriptor sparks(
+            long id, Vec3 position, long nowMs, long lifetimeMs, long seed,
+            int sourceEntityId, int primaryColor, int secondaryColor,
+            float radius, int rayCount, float intensity, int priority, boolean depthTest
+    ) {
         return new TransientEffectDescriptor(
-                id, SPARKS, EffectDomain.BILLBOARD, EffectParticipation.EMISSIVE, position, nowMs, lifetimeMs,
+                id, SPARKS, EffectDomain.BILLBOARD, position, nowMs, lifetimeMs,
                 sourceEntityId, seed, 0, priority,
-                material(primaryColor, secondaryColor, intensity),
+                material(primaryColor, secondaryColor, intensity, depthTest),
                 new EffectParameters(Math.max(0.05f, radius), Math.max(3, rayCount),
                         Math.max(0.0f, intensity), 0.12f, 0, 0, 0, 0)
         );
@@ -76,37 +93,54 @@ public final class TransientAttackKernels {
             int sourceEntityId, int primaryColor, int secondaryColor,
             float radius, float arcRadians, float tiltRadians, float intensity, int priority
     ) {
+        return slash(id, position, nowMs, lifetimeMs, seed, sourceEntityId, primaryColor, secondaryColor,
+                radius, arcRadians, tiltRadians, intensity, priority, true);
+    }
+
+    public static TransientEffectDescriptor slash(
+            long id, Vec3 position, long nowMs, long lifetimeMs, long seed,
+            int sourceEntityId, int primaryColor, int secondaryColor,
+            float radius, float arcRadians, float tiltRadians, float intensity, int priority, boolean depthTest
+    ) {
         return new TransientEffectDescriptor(
-                id, SLASH, EffectDomain.RIBBON, EffectParticipation.EMISSIVE, position, nowMs, lifetimeMs,
+                id, SLASH, EffectDomain.RIBBON, position, nowMs, lifetimeMs,
                 sourceEntityId, seed, 0, priority,
-                material(primaryColor, secondaryColor, intensity),
+                material(primaryColor, secondaryColor, intensity, depthTest),
                 new EffectParameters(Math.max(0.05f, radius), Math.max(0.15f, arcRadians),
                         tiltRadians, Math.max(0.0f, intensity), 22.0f, 0, 0, 0)
         );
     }
 
-    /** Volumetric world-space shell used by impact/pop effects. */
     public static TransientEffectDescriptor radialBurst(
             long id, Vec3 position, long nowMs, long lifetimeMs, long seed,
             int sourceEntityId, int primaryColor, int secondaryColor,
             float radius, int particleCount, float intensity, float coreScale, int priority
     ) {
+        return radialBurst(id, position, nowMs, lifetimeMs, seed, sourceEntityId, primaryColor, secondaryColor,
+                radius, particleCount, intensity, coreScale, priority, true);
+    }
+
+    public static TransientEffectDescriptor radialBurst(
+            long id, Vec3 position, long nowMs, long lifetimeMs, long seed,
+            int sourceEntityId, int primaryColor, int secondaryColor,
+            float radius, int particleCount, float intensity, float coreScale, int priority, boolean depthTest
+    ) {
         return new TransientEffectDescriptor(
-                id, RADIAL_BURST, EffectDomain.BILLBOARD, EffectParticipation.EMISSIVE, position, nowMs, lifetimeMs,
+                id, RADIAL_BURST, EffectDomain.BILLBOARD, position, nowMs, lifetimeMs,
                 sourceEntityId, seed, 0, priority,
-                material(primaryColor, secondaryColor, intensity),
+                material(primaryColor, secondaryColor, intensity, depthTest),
                 new EffectParameters(Math.max(0.05f, radius), Math.max(12, particleCount),
                         Math.max(0.0f, intensity), Math.max(0.05f, coreScale), 0, 0, 0, 0)
         );
     }
 
-    private static EffectMaterial material(int primary, int secondary, float intensity) {
+    private static EffectMaterial material(int primary, int secondary, float intensity, boolean depthTest) {
         return new EffectMaterial(
                 primary,
                 secondary,
                 1.0f,
                 Math.max(0.0f, intensity),
-                EffectMaterial.DepthPolicy.MAIN,
+                depthTest ? EffectMaterial.DepthPolicy.MAIN : EffectMaterial.DepthPolicy.NONE,
                 EffectMaterial.BlendPolicy.ADDITIVE
         );
     }
@@ -119,14 +153,18 @@ public final class TransientAttackKernels {
         float fade = 1.0f - smooth(t);
         if (fade <= 0.002f) return;
 
+        float radius = effect.parameters().p0();
+        if (!visible(effect.position(), radius * 1.18f)) return;
+
+        boolean useDepth = effect.material().depthPolicy() != EffectMaterial.DepthPolicy.NONE;
         MeshBuilder mesh = renderer.batchTextured(
-                CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH,
+                useDepth ? CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH
+                        : CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE,
                 TextureStorage.FIRE_FLY,
-                Renderer3D.DepthMode.MAIN
+                useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.NONE
         );
         if (mesh == null) return;
 
-        float radius = effect.parameters().p0();
         float intensity = effect.parameters().p1();
         int count = Mth.clamp(Math.round(effect.parameters().p2()), 8, 48);
         Quaternionf camera = RenderState.cameraRotation;
@@ -161,14 +199,18 @@ public final class TransientAttackKernels {
         float fade = 1.0f - smooth(t);
         if (fade <= 0.002f) return;
 
+        float radius = effect.parameters().p0();
+        if (!visible(effect.position(), radius * 1.22f)) return;
+
+        boolean useDepth = effect.material().depthPolicy() != EffectMaterial.DepthPolicy.NONE;
         MeshBuilder mesh = renderer.batchTextured(
-                CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH,
+                useDepth ? CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH
+                        : CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE,
                 TextureStorage.FIRE_FLY,
-                Renderer3D.DepthMode.MAIN
+                useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.NONE
         );
         if (mesh == null) return;
 
-        float radius = effect.parameters().p0();
         int rays = Mth.clamp(Math.round(effect.parameters().p1()), 3, 64);
         float intensity = effect.parameters().p2();
         float baseSize = Math.max(0.02f, effect.parameters().p3());
@@ -203,21 +245,23 @@ public final class TransientAttackKernels {
         float alpha = appear * fade;
         if (alpha <= 0.002f) return;
 
+        float radius = effect.parameters().p0();
+        if (!visible(effect.position(), radius * 1.24f)) return;
+
+        boolean useDepth = effect.material().depthPolicy() != EffectMaterial.DepthPolicy.NONE;
         MeshBuilder mesh = renderer.batchTextured(
-                CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH,
+                useDepth ? CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH
+                        : CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE,
                 TextureStorage.FIRE_FLY,
-                Renderer3D.DepthMode.MAIN
+                useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.NONE
         );
         if (mesh == null) return;
 
-        float radius = effect.parameters().p0();
         int count = Mth.clamp(Math.round(effect.parameters().p1()), 12, 96);
         float intensity = effect.parameters().p2();
         float coreScale = effect.parameters().p3();
         Quaternionf camera = RenderState.cameraRotation;
 
-        // Fast expanding shell with a bright core. The Fibonacci distribution keeps the burst
-        // volumetric from every camera angle without introducing a mesh/simulation dependency.
         float shell = radius * (0.08f + 0.92f * (1.0f - (float) Math.pow(1.0f - t, 2.35)));
         float shellSize = radius * (0.030f + 0.025f * (1.0f - t)) * (0.85f + intensity * 0.18f);
         double golden = Math.PI * (3.0 - Math.sqrt(5.0));
@@ -255,14 +299,18 @@ public final class TransientAttackKernels {
         float fade = 1.0f - smooth(t);
         if (fade <= 0.002f) return;
 
+        float radius = effect.parameters().p0();
+        if (!visible(effect.position(), radius * 1.26f)) return;
+
+        boolean useDepth = effect.material().depthPolicy() != EffectMaterial.DepthPolicy.NONE;
         MeshBuilder mesh = renderer.batchTextured(
-                CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH,
+                useDepth ? CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH
+                        : CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE,
                 TextureStorage.FIRE_FLY,
-                Renderer3D.DepthMode.MAIN
+                useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.NONE
         );
         if (mesh == null) return;
 
-        float radius = effect.parameters().p0();
         float arc = effect.parameters().p1();
         float tilt = effect.parameters().p2();
         float intensity = effect.parameters().p3();
@@ -287,6 +335,16 @@ public final class TransientAttackKernels {
             int color = lerpColor(effect.material().primaryColor(), effect.material().secondaryColor(), center);
             addBillboard(mesh, p, size, camera, withAlpha(color, Math.round(alpha * 255.0f)));
         }
+    }
+
+    private static boolean visible(Vec3 center, float radius) {
+        if (center == null) return false;
+        double extent = Math.max(0.18, radius);
+        AABB box = new AABB(
+                center.x - extent, center.y - extent, center.z - extent,
+                center.x + extent, center.y + extent, center.z + extent
+        );
+        return Renderer3D.Culling.isInFrustum(box) && Renderer3D.Culling.isSectionVisible(box);
     }
 
     private static void addBillboard(MeshBuilder mesh, Vec3 center, float size, Quaternionf camera, int argb) {

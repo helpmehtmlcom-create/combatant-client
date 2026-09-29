@@ -7,6 +7,7 @@
 package combatant.client.mixins.sodium.gui;
 
 import combatant.client.compat.sodium.gui.SodiumModIconAccess;
+import net.caffeinemc.mods.sodium.client.config.structure.ModOptions;
 import net.minecraft.resources.Identifier;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
@@ -18,4 +19,7 @@ public interface SodiumPageModHeaderIconAccessorMixin extends SodiumModIconAcces
 
     @Accessor("iconMonochrome")
     @Override boolean combatant$isIconMonochrome();
+
+    @Accessor("modOptions")
+    @Override ModOptions combatant$getModOptions();
 }

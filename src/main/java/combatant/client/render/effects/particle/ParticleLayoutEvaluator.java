@@ -179,14 +179,16 @@ public final class ParticleLayoutEvaluator {
         int localIndex = index / d.rings();
         int localCount = Math.max(1, (count + d.rings() - 1 - ring) / d.rings());
         float t = localCount <= 1 ? 0.0f : localIndex / (float) localCount;
-        float wave = 0.5f + 0.5f * (float) Math.sin(time * d.speed() - ring * 1.6f);
-        double radius = d.baseRadius() + d.radiusAmplitude() * wave + ring * d.radiusAmplitude() * 0.18;
-        double angle = TAU * t + ring * 0.37;
-        double y = d.height() * (ring - (d.rings() - 1) * 0.5) / Math.max(1.0, d.rings());
+        float wave = fract(time * d.speed() * 0.85f + ring / (float) d.rings());
+        double radius = d.baseRadius() + d.radiusAmplitude() * wave;
+        double angle = TAU * t;
+        double y = d.height() * (ring - (d.rings() - 1) * 0.5);
+        float alpha = (1.0f - wave) * (1.0f - wave) * Math.min(1.0f, wave * 5.0f);
+        float scale = 1.0f - 0.35f * wave;
         return new ParticleLayoutSample(
                 new Vec3(Math.cos(angle) * radius, y, Math.sin(angle) * radius),
-                0.25f + wave * 0.75f,
-                0.62f + wave * 0.7f,
+                Mth.clamp(alpha * 1.35f, 0.0f, 1.0f),
+                Math.max(0.35f, scale),
                 (float) Math.toDegrees(angle),
                 Math.round(t * 360.0f) + ring * 75
         );
@@ -216,6 +218,10 @@ public final class ParticleLayoutEvaluator {
                 (float) Math.toDegrees(angle),
                 branch * 120 + Math.round(t * 160.0f)
         );
+    }
+
+    private static float fract(float value) {
+        return value - (float) Math.floor(value);
     }
 
     private static double unitNoise(long value) {

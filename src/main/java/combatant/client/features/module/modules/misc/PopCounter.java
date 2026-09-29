@@ -9,26 +9,20 @@ package combatant.client.features.module.modules.misc;
 
 import combatant.client.config.values.BooleanMapValue;
 import combatant.client.config.values.BooleanValue;
-import combatant.client.events.EventHandler;
-import combatant.client.events.impl.PacketEvent;
+import combatant.client.features.command.CommandOutput;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.ModuleSubcategory;
-import combatant.client.features.module.Notifier;
 import combatant.client.features.relations.CategoryRules;
 import combatant.client.features.relations.CategoryType;
+import combatant.client.util.pvp.opponents.TotemPopCounter;
+import combatant.client.util.pvp.opponents.TotemPopSnapshot;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.resources.language.I18n;
-import net.minecraft.network.protocol.game.ClientboundEntityEventPacket;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EntityEvent;
 import net.minecraft.world.entity.player.Player;
 
-import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.UUID;
 
 @ModuleInfo(
@@ -39,9 +33,7 @@ import java.util.UUID;
         subcategory = ModuleSubcategory.UTILITY,
         description = "module.popcounter.description")
 public final class PopCounter extends Module {
-
     private final Minecraft mc = Minecraft.getInstance();
-
     private final BooleanValue self = bool("popCounterSelf", "self", true);
     private final BooleanValue deathSummary = bool("popCounterDeathSummary", "death_summary", true);
     private final BooleanMapValue targets = group("popCounterTargets", "targets", new LinkedHashMap<>() {{
@@ -51,98 +43,83 @@ public final class PopCounter extends Module {
         put("others", true);
     }});
 
-    private final Map<UUID, Integer> counts = new HashMap<>();
-    private ClientLevel level;
-    private int selfPops;
+    private final TotemPopCounter.Listener listener = new TotemPopCounter.Listener() {
+        @Override
+        public void onPop(TotemPopSnapshot snapshot) {
+            if (!isEnabled() || snapshot == null || snapshot.playerId() == null) return;
+            Minecraft client = Minecraft.getInstance();
+            if (client == null) return;
+            client.execute(() -> emitPop(snapshot));
+        }
+
+        @Override
+        public void onReset(UUID playerId, TotemPopSnapshot snapshot, TotemPopCounter.ResetReason reason) {
+            if (!isEnabled() || reason != TotemPopCounter.ResetReason.DEATH || snapshot == null || snapshot.count() <= 0) return;
+            Minecraft client = Minecraft.getInstance();
+            if (client == null) return;
+            client.execute(() -> emitDeath(snapshot));
+        }
+    };
 
     @Override
     public void onEnable() {
-        clearState();
+        TotemPopCounter.addListener(listener);
     }
 
     @Override
     public void onDisable() {
-        clearState();
+        TotemPopCounter.removeListener(listener);
     }
 
-    @Override
-    public void onTick() {
-        if (!isEnabled()) return;
-        if (mc.level == null) {
-            clearState();
-            return;
-        }
-        if (level != mc.level) {
-            counts.clear();
-            selfPops = 0;
-            level = mc.level;
-        }
-    }
-
-    @EventHandler
-    private void onPacketReceivePost(PacketEvent.ReceivePost event) {
-        if (!isEnabled() || mc.level == null) return;
-        if (!(event.getPacket() instanceof ClientboundEntityEventPacket packet)) return;
-
-        Entity entity = packet.getEntity(mc.level);
-        if (!(entity instanceof Player player)) return;
-
-        byte id = packet.getEventId();
-        if (id == EntityEvent.PROTECTED_FROM_DEATH) {
-            onPop(player);
-        } else if (id == EntityEvent.DEATH) {
-            onDeath(player);
-        }
-    }
-
-    private void onPop(Player player) {
-        boolean own = player == mc.player;
+    private void emitPop(TotemPopSnapshot snapshot) {
+        boolean own = mc.player != null && snapshot.playerId().equals(mc.player.getUUID());
         if (own) {
-            selfPops++;
             if (!self.get()) return;
-            Notifier.update("popcounter:self", I18n.get("notification.popcounter.self_pop", selfPops), Notifier.Type.WARNING);
+            CommandOutput.warning(I18n.get("notification.popcounter.self_pop", snapshot.count()));
             return;
         }
-        if (!allows(player)) return;
 
-        int count = counts.merge(player.getUUID(), 1, Integer::sum);
-        Notifier.update(
-                "popcounter:" + player.getUUID(),
-                I18n.get("notification.popcounter.pop", player.getName().getString(), count),
-                Notifier.Type.INFO
-        );
+        Player player = mc.level != null ? mc.level.getPlayerByUUID(snapshot.playerId()) : null;
+        String name = snapshot.name();
+        if (player != null) {
+            if (!allows(player)) return;
+            name = player.getName().getString();
+        } else if (!allowsName(name)) {
+            return;
+        }
+        if (name == null || name.isBlank()) name = snapshot.playerId().toString();
+        CommandOutput.send(I18n.get("notification.popcounter.pop", name, snapshot.count()));
     }
 
-    private void onDeath(Player player) {
-        boolean own = player == mc.player;
-        int count = own ? selfPops : counts.getOrDefault(player.getUUID(), 0);
-
-        if (deathSummary.get() && count > 0 && (own ? self.get() : allows(player))) {
-            String key = own ? "notification.popcounter.self_death" : "notification.popcounter.death";
-            String text = own
-                    ? I18n.get(key, count)
-                    : I18n.get(key, player.getName().getString(), count);
-            Notifier.info(text);
-        }
-
+    private void emitDeath(TotemPopSnapshot snapshot) {
+        if (!deathSummary.get()) return;
+        boolean own = mc.player != null && snapshot.playerId().equals(mc.player.getUUID());
         if (own) {
-            selfPops = 0;
-            Notifier.clear("popcounter:self");
-        } else {
-            counts.remove(player.getUUID());
-            Notifier.clear("popcounter:" + player.getUUID());
+            if (self.get()) CommandOutput.send(I18n.get("notification.popcounter.self_death", snapshot.count()));
+            return;
         }
-    }
 
-    private void clearState() {
-        counts.clear();
-        selfPops = 0;
-        level = null;
+        Player player = mc.level != null ? mc.level.getPlayerByUUID(snapshot.playerId()) : null;
+        String name = snapshot.name();
+        if (player != null) {
+            if (!allows(player)) return;
+            name = player.getName().getString();
+        } else if (!allowsName(name)) {
+            return;
+        }
+        if (name == null || name.isBlank()) name = snapshot.playerId().toString();
+        CommandOutput.send(I18n.get("notification.popcounter.death", name, snapshot.count()));
     }
 
     private boolean allows(Player player) {
-        if (player == null) return false;
-        CategoryType type = CategoryRules.determine(player.getGameProfile().name());
+        return player != null && allowsType(CategoryRules.determine(player.getGameProfile().name()));
+    }
+
+    private boolean allowsName(String name) {
+        return name != null && !name.isBlank() && allowsType(CategoryRules.determine(name));
+    }
+
+    private boolean allowsType(CategoryType type) {
         return switch (type) {
             case FRIEND, BEDWARS_SELF -> targets.get("friends");
             case ENEMY, BEDWARS_ENEMY -> targets.get("enemies");

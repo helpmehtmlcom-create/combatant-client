@@ -8,6 +8,7 @@ package combatant.client.mixins.sodium.gui;
 
 import combatant.client.compat.sodium.gui.SodiumSearchWidgetAccess;
 import net.caffeinemc.mods.sodium.client.gui.widgets.SearchWidget;
+import net.minecraft.client.gui.components.EditBox;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
@@ -15,4 +16,7 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 public interface SodiumSearchWidgetAccessorMixin extends SodiumSearchWidgetAccess {
     @Accessor("query")
     @Override String combatant$getQuery();
+
+    @Accessor("searchBox")
+    @Override EditBox combatant$getSearchBox();
 }

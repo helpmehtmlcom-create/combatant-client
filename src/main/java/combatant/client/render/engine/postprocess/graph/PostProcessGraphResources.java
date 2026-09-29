@@ -58,7 +58,7 @@ public final class PostProcessGraphResources implements AutoCloseable {
                 : WorldSceneDepth.hasMain() ? WorldSceneDepth.mainDepthView() : main.getDepthTextureView();
         GpuTextureView preTranslucentDepth = IrisSceneDepth.isValid()
                 ? IrisSceneDepth.preTranslucentDepthView()
-                : needsPreTranslucentDepth() ? PreTranslucentDepth.getDepthView() : null;
+                : PreTranslucentDepth.getCapturedDepthView();
         GpuTextureView staticWorldDepth = IrisSceneDepth.isValid()
                 ? null
                 : WorldSceneDepth.hasItemEntity() ? WorldSceneDepth.itemEntityDepthView() : null;
@@ -184,10 +184,6 @@ public final class PostProcessGraphResources implements AutoCloseable {
         storageOwner = null;
     }
 
-    private static boolean needsPreTranslucentDepth() {
-        // Legacy ReimaginedVisual DoF no longer consumes PostProcessGraph depth captures.
-        return false;
-    }
 
     public void releaseBackendResources(CombatantRhi owner) {
         if (storageOwner == null || owner == null || storageOwner == owner) {

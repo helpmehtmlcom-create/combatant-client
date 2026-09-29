@@ -98,18 +98,6 @@ public class CpuTransientWorldEffectSystem implements TransientWorldEffectSystem
     }
 
     @Override
-    public synchronized List<TransientEffectDescriptor> snapshot(EffectParticipation participation) {
-        if (participation == null) return snapshot();
-        List<TransientEffectDescriptor> out = new ArrayList<>();
-        for (TransientEffectDescriptor descriptor : active.values()) {
-            if (descriptor.participation() == participation) {
-                out.add(descriptor);
-            }
-        }
-        return List.copyOf(out);
-    }
-
-    @Override
     public synchronized int activeCount() {
         return active.size();
     }

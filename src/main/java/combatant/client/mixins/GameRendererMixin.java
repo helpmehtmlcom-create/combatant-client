@@ -580,11 +580,37 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
                 }
             }
             try (RenderPhaseScope combatant$postPreHandPhase = CombatantRenderSystem.phase(RenderPhase.WORLD_POST_PRE_HAND)) {
+                float postTickDelta = tickCounter.getGameTimeDeltaPartialTick(true);
+                if (combatant$prepareWorldPostMaskState()) {
+                    ModuleManager.prepareWorldPostProcess(postTickDelta);
+                }
                 PostProcessManager.renderAll(PostProcessPass.Phase.PRE_HAND,
-                        tickCounter.getGameTimeDeltaPartialTick(true));
+                        postTickDelta);
                 combatant$renderCombatantWorldAfterPreHandPostProcess(tickCounter);
             }
         }
+    }
+
+    @Unique
+    private boolean combatant$prepareWorldPostMaskState() {
+        Matrix4f capturedPosition = CombatantWorldMatrices.positionMatrix();
+        Matrix4f capturedProjection = CombatantWorldMatrices.renderProjectionMatrix();
+        if (capturedProjection == null || mainCamera == null) return false;
+
+        Vec3 capturedCameraPos = CombatantWorldMatrices.cameraPosition();
+        Vec3 cameraPos = capturedCameraPos != null ? capturedCameraPos : mainCamera.position();
+        RenderState.cameraPos = cameraPos;
+        RenderState.cameraRotation.set(mainCamera.rotation());
+        RenderState.cameraYaw = mainCamera.yRot();
+        RenderState.cameraPitch = mainCamera.xRot();
+        RenderState.worldProjection.set(capturedProjection);
+
+        Matrix4f position = capturedPosition != null
+                ? capturedPosition
+                : new Matrix4f().rotation(mainCamera.rotation().conjugate(new org.joml.Quaternionf()));
+        RenderState.frustum = new Frustum(position, capturedProjection);
+        RenderState.frustum.prepare(cameraPos.x, cameraPos.y, cameraPos.z);
+        return true;
     }
 
     @Unique

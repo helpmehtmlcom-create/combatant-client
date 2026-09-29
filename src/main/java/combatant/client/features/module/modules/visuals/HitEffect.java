@@ -26,6 +26,7 @@ import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.effects.surface.CurrentSurfaceWaveRenderer;
+import combatant.client.render.effects.shockwave.WorldBlastShockwaves;
 import combatant.client.render.effects.surface.SurfaceWaveDescriptor;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import combatant.client.render.helpers.Particle3D;
@@ -66,6 +67,9 @@ public class HitEffect extends Module {
     private static final String SETTING_HIT_PARTICLE_LIFE = "hit_particle_life_ms";
     private static final String SETTING_HIT_PARTICLE_TEXTURE = "hit_particle_texture";
     private static final String SETTING_HIT_PARTICLE_RANDOM_COLOR = "hit_particle_random_color";
+    private static final String SETTING_BLAST_RADIUS = "blast_radius";
+    private static final String SETTING_BLAST_DURATION = "blast_duration";
+    private static final String SETTING_BLAST_STRENGTH = "blast_strength";
 
     private static final float CHARGED_THRESHOLD = 0.9f;
 
@@ -91,13 +95,16 @@ public class HitEffect extends Module {
     private final EnumValue<EffectMode> effectMode =
             enumSetting("hitEffectMode", SETTING_EFFECT_MODE, EffectMode.PARTICLES, EffectMode.values());
     private final ModeValue colorMode =
-            modeSetting("hitEffectColorMode", SETTING_COLOR_MODE, "Theme",
-                    "Static", "Rainbow", "LightRainbow", "Sky", "Fade", "DoubleColor", "Analogous", "Theme");
+            visibleWhen(modeSetting("hitEffectColorMode", SETTING_COLOR_MODE, "Theme",
+                    "Static", "Rainbow", "LightRainbow", "Sky", "Fade", "DoubleColor", "Analogous", "Theme"),
+                    () -> !isBlastMode());
     private final NumberValue<Integer> colorSpeed =
-            num("hitEffectColorSpeed", SETTING_COLOR_SPEED, 18, 2, 54);
-    private final RGBAColorValue colorValue = color("hitEffectColor", SETTING_COLOR, "#FF8ED4FF");
+            visibleWhen(num("hitEffectColorSpeed", SETTING_COLOR_SPEED, 18, 2, 54), () -> !isBlastMode());
+    private final RGBAColorValue colorValue =
+            visibleWhen(color("hitEffectColor", SETTING_COLOR, "#FF8ED4FF"), () -> !isBlastMode());
     private final RGBAColorValue colorValue2 =
-            visibleWhen(color("hitEffectColor2", SETTING_COLOR2, "#FFFF7D9A"), this::usesSecondaryColor);
+            visibleWhen(color("hitEffectColor2", SETTING_COLOR2, "#FFFF7D9A"),
+                    () -> !isBlastMode() && usesSecondaryColor());
     private final BooleanValue depthTest = bool("hitEffectDepthTest", SETTING_DEPTH_TEST, true);
     private final BooleanValue onlyPlayers = bool("hitEffectOnlyPlayers", SETTING_ONLY_PLAYERS, true);
 
@@ -117,8 +124,15 @@ public class HitEffect extends Module {
                     ParticleTextureMode.RANDOM, ParticleTextureMode.values()), this::isParticleMode);
     private final BooleanValue hitParticleRandomColor =
             visibleWhen(bool("hitEffectParticleRandomColor", SETTING_HIT_PARTICLE_RANDOM_COLOR, false), this::isParticleMode);
+    private final NumberValue<Float> blastRadius =
+            visibleWhen(num("hitEffectBlastRadius", SETTING_BLAST_RADIUS, 8.0f, 1.0f, 16.0f), this::isBlastMode);
+    private final NumberValue<Integer> blastDurationMs =
+            visibleWhen(num("hitEffectBlastDuration", SETTING_BLAST_DURATION, 1000, 200, 4000), this::isBlastMode);
+    private final NumberValue<Float> blastStrength =
+            visibleWhen(num("hitEffectBlastStrength", SETTING_BLAST_STRENGTH, 0.5f, 0.1f, 2.0f), this::isBlastMode);
 
     private final List<SurfaceWaveDescriptor> waves = new ArrayList<>();
+    private final List<BlastShockwave> blastShockwaves = new ArrayList<>();
     private final List<Particle3D> hitParticles = new ArrayList<>();
     private final List<Particle3D>[] hitParticleBuckets = createBuckets();
     private int lastHitParticleTick = Integer.MIN_VALUE;
@@ -195,6 +209,8 @@ public class HitEffect extends Module {
     @Override
     public void onDisable() {
         waves.clear();
+        blastShockwaves.clear();
+        WorldBlastShockwaves.clear();
         hitParticles.clear();
         lastHitParticleTick = Integer.MIN_VALUE;
         spawnedHitParticlesThisTick = 0;
@@ -208,6 +224,10 @@ public class HitEffect extends Module {
         if (isWaveMode()) {
             Vec3 pos = target.position().add(0.0, -0.1, 0.0);
             addWave(pos);
+            return;
+        }
+        if (isBlastMode()) {
+            addBlast(target.position().add(0.0, 0.02, 0.0));
             return;
         }
 
@@ -227,6 +247,28 @@ public class HitEffect extends Module {
 
         if (!hitParticles.isEmpty()) {
             hitParticles.removeIf(Particle3D::update);
+        }
+    }
+
+    @Override
+    public void onPrepareWorldPostProcess(float tickDelta) {
+        if (!isEnabled() || !isBlastMode() || blastShockwaves.isEmpty()) return;
+        long now = System.currentTimeMillis();
+        Iterator<BlastShockwave> iterator = blastShockwaves.iterator();
+        while (iterator.hasNext()) {
+            BlastShockwave blast = iterator.next();
+            long elapsed = now - blast.startedAt();
+            if (elapsed >= blast.durationMs()) {
+                iterator.remove();
+                continue;
+            }
+            float t = Mth.clamp((float) elapsed / blast.durationMs(), 0.0f, 1.0f);
+            float radius = blast.maxRadius() * (float) Math.pow(t, 0.6);
+            float fade = 1.0f - Mth.clamp((t - 0.4f) / 0.6f, 0.0f, 1.0f);
+            float strength = blast.strength() * fade;
+            if (radius > 0.001f && strength > 0.001f) {
+                WorldBlastShockwaves.submit(blast.center(), radius, strength, depthTest.get());
+            }
         }
     }
 
@@ -256,6 +298,19 @@ public class HitEffect extends Module {
                 continue;
             }
             CurrentSurfaceWaveRenderer.render(renderer, mc.level, wave, nowMs, this::getColorArgb);
+        }
+    }
+
+    private void addBlast(Vec3 center) {
+        blastShockwaves.add(new BlastShockwave(
+                center,
+                System.currentTimeMillis(),
+                Math.max(200L, blastDurationMs.get()),
+                Math.max(0.001f, blastRadius.get()),
+                Math.max(0.0f, blastStrength.get())
+        ));
+        while (blastShockwaves.size() > 12) {
+            blastShockwaves.remove(0);
         }
     }
 
@@ -407,7 +462,7 @@ public class HitEffect extends Module {
         RenderPipeline pipeline = useDepth
                 ? CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_LIQUID_IGNORE
                 : CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE;
-        Renderer3D.DepthMode depthMode = useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.MAIN;
+        Renderer3D.DepthMode depthMode = useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.NONE;
         Quaternionf camRot = RenderState.cameraRotation;
 
         if (hitParticleTexture.get() == ParticleTextureMode.BLOOM) {
@@ -481,6 +536,10 @@ public class HitEffect extends Module {
 
     private boolean isWaveMode() {
         return effectMode.get() == EffectMode.WAVE;
+    }
+
+    private boolean isBlastMode() {
+        return effectMode.get() == EffectMode.BLAST;
     }
 
     private boolean usesSecondaryColor() {
@@ -563,7 +622,8 @@ public class HitEffect extends Module {
 
     public enum EffectMode implements EnumValue.IdProvider, EnumValue.AliasProvider {
         PARTICLES("particles", List.of("bubbles")),
-        WAVE("wave", List.of());
+        WAVE("wave", List.of()),
+        BLAST("blast", List.of());
 
         private final String id;
         private final List<String> aliases;
@@ -582,6 +642,9 @@ public class HitEffect extends Module {
         public List<String> aliases() {
             return aliases;
         }
+    }
+
+    private record BlastShockwave(Vec3 center, long startedAt, long durationMs, float maxRadius, float strength) {
     }
 
     private record ParticleTexture(net.minecraft.resources.Identifier texture, int index) {

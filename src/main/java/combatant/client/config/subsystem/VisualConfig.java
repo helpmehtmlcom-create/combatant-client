@@ -35,6 +35,7 @@ public final class VisualConfig extends SubsystemConfig {
     private final BooleanValue clickGuiModulesHints = bool("clickGuiModulesHints", true);
     private final BooleanValue clickGuiHudEditorHints = bool("clickGuiHudEditorHints", true);
     private final BooleanValue modernSodiumGui = bool("modernSodiumGui", true);
+    private final BooleanValue modernIrisGui = bool("modernIrisGui", true);
 
     private VisualConfig() {
         loadConfig();
@@ -132,6 +133,10 @@ public final class VisualConfig extends SubsystemConfig {
         return modernSodiumGui.get();
     }
 
+    public boolean isModernIrisGuiEnabled() {
+        return modernIrisGui.get();
+    }
+
     @Override
     protected void afterLoad() {
         String legacy = legacyMsaa3d.get();
@@ -155,7 +160,8 @@ public final class VisualConfig extends SubsystemConfig {
                 SettingDef.bool(combatantMainMenu),
                 SettingDef.mode(menuBackground).visibleWhen(combatantMainMenu::get),
                 SettingDef.bool(menuClockShowSeconds),
-                SettingDef.bool(modernSodiumGui)
+                SettingDef.bool(modernSodiumGui),
+                SettingDef.bool(modernIrisGui)
         );
     }
 

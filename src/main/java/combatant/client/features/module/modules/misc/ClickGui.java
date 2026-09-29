@@ -61,6 +61,7 @@ public class ClickGui extends Module {
         out.put("gui_close", true);
         out.put("guicoloropen", true);
         out.put("guicolorselect", true);
+        out.put("guihover", true);
         out.put("guimodulehover", true);
         out.put("moduleopen", true);
         out.put("moduleclose", true);

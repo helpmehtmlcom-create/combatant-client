@@ -9,9 +9,15 @@ package combatant.client.features.module.modules.visuals;
 
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
+import net.minecraft.util.Mth;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import combatant.client.config.common.CommonSettingSchemas;
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.EnumValue;
@@ -29,6 +35,7 @@ import combatant.client.render.engine.math.ColorMath;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.uniform.MeshBuilder;
+import combatant.client.render.effects.shockwave.WorldJumpShockwaves;
 import combatant.client.util.time.Timer;
 
 import java.util.*;
@@ -42,13 +49,15 @@ import java.util.List;
 public class JumpCircles extends Module {
     private final Minecraft mc = Minecraft.getInstance();
     private final EnumValue<CircleMode> mode =
-            enumSetting("jumpCirclesMode", "mode", CircleMode.DEFAULT);
-    private final BooleanValue easeOut = bool("jumpCirclesEaseOut", "ease_out", true);
-    private final NumberValue<Float> rotateSpeed = num("jumpCirclesRotateSpeed", "rotate_speed", 2f, 0.5f, 5f);
-    private final NumberValue<Float> circleScale = common(
+            enumSetting("jumpCirclesMode", "mode", CircleMode.SHOCKWAVE);
+    private final BooleanValue easeOut = visibleWhen(
+            bool("jumpCirclesEaseOut", "ease_out", true), this::isLegacyMode);
+    private final NumberValue<Float> rotateSpeed = visibleWhen(
+            num("jumpCirclesRotateSpeed", "rotate_speed", 2f, 0.5f, 5f), this::isLegacyMode);
+    private final NumberValue<Float> circleScale = visibleWhen(common(
             num("jumpCirclesCircleScale", "circle_scale", 1f, 0.5f, 5f),
             CommonSettingSchemas.RENDER_SCALE.commonI18nKey()
-    );
+    ), () -> !isShockwaveMode());
     private final NumberValue<Float> pulseMaxSize = visibleWhen(num(
             "jumpCirclesPulseMaxSize", "pulse_max_size", 2.5f, 1.0f, 3.0f
     ), this::isPulseMode);
@@ -60,6 +69,16 @@ public class JumpCircles extends Module {
             bool("jumpCirclesDepthTest", "depth_test", true),
             CommonSettingSchemas.RENDER_DEPTH_TEST.commonI18nKey()
     );
+    private final NumberValue<Float> shockRadius = visibleWhen(
+            num("jumpCirclesShockRadius", "shock_radius", 1.5f, 0.5f, 2.5f), this::isShockwaveMode);
+    private final NumberValue<Float> shockWidth = visibleWhen(
+            num("jumpCirclesShockWidth", "shock_width", 1.0f, 0.05f, 1.5f), this::isShockwaveMode);
+    private final NumberValue<Float> shockStrength = visibleWhen(
+            num("jumpCirclesShockStrength", "shock_strength", 2.0f, 0.1f, 2.0f), this::isShockwaveMode);
+    private final NumberValue<Integer> shockExpandMs = visibleWhen(
+            num("jumpCirclesShockExpand", "shock_expand", 800, 100, 800), this::isShockwaveMode);
+    private final NumberValue<Integer> shockFadeMs = visibleWhen(
+            num("jumpCirclesShockFade", "shock_fade", 1500, 200, 1500), this::isShockwaveMode);
     private final EnumValue<ColorMode> colorMode =
             enumCommon("jumpCirclesColorMode", "color_mode",
                     CommonSettingSchemas.RENDER_COLOR_MODE.commonI18nKey(), ColorMode.STATIC);
@@ -77,7 +96,7 @@ public class JumpCircles extends Module {
     ), this::usesSecondaryColor);
     private final List<Circle> circles = new ArrayList<>();
     private final Map<UUID, Boolean> groundState = new HashMap<>();
-    private final Map<UUID, Double> groundedFeetY = new HashMap<>();
+    private final Map<UUID, Vec3> groundedPosition = new HashMap<>();
 
     @Override
     public WorldPhase getWorldPhase() {
@@ -99,46 +118,114 @@ public class JumpCircles extends Module {
             boolean prevGround = groundState.getOrDefault(id, false);
             boolean nowGround = pl.onGround();
 
-            // Cache the exact feet height while the player is grounded. Using
-            // floor(Y) snaps slabs, stairs, snow layers, etc. to an integer
-            // block height. On the first airborne tick the player Y has already
-            // moved upward, so the last grounded bounding-box minY is the stable
-            // takeoff surface height used by the circle.
             if (nowGround) {
-                groundedFeetY.put(id, pl.getBoundingBox().minY);
+                groundedPosition.put(id, new Vec3(pl.getX(), pl.getY(), pl.getZ()));
             }
 
             if (prevGround && !nowGround) {
-                double surfaceY = groundedFeetY.getOrDefault(id, pl.getBoundingBox().minY);
-                circles.add(new Circle(
-                        new Vec3(pl.getX(), surfaceY + 0.015625, pl.getZ()),
-                        new Timer()
-                ));
+                Vec3 grounded = groundedPosition.getOrDefault(id, pl.position());
+                boolean rising = pl.getDeltaMovement().y > 0.0 || pl.getY() - grounded.y > 0.02;
+                if (rising) {
+                    circles.add(new Circle(
+                            new Vec3(grounded.x, resolveSurfaceY(grounded.x, grounded.y, grounded.z), grounded.z),
+                            new Timer()
+                    ));
+                }
             }
             groundState.put(id, nowGround);
         }
 
         groundState.keySet().removeIf(id -> !active.contains(id));
-        groundedFeetY.keySet().removeIf(id -> !active.contains(id));
+        groundedPosition.keySet().removeIf(id -> !active.contains(id));
         circles.removeIf(c -> c.timer.passedMs(lifetimeMs()));
+    }
+
+    private double resolveSurfaceY(double x, double y, double z) {
+        if (mc.level == null) return y + 0.01;
+
+        BlockPos base = BlockPos.containing(x, y, z);
+        double localX = x - base.getX();
+        double localZ = z - base.getZ();
+        double best = Double.NEGATIVE_INFINITY;
+
+        for (int blockY = base.getY() + 1; blockY >= base.getY() - 2; blockY--) {
+            BlockPos pos = new BlockPos(base.getX(), blockY, base.getZ());
+            BlockState state = mc.level.getBlockState(pos);
+            VoxelShape shape = state.getShape(mc.level, pos);
+            for (AABB box : shape.toAabbs()) {
+                if (localX < box.minX || localX > box.maxX || localZ < box.minZ || localZ > box.maxZ) continue;
+                double top = pos.getY() + box.maxY;
+                boolean sameSurface = Math.abs(top - y) <= 0.01;
+                boolean snowSurface = state.is(Blocks.SNOW) && top >= y - 0.01 && top <= y + 0.13;
+                if ((sameSurface || snowSurface) && top > best) best = top;
+            }
+        }
+
+        return (best == Double.NEGATIVE_INFINITY ? y : best) + 0.01;
     }
 
     @Override
     public void onDisable() {
         circles.clear();
         groundState.clear();
-        groundedFeetY.clear();
+        groundedPosition.clear();
+        WorldJumpShockwaves.clear();
+    }
+
+    @Override
+    public void onPrepareWorldPostProcess(float tickDelta) {
+        if (!isEnabled() || !isShockwaveMode() || mc.level == null || mc.player == null || circles.isEmpty()) return;
+
+        int submitted = 0;
+        long expand = shockExpandMs.get();
+        long fade = shockFadeMs.get();
+        long total = Math.max(1L, expand + fade);
+        boolean useDepth = depthTest.get();
+
+        for (Circle circle : circles) {
+            if (submitted >= 12) break;
+            long age = circle.timer.getPassedTimeMs();
+            if (age < 0L || age >= total) continue;
+
+            float radius;
+            float envelope;
+            if (age < expand) {
+                float p = Mth.clamp(age / (float) Math.max(1L, expand), 0.0f, 1.0f);
+                float eased = 1.0f - (float) Math.pow(1.0f - p, 3.0);
+                radius = shockRadius.get() * eased;
+                envelope = eased;
+            } else {
+                float p = Mth.clamp((age - expand) / (float) Math.max(1L, fade), 0.0f, 1.0f);
+                radius = shockRadius.get() * (1.0f + p * 0.18f);
+                float remaining = 1.0f - p;
+                envelope = remaining * remaining;
+            }
+
+            if (radius <= 0.001f || envelope <= 0.001f) continue;
+            float progress = Mth.clamp(age / (float) total, 0.0f, 1.0f);
+            float thickness = shockWidth.get() * (1.0f - 0.5f * progress);
+            int color = ColorMath.scaleAlpha(getColorArgb(submitted * 41), envelope);
+            WorldJumpShockwaves.submit(
+                    circle.pos,
+                    radius,
+                    thickness,
+                    color,
+                    shockStrength.get() * envelope,
+                    useDepth
+            );
+            submitted++;
+        }
     }
 
     @Override
     public void onRenderWorldEngine(Renderer3D renderer, Renderer3D depthRenderer, float tickDelta) {
-        if (!isEnabled() || mc.level == null || mc.player == null || circles.isEmpty()) return;
+        if (!isEnabled() || mc.level == null || mc.player == null || circles.isEmpty() || isShockwaveMode()) return;
 
         boolean useDepth = depthTest.get();
         RenderPipeline pipeline = useDepth
                 ? CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_LIQUID_IGNORE
                 : CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE;
-        Renderer3D.DepthMode depthMode = useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.MAIN;
+        Renderer3D.DepthMode depthMode = useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.NONE;
         MeshBuilder mesh = renderer.batchTextured(pipeline, resolveTexture(), depthMode);
         if (mesh == null) return;
 
@@ -207,7 +294,16 @@ public class JumpCircles extends Module {
         return mode.get() == CircleMode.PULSE;
     }
 
+    private boolean isShockwaveMode() {
+        return mode.get() == CircleMode.SHOCKWAVE;
+    }
+
+    private boolean isLegacyMode() {
+        return mode.get() == CircleMode.DEFAULT || mode.get() == CircleMode.BUBBLE;
+    }
+
     private long lifetimeMs() {
+        if (isShockwaveMode()) return shockExpandMs.get() + shockFadeMs.get();
         return isPulseMode() ? pulseLifetime.get() : (easeOut.get() ? 5000L : 6000L);
     }
 
@@ -238,7 +334,7 @@ public class JumpCircles extends Module {
         return switch (mode.get()) {
             case BUBBLE -> TextureStorage.BUBBLE;
             case PULSE -> TextureStorage.JUMP_CIRCLE;
-            case DEFAULT -> TextureStorage.DEFAULT_CIRCLE;
+            case DEFAULT, SHOCKWAVE -> TextureStorage.DEFAULT_CIRCLE;
         };
     }
 
@@ -287,6 +383,7 @@ public class JumpCircles extends Module {
     }
 
     private enum CircleMode {
+        SHOCKWAVE,
         DEFAULT,
         BUBBLE,
         PULSE

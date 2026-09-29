@@ -6,10 +6,12 @@
  */
 package combatant.client.compat.sodium.gui;
 
+import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.textures.GpuSampler;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import combatant.client.config.subsystem.VisualConfig;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
+import combatant.client.features.gui.clickgui.sound.GuiSound;
 import combatant.client.features.gui.clickgui.layout.screen.settings.SettingsGuiPalette;
 import combatant.client.features.theme.Theme;
 import combatant.client.render.engine.animation.AnimationUtility;
@@ -21,6 +23,7 @@ import combatant.client.render.engine.svg.SvgRenderOptions;
 import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.helpers.ScissorFunction;
+import combatant.client.render.helpers.SystemCursor;
 import combatant.client.runtime.RuntimeGate;
 import combatant.client.util.logging.DebugLog;
 import combatant.client.util.text.LegacyTextUtil;
@@ -29,6 +32,7 @@ import net.caffeinemc.mods.sodium.client.config.structure.BooleanOption;
 import net.caffeinemc.mods.sodium.client.config.structure.EnumOption;
 import net.caffeinemc.mods.sodium.client.config.structure.ExternalButtonOption;
 import net.caffeinemc.mods.sodium.client.config.structure.IntegerOption;
+import net.caffeinemc.mods.sodium.client.config.structure.ModOptions;
 import net.caffeinemc.mods.sodium.client.config.structure.Option;
 import net.caffeinemc.mods.sodium.client.config.structure.StatefulOption;
 import net.caffeinemc.mods.sodium.client.gui.VideoSettingsScreen;
@@ -51,30 +55,40 @@ import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.texture.AbstractTexture;
+import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.FormattedText;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.TextColor;
 import net.minecraft.resources.Identifier;
+import net.fabricmc.loader.api.FabricLoader;
+import net.fabricmc.loader.api.ModContainer;
+import org.lwjgl.glfw.GLFW;
 
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.WeakHashMap;
 
-/**
- * Fixed-coordinate presentation layer for Sodium's video settings screen.
- *
- * Sodium still owns option state, search results, apply/undo semantics and all config APIs. The
- * Combatant layer owns only presentation and the pointer-to-widget bridge. The authored layout is
- * expressed directly in UNSCALED_LOGICAL units and therefore never depends on Minecraft GUI scale.
- */
+
 public final class SodiumGraphicsGuiRenderer {
     private static final Map<Object, Motion> MOTION = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<Object, ScrollState> SCROLL = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<VideoSettingsScreen, FrameLayout> LAST_FRAME = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<PageListWidget, CategoryMotion> CATEGORY_MOTION = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<VideoSettingsScreen, AbstractWidget> LAST_CATEGORY_HOVER = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<VideoSettingsScreen, IntegerOption> ACTIVE_INTEGER_DRAG = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<VideoSettingsScreen, Option> INFO_OPTION = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<String, Identifier> COLOR_MOD_ICONS = Collections.synchronizedMap(new HashMap<>());
+    private static final Set<String> COLOR_MOD_ICON_MISSES = Collections.synchronizedSet(new HashSet<>());
 
     // 1920x1080 authored canvas. These are direct logical coordinates, not scaled Sodium pixels.
     private static final float CANVAS_W = 1920f;
@@ -161,22 +175,20 @@ public final class SodiumGraphicsGuiRenderer {
 
             SettingsGuiPalette palette = SettingsGuiPalette.current();
             VisualStyle style = VisualStyle.from(palette);
+            if (enumPopup != null && enumPopup.screen != screen) enumPopup = null;
             FrameLayout frame = buildFrame(canvas, pageList, optionList, applyButton, closeButton, undoButton, prompt);
             LAST_FRAME.put(screen, frame);
+            updateIntegerDrag(screen, frame);
 
             drawBackdrop(canvas, style);
             drawWindow(frame, style);
             drawSearch(frame, searchWidget, style);
-            drawPages(frame, style);
+            drawPages(frame, screen, pageList, style);
             drawOptions(frame, screen, style);
             drawActionButtons(frame, applyButton, closeButton, undoButton, hasPendingChanges, style);
-            drawInfoPanel(frame, style);
-
-            if (prompt != null) {
-                drawPrompt(frame, prompt, style);
-            } else {
-                drawEnumPopup(frame, style);
-            }
+            if (prompt == null) drawEnumPopup(frame, style);
+            drawInfoPanel(frame, screen, style);
+            if (prompt != null) drawPrompt(frame, prompt, style);
 
             Renderer2D.COLOR.render();
             batchActive = false;
@@ -215,13 +227,25 @@ public final class SodiumGraphicsGuiRenderer {
         float mx = frame.canvas.mouseX;
         float my = frame.canvas.mouseY;
 
+        if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            ACTIVE_INTEGER_DRAG.remove(screen);
+        }
+
         if (prompt != null) {
             return clickPrompt(frame, prompt, event, doubleClick, mx, my);
         }
 
         if (enumPopup != null && enumPopup.screen == screen) {
+            if (enumPopup.anchor.contains(mx, my)) {
+                enumPopup.close();
+                return true;
+            }
             if (clickEnumPopup(enumPopup, mx, my, event.button())) return true;
-            if (!enumPopup.bounds.contains(mx, my)) enumPopup = null;
+            if (!enumPopup.bounds.contains(mx, my)) {
+                enumPopup.close();
+                return true;
+            }
+            return true;
         }
 
         Screen vanillaScreen = screen;
@@ -236,19 +260,27 @@ public final class SodiumGraphicsGuiRenderer {
                         nativeRect.y() + nativeRect.height() * 0.5);
                 searchWidget.mouseClicked(nativeEvent, doubleClick);
             }
-            vanillaScreen.setFocused(searchWidget);
-            searchWidget.setFocused(true);
+            focusSearch(screen, searchWidget);
             return true;
         }
 
-        if (searchWidget.isFocused()) {
-            vanillaScreen.setFocused(null);
-            searchWidget.setFocused(false);
+        if (searchWidget.isSearching() || isSearchFocused(searchWidget)) {
+            blurSearch(vanillaScreen, searchWidget);
+        }
+
+        if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT && externalInfoAction(frame).contains(mx, my)) {
+            Option externalOption = INFO_OPTION.get(screen);
+            if (externalOption instanceof ExternalButtonOption external && external.isEnabled()) {
+                external.getCurrentScreenConsumer().accept(screen);
+                return true;
+            }
         }
 
         if (frame.pageScrollbar.contains(mx, my)) {
-            jumpScroll(frame.pageScroll, my, frame.pageScrollbar, frame.pageContentHeight, NAV_H);
-            syncNativeScrollbar(pageList, frame.pageScroll, frame.pageContentHeight, NAV_H);
+            if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                beginScrollbarDrag(frame.pageScroll, my, frame.pageScrollbar, frame.pageContentHeight, NAV_H);
+                syncNativeScrollbar(pageList, frame.pageScroll, frame.pageContentHeight, NAV_H);
+            }
             return true;
         }
 
@@ -259,12 +291,19 @@ public final class SodiumGraphicsGuiRenderer {
                     widget.getX() + Math.max(1.0, widget.getWidth() * 0.5),
                     widget.getY() + Math.max(1.0, widget.getHeight() * 0.5));
             widget.mouseClicked(nativeEvent, doubleClick);
+            // Native Sodium owns the page->section mapping. Read the destination it just chose
+            // and translate that destination into the fixed-coordinate scroll domain.
+            syncCustomScrollFromNative(optionList, frame.optionScroll,
+                    frame.optionContentHeight, OPTIONS_H, true);
             return true;
         }
 
         if (frame.optionScrollbar.contains(mx, my)) {
-            jumpScroll(frame.optionScroll, my, frame.optionScrollbar, frame.optionContentHeight, OPTIONS_H);
-            syncNativeScrollbar(optionList, frame.optionScroll, frame.optionContentHeight, OPTIONS_H);
+            if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                beginScrollbarDrag(frame.optionScroll, my, frame.optionScrollbar, frame.optionContentHeight, OPTIONS_H);
+                syncNativeScrollbar(optionList, frame.optionScroll, frame.optionContentHeight, OPTIONS_H);
+                updateNativeSectionFocus(optionList);
+            }
             return true;
         }
 
@@ -301,6 +340,45 @@ public final class SodiumGraphicsGuiRenderer {
         return frame.root.contains(mx, my);
     }
 
+    public static boolean focusSearch(VideoSettingsScreen screen, SearchWidget searchWidget) {
+        if (!shouldUseModernUi() || screen == null || searchWidget == null) return false;
+        if (enumPopup != null && enumPopup.screen == screen) enumPopup.close();
+        if (searchWidget instanceof SodiumSearchWidgetAccess access) {
+            var edit = access.combatant$getSearchBox();
+            if (edit != null) {
+                // Sodium's AbstractWidget#setFocused(true) intentionally ignores mouse focus.
+                // Focus the real EditBox through the parent container so key input and caret
+                // ownership match Sodium's native search implementation.
+                searchWidget.setFocused(edit);
+                edit.setFocused(true);
+            }
+        }
+        screen.setFocused(searchWidget);
+        return true;
+    }
+
+    private static void blurSearch(Screen screen, SearchWidget searchWidget) {
+        if (screen == null || searchWidget == null) return;
+        if (searchWidget instanceof SodiumSearchWidgetAccess access) {
+            var edit = access.combatant$getSearchBox();
+            if (edit != null) edit.setFocused(false);
+        }
+        // Clear the parent widget's focused child as well; otherwise keyboard events may still
+        // be routed to the stale EditBox even after the visual focus has left the search field.
+        searchWidget.setFocused((net.minecraft.client.gui.components.events.GuiEventListener) null);
+        searchWidget.setFocused(false);
+        if (screen.getFocused() == searchWidget) screen.setFocused(null);
+    }
+
+    private static boolean isSearchFocused(SearchWidget searchWidget) {
+        if (searchWidget == null) return false;
+        if (searchWidget instanceof SodiumSearchWidgetAccess access) {
+            var edit = access.combatant$getSearchBox();
+            if (edit != null && edit.isFocused()) return true;
+        }
+        return searchWidget.isFocused();
+    }
+
     public static boolean mouseScrolled(VideoSettingsScreen screen,
                                         double mouseX,
                                         double mouseY,
@@ -313,18 +391,17 @@ public final class SodiumGraphicsGuiRenderer {
         if (frame == null) return false;
         float mx = frame.canvas.mouseX;
         float my = frame.canvas.mouseY;
-        if (enumPopup != null && enumPopup.screen == screen && enumPopup.bounds.contains(mx, my)) {
-            enumPopup.scrollBy(vertical);
+        if (enumPopup != null && enumPopup.screen == screen) {
+            if (enumPopup.animatedBounds().contains(mx, my)) enumPopup.scrollBy(vertical);
             return true;
         }
         if (frame.navViewport.contains(mx, my)) {
             scrollBy(frame.pageScroll, vertical, frame.pageContentHeight, NAV_H);
-            pageList.mouseScrolled(pageList.getX() + 2.0, pageList.getY() + 2.0, horizontal, vertical);
+            syncNativeScrollbar(pageList, frame.pageScroll, frame.pageContentHeight, NAV_H);
             return true;
         }
         if (frame.optionViewport.contains(mx, my)) {
             scrollBy(frame.optionScroll, vertical, frame.optionContentHeight, OPTIONS_H);
-            optionList.mouseScrolled(optionList.getX() + 2.0, optionList.getY() + 2.0, horizontal, vertical);
             return true;
         }
         return false;
@@ -376,36 +453,30 @@ public final class SodiumGraphicsGuiRenderer {
 
     private static void drawSearch(FrameLayout f, SearchWidget search, VisualStyle s) {
         Rect r = f.search;
-        boolean hover = r.contains(f.canvas.mouseX, f.canvas.mouseY);
-        boolean focused = search.isFocused();
+        boolean hover = enumPopup == null && r.contains(f.canvas.mouseX, f.canvas.mouseY);
+        boolean focused = isSearchFocused(search);
         String query = ((SodiumSearchWidgetAccess) search).combatant$getQuery();
         boolean hasQuery = query != null && !query.isBlank();
         Motion mo = motion(search, hover, focused);
         float h = AnimationUtility.easeOutCubic(mo.hover);
         float a = AnimationUtility.easeOutCubic(mo.active);
 
-        int left = mix(s.control, s.controlHover, h * 0.52f);
-        int right = mix(s.control, s.accentSoft, 0.04f + a * 0.09f + h * 0.05f);
+        if (hover || focused) {
+            SystemCursor.set(SystemCursor.CursorType.TEXT);
+        }
+
+        int left = mix(s.control, s.controlHover, h * 0.52f + a * 0.16f);
+        int right = mix(s.control, s.accentSoft, 0.04f + a * 0.11f + h * 0.05f);
         Renderer2D.COLOR.quad(r.x, r.y, r.w, r.h,
                 withAlpha(left, 238), withAlpha(right, 238),
                 withAlpha(right, 224), withAlpha(left, 224));
-        if (focused) {
-            Renderer2D.COLOR.quad(r.x, r.y + r.h - 3f, r.w, 3f,
-                    withAlpha(s.accent, Math.round(150f + 85f * a)),
-                    withAlpha(s.accentBright, Math.round(175f + 70f * a)),
-                    withAlpha(s.accentBright, Math.round(175f + 70f * a)),
-                    withAlpha(s.accent, Math.round(150f + 85f * a)));
-            Renderer2D.COLOR.quad(r.x, r.y + r.h - 13f, r.w, 10f,
-                    0x00000000, withAlpha(s.accentSoft, Math.round(20f * a)),
-                    withAlpha(s.accentSoft, Math.round(13f * a)), 0x00000000);
-        }
 
         float iconSize = 22f;
         float iconX = r.x + 24f;
         float iconY = r.y + 29f;
         Renderer2D.COLOR.svg("search", iconX, iconY, iconSize, iconSize,
                 SvgRenderOptions.overrideColor(withAlpha(focused ? s.accentBright : s.textMuted,
-                        focused ? 230 : Math.round(170f + h * 35f))));
+                        focused ? 236 : Math.round(170f + h * 35f))));
 
         float textX = r.x + 62f;
         float textY = r.y + 27f;
@@ -416,31 +487,119 @@ public final class SodiumGraphicsGuiRenderer {
         float maxW = r.w - 122f;
         String fit = ClickGuiRenderer.fitText(font, visible, textSize, maxW);
         drawText(font, fit, textX, textY, textSize,
-                hasQuery ? withAlpha(s.textPrimary, 246) : withAlpha(s.textMuted, focused ? 126 : 174));
+                hasQuery ? withAlpha(s.textPrimary, 246) : withAlpha(s.textMuted, focused ? 146 : 174));
 
         if (focused && blinkCaret()) {
             float caretX = hasQuery
                     ? Math.min(textX + ClickGuiRenderer.textWidth(fontMedium(), fit, textSize) + 3f, r.x + r.w - 76f)
                     : textX;
-            Renderer2D.COLOR.quad(caretX, r.y + 22f, 2f, 36f, withAlpha(s.accentBright, 246));
+            Renderer2D.COLOR.quad(caretX, r.y + 21f, 2f, 38f, withAlpha(s.accentBright, 252));
         }
 
         if (hasQuery) {
+            boolean clearHover = enumPopup == null && f.searchClear.contains(f.canvas.mouseX, f.canvas.mouseY);
+            if (clearHover) SystemCursor.set(SystemCursor.CursorType.HAND);
+            Motion clearMotion = motion(f.searchClear, clearHover, false);
+            float ch = AnimationUtility.easeOutCubic(clearMotion.hover);
             Renderer2D.COLOR.svg("x", f.searchClear.x + 8f, f.searchClear.y + 8f, 18f, 18f,
-                    SvgRenderOptions.overrideColor(withAlpha(s.textMuted, Math.round(165f + h * 55f))));
+                    SvgRenderOptions.overrideColor(withAlpha(s.textMuted, Math.round(165f + ch * 72f))));
         }
     }
 
-    private static void drawPages(FrameLayout f, VisualStyle s) {
+    private static void drawPages(FrameLayout f,
+                                  VideoSettingsScreen screen,
+                                  PageListWidget pageList,
+                                  VisualStyle s) {
         boolean pushed = ScissorFunction.pushRaw(f.navViewport.x, f.navViewport.y, f.navViewport.w, f.navViewport.h);
         try {
+            PageSlot selectedSlot = null;
+            AbstractWidget hoveredCategory = null;
+            for (PageSlot slot : f.pages) {
+                if (slot.modHeader) continue;
+                if (slot.widget instanceof SodiumCenteredWidgetAccess access && access.combatant$isSelected()) {
+                    selectedSlot = slot;
+                }
+                if (enumPopup == null && slot.rect.contains(f.canvas.mouseX, f.canvas.mouseY)) {
+                    hoveredCategory = slot.widget;
+                }
+            }
+
+            drawCategorySelectionMotion(f, pageList, selectedSlot, s);
+
             for (PageSlot slot : f.pages) {
                 if (!slot.rect.intersects(f.navViewport)) continue;
                 drawPageEntry(f, slot, s);
             }
+
+            updateCategoryHoverFeedback(screen, hoveredCategory);
+
+            boolean scrollbarHot = enumPopup == null && (f.pageScrollbar.contains(f.canvas.mouseX, f.canvas.mouseY) || f.pageScroll.dragging);
+            if (scrollbarHot) SystemCursor.set(SystemCursor.CursorType.SCROLL);
             drawScrollbar(f.pageScrollbar, f.pageScroll, f.pageContentHeight, NAV_H, f.canvas, s);
         } finally {
             if (pushed) ScissorFunction.pop();
+        }
+    }
+
+    private static void drawCategorySelectionMotion(FrameLayout f,
+                                                    PageListWidget pageList,
+                                                    PageSlot selectedSlot,
+                                                    VisualStyle s) {
+        if (selectedSlot == null) return;
+        CategoryMotion state;
+        synchronized (CATEGORY_MOTION) {
+            state = CATEGORY_MOTION.computeIfAbsent(pageList, unused -> new CategoryMotion());
+        }
+
+        float target = selectedSlot.contentY;
+        if (!state.initialized) {
+            state.initialized = true;
+            state.currentContentY = target;
+            state.targetContentY = target;
+            state.sectionIndex = selectedSlot.sectionIndex;
+            state.widget = selectedSlot.widget;
+        } else if (state.widget != selectedSlot.widget) {
+            if (state.sectionIndex != selectedSlot.sectionIndex) {
+                state.currentContentY = target;
+            }
+            state.targetContentY = target;
+            state.sectionIndex = selectedSlot.sectionIndex;
+            state.widget = selectedSlot.widget;
+        } else {
+            state.targetContentY = target;
+        }
+
+        float dt = Math.max(0.001f, AnimationUtility.deltaTime());
+        state.currentContentY = AnimationUtility.approach(state.currentContentY, state.targetContentY, dt, 9.4f);
+
+        float y = f.navViewport.y + state.currentContentY - f.pageScroll.current;
+        Rect r = new Rect(selectedSlot.rect.x, y, selectedSlot.rect.w, selectedSlot.rect.h);
+        if (!r.intersects(f.navViewport)) return;
+
+        Renderer2D.COLOR.quad(r.x, r.y + 2f, r.w, r.h - 4f,
+                scaleAlpha(s.categorySelectedLeft, 0.64f),
+                scaleAlpha(s.categorySelectedRight, 0.70f),
+                scaleAlpha(s.categorySelectedRight, 0.56f),
+                scaleAlpha(s.categorySelectedLeft, 0.50f));
+        Renderer2D.COLOR.quad(r.x, r.y + 11f, 4f, r.h - 22f,
+                withAlpha(s.accentBright, 226));
+        Renderer2D.COLOR.quad(r.x + 4f, r.y + 11f, 16f, r.h - 22f,
+                withAlpha(s.accentSoft, 31), 0x00000000,
+                0x00000000, withAlpha(s.accentSoft, 18));
+    }
+
+    private static void updateCategoryHoverFeedback(VideoSettingsScreen screen, AbstractWidget hoveredCategory) {
+        AbstractWidget previous;
+        synchronized (LAST_CATEGORY_HOVER) {
+            previous = LAST_CATEGORY_HOVER.get(screen);
+            if (hoveredCategory == null) {
+                LAST_CATEGORY_HOVER.remove(screen);
+            } else {
+                LAST_CATEGORY_HOVER.put(screen, hoveredCategory);
+            }
+        }
+        if (hoveredCategory != null && hoveredCategory != previous) {
+            GuiSound.MODULE_HOVER.feedback(0.52);
         }
     }
 
@@ -448,13 +607,17 @@ public final class SodiumGraphicsGuiRenderer {
         AbstractWidget widget = slot.widget;
         if (!(widget instanceof SodiumCenteredWidgetAccess access) || !access.combatant$isVisible()) return;
         Rect r = slot.rect;
-        boolean hover = r.contains(f.canvas.mouseX, f.canvas.mouseY);
+        boolean hover = enumPopup == null && r.contains(f.canvas.mouseX, f.canvas.mouseY);
         boolean selected = access.combatant$isSelected();
         boolean header = slot.modHeader;
         Motion mo = motion(widget, hover, selected);
         float h = AnimationUtility.easeOutCubic(mo.hover);
         float a = AnimationUtility.easeOutCubic(mo.active);
         float alpha = access.combatant$isEnabled() ? 1f : 0.42f;
+
+        if (hover && access.combatant$isEnabled()) {
+            SystemCursor.set(SystemCursor.CursorType.HAND);
+        }
 
         if (header) {
             int left = mix(s.headerMod, s.accentSoft, 0.045f + h * 0.025f);
@@ -477,31 +640,25 @@ public final class SodiumGraphicsGuiRenderer {
             return;
         }
 
-        if (h > 0.002f || a > 0.002f) {
-            int left = mix(s.categoryHoverLeft, s.categorySelectedLeft, a);
-            int right = mix(s.categoryHoverRight, s.categorySelectedRight, a);
-            Renderer2D.COLOR.quad(r.x, r.y + 2f, r.w, r.h - 4f,
-                    scaleAlpha(left, 0.28f + h * 0.36f + a * 0.38f),
-                    scaleAlpha(right, 0.30f + h * 0.38f + a * 0.40f),
-                    scaleAlpha(right, 0.24f + h * 0.31f + a * 0.34f),
-                    scaleAlpha(left, 0.22f + h * 0.29f + a * 0.32f));
-        }
-        if (a > 0.004f) {
-            Renderer2D.COLOR.quad(r.x, r.y + 12f, 4f, r.h - 24f,
-                    withAlpha(s.accentBright, Math.round(220f * a)));
-            Renderer2D.COLOR.quad(r.x + 4f, r.y + 12f, 13f, r.h - 24f,
-                    withAlpha(s.accentSoft, Math.round(26f * a)), 0x00000000,
-                    0x00000000, withAlpha(s.accentSoft, Math.round(16f * a)));
-        }
+        // Fade the category hover all the way to transparent. There is deliberately no
+        // non-zero base alpha and no visibility threshold, so the tail cannot pop/clamp off.
+        Renderer2D.COLOR.quad(r.x, r.y + 2f, r.w, r.h - 4f,
+                motionAlpha(s.categoryHoverLeft, h * 0.62f),
+                motionAlpha(s.categoryHoverRight, h * 0.66f),
+                motionAlpha(s.categoryHoverRight, h * 0.52f),
+                motionAlpha(s.categoryHoverLeft, h * 0.48f));
 
         Component label = access.combatant$getLabel();
         Component subtitle = access.combatant$getSubtitle();
+        int primary = selected
+                ? mix(s.textPrimary, s.accentBright, 0.28f * a)
+                : s.textPrimary;
         if (subtitle == null || subtitle.getString().isBlank()) {
-            drawStyledComponent(label, fontMedium(), r.x + 24f, r.y + 24f, 19f,
-                    scaleAlpha(s.textPrimary, alpha), r.w - 48f);
+            drawStyledComponent(label, selected ? fontBold() : fontMedium(), r.x + 24f, r.y + 24f, 19f,
+                    scaleAlpha(primary, alpha), r.w - 48f);
         } else {
-            drawStyledComponent(label, fontMedium(), r.x + 24f, r.y + 15f, 18f,
-                    scaleAlpha(s.textPrimary, alpha), r.w - 48f);
+            drawStyledComponent(label, selected ? fontBold() : fontMedium(), r.x + 24f, r.y + 15f, 18f,
+                    scaleAlpha(primary, alpha), r.w - 48f);
             drawStyledComponent(subtitle, fontRegular(), r.x + 24f, r.y + 42f, 14f,
                     scaleAlpha(s.textMuted, alpha * 0.90f), r.w - 48f);
         }
@@ -561,7 +718,8 @@ public final class SodiumGraphicsGuiRenderer {
         ResetButton reset = header.combatant$getResetButton();
         if (reset != null && reset.isActive() && slot.resetRect != null) {
             Rect rr = slot.resetRect;
-            boolean hover = rr.contains(f.canvas.mouseX, f.canvas.mouseY);
+            boolean hover = enumPopup == null && rr.contains(f.canvas.mouseX, f.canvas.mouseY);
+            if (hover) SystemCursor.set(SystemCursor.CursorType.HAND);
             Motion mo = motion(reset, hover, false);
             float h = AnimationUtility.easeOutCubic(mo.hover);
             if (h > 0.002f) {
@@ -578,12 +736,18 @@ public final class SodiumGraphicsGuiRenderer {
         Option option = control.getOption();
         if (option == null) return;
         Rect r = slot.rect;
-        boolean hover = r.contains(f.canvas.mouseX, f.canvas.mouseY);
+        boolean hover = !popupBlocks(screen) && r.contains(f.canvas.mouseX, f.canvas.mouseY);
         boolean changed = option.hasChanged();
         boolean enabled = option.isEnabled();
         Motion mo = motion(control, hover, changed);
         float h = AnimationUtility.easeOutCubic(mo.hover);
         float c = AnimationUtility.easeOutCubic(mo.active);
+
+        if (hover && enabled) {
+            SystemCursor.set(option instanceof IntegerOption
+                    ? SystemCursor.CursorType.RESIZE_HORIZONTAL
+                    : SystemCursor.CursorType.HAND);
+        }
 
         int left = mix(s.rowBase, s.rowHover, h * 0.70f);
         int right = mix(s.rowBaseRight, s.rowHoverRight, h * 0.74f);
@@ -594,9 +758,9 @@ public final class SodiumGraphicsGuiRenderer {
         Renderer2D.COLOR.quad(r.x, r.y, r.w, r.h,
                 scaleAlpha(left, 0.90f), scaleAlpha(right, 0.91f),
                 scaleAlpha(right, 0.76f), scaleAlpha(left, 0.74f));
-        if (hover || changed) {
+        if (h > 0.002f || c > 0.002f) {
             Renderer2D.COLOR.quad(r.x, r.y + 10f, 3f, r.h - 20f,
-                    withAlpha(s.accent, Math.round((hover ? 86f : 0f) + c * 116f)));
+                    withAlpha(s.accent, Math.round(h * 86f + c * 116f)));
         }
 
         Rect controlRect = slot.controlRect;
@@ -614,6 +778,9 @@ public final class SodiumGraphicsGuiRenderer {
             ResetButton reset = ((SodiumStatefulControlAccess) stateful).combatant$getResetButton();
             if (reset != null && reset.isActive() && slot.resetRect != null) {
                 Rect rr = slot.resetRect;
+                if (!popupBlocks(screen) && rr.contains(f.canvas.mouseX, f.canvas.mouseY)) {
+                    SystemCursor.set(SystemCursor.CursorType.HAND);
+                }
                 Renderer2D.COLOR.quad(rr.x, rr.y, rr.w, rr.h, withAlpha(s.control, 182));
                 Renderer2D.COLOR.svg("rotate-ccw", rr.x + 9f, rr.y + 9f, 18f, 18f,
                         SvgRenderOptions.overrideColor(withAlpha(s.textMuted, 208)));
@@ -622,25 +789,25 @@ public final class SodiumGraphicsGuiRenderer {
         }
 
         if (option instanceof BooleanOption bool) {
-            drawBooleanControl(bool, controlRect, enabled, hover, s);
+            drawBooleanControl(bool, controlRect, enabled, h, s);
         } else if (option instanceof IntegerOption integer) {
-            drawIntegerControl(integer, controlRect, enabled, hover, s);
+            drawIntegerControl(integer, controlRect, enabled, h, s);
         } else if (option instanceof EnumOption<?> enumeration) {
-            drawEnumControl(screen, enumeration, controlRect, enabled, hover, s);
+            drawEnumControl(screen, enumeration, controlRect, enabled, h, s);
         } else if (option instanceof ExternalButtonOption) {
-            drawExternalControl(controlRect, enabled, hover, s);
+            drawExternalControl(controlRect, enabled, h, s);
         } else if (option instanceof StatefulOption<?> stateful) {
-            drawGenericStatefulControl(stateful, controlRect, enabled, hover, s);
+            drawGenericStatefulControl(stateful, controlRect, enabled, h, s);
         }
     }
 
-    private static void drawBooleanControl(BooleanOption option, Rect r, boolean enabled, boolean hover, VisualStyle s) {
+    private static void drawBooleanControl(BooleanOption option, Rect r, boolean enabled, float hoverAnim, VisualStyle s) {
         boolean on = Boolean.TRUE.equals(option.getValidatedValue());
-        Motion mo = motion(option, hover, on);
+        Motion mo = motion(option, hoverAnim > 0.01f, on);
         float a = AnimationUtility.easeOutCubic(mo.active);
         Rect box = new Rect(r.x + r.w - 112f, r.y + 15f, 104f, 42f);
-        int off = enabled ? s.control : withAlpha(s.control, 98);
-        int active = enabled ? mix(s.accentSoft, s.accent, 0.20f) : off;
+        int off = enabled ? mix(s.control, s.controlHover, hoverAnim * 0.44f) : withAlpha(s.control, 98);
+        int active = enabled ? mix(mix(s.accentSoft, s.accent, 0.20f), s.accentBright, hoverAnim * 0.08f) : off;
         Renderer2D.COLOR.quad(box.x, box.y, box.w, box.h,
                 mix(off, active, a), mix(off, active, a * 0.92f),
                 mix(withAlpha(off, 176), withAlpha(active, 204), a), withAlpha(off, 166));
@@ -652,7 +819,7 @@ public final class SodiumGraphicsGuiRenderer {
                 enabled ? (on ? withAlpha(s.textPrimary, 250) : withAlpha(s.textMuted, 214)) : withAlpha(s.textMuted, 112));
     }
 
-    private static void drawIntegerControl(IntegerOption option, Rect r, boolean enabled, boolean hover, VisualStyle s) {
+    private static void drawIntegerControl(IntegerOption option, Rect r, boolean enabled, float hoverAnim, VisualStyle s) {
         int value = option.getValidatedValue();
         SteppedValidator validator = option.getSteppedValidator();
         int min = validator != null ? validator.min() : value;
@@ -670,7 +837,7 @@ public final class SodiumGraphicsGuiRenderer {
                 withAlpha(s.accent, enabled ? 206 : 78), withAlpha(s.accentBright, enabled ? 224 : 84),
                 withAlpha(s.accentBright, enabled ? 214 : 82), withAlpha(s.accent, enabled ? 192 : 72));
         float cx = trackX + trackW * ratio;
-        float knob = hover ? 16f : 14f;
+        float knob = 14f + 2f * hoverAnim;
         Renderer2D.COLOR.roundedRectSoftShadow(cx - knob * 0.5f, trackY - 6f, knob, knob,
                 knob * 0.5f, 10f, 0.018f, withAlpha(s.accent, enabled ? 120 : 48));
         Renderer2D.COLOR.roundedRectGradientQuad(cx - knob * 0.5f, trackY - 6f, knob, knob,
@@ -686,28 +853,52 @@ public final class SodiumGraphicsGuiRenderer {
 
     @SuppressWarnings({"rawtypes", "unchecked"})
     private static void drawEnumControl(VideoSettingsScreen screen, EnumOption<?> option, Rect r,
-                                        boolean enabled, boolean hover, VisualStyle s) {
+                                        boolean enabled, float hoverAnim, VisualStyle s) {
         Object raw = option.getValidatedValue();
         Component valueComponent = raw instanceof Enum<?> e
                 ? ((EnumOption) option).getElementName(e)
                 : Component.literal(String.valueOf(raw));
-        boolean open = enumPopup != null && enumPopup.screen == screen && enumPopup.option == option;
-        int left = open ? mix(s.controlHover, s.accentSoft, 0.13f) : hover && enabled ? s.controlHover : s.control;
-        int right = open ? mix(s.controlHoverRight, s.accent, 0.09f) : hover && enabled ? s.controlHoverRight : s.control;
-        Renderer2D.COLOR.quad(r.x, r.y + 11f, r.w, 50f,
-                withAlpha(left, 232), withAlpha(right, 228), withAlpha(right, 198), withAlpha(left, 202));
-        Renderer2D.COLOR.quad(r.x, r.y + 60f, r.w, 1f,
-                withAlpha(open ? s.accentBright : s.strokeBright, open ? 158 : 62));
+        boolean open = enumPopup != null && enumPopup.screen == screen && enumPopup.option == option && !enumPopup.closing;
+        Motion popupMotion = motion(option, hoverAnim > 0.01f && enabled, open);
+        float openAnim = AnimationUtility.easeOutCubic(popupMotion.active);
+        Rect surface = new Rect(r.x, r.y + 11f, r.w, 50f);
+        drawSelectQuad(surface, enabled ? hoverAnim : 0f, openAnim, enabled ? 1f : 0.48f, s);
+
         drawStyledComponent(valueComponent, fontMedium(), r.x + 14f, r.y + 27f, 15f,
                 enabled ? withAlpha(s.textPrimary, 230) : withAlpha(s.textMuted, 108), r.w - 52f);
-        String chevron = open ? "chevron-up" : "chevron-down";
-        Renderer2D.COLOR.svg(chevron, r.x + r.w - 30f, r.y + 27f, 14f, 14f,
-                SvgRenderOptions.overrideColor(enabled ? withAlpha(s.textMuted, 202) : withAlpha(s.textMuted, 92)));
+        int chevronColor = enabled ? withAlpha(s.textMuted, 202) : withAlpha(s.textMuted, 92);
+        if (openAnim < 0.995f) {
+            Renderer2D.COLOR.svg("chevron-down", r.x + r.w - 30f, r.y + 27f, 14f, 14f,
+                    SvgRenderOptions.overrideColor(scaleAlpha(chevronColor, 1f - openAnim)));
+        }
+        if (openAnim > 0.005f) {
+            Renderer2D.COLOR.svg("chevron-up", r.x + r.w - 30f, r.y + 27f, 14f, 14f,
+                    SvgRenderOptions.overrideColor(scaleAlpha(chevronColor, openAnim)));
+        }
     }
 
-    private static void drawExternalControl(Rect r, boolean enabled, boolean hover, VisualStyle s) {
-        int left = hover && enabled ? s.controlHover : s.control;
-        int right = hover && enabled ? mix(s.controlHoverRight, s.accentSoft, 0.10f) : s.control;
+    /** Shared flat select surface used by both the enum control and its popup rows. */
+    private static void drawSelectQuad(Rect r, float hover, float active, float alpha, VisualStyle s) {
+        float h = clamp01(hover);
+        float a = clamp01(active);
+        float opacity = clamp01(alpha);
+        int left = mix(s.control, s.controlHover, h * 0.88f);
+        int right = mix(s.control, s.controlHoverRight, h * 0.90f);
+        left = mix(left, s.accentSoft, a * 0.13f);
+        right = mix(right, s.accent, a * 0.09f);
+        Renderer2D.COLOR.quad(r.x, r.y, r.w, r.h,
+                motionAlpha(withAlpha(left, 232), opacity),
+                motionAlpha(withAlpha(right, 228), opacity),
+                motionAlpha(withAlpha(right, 198), opacity),
+                motionAlpha(withAlpha(left, 202), opacity));
+        Renderer2D.COLOR.quad(r.x, r.y + r.h - 1f, r.w, 1f,
+                motionAlpha(mix(withAlpha(s.strokeBright, 62), withAlpha(s.accentBright, 158), a), opacity));
+    }
+
+    private static void drawExternalControl(Rect r, boolean enabled, float hoverAnim, VisualStyle s) {
+        float h = enabled ? hoverAnim : 0f;
+        int left = mix(s.control, s.controlHover, h);
+        int right = mix(s.control, mix(s.controlHoverRight, s.accentSoft, 0.10f), h);
         Renderer2D.COLOR.quad(r.x, r.y + 11f, r.w, 50f,
                 withAlpha(left, 228), withAlpha(right, 220), withAlpha(right, 194), withAlpha(left, 198));
         String value = Component.translatable("sodium.options.open_external_page_button").getString();
@@ -719,9 +910,10 @@ public final class SodiumGraphicsGuiRenderer {
     }
 
     private static void drawGenericStatefulControl(StatefulOption<?> option, Rect r,
-                                                   boolean enabled, boolean hover, VisualStyle s) {
-        int left = hover && enabled ? s.controlHover : s.control;
-        int right = hover && enabled ? s.controlHoverRight : s.control;
+                                                   boolean enabled, float hoverAnim, VisualStyle s) {
+        float h = enabled ? hoverAnim : 0f;
+        int left = mix(s.control, s.controlHover, h);
+        int right = mix(s.control, s.controlHoverRight, h);
         Renderer2D.COLOR.quad(r.x, r.y + 11f, r.w, 50f,
                 withAlpha(left, 226), withAlpha(right, 220), withAlpha(right, 190), withAlpha(left, 194));
         String value = String.valueOf(option.getValidatedValue());
@@ -745,8 +937,9 @@ public final class SodiumGraphicsGuiRenderer {
         FlatButtonWidget button = slot.button;
         if (!(button instanceof SodiumFlatButtonAccess access) || !access.combatant$isVisible()) return;
         Rect r = slot.rect;
-        boolean hover = r.contains(f.canvas.mouseX, f.canvas.mouseY);
+        boolean hover = enumPopup == null && r.contains(f.canvas.mouseX, f.canvas.mouseY);
         boolean enabled = access.combatant$isEnabled();
+        if (hover && enabled) SystemCursor.set(SystemCursor.CursorType.HAND);
         Motion mo = motion(button, hover && enabled, primary || access.combatant$isSelected());
         float h = AnimationUtility.easeOutCubic(mo.hover);
         float a = AnimationUtility.easeOutCubic(mo.active);
@@ -771,29 +964,58 @@ public final class SodiumGraphicsGuiRenderer {
                 enabled ? withAlpha(s.textPrimary, 238) : withAlpha(s.textMuted, 106), r.w - 36f);
     }
 
-    private static void drawInfoPanel(FrameLayout f, VisualStyle s) {
+    private static void drawInfoPanel(FrameLayout f, VideoSettingsScreen screen, VisualStyle s) {
         ControlElement hovered = null;
-        for (OptionSlot slot : f.options) {
-            if (slot.control != null && slot.rect.contains(f.canvas.mouseX, f.canvas.mouseY)) {
-                hovered = slot.control;
-                break;
+        Option forcedOption = popupBlocks(screen) ? enumPopup.option : null;
+        if (forcedOption == null) {
+            for (OptionSlot slot : f.options) {
+                if (slot.control != null && slot.rect.contains(f.canvas.mouseX, f.canvas.mouseY)) {
+                    hovered = slot.control;
+                    break;
+                }
             }
         }
-        if (hovered == null || hovered.getOption() == null) {
-            drawText(fontBold(), "SODIUM", f.infoViewport.x + 32f, f.infoViewport.y + 34f, 22f,
-                    withAlpha(s.textPrimary, 222));
-            drawText(fontRegular(), "Video settings", f.infoViewport.x + 32f, f.infoViewport.y + 70f, 15f,
-                    withAlpha(s.textMuted, 174));
+        Option retainedInfo = null;
+        if (forcedOption == null && (hovered == null || hovered.getOption() == null)
+                && f.infoViewport.contains(f.canvas.mouseX, f.canvas.mouseY)) {
+            Option previous = INFO_OPTION.get(screen);
+            if (previous instanceof ExternalButtonOption) retainedInfo = previous;
+        }
+        if (forcedOption == null && (hovered == null || hovered.getOption() == null) && retainedInfo == null) {
+            INFO_OPTION.remove(screen);
+            SectionContext section = currentSectionContext(f);
+            String title = section.primaryTitle();
+            String parent = section.parentTitle();
+
+            if (title == null || title.isBlank()) title = "Video settings";
+            drawText(fontBold(), LegacyTextUtil.stripLegacy(title),
+                    f.infoViewport.x + 32f, f.infoViewport.y + 34f, 22f,
+                    withAlpha(s.textPrimary, 232));
+
+            if (parent != null && !parent.isBlank() && !parent.equalsIgnoreCase(title)) {
+                drawText(fontRegular(), LegacyTextUtil.stripLegacy(parent),
+                        f.infoViewport.x + 32f, f.infoViewport.y + 70f, 15f,
+                        withAlpha(s.textMuted, 178));
+            }
             Renderer2D.COLOR.quad(f.infoViewport.x + 32f, f.infoViewport.y + 104f,
                     f.infoViewport.w - 64f, 1f, withAlpha(s.stroke, 70));
             return;
         }
 
-        Option option = hovered.getOption();
+        Option option = forcedOption != null ? forcedOption
+                : (hovered != null && hovered.getOption() != null ? hovered.getOption() : retainedInfo);
+        INFO_OPTION.put(screen, option);
         Component name = option.getName() != null ? option.getName() : Component.empty();
         drawStyledComponent(name, fontBold(), f.infoViewport.x + 32f, f.infoViewport.y + 32f, 21f,
                 withAlpha(s.textPrimary, 240), f.infoViewport.w - 64f);
         float y = f.infoViewport.y + 76f;
+        if (forcedOption instanceof EnumOption<?> enumeration && enumPopup != null
+                && enumPopup.hoveredValue != null) {
+            Component hoveredMode = enumElementName(enumeration, enumPopup.hoveredValue);
+            drawStyledComponent(hoveredMode, fontMedium(), f.infoViewport.x + 32f, y, 15f,
+                    withAlpha(s.accentBright, 224), f.infoViewport.w - 64f);
+            y += 32f;
+        }
         if (option.getImpact() != null) {
             Component impact = Component.translatable("sodium.options.performance_impact_string",
                     option.getImpact().getName());
@@ -804,6 +1026,23 @@ public final class SodiumGraphicsGuiRenderer {
         Renderer2D.COLOR.quad(f.infoViewport.x + 32f, y, f.infoViewport.w - 64f, 1f,
                 withAlpha(s.stroke, 68));
         y += 24f;
+
+        if (option instanceof ExternalButtonOption) {
+            Rect action = externalInfoAction(f);
+            boolean actionHover = action.contains(f.canvas.mouseX, f.canvas.mouseY);
+            if (actionHover) SystemCursor.set(SystemCursor.CursorType.HAND);
+            Motion actionMotion = motion(action, actionHover, false);
+            float ah = AnimationUtility.easeOutCubic(actionMotion.hover);
+            int bg = mix(s.control, s.controlHover, ah * 0.68f);
+            Renderer2D.COLOR.quad(action.x, action.y, action.w, action.h,
+                    withAlpha(bg, 235), withAlpha(bg, 230), withAlpha(bg, 218), withAlpha(bg, 222));
+            Renderer2D.COLOR.quad(action.x, action.y + action.h - 2f, action.w, 2f,
+                    withAlpha(s.accent, Math.round(54f + 86f * ah)));
+            Renderer2D.COLOR.svg("external-link", action.x + 18f, action.y + 16f, 20f, 20f,
+                    SvgRenderOptions.overrideColor(withAlpha(actionHover ? s.accentBright : s.textMuted, 226)));
+            drawText(fontMedium(), Component.translatable("sodium.options.open_external_page_button").getString(),
+                    action.x + 50f, action.y + 16f, 16f, withAlpha(s.textPrimary, 232));
+        }
 
         Component tooltip = option.getTooltip();
         if (tooltip == null) return;
@@ -816,58 +1055,160 @@ public final class SodiumGraphicsGuiRenderer {
         }
     }
 
+    private static Rect externalInfoAction(FrameLayout f) {
+        return new Rect(f.infoViewport.x + 32f, f.infoViewport.y + f.infoViewport.h - 160f,
+                f.infoViewport.w - 64f, 54f);
+    }
+
+    private static SectionContext currentSectionContext(FrameLayout f) {
+        if (f == null || f.options == null || f.options.isEmpty()) {
+            return SectionContext.EMPTY;
+        }
+
+        float probeY = f.optionViewport.y + 34f;
+        String mod = null;
+        String page = null;
+        String group = null;
+        boolean sawHeaderBeforeProbe = false;
+
+        for (OptionSlot slot : f.options) {
+            if (slot.header == null) continue;
+            String title = slot.header.combatant$getTitle();
+            if (title == null || title.isBlank()) continue;
+
+            if (slot.rect.y <= probeY) {
+                sawHeaderBeforeProbe = true;
+                if (slot.modHeader) {
+                    mod = title;
+                    page = null;
+                    group = null;
+                } else if (slot.pageHeader) {
+                    page = title;
+                    group = null;
+                } else if (slot.groupHeader) {
+                    group = title;
+                }
+                continue;
+            }
+
+            // At the very top of a freshly selected page there may be no header whose Y is
+            // already above the probe. Seed the context from the first upcoming hierarchy node.
+            if (!sawHeaderBeforeProbe && mod == null && page == null && group == null) {
+                if (slot.modHeader) mod = title;
+                else if (slot.pageHeader) page = title;
+                else if (slot.groupHeader) group = title;
+            }
+            break;
+        }
+
+        // Page-list selection is the authoritative fallback when the current option viewport
+        // starts between headers (for example after a rebuild or a programmatic page jump).
+        if (page == null || page.isBlank()) {
+            String selectedPage = selectedPageTitle(f);
+            if (selectedPage != null && !selectedPage.isBlank()) page = selectedPage;
+        }
+        if (mod == null || mod.isBlank()) {
+            String selectedMod = selectedModTitle(f);
+            if (selectedMod != null && !selectedMod.isBlank()) mod = selectedMod;
+        }
+
+        return new SectionContext(mod, page, group);
+    }
+
+    private static String selectedPageTitle(FrameLayout f) {
+        for (PageSlot slot : f.pages) {
+            if (slot.modHeader) continue;
+            if (!(slot.widget instanceof SodiumCenteredWidgetAccess access)) continue;
+            if (!access.combatant$isSelected()) continue;
+            Component label = access.combatant$getLabel();
+            return label != null ? label.getString() : null;
+        }
+        return null;
+    }
+
+    private static String selectedModTitle(FrameLayout f) {
+        String currentMod = null;
+        for (PageSlot slot : f.pages) {
+            if (!(slot.widget instanceof SodiumCenteredWidgetAccess access)) continue;
+            Component label = access.combatant$getLabel();
+            String text = label != null ? label.getString() : null;
+            if (slot.modHeader) {
+                currentMod = text;
+                continue;
+            }
+            if (access.combatant$isSelected()) return currentMod;
+        }
+        return currentMod;
+    }
+
     private static void drawEnumPopup(FrameLayout f, VisualStyle s) {
         EnumPopup popup = enumPopup;
         if (popup == null || popup.screen == null || popup.bounds == null) return;
-        Rect r = popup.bounds;
-        popup.tickScroll();
-        float reveal = AnimationUtility.easeOutCubic(popup.reveal = AnimationUtility.approach(
-                popup.reveal, 1f, Math.max(0.001f, AnimationUtility.deltaTime()), 13f));
-        Renderer2D.COLOR.roundedRectSoftShadow(r.x, r.y + 4f, r.w, r.h, 7f, 24f,
-                0.025f * reveal, withAlpha(s.shadow, Math.round(210f * reveal)));
-        Renderer2D.COLOR.liquidGlassRect(r.x, r.y, r.w, r.h, 7f, s.glassTint,
-                0.48f, 0.76f, Renderer2D.LiquidGlassPreset.HUD_SMALL, 0.90f, 0f);
-        Renderer2D.COLOR.roundedRectGradientQuad(r.x, r.y, r.w, r.h, 7f, 0.65f,
-                withAlpha(s.strokeBright, Math.round(90f * reveal)),
-                withAlpha(s.strokeBright, Math.round(72f * reveal)),
-                withAlpha(s.stroke, Math.round(48f * reveal)),
-                withAlpha(s.stroke, Math.round(62f * reveal)));
 
-        boolean clipped = ScissorFunction.pushRaw(r.x + 5f, r.y + 6f, r.w - 10f, r.h - 12f);
+        popup.tickScroll();
+        popup.tickReveal();
+        if (popup.closing && popup.reveal <= 0.012f) {
+            if (enumPopup == popup) enumPopup = null;
+            return;
+        }
+
+        float reveal = AnimationUtility.easeInOutCubic(popup.reveal);
+        Rect r = popup.animatedBounds();
+        if (r.h <= 1f || r.w <= 1f) return;
+
+        // Modal popup uses the exact same flat select-quad component/palette as the anchor.
+        // Shadow/glow stay rectangular as well; there is no separate glass/rounded popup skin.
+        Renderer2D.COLOR.quad(r.x - 5f, r.y + 5f, r.w + 10f, r.h + 5f,
+                motionAlpha(s.shadow, reveal * 0.54f));
+        drawSelectQuad(r, 0f, 0f, reveal, s);
+        Renderer2D.COLOR.quad(r.x, r.y, r.w, 1f, motionAlpha(withAlpha(s.strokeBright, 102), reveal));
+        Renderer2D.COLOR.quad(r.x, r.y, 1f, r.h, motionAlpha(withAlpha(s.strokeBright, 82), reveal));
+        Renderer2D.COLOR.quad(r.x + r.w - 1f, r.y, 1f, r.h, motionAlpha(withAlpha(s.stroke, 74), reveal));
+
+        boolean clipped = ScissorFunction.pushRaw(r.x + 4f, r.y + 5f,
+                Math.max(1f, r.w - 8f), Math.max(1f, r.h - 10f));
+        popup.hoveredValue = null;
         try {
+            float itemSlide = (1f - reveal) * (popup.opensUp ? 12f : -12f);
             for (int i = 0; i < popup.values.size(); i++) {
                 Enum<?> value = popup.values.get(i);
                 Rect base = popup.items.get(i);
-                Rect ir = new Rect(base.x, base.y - popup.scrollCurrent, base.w, base.h);
+                Rect ir = new Rect(base.x, base.y - popup.scrollCurrent + itemSlide, base.w, base.h);
                 if (!ir.intersects(r)) continue;
-                boolean hover = ir.contains(f.canvas.mouseX, f.canvas.mouseY);
                 boolean selected = value == popup.option.getValidatedValue();
-                Motion mo = motion(value, hover, selected);
+                boolean hover = !popup.closing && ir.contains(f.canvas.mouseX, f.canvas.mouseY);
+                if (hover) popup.hoveredValue = value;
+                if (hover && !selected) SystemCursor.set(SystemCursor.CursorType.HAND);
+
+                Motion mo = popup.motion(value, hover, selected);
                 float h = AnimationUtility.easeOutCubic(mo.hover);
                 float a = AnimationUtility.easeOutCubic(mo.active);
-                if (h > 0.002f || a > 0.002f) {
-                    Renderer2D.COLOR.quad(ir.x + 5f, ir.y + 2f, ir.w - 10f, ir.h - 4f,
-                            scaleAlpha(mix(s.controlHover, s.accentSoft, a * 0.16f), 0.34f + h * 0.36f + a * 0.24f));
-                }
-                Component label = enumElementName(popup.option, value);
-                drawStyledComponent(label, selected ? fontBold() : fontMedium(), ir.x + 16f, ir.y + 16f, 15f,
-                        selected ? withAlpha(s.accentBright, 244) : withAlpha(s.textPrimary, 226), ir.w - 48f);
+                Rect itemSurface = new Rect(ir.x + 4f, ir.y + 2f, ir.w - 8f, ir.h - 4f);
+                drawSelectQuad(itemSurface, h, a * 0.72f, reveal * (selected ? 0.90f : 0.72f), s);
                 if (selected) {
-                    Renderer2D.COLOR.quad(ir.x + ir.w - 22f, ir.y + 18f, 7f, 7f,
-                            withAlpha(s.accentBright, 232));
+                    Renderer2D.COLOR.quad(itemSurface.x, itemSurface.y + 7f, 3f, itemSurface.h - 14f,
+                            motionAlpha(withAlpha(s.accentBright, 224), reveal));
                 }
+
+                Component label = enumElementName(popup.option, value);
+                drawStyledComponent(label, selected ? fontBold() : fontMedium(), ir.x + 17f, ir.y + 16f, 15f,
+                        motionAlpha(selected ? withAlpha(s.accentBright, 244) : withAlpha(s.textPrimary, 226), reveal),
+                        ir.w - 38f);
             }
         } finally {
             if (clipped) ScissorFunction.pop();
         }
 
-        if (popup.scrollMax > 0f) {
-            Rect track = new Rect(r.x + r.w - 6f, r.y + 8f, 2f, r.h - 16f);
-            float visibleRatio = Math.min(1f, (r.h - 12f) / Math.max(r.h - 12f, popup.contentHeight));
+        if (popup.scrollMax > 0f && reveal > 0.02f) {
+            Rect track = new Rect(r.x + r.w - 6f, r.y + 8f, 2f, Math.max(1f, r.h - 16f));
+            float visibleRatio = Math.min(1f, (popup.bounds.h - 12f)
+                    / Math.max(popup.bounds.h - 12f, popup.contentHeight));
             float handleH = Math.max(28f, track.h * visibleRatio);
             float handleY = track.y + (track.h - handleH) * clamp01(popup.scrollCurrent / popup.scrollMax);
-            Renderer2D.COLOR.quad(track.x, track.y, track.w, track.h, withAlpha(s.scrollTrack, 50));
-            Renderer2D.COLOR.quad(track.x, handleY, track.w, handleH, withAlpha(s.scrollHandleBright, 156));
+            Renderer2D.COLOR.quad(track.x, track.y, track.w, track.h,
+                    motionAlpha(withAlpha(s.scrollTrack, 58), reveal));
+            Renderer2D.COLOR.quad(track.x, handleY, track.w, handleH,
+                    motionAlpha(withAlpha(s.scrollHandleBright, 166), reveal));
         }
     }
 
@@ -929,16 +1270,34 @@ public final class SodiumGraphicsGuiRenderer {
         PageBuild pageBuild = buildPageSlots(canvas, pages, nav, pageScroll);
         OptionBuild optionBuild = buildOptionSlots(canvas, options, option, optionScroll);
 
+        Rect pageScrollbar = new Rect(ox + NAV_W - 18f, oy + BODY_Y + 12f, PAGE_SCROLL_W, NAV_H - 24f);
+        Rect optionScrollbar = new Rect(ox + OPTIONS_X + OPTIONS_W - 18f, oy + BODY_Y + 12f, OPTION_SCROLL_W, OPTIONS_H - 24f);
+
         pageScroll.clamp(pageBuild.contentHeight, NAV_H);
         optionScroll.clamp(optionBuild.contentHeight, OPTIONS_H);
+        ensureSelectedPageVisible(pageBuild.slots, pageScroll, nav);
+        updateScrollbarDrag(pageScroll, canvas.mouseY, pageScrollbar, pageBuild.contentHeight, NAV_H);
+        updateScrollbarDrag(optionScroll, canvas.mouseY, optionScrollbar, optionBuild.contentHeight, OPTIONS_H);
+
         pageScroll.tick();
         optionScroll.tick();
+
+        // Keep Sodium's own section state synchronized with the fixed-coordinate scroller.
+        // Programmatic page jumps preserve the page selected by the click while the content glides
+        // toward the requested section; free scrolling follows the section under the viewport.
+        if (optionScroll.programmaticJump) {
+            if (Math.abs(optionScroll.current - optionScroll.target) <= 0.6f) {
+                optionScroll.programmaticJump = false;
+            }
+        } else {
+            syncNativeScrollbarAt(options, optionScroll.current, optionBuild.contentHeight, OPTIONS_H);
+            updateNativeSectionFocus(options);
+        }
+        syncNativeScrollbarAt(pages, pageScroll.current, pageBuild.contentHeight, NAV_H);
+
         // Rebuild with animated offsets after tick.
         pageBuild = buildPageSlots(canvas, pages, nav, pageScroll);
         optionBuild = buildOptionSlots(canvas, options, option, optionScroll);
-
-        Rect pageScrollbar = new Rect(ox + NAV_W - 18f, oy + BODY_Y + 12f, PAGE_SCROLL_W, NAV_H - 24f);
-        Rect optionScrollbar = new Rect(ox + OPTIONS_X + OPTIONS_W - 18f, oy + BODY_Y + 12f, OPTION_SCROLL_W, OPTIONS_H - 24f);
 
         ButtonSlot closeSlot = close != null ? new ButtonSlot(close, new Rect(ox + CLOSE_X, oy + CLOSE_Y, ACTION_W, ACTION_H)) : null;
         ButtonSlot applySlot = apply != null ? new ButtonSlot(apply, new Rect(ox + APPLY_X, oy + APPLY_Y, ACTION_W, ACTION_H)) : null;
@@ -973,16 +1332,21 @@ public final class SodiumGraphicsGuiRenderer {
     private static PageBuild buildPageSlots(FixedCanvas canvas, PageListWidget pages, Rect viewport, ScrollState scroll) {
         ArrayList<PageSlot> out = new ArrayList<>();
         float cursor = 0f;
+        int sectionIndex = -1;
         for (GuiEventListener child : pages.children()) {
             if (child instanceof ScrollbarWidget) continue;
             if (!(child instanceof AbstractWidget widget)) continue;
             boolean modHeader = widget.getClass().getSimpleName().contains("HeaderEntryWidget");
-            if (modHeader) cursor += PAGE_HEADER_GAP;
+            if (modHeader) {
+                cursor += PAGE_HEADER_GAP;
+                sectionIndex++;
+            }
             float h = modHeader ? PAGE_HEADER_H : PAGE_ENTRY_H;
             float x = viewport.x + PAGE_LEFT;
             float w = viewport.w - PAGE_LEFT - PAGE_RIGHT_GUTTER;
-            Rect rect = new Rect(x, viewport.y + cursor - scroll.current, w, h);
-            out.add(new PageSlot(widget, rect, modHeader));
+            float contentY = cursor;
+            Rect rect = new Rect(x, viewport.y + contentY - scroll.current, w, h);
+            out.add(new PageSlot(widget, rect, modHeader, Math.max(0, sectionIndex), contentY));
             cursor += h;
         }
         return new PageBuild(out, cursor + 20f);
@@ -1063,6 +1427,8 @@ public final class SodiumGraphicsGuiRenderer {
             return true;
         }
 
+        if (slot.controlRect == null || !slot.controlRect.contains(mx, my)) return true;
+
         if (option instanceof BooleanOption bool) {
             bool.modifyValue(!Boolean.TRUE.equals(bool.getValidatedValue()));
             return true;
@@ -1070,6 +1436,7 @@ public final class SodiumGraphicsGuiRenderer {
         if (option instanceof IntegerOption integer) {
             Rect r = slot.controlRect;
             setIntegerFromPointer(integer, r, mx);
+            ACTIVE_INTEGER_DRAG.put(screen, integer);
             return true;
         }
         if (option instanceof EnumOption<?> enumeration) {
@@ -1083,6 +1450,33 @@ public final class SodiumGraphicsGuiRenderer {
 
         clickWidget(control, event, doubleClick);
         return true;
+    }
+
+    private static boolean popupBlocks(VideoSettingsScreen screen) {
+        EnumPopup popup = enumPopup;
+        return popup != null && popup.screen == screen;
+    }
+
+    private static void updateIntegerDrag(VideoSettingsScreen screen, FrameLayout frame) {
+        IntegerOption active = ACTIVE_INTEGER_DRAG.get(screen);
+        if (active == null) return;
+        if (!isLeftMouseDown()) {
+            ACTIVE_INTEGER_DRAG.remove(screen);
+            return;
+        }
+        if (popupBlocks(screen)) {
+            ACTIVE_INTEGER_DRAG.remove(screen);
+            return;
+        }
+        for (OptionSlot slot : frame.options) {
+            if (slot.control == null || slot.control.getOption() != active) continue;
+            int before = active.getValidatedValue();
+            setIntegerFromPointer(active, slot.controlRect, frame.canvas.mouseX);
+            if (active.getValidatedValue() != before) GuiSound.SLIDER_MOVE.feedback(0.48);
+            SystemCursor.set(SystemCursor.CursorType.RESIZE_HORIZONTAL);
+            return;
+        }
+        ACTIVE_INTEGER_DRAG.remove(screen);
     }
 
     private static void setIntegerFromPointer(IntegerOption integer, Rect r, float mx) {
@@ -1101,6 +1495,11 @@ public final class SodiumGraphicsGuiRenderer {
     }
 
     private static void openEnumPopup(VideoSettingsScreen screen, EnumOption<?> option, Rect anchor) {
+        if (enumPopup != null && enumPopup.screen == screen && enumPopup.option == option && !enumPopup.closing) {
+            enumPopup.close();
+            return;
+        }
+
         ArrayList<Enum<?>> values = new ArrayList<>();
         Object[] constants = option.getEnumClass().getEnumConstants();
         if (constants != null) {
@@ -1110,15 +1509,19 @@ public final class SodiumGraphicsGuiRenderer {
             }
         }
         if (values.isEmpty()) return;
+
         float itemH = 48f;
         float contentHeight = values.size() * itemH;
         float h = Math.min(336f, contentHeight + 12f);
         float x = anchor.x;
         float y = anchor.y + anchor.h - 5f;
+        boolean opensUp = false;
         FrameLayout frame = LAST_FRAME.get(screen);
         if (frame != null && y + h > frame.root.y + frame.root.h - 16f) {
             y = Math.max(frame.root.y + 16f, anchor.y - h + 5f);
+            opensUp = true;
         }
+
         Rect bounds = new Rect(x, y, anchor.w, h);
         ArrayList<Rect> items = new ArrayList<>();
         float iy = y + 6f;
@@ -1126,20 +1529,35 @@ public final class SodiumGraphicsGuiRenderer {
             items.add(new Rect(x + 5f, iy, anchor.w - 10f, itemH));
             iy += itemH;
         }
-        enumPopup = new EnumPopup(screen, option, values, bounds, items, contentHeight, 0f);
+        enumPopup = new EnumPopup(screen, option, values, anchor, bounds, items, contentHeight, opensUp);
     }
 
     private static boolean clickEnumPopup(EnumPopup popup, float mx, float my, int button) {
-        if (button != 0) return popup.bounds.contains(mx, my);
+        if (popup == null) return false;
+        if (popup.closing) return popup.bounds.contains(mx, my);
+        if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return popup.bounds.contains(mx, my);
+
+        Rect visibleBounds = popup.animatedBounds();
+        if (!visibleBounds.contains(mx, my)) return false;
+
+        float reveal = AnimationUtility.easeInOutCubic(popup.reveal);
+        float itemSlide = (1f - reveal) * (popup.opensUp ? 12f : -12f);
         for (int i = 0; i < popup.items.size(); i++) {
             Rect base = popup.items.get(i);
-            Rect visible = new Rect(base.x, base.y - popup.scrollCurrent, base.w, base.h);
-            if (!visible.contains(mx, my)) continue;
-            setEnumValue(popup.option, popup.values.get(i));
-            enumPopup = null;
+            Rect visible = new Rect(base.x, base.y - popup.scrollCurrent + itemSlide, base.w, base.h);
+            if (!visible.contains(mx, my) || !visible.intersects(visibleBounds)) continue;
+
+            Enum<?> next = popup.values.get(i);
+            if (next == popup.option.getValidatedValue()) {
+                return true;
+            }
+
+            setEnumValue(popup.option, next);
+            GuiSound.CHANGE_MODE.feedback(0.70);
+            popup.close();
             return true;
         }
-        return popup.bounds.contains(mx, my);
+        return true;
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -1181,22 +1599,133 @@ public final class SodiumGraphicsGuiRenderer {
 
     private static void scrollBy(ScrollState state, double vertical, float contentHeight, float viewportHeight) {
         if (state == null || vertical == 0.0) return;
+        state.programmaticJump = false;
         state.target -= (float) Math.signum(vertical) * 64f;
         state.clamp(contentHeight, viewportHeight);
     }
 
-    private static void jumpScroll(ScrollState state, float mouseY, Rect track, float contentHeight, float viewportHeight) {
+    private static void beginScrollbarDrag(ScrollState state,
+                                           float mouseY,
+                                           Rect track,
+                                           float contentHeight,
+                                           float viewportHeight) {
+        if (state == null) return;
+        float max = Math.max(0f, contentHeight - viewportHeight);
+        if (max <= 0f) {
+            state.dragging = false;
+            state.target = 0f;
+            return;
+        }
+
+        float handleH = scrollbarHandleHeight(track, contentHeight, viewportHeight);
+        float handleY = scrollbarHandleY(track, state.current, contentHeight, viewportHeight);
+        boolean onHandle = mouseY >= handleY && mouseY <= handleY + handleH;
+        state.dragging = true;
+        state.programmaticJump = false;
+        state.dragOffset = onHandle ? mouseY - handleY : handleH * 0.5f;
+        dragScrollbarToMouse(state, mouseY, track, contentHeight, viewportHeight);
+    }
+
+    private static void updateScrollbarDrag(ScrollState state,
+                                            float mouseY,
+                                            Rect track,
+                                            float contentHeight,
+                                            float viewportHeight) {
+        if (state == null || !state.dragging) return;
+        if (!isLeftMouseDown()) {
+            state.dragging = false;
+            return;
+        }
+        dragScrollbarToMouse(state, mouseY, track, contentHeight, viewportHeight);
+    }
+
+    private static void dragScrollbarToMouse(ScrollState state,
+                                             float mouseY,
+                                             Rect track,
+                                             float contentHeight,
+                                             float viewportHeight) {
         float max = Math.max(0f, contentHeight - viewportHeight);
         if (max <= 0f) {
             state.target = 0f;
             return;
         }
-        float ratio = clamp01((mouseY - track.y) / Math.max(1f, track.h));
+        float handleH = scrollbarHandleHeight(track, contentHeight, viewportHeight);
+        float travel = Math.max(1f, track.h - handleH);
+        float handleY = mouseY - state.dragOffset;
+        float ratio = clamp01((handleY - track.y) / travel);
         state.target = max * ratio;
+        state.current = state.target;
+        state.clamp(contentHeight, viewportHeight);
+    }
+
+    private static boolean isLeftMouseDown() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc != null
+                && mc.getWindow() != null
+                && GLFW.glfwGetMouseButton(mc.getWindow().handle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
+    }
+
+    private static float scrollbarHandleHeight(Rect track, float contentHeight, float viewportHeight) {
+        float ratio = Math.min(1f, viewportHeight / Math.max(viewportHeight, contentHeight));
+        return Math.max(42f, track.h * ratio);
+    }
+
+    private static float scrollbarHandleY(Rect track,
+                                          float scroll,
+                                          float contentHeight,
+                                          float viewportHeight) {
+        float max = Math.max(0f, contentHeight - viewportHeight);
+        float handleH = scrollbarHandleHeight(track, contentHeight, viewportHeight);
+        return track.y + (track.h - handleH) * (max <= 0f ? 0f : clamp01(scroll / max));
+    }
+
+    private static void ensureSelectedPageVisible(List<PageSlot> slots,
+                                                  ScrollState state,
+                                                  Rect viewport) {
+        if (slots == null || state == null || viewport == null) return;
+        for (PageSlot slot : slots) {
+            if (slot.modHeader) continue;
+            if (!(slot.widget instanceof SodiumCenteredWidgetAccess access) || !access.combatant$isSelected()) continue;
+
+            float safeTop = 14f;
+            float safeBottom = viewport.h - 14f;
+            float topAtTarget = slot.contentY - state.target;
+            float bottomAtTarget = topAtTarget + slot.rect.h;
+            if (topAtTarget < safeTop) {
+                state.target = Math.max(0f, slot.contentY - safeTop);
+            } else if (bottomAtTarget > safeBottom) {
+                state.target = Math.max(0f, slot.contentY + slot.rect.h - safeBottom);
+            }
+            return;
+        }
+    }
+
+    private static void syncCustomScrollFromNative(Object list,
+                                                   ScrollState state,
+                                                   float contentHeight,
+                                                   float viewportHeight,
+                                                   boolean programmaticJump) {
+        ScrollbarWidget bar = findScrollbar(list);
+        if (bar == null || state == null) return;
+        SodiumScrollbarAccess access = (SodiumScrollbarAccess) bar;
+        int visible = access.combatant$getVisibleAmount();
+        int total = access.combatant$getTotalAmount();
+        int nativeMax = Math.max(0, total - visible);
+        float customMax = Math.max(0f, contentHeight - viewportHeight);
+        float ratio = nativeMax <= 0 ? 0f : clamp01(bar.getScrollAmount() / (float) nativeMax);
+        state.target = customMax * ratio;
+        state.programmaticJump = programmaticJump;
         state.clamp(contentHeight, viewportHeight);
     }
 
     private static void syncNativeScrollbar(Object list, ScrollState state, float contentHeight, float viewportHeight) {
+        syncNativeScrollbarAt(list, state != null ? state.target : 0f, contentHeight, viewportHeight);
+    }
+
+    private static void syncNativeScrollbarAt(Object list,
+                                              float customScroll,
+                                              float contentHeight,
+                                              float viewportHeight) {
         ScrollbarWidget bar = findScrollbar(list);
         if (bar == null) return;
         SodiumScrollbarAccess access = (SodiumScrollbarAccess) bar;
@@ -1204,8 +1733,14 @@ public final class SodiumGraphicsGuiRenderer {
         int total = access.combatant$getTotalAmount();
         int nativeMax = Math.max(0, total - visible);
         float customMax = Math.max(0f, contentHeight - viewportHeight);
-        int target = customMax <= 0f ? 0 : Math.round(nativeMax * clamp01(state.target / customMax));
+        int target = customMax <= 0f ? 0 : Math.round(nativeMax * clamp01(customScroll / customMax));
         bar.scrollTo(target);
+    }
+
+    private static void updateNativeSectionFocus(OptionListWidget list) {
+        if (list instanceof SodiumOptionListAccess access) {
+            access.combatant$updateSectionFocus(list.getScrollAmount());
+        }
     }
 
     private static ScrollbarWidget findScrollbar(Object list) {
@@ -1221,24 +1756,25 @@ public final class SodiumGraphicsGuiRenderer {
                                       FixedCanvas canvas, VisualStyle s) {
         float max = Math.max(0f, contentHeight - viewportHeight);
         if (max <= 0f) return;
-        boolean hover = track.contains(canvas.mouseX, canvas.mouseY);
-        Motion mo = motion(state, hover, false);
+        boolean hover = enumPopup == null && track.contains(canvas.mouseX, canvas.mouseY);
+        if (enumPopup == null && (hover || state.dragging)) SystemCursor.set(SystemCursor.CursorType.SCROLL);
+        Motion mo = motion(state, hover || state.dragging, state.dragging);
         float h = AnimationUtility.easeOutCubic(mo.hover);
+        float a = AnimationUtility.easeOutCubic(mo.active);
         Renderer2D.COLOR.quad(track.x, track.y, track.w, track.h,
-                withAlpha(s.scrollTrack, Math.round(56f + h * 24f)));
-        float ratio = Math.min(1f, viewportHeight / Math.max(viewportHeight, contentHeight));
-        float handleH = Math.max(42f, track.h * ratio);
-        float pos = (track.h - handleH) * clamp01(state.current / max);
-        Renderer2D.COLOR.quad(track.x, track.y + pos, track.w, handleH,
-                withAlpha(s.scrollHandle, Math.round(132f + h * 68f)),
-                withAlpha(s.scrollHandleBright, Math.round(148f + h * 72f)),
-                withAlpha(s.scrollHandleBright, Math.round(130f + h * 64f)),
-                withAlpha(s.scrollHandle, Math.round(120f + h * 60f)));
+                withAlpha(s.scrollTrack, Math.round(54f + h * 30f + a * 18f)));
+        float handleH = scrollbarHandleHeight(track, contentHeight, viewportHeight);
+        float handleY = scrollbarHandleY(track, state.current, contentHeight, viewportHeight);
+        Renderer2D.COLOR.quad(track.x, handleY, track.w, handleH,
+                withAlpha(s.scrollHandle, Math.round(130f + h * 62f + a * 34f)),
+                withAlpha(s.scrollHandleBright, Math.round(146f + h * 70f + a * 28f)),
+                withAlpha(s.scrollHandleBright, Math.round(128f + h * 64f + a * 30f)),
+                withAlpha(s.scrollHandle, Math.round(118f + h * 58f + a * 30f)));
     }
 
     private static void drawModIcon(Object source, float x, float y, float size, VisualStyle s, float alpha) {
         if (!(source instanceof SodiumModIconAccess iconAccess)) return;
-        Identifier id = iconAccess.combatant$getIcon();
+        Identifier id = resolveDisplayModIcon(iconAccess);
         if (id == null) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) return;
@@ -1247,10 +1783,102 @@ public final class SodiumGraphicsGuiRenderer {
         GpuTextureView view = texture.getTextureView();
         GpuSampler sampler = texture.getSampler();
         if (view == null || sampler == null) return;
-        int tint = iconAccess.combatant$isIconMonochrome()
-                ? scaleAlpha(s.textPrimary, alpha)
-                : withAlpha(0xFFFFFFFF, Math.round(255f * clamp01(alpha)));
+        int tint = withAlpha(0xFFFFFFFF, Math.round(255f * clamp01(alpha)));
         Renderer2D.COLOR.textureQuad(view, sampler, x, y, size, size, tint);
+    }
+
+    /**
+     * Sodium deliberately supplies monochrome UI glyphs for many mod headers. For the modern
+     * surface that is the wrong source image: resolve the owning Fabric mod's real metadata icon
+     * instead. Non-monochrome Sodium icons are already artwork and are kept verbatim.
+     */
+    private static Identifier resolveDisplayModIcon(SodiumModIconAccess iconAccess) {
+        Identifier sodiumIcon = iconAccess.combatant$getIcon();
+        if (!iconAccess.combatant$isIconMonochrome()) return sodiumIcon;
+
+        ModOptions options = iconAccess.combatant$getModOptions();
+        String key = options != null && options.configId() != null && !options.configId().isBlank()
+                ? options.configId()
+                : sodiumIcon != null ? sodiumIcon.getNamespace() : "";
+        if (key.isBlank()) return sodiumIcon;
+
+        Identifier cached = COLOR_MOD_ICONS.get(key);
+        if (cached != null) return cached;
+        if (COLOR_MOD_ICON_MISSES.contains(key)) return sodiumIcon;
+
+        try {
+            ModContainer container = findModContainer(options, sodiumIcon);
+            if (container == null) {
+                COLOR_MOD_ICON_MISSES.add(key);
+                return sodiumIcon;
+            }
+            String iconPath = container.getMetadata().getIconPath(128)
+                    .or(() -> container.getMetadata().getIconPath(64))
+                    .or(() -> container.getMetadata().getIconPath(32))
+                    .orElse(null);
+            if (iconPath == null || iconPath.isBlank()) {
+                COLOR_MOD_ICON_MISSES.add(key);
+                return sodiumIcon;
+            }
+            String relativeIconPath = iconPath.startsWith("/") ? iconPath.substring(1) : iconPath;
+            Path path = null;
+            for (Path root : container.getRootPaths()) {
+                Path candidate = root.resolve(relativeIconPath);
+                if (Files.isRegularFile(candidate)) {
+                    path = candidate;
+                    break;
+                }
+            }
+            if (path == null) {
+                COLOR_MOD_ICON_MISSES.add(key);
+                return sodiumIcon;
+            }
+
+            NativeImage image;
+            try (InputStream stream = Files.newInputStream(path)) {
+                image = NativeImage.read(stream);
+            }
+            if (image == null) {
+                COLOR_MOD_ICON_MISSES.add(key);
+                return sodiumIcon;
+            }
+
+            String safeKey = key.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9._/-]", "_");
+            Identifier dynamicId = Identifier.fromNamespaceAndPath("combatant", "sodium_mod_icons/" + safeKey);
+            Minecraft mc = Minecraft.getInstance();
+            if (mc == null) {
+                image.close();
+                return sodiumIcon;
+            }
+            mc.getTextureManager().register(dynamicId, new DynamicTexture(() -> "combatant_sodium_mod_icon_" + safeKey, image));
+            COLOR_MOD_ICONS.put(key, dynamicId);
+            return dynamicId;
+        } catch (Throwable t) {
+            COLOR_MOD_ICON_MISSES.add(key);
+            DebugLog.errorOnce("sodium-modern-mod-icon-" + key,
+                    "[SodiumGui] Failed to load full-color Fabric mod icon for " + key, t);
+            return sodiumIcon;
+        }
+    }
+
+    private static ModContainer findModContainer(ModOptions options, Identifier sodiumIcon) {
+        FabricLoader loader = FabricLoader.getInstance();
+        if (options != null && options.configId() != null && !options.configId().isBlank()) {
+            ModContainer exact = loader.getModContainer(options.configId()).orElse(null);
+            if (exact != null) return exact;
+        }
+        if (sodiumIcon != null) {
+            ModContainer byNamespace = loader.getModContainer(sodiumIcon.getNamespace()).orElse(null);
+            if (byNamespace != null) return byNamespace;
+        }
+        if (options != null && options.name() != null && !options.name().isBlank()) {
+            String wanted = options.name().trim();
+            for (ModContainer container : loader.getAllMods()) {
+                String display = container.getMetadata().getName();
+                if (display != null && display.equalsIgnoreCase(wanted)) return container;
+            }
+        }
+        return null;
     }
 
     private static void drawStyledComponent(Component component,
@@ -1418,10 +2046,8 @@ public final class SodiumGraphicsGuiRenderer {
             m = MOTION.computeIfAbsent(key, unused -> new Motion());
         }
         float dt = Math.max(0.001f, AnimationUtility.deltaTime());
-        m.hover = AnimationUtility.approach(m.hover, hover ? 1f : 0f, dt, 12.5f);
-        m.active = AnimationUtility.approach(m.active, active ? 1f : 0f, dt, 10.5f);
-        m.hover = AnimationUtility.snap(m.hover, hover ? 1f : 0f, 0.002f);
-        m.active = AnimationUtility.snap(m.active, active ? 1f : 0f, 0.002f);
+        m.hover = AnimationUtility.approach(m.hover, hover ? 1f : 0f, dt, 11.0f);
+        m.active = AnimationUtility.approach(m.active, active ? 1f : 0f, dt, 9.5f);
         return m;
     }
 
@@ -1468,14 +2094,30 @@ public final class SodiumGraphicsGuiRenderer {
         return withAlpha(color, Math.round(alpha * clamp01(factor)));
     }
 
+    private static int motionAlpha(int color, float factor) {
+        int alpha = (color >>> 24) & 0xFF;
+        return withAlpha(color, Math.round(alpha * factor));
+    }
+
     private static final class Motion {
         float hover;
         float active;
     }
 
+    private static final class CategoryMotion {
+        boolean initialized;
+        AbstractWidget widget;
+        int sectionIndex;
+        float currentContentY;
+        float targetContentY;
+    }
+
     private static final class ScrollState {
         float current;
         float target;
+        boolean dragging;
+        float dragOffset;
+        boolean programmaticJump;
 
         void clamp(float contentHeight, float viewportHeight) {
             float max = Math.max(0f, contentHeight - viewportHeight);
@@ -1541,7 +2183,11 @@ public final class SodiumGraphicsGuiRenderer {
         }
     }
 
-    private record PageSlot(AbstractWidget widget, Rect rect, boolean modHeader) {
+    private record PageSlot(AbstractWidget widget,
+                            Rect rect,
+                            boolean modHeader,
+                            int sectionIndex,
+                            float contentY) {
     }
 
     private record OptionSlot(AbstractWidget widget,
@@ -1553,6 +2199,25 @@ public final class SodiumGraphicsGuiRenderer {
                               boolean modHeader,
                               boolean pageHeader,
                               boolean groupHeader) {
+    }
+
+    private record SectionContext(String modTitle, String pageTitle, String groupTitle) {
+        private static final SectionContext EMPTY = new SectionContext(null, null, null);
+
+        String primaryTitle() {
+            if (groupTitle != null && !groupTitle.isBlank()) return groupTitle;
+            if (pageTitle != null && !pageTitle.isBlank()) return pageTitle;
+            return modTitle;
+        }
+
+        String parentTitle() {
+            if (groupTitle != null && !groupTitle.isBlank()) {
+                if (pageTitle != null && !pageTitle.isBlank()) return pageTitle;
+                return modTitle;
+            }
+            if (pageTitle != null && !pageTitle.isBlank()) return modTitle;
+            return null;
+        }
     }
 
     private record ButtonSlot(FlatButtonWidget button, Rect rect) {
@@ -1642,28 +2307,65 @@ public final class SodiumGraphicsGuiRenderer {
         final VideoSettingsScreen screen;
         final EnumOption<?> option;
         final List<Enum<?>> values;
+        final Rect anchor;
         final Rect bounds;
         final List<Rect> items;
         final float contentHeight;
         final float scrollMax;
+        final boolean opensUp;
         float reveal;
         float scrollCurrent;
         float scrollTarget;
+        Enum<?> hoveredValue;
+        final Map<Enum<?>, Motion> itemMotions = new IdentityHashMap<>();
+        boolean closing;
 
-        EnumPopup(VideoSettingsScreen screen, EnumOption<?> option, List<Enum<?>> values,
-                  Rect bounds, List<Rect> items, float contentHeight, float reveal) {
+        EnumPopup(VideoSettingsScreen screen,
+                  EnumOption<?> option,
+                  List<Enum<?>> values,
+                  Rect anchor,
+                  Rect bounds,
+                  List<Rect> items,
+                  float contentHeight,
+                  boolean opensUp) {
             this.screen = screen;
             this.option = option;
             this.values = values;
+            this.anchor = anchor;
             this.bounds = bounds;
             this.items = items;
             this.contentHeight = contentHeight;
             this.scrollMax = Math.max(0f, contentHeight - (bounds.h - 12f));
-            this.reveal = reveal;
+            this.opensUp = opensUp;
+        }
+
+        void close() {
+            closing = true;
+        }
+
+        Motion motion(Enum<?> value, boolean hover, boolean active) {
+            Motion motion = itemMotions.computeIfAbsent(value, unused -> new Motion());
+            float dt = Math.max(0.001f, AnimationUtility.deltaTime());
+            motion.hover = AnimationUtility.approach(motion.hover, hover ? 1f : 0f, dt, 11.0f);
+            motion.active = AnimationUtility.approach(motion.active, active ? 1f : 0f, dt, 9.5f);
+            return motion;
+        }
+
+        void tickReveal() {
+            float dt = Math.max(0.001f, AnimationUtility.deltaTime());
+            reveal = AnimationUtility.approach(reveal, closing ? 0f : 1f, dt, closing ? 15f : 11.5f);
+            reveal = clamp01(reveal);
+        }
+
+        Rect animatedBounds() {
+            float e = AnimationUtility.easeInOutCubic(reveal);
+            float height = Math.max(2f, bounds.h * e);
+            float y = opensUp ? bounds.y + bounds.h - height : bounds.y;
+            return new Rect(bounds.x, y, bounds.w, height);
         }
 
         void scrollBy(double vertical) {
-            if (vertical == 0.0 || scrollMax <= 0f) return;
+            if (vertical == 0.0 || scrollMax <= 0f || closing) return;
             scrollTarget -= (float) Math.signum(vertical) * 48f;
             scrollTarget = Math.max(0f, Math.min(scrollMax, scrollTarget));
         }

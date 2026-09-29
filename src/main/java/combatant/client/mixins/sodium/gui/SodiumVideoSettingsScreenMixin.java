@@ -19,6 +19,7 @@ import net.caffeinemc.mods.sodium.client.gui.widgets.ScrollableTooltip;
 import net.caffeinemc.mods.sodium.client.gui.widgets.SearchWidget;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -28,6 +29,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.List;
 
@@ -38,6 +40,7 @@ import java.util.List;
 @Mixin(value = VideoSettingsScreen.class, remap = false)
 public abstract class SodiumVideoSettingsScreenMixin {
     @Unique private boolean combatant$donationSuppressed;
+    @Unique private boolean combatant$suppressEscapeRelease;
 
     @Shadow private PageListWidget pageList;
     @Shadow private SearchWidget searchWidget;
@@ -59,6 +62,20 @@ public abstract class SodiumVideoSettingsScreenMixin {
     @Shadow
     private void updateSearchWidgetWidth() {
         throw new AssertionError();
+    }
+
+    @Inject(method = "init", at = @At("TAIL"), remap = false)
+    private void combatant$guardEscapeReleaseAfterChildReturn(CallbackInfo ci) {
+        if (!SodiumGraphicsGuiRenderer.shouldUseModernUi()) return;
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.getWindow() == null) return;
+
+        // A child screen (notably Iris' ShaderPackScreen) closes on ESC key-press and restores
+        // this same Sodium screen before that physical key is released. Sodium normally closes
+        // itself from keyReleased(ESC), so without this one-shot guard the return immediately
+        // falls through one more screen. Only arm while ESC is physically held during re-init.
+        combatant$suppressEscapeRelease = GLFW.glfwGetKey(
+                client.getWindow().handle(), GLFW.GLFW_KEY_ESCAPE) == GLFW.GLFW_PRESS;
     }
 
     @Inject(method = "rebuild", at = @At("TAIL"), remap = false)
@@ -109,6 +126,33 @@ public abstract class SodiumVideoSettingsScreenMixin {
         )) {
             ci.cancel();
         }
+    }
+
+    @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true, remap = false)
+    private void combatant$modernSearchShortcut(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
+        if (!SodiumGraphicsGuiRenderer.shouldUseModernUi() || prompt != null || event == null) return;
+
+        // SearchWidget consumes ESC on key-press by clearing/unfocusing itself. Sodium also has
+        // an ESC close path on key-release, so remember that this physical key belongs to the
+        // search state and consume only its matching release below.
+        if (event.key() == GLFW.GLFW_KEY_ESCAPE && searchWidget != null && searchWidget.isSearching()) {
+            combatant$suppressEscapeRelease = true;
+        }
+
+        boolean control = (event.modifiers() & GLFW.GLFW_MOD_CONTROL) != 0;
+        if (control && event.key() == GLFW.GLFW_KEY_F
+                && SodiumGraphicsGuiRenderer.focusSearch((VideoSettingsScreen) (Object) this, searchWidget)) {
+            cir.setReturnValue(true);
+        }
+    }
+
+    @Inject(method = "keyReleased", at = @At("HEAD"), cancellable = true, remap = false)
+    private void combatant$consumeOwnedEscapeRelease(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
+        if (!SodiumGraphicsGuiRenderer.shouldUseModernUi() || event == null) return;
+        if (event.key() != GLFW.GLFW_KEY_ESCAPE || !combatant$suppressEscapeRelease) return;
+
+        combatant$suppressEscapeRelease = false;
+        cir.setReturnValue(true);
     }
 
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true, remap = false)

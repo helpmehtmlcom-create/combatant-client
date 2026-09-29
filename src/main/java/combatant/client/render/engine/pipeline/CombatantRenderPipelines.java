@@ -80,6 +80,12 @@ public enum CombatantRenderPipelines {
     public static final Identifier SHADER_RIG_ENTITY_TRANSLUCENT_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/rig_entity_translucent.frag");
     public static final Identifier SHADER_GUI_TEXTURE_LOOKUP_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/gui_texture_lookup.frag");
     public static final Identifier SHADER_POS_TEX_COLOR_TINT_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_tex_color_tint.frag");
+    public static final Identifier SHADER_WORLD_POST_DISTORTION_MASK_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/world_post_distortion_mask.frag");
+    public static final Identifier SHADER_WORLD_POST_DISTORTION_MASK_SAMPLED_DEPTH_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/world_post_distortion_mask_sampled_depth.frag");
+    public static final Identifier SHADER_WORLD_SPHERE_DISTORTION_MASK_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/world_sphere_distortion_mask.frag");
+    public static final Identifier SHADER_WORLD_SPHERE_DISTORTION_MASK_SAMPLED_DEPTH_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/world_sphere_distortion_mask_sampled_depth.frag");
+    public static final Identifier SHADER_WORLD_TOTEM_BURST_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/world_totem_burst.vert");
+    public static final Identifier SHADER_WORLD_TOTEM_BURST_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/world_totem_burst.frag");
     public static final Identifier SHADER_MAP_TILE_LIGHT_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/map_tile_light.frag");
     public static final Identifier SHADER_MAP_TILE_OPAQUE_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/map_tile_opaque.frag");
     public static final Identifier SHADER_POS_TEX_LOCAL_COLOR_RECT_PARAMS_VERT = Identifier.fromNamespaceAndPath("combatant", "shaders/pos_tex_local_color_rect_params.vert");
@@ -133,6 +139,10 @@ public enum CombatantRenderPipelines {
     public static final Identifier SHADER_DAMAGE_TINT_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/damage_tint.frag");
     public static final Identifier SHADER_KILL_BLUR_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/kill_blur.frag");
     public static final Identifier SHADER_POSTPROCESS_COPY_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/postprocess_copy.frag");
+    public static final Identifier SHADER_WORLD_MASK_DISTORTION_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/world_mask_distortion.frag");
+    public static final Identifier SHADER_JUMP_SHOCKWAVE_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/jump_shockwave.frag");
+    public static final Identifier SHADER_TARGET_LENS_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/target_lens.frag");
+    public static final Identifier SHADER_BLAST_SHOCKWAVE_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/blast_shockwave.frag");
     public static final Identifier SHADER_MAIN_MENU_TEXTURE_BACKGROUND_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/main_menu_texture_background.frag");
     public static final Identifier SHADER_MENU_BACKGROUND_AURORA_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/menu_background_aurora.frag");
     public static final Identifier SHADER_MENU_BACKGROUND_WAVES_FRAG = Identifier.fromNamespaceAndPath("combatant", "shaders/menu_background_waves.frag");
@@ -557,6 +567,105 @@ public enum CombatantRenderPipelines {
             .withCull(false)
             .build()
     );
+    public static final RenderPipeline WORLD_POST_DISTORTION_MASK = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
+            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_post_distortion_mask"))
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexShader(SHADER_POS_TEX_COLOR_VERT)
+            .withFragmentShader(SHADER_WORLD_POST_DISTORTION_MASK_FRAG)
+            .withSampler("u_Texture")
+            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withBlend(BlendFunction.TRANSLUCENT_PREMULTIPLIED_ALPHA)
+            .withCull(false)
+            .build()
+    );
+    public static final RenderPipeline WORLD_POST_DISTORTION_MASK_DEPTH = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
+            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_post_distortion_mask_depth"))
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexShader(SHADER_POS_TEX_COLOR_VERT)
+            .withFragmentShader(SHADER_WORLD_POST_DISTORTION_MASK_FRAG)
+            .withSampler("u_Texture")
+            .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withBlend(BlendFunction.TRANSLUCENT_PREMULTIPLIED_ALPHA)
+            .withCull(false)
+            .build()
+    );
+    public static final RenderPipeline WORLD_POST_DISTORTION_MASK_SAMPLED_DEPTH = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
+            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_post_distortion_mask_sampled_depth"))
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexShader(SHADER_POS_TEX_COLOR_VERT)
+            .withFragmentShader(SHADER_WORLD_POST_DISTORTION_MASK_SAMPLED_DEPTH_FRAG)
+            .withSampler("u_Texture")
+            .withSampler("u_Depth")
+            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withBlend(BlendFunction.TRANSLUCENT_PREMULTIPLIED_ALPHA)
+            .withCull(false)
+            .build()
+    );
+    public static final RenderPipeline WORLD_SPHERE_DISTORTION_MASK = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
+            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_sphere_distortion_mask"))
+            .withDomain(PipelineDomain.WORLD)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexShader(SHADER_WORLD_TOTEM_BURST_VERT)
+            .withFragmentShader(SHADER_WORLD_SPHERE_DISTORTION_MASK_FRAG)
+            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withBlend(BlendFunction.TRANSLUCENT_PREMULTIPLIED_ALPHA)
+            .withCull(true)
+            .build()
+    );
+    public static final RenderPipeline WORLD_SPHERE_DISTORTION_MASK_DEPTH = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
+            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_sphere_distortion_mask_depth"))
+            .withDomain(PipelineDomain.WORLD)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexShader(SHADER_WORLD_TOTEM_BURST_VERT)
+            .withFragmentShader(SHADER_WORLD_SPHERE_DISTORTION_MASK_FRAG)
+            .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withBlend(BlendFunction.TRANSLUCENT_PREMULTIPLIED_ALPHA)
+            .withCull(true)
+            .build()
+    );
+    public static final RenderPipeline WORLD_SPHERE_DISTORTION_MASK_SAMPLED_DEPTH = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
+            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_sphere_distortion_mask_sampled_depth"))
+            .withDomain(PipelineDomain.WORLD)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexShader(SHADER_WORLD_TOTEM_BURST_VERT)
+            .withFragmentShader(SHADER_WORLD_SPHERE_DISTORTION_MASK_SAMPLED_DEPTH_FRAG)
+            .withSampler("u_Depth")
+            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withBlend(BlendFunction.TRANSLUCENT_PREMULTIPLIED_ALPHA)
+            .withCull(true)
+            .build()
+    );
+    public static final RenderPipeline WORLD_TOTEM_BURST = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
+            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_totem_burst"))
+            .withDomain(PipelineDomain.WORLD)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexShader(SHADER_WORLD_TOTEM_BURST_VERT)
+            .withFragmentShader(SHADER_WORLD_TOTEM_BURST_FRAG)
+            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withBlend(BlendFunctions.ALPHA_ADDITIVE)
+            .withCull(true)
+            .build()
+    );
+    public static final RenderPipeline WORLD_TOTEM_BURST_DEPTH = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
+            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_totem_burst_depth"))
+            .withDomain(PipelineDomain.WORLD)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexShader(SHADER_WORLD_TOTEM_BURST_VERT)
+            .withFragmentShader(SHADER_WORLD_TOTEM_BURST_FRAG)
+            .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withBlend(BlendFunctions.ALPHA_ADDITIVE)
+            .withCull(true)
+            .build()
+    );
+
     /**
      * Depth test (GEQUAL); translucent; lines.
      */
@@ -1168,6 +1277,60 @@ public enum CombatantRenderPipelines {
             .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
             .withDepthWrite(false)
             .withBlend(BlendFunction.TRANSLUCENT)
+            .withCull(false)
+            .build()
+    );
+    /** Local screen refraction driven by the depth-tested world mask target. */
+    public static final RenderPipeline POSTPROCESS_WORLD_MASK_DISTORTION = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
+            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/postprocess_world_mask_distortion"))
+            .withVertexFormat(CombatantVertexFormats.POS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexShader(SHADER_DAMAGE_TINT_VERT)
+            .withFragmentShader(SHADER_WORLD_MASK_DISTORTION_FRAG)
+            .withSampler("u_Texture")
+            .withSampler("u_Mask")
+            .withUniform("WorldMaskedPost", UniformType.UNIFORM_BUFFER)
+            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withBlend(BlendFunction.TRANSLUCENT)
+            .withCull(false)
+            .build()
+    );
+    public static final RenderPipeline POSTPROCESS_JUMP_SHOCKWAVE = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
+            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/postprocess_jump_shockwave"))
+            .withVertexFormat(CombatantVertexFormats.POS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexShader(SHADER_DAMAGE_TINT_VERT)
+            .withFragmentShader(SHADER_JUMP_SHOCKWAVE_FRAG)
+            .withSampler("u_Texture")
+            .withSampler("u_Depth")
+            .withUniform("JumpShockwave", UniformType.UNIFORM_BUFFER)
+            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withCull(false)
+            .build()
+    );
+    public static final RenderPipeline POSTPROCESS_TARGET_LENS = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
+            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/postprocess_target_lens"))
+            .withVertexFormat(CombatantVertexFormats.POS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexShader(SHADER_DAMAGE_TINT_VERT)
+            .withFragmentShader(SHADER_TARGET_LENS_FRAG)
+            .withSampler("u_Texture")
+            .withSampler("u_Depth")
+            .withUniform("TargetLens", UniformType.UNIFORM_BUFFER)
+            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withCull(false)
+            .build()
+    );
+    public static final RenderPipeline POSTPROCESS_BLAST_SHOCKWAVE = add(new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
+            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/postprocess_blast_shockwave"))
+            .withVertexFormat(CombatantVertexFormats.POS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexShader(SHADER_DAMAGE_TINT_VERT)
+            .withFragmentShader(SHADER_BLAST_SHOCKWAVE_FRAG)
+            .withSampler("u_Texture")
+            .withSampler("u_Depth")
+            .withUniform("JumpShockwave", UniformType.UNIFORM_BUFFER)
+            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthWrite(false)
             .withCull(false)
             .build()
     );

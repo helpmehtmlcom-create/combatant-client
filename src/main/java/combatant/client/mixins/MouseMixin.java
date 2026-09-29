@@ -33,6 +33,7 @@ import combatant.client.features.gui.hud.nondraggable.impl.DynamicIsland;
 import combatant.client.features.module.ModuleManager;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.visuals.Freecam;
+import combatant.client.features.module.modules.visuals.FreeLook;
 import combatant.client.features.module.modules.visuals.Zoom;
 import combatant.client.runtime.RuntimeGate;
 import combatant.client.util.input.KeyManager;
@@ -172,30 +173,35 @@ public class MouseMixin {
     )
     private void freecam$look(LocalPlayer player, double dx, double dy) {
         Freecam fc = Modules.get(Freecam.class);
+        FreeLook freeLook = Modules.get(FreeLook.class);
 
-        if (!RuntimeGate.canRunClientLogic() || fc == null || !fc.isEnabled()) {
+        if (!RuntimeGate.canRunClientLogic()) {
             player.turn(dx, dy);
             return;
         }
 
-        if (!fc.isCameraInput()) {
-            player.turn(dx, dy);
+        if (fc != null && fc.isEnabled() && fc.isCameraInput()) {
+            Minecraft mc = Minecraft.getInstance();
+
+            double sens = mc.options.sensitivity().get();
+            double f = sens * 0.6 + 0.2;
+            double scale = f * f * f * 8.0;
+
+            float yawDelta = (float) (dx * scale * 0.15F);
+            float pitchDelta = (float) (dy * scale * 0.15F);
+
+            fc.camYaw += yawDelta;
+            fc.camPitch += pitchDelta;
+            fc.camPitch = Mth.clamp(fc.camPitch, -90.0F, 90.0F);
             return;
         }
 
-        Minecraft mc = Minecraft.getInstance();
+        if (freeLook != null && freeLook.captureMouseInput()) {
+            freeLook.turnCamera(dx, dy);
+            return;
+        }
 
-        double sens = mc.options.sensitivity().get();
-        double f = sens * 0.6 + 0.2;
-        double scale = f * f * f * 8.0;
-
-        float yawDelta = (float) (dx * scale * 0.15F);
-        float pitchDelta = (float) (dy * scale * 0.15F);
-
-        fc.camYaw += yawDelta;
-        fc.camPitch += pitchDelta;
-
-        fc.camPitch = Mth.clamp(fc.camPitch, -90.0F, 90.0F);
+        player.turn(dx, dy);
     }
 
     @ModifyExpressionValue(

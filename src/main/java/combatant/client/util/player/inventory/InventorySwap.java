@@ -48,6 +48,8 @@ public final class InventorySwap {
     private int savedSelectedSlot = -1;
     private int internalSwapDepth;
     private HotbarLease hotbarLease;
+    private InventoryLease inventoryLease;
+    private Object inventoryActionOwner;
     private InventorySwapPolicy defaultPolicy = InventorySwapPolicy.NONE;
     private InventorySearchScope defaultScope = InventorySearchScope.FULL;
     private InventorySwapVisibility defaultVisibility = InventorySwapVisibility.SILENT;
@@ -208,7 +210,7 @@ public final class InventorySwap {
         }
 
         strictQueue.removeFirst();
-        runGuarded(next.action);
+        runGuarded(next.owner, next.action);
 
         if (strictQueue.isEmpty()) {
             requestMovementLock(1);
@@ -377,6 +379,33 @@ public final class InventorySwap {
 
     public void tick() {
         activeLease();
+        activeInventoryLease();
+    }
+
+    public boolean leaseInventory(Object owner, int ticksUntilReset) {
+        LocalPlayer player = mc.player;
+        if (player == null || owner == null) return false;
+
+        InventoryLease active = activeInventoryLease();
+        if (active != null && active.owner != owner) return false;
+
+        int resetAfterAge = player.tickCount + Math.max(1, ticksUntilReset) + 1;
+        inventoryLease = new InventoryLease(player.getUUID(), owner, resetAfterAge);
+        return true;
+    }
+
+    public boolean isInventoryLeased() {
+        return activeInventoryLease() != null;
+    }
+
+    public boolean isInventoryLeasedBy(Object owner) {
+        InventoryLease active = activeInventoryLease();
+        return active != null && active.owner == owner;
+    }
+
+    public void releaseInventory(Object owner) {
+        InventoryLease active = activeInventoryLease();
+        if (active != null && active.owner == owner) inventoryLease = null;
     }
 
     public void saveSelectedSlot() {
@@ -422,6 +451,7 @@ public final class InventorySwap {
     }
 
     public boolean clickSwap(int containerSlot, int hotbarButton) {
+        if (!inventoryAccessAllowed(inventoryActionOwner)) return false;
         LocalPlayer player = mc.player;
         MultiPlayerGameMode interaction = mc.gameMode;
         AbstractContainerMenu handler = player != null ? player.containerMenu : null;
@@ -438,6 +468,7 @@ public final class InventorySwap {
     }
 
     public boolean pickupSwap(int slotA, int slotB) {
+        if (!inventoryAccessAllowed(inventoryActionOwner)) return false;
         LocalPlayer player = mc.player;
         MultiPlayerGameMode interaction = mc.gameMode;
         AbstractContainerMenu handler = player != null ? player.containerMenu : null;
@@ -456,7 +487,15 @@ public final class InventorySwap {
     }
 
     public boolean swapScreenSlots(int slotA, int slotB) {
-        return command(InventoryActionKind.INVENTORY_CLICK, () -> pickupSwap(slotA, slotB));
+        return swapScreenSlots(slotA, slotB, defaultPolicy);
+    }
+
+    public boolean swapScreenSlots(int slotA, int slotB, InventorySwapPolicy policy) {
+        return swapScreenSlots(slotA, slotB, policy, null);
+    }
+
+    public boolean swapScreenSlots(int slotA, int slotB, InventorySwapPolicy policy, Object owner) {
+        return command(owner, InventoryActionKind.INVENTORY_CLICK, policy, () -> pickupSwap(slotA, slotB));
     }
 
     public boolean swapInventoryToHotbar(int inventorySlot, int hotbarSlot) {
@@ -476,13 +515,19 @@ public final class InventorySwap {
     }
 
     public boolean swapInventoryToOffhand(int inventorySlot, Runnable afterSwap) {
+        return swapInventoryToOffhand(inventorySlot, defaultPolicy, afterSwap);
+    }
+
+    public boolean swapInventoryToOffhand(int inventorySlot, InventorySwapPolicy policy, Runnable afterSwap) {
+        return swapInventoryToOffhand(inventorySlot, policy, null, afterSwap);
+    }
+
+    public boolean swapInventoryToOffhand(int inventorySlot, InventorySwapPolicy policy, Object owner, Runnable afterSwap) {
         if (inventorySlot < 0 || inventorySlot >= 36) return false;
         int sourceScreenSlot = mapInventoryToScreenSlot(inventorySlot);
-        return command(InventoryActionKind.INVENTORY_CLICK, () -> {
-            clickSwap(sourceScreenSlot, OFFHAND_SWAP_BUTTON);
-            if (afterSwap != null) {
-                afterSwap.run();
-            }
+        return command(owner, InventoryActionKind.INVENTORY_CLICK, policy, () -> {
+            if (!clickSwap(sourceScreenSlot, OFFHAND_SWAP_BUTTON)) return;
+            if (afterSwap != null) afterSwap.run();
         });
     }
 
@@ -628,21 +673,27 @@ public final class InventorySwap {
     }
 
     public boolean command(InventoryActionKind actionKind, InventorySwapPolicy policy, Runnable action) {
+        return command(null, actionKind, policy, action);
+    }
+
+    public boolean command(Object owner, InventoryActionKind actionKind, InventorySwapPolicy policy, Runnable action) {
         if (action == null) return false;
         InventoryActionKind kind = actionKind != null ? actionKind : InventoryActionKind.GENERIC;
         InventorySwapPolicy resolvedPolicy = policy != null ? policy : defaultPolicy;
+        if (isInventoryAction(kind) && !inventoryAccessAllowed(owner)) return false;
 
         if (resolvedPolicy == InventorySwapPolicy.NONE || isSafeFor(kind, resolvedPolicy)) {
-            runGuarded(action);
+            runGuarded(owner, action);
             return true;
         }
 
         strictQueue.addLast(new QueuedAction(
                 kind,
                 resolvedPolicy,
+                owner,
                 action,
                 initialWaitTicks(resolvedPolicy, kind),
-                () -> isSafeFor(kind, resolvedPolicy)
+                () -> isSafeFor(kind, resolvedPolicy) && (!isInventoryAction(kind) || inventoryAccessAllowed(owner))
         ));
         requestStrictMovementLock();
         return true;
@@ -918,12 +969,28 @@ public final class InventorySwap {
     }
 
     private void runGuarded(Runnable action) {
+        runGuarded(null, action);
+    }
+
+    private void runGuarded(Object owner, Runnable action) {
+        Object previousOwner = inventoryActionOwner;
+        inventoryActionOwner = owner;
         beginInternalSwap();
         try {
             action.run();
         } finally {
             endInternalSwap();
+            inventoryActionOwner = previousOwner;
         }
+    }
+
+    private boolean isInventoryAction(InventoryActionKind kind) {
+        return kind == InventoryActionKind.INVENTORY_CLICK || kind == InventoryActionKind.INVENTORY_CLOSE;
+    }
+
+    private boolean inventoryAccessAllowed(Object owner) {
+        InventoryLease active = activeInventoryLease();
+        return active == null || active.owner == owner;
     }
 
     private void requestStrictMovementLock() {
@@ -959,6 +1026,18 @@ public final class InventorySwap {
         return current;
     }
 
+    private InventoryLease activeInventoryLease() {
+        InventoryLease current = inventoryLease;
+        if (current == null) return null;
+
+        LocalPlayer player = mc.player;
+        if (player == null || !player.getUUID().equals(current.playerUuid) || player.tickCount >= current.resetAfterAge) {
+            inventoryLease = null;
+            return null;
+        }
+        return current;
+    }
+
     private void clearLease(HotbarLease lease, boolean restoreServerSlot) {
         hotbarLease = null;
         if (!restoreServerSlot) return;
@@ -986,17 +1065,27 @@ public final class InventorySwap {
     private record HotbarLease(UUID playerUuid, Object owner, int enforcedSlot, int clientSlot, int resetAfterAge) {
     }
 
+    private record InventoryLease(UUID playerUuid, Object owner, int resetAfterAge) {
+    }
+
     private static final class QueuedAction {
         private final InventoryActionKind kind;
         private final InventorySwapPolicy policy;
+        private final Object owner;
         private final Runnable action;
         private final BooleanSupplier safety;
         private int waitTicks;
 
         private QueuedAction(InventoryActionKind kind, InventorySwapPolicy policy, Runnable action, int waitTicks,
                              BooleanSupplier safety) {
+            this(kind, policy, null, action, waitTicks, safety);
+        }
+
+        private QueuedAction(InventoryActionKind kind, InventorySwapPolicy policy, Object owner, Runnable action, int waitTicks,
+                             BooleanSupplier safety) {
             this.kind = kind != null ? kind : InventoryActionKind.GENERIC;
             this.policy = policy != null ? policy : InventorySwapPolicy.NONE;
+            this.owner = owner;
             this.action = action;
             this.safety = safety != null ? safety : () -> true;
             this.waitTicks = Math.max(0, waitTicks);

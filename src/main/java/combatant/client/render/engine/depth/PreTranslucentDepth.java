@@ -16,6 +16,7 @@ import com.mojang.blaze3d.textures.GpuTextureView;
 import net.minecraft.client.Minecraft;
 import combatant.client.mixininterface.IMsaaTexture;
 import combatant.client.render.engine.core.CombatantRenderSystem;
+import combatant.client.render.engine.core.RenderFrameContext;
 import combatant.client.render.engine.msaa.MsaaWorldTarget;
 
 /**
@@ -35,6 +36,7 @@ public enum PreTranslucentDepth {
     private static int msaaDepthCopyH = -1;
     private static boolean captured;
     private static boolean capturedMsaa;
+    private static long capturedFrameId = Long.MIN_VALUE;
 
     public static void captureFrom(RenderTarget source) {
         if (source == null) return;
@@ -47,6 +49,7 @@ public enum PreTranslucentDepth {
 
         captured = false;
         capturedMsaa = false;
+        capturedFrameId = Long.MIN_VALUE;
 
         boolean isMsaa = source.getDepthTexture() instanceof IMsaaTexture msaa && msaa.combatant$isMsaa();
         if (isMsaa) {
@@ -63,6 +66,7 @@ public enum PreTranslucentDepth {
                     );
                     msaaDepthView = msaaDepthCopyView;
                     capturedMsaa = true;
+                    capturedFrameId = currentFrameId();
                     if (CombatantRenderSystem.rhi().msaa().eagerPreTranslucentDepthResolve()) {
                         captured = resolveMsaaDepthCopy();
                     }
@@ -85,6 +89,7 @@ public enum PreTranslucentDepth {
             depthCopyH = h;
             depthCopy.copyDepthFrom(source);
             captured = true;
+            capturedFrameId = currentFrameId();
         }
     }
 
@@ -114,6 +119,20 @@ public enum PreTranslucentDepth {
         return WorldSceneDepth.mainDepthView();
     }
 
+
+    public static GpuTextureView getCapturedDepthView() {
+        if (capturedFrameId != currentFrameId()) {
+            return null;
+        }
+        if (captured && depthCopy != null) {
+            return depthCopy.getDepthTextureView();
+        }
+        if (capturedMsaa && msaaDepthView != null && resolveMsaaDepthCopy()) {
+            return depthCopy != null ? depthCopy.getDepthTextureView() : null;
+        }
+        return null;
+    }
+
     public static GpuTextureView getDepthViewFor(GpuTextureView colorAttachment) {
         int requiredSamples = samples(colorAttachment);
         if (requiredSamples > 1
@@ -128,14 +147,19 @@ public enum PreTranslucentDepth {
         if (requiredSamples == 1 && capturedMsaa && msaaDepthView != null && resolveMsaaDepthCopy()) {
             return depthCopy.getDepthTextureView();
         }
-        GpuTextureView fallback = WorldSceneDepth.mainDepthView();
-        return samples(fallback) == requiredSamples ? fallback : null;
+        return null;
     }
 
     public static void reset() {
         captured = false;
         capturedMsaa = false;
+        capturedFrameId = Long.MIN_VALUE;
         msaaDepthView = null;
+    }
+
+    private static long currentFrameId() {
+        RenderFrameContext context = CombatantRenderSystem.currentContext();
+        return context != null ? context.frameId() : CombatantRenderSystem.resources().frameId();
     }
 
     private static void ensureMsaaDepthCopy(int w, int h, int samples) {

@@ -128,6 +128,8 @@ public class NameTags extends Module {
     private static final float TOTEM_BADGE_TEXT_SCALE = NAMEPLATE_SCALE;
     private static final float TOTEM_BADGE_ANIM_SPEED = 10.0f;
     private static final float ENCHANT_TEXT_MIN_GAP = 2.0f;
+    private static final double ENCHANT_OUTLINE_OFFSET = 1.0;
+    private static final float ENCHANT_OUTLINE_ALPHA = 1.0f;
     private static final int ENCHANT_NAME_MAX_CODEPOINTS = 2;
     private static final WorldUiPresentationService.Policy WORLD_PRESENTATION_POLICY =
             WorldUiPresentationService.Policy.defaults();
@@ -977,9 +979,9 @@ public class NameTags extends Module {
                     EnchantLine line = lines.get(lineIndex);
                     double width = worldTextWidth(nameRenderer, line.text(), SMALL_TEXT_SCALE);
                     double lineY = itemY - 3.0 - enchantHeight * (lineIndex + 1);
-                    drawWorldText(renderer, basis, nameRenderer, line.text(), entry.anchor(),
+                    drawWorldOutlinedText(renderer, basis, nameRenderer, line.text(), entry.anchor(),
                             equipment.centers()[i] - width * 0.5, lineY,
-                            SMALL_TEXT_SCALE, entry.worldScale(), line.color(), entry.alpha(), true);
+                            SMALL_TEXT_SCALE, entry.worldScale(), line.color(), entry.alpha());
                 }
             }
         }
@@ -1235,6 +1237,33 @@ public class NameTags extends Module {
         if (text == null || text.isEmpty() || alpha <= 0.001f) return;
         WorldBillboardRenderer.text(renderer, basis, textRenderer, text, anchor, pixelX, pixelY,
                 textScale, worldScale, argb, alpha, shadow);
+    }
+
+    private static void drawWorldOutlinedText(Renderer3D renderer,
+                                              WorldBillboardRenderer.Basis basis,
+                                              TextRenderer textRenderer,
+                                              String text,
+                                              Vec3 anchor,
+                                              double pixelX,
+                                              double pixelY,
+                                              double textScale,
+                                              double worldScale,
+                                              int argb,
+                                              float alpha) {
+        if (text == null || text.isEmpty() || alpha <= 0.001f) return;
+        double o = ENCHANT_OUTLINE_OFFSET;
+        float outlineAlpha = Math.min(1.0f, alpha * ENCHANT_OUTLINE_ALPHA);
+        double[] offsets = {-o, 0.0, o};
+        for (double ox : offsets) {
+            for (double oy : offsets) {
+                if (ox == 0.0 && oy == 0.0) continue;
+                drawWorldText(renderer, basis, textRenderer, text, anchor,
+                        pixelX + ox, pixelY + oy, textScale, worldScale,
+                        0xFF000000, outlineAlpha, false);
+            }
+        }
+        drawWorldText(renderer, basis, textRenderer, text, anchor,
+                pixelX, pixelY, textScale, worldScale, argb, alpha, false);
     }
 
     private static double drawWorldStyledText(Renderer3D renderer,
@@ -1862,7 +1891,14 @@ public class NameTags extends Module {
     }
 
     private void renderEquipmentText(TextRenderer textRenderer, String text, double x, double y, int color) {
-        textRenderer.render(text, x, y, new RenderColor(foregroundColor(color)), true);
+        int outline = foregroundColor(0xFF000000);
+        for (int ox = -1; ox <= 1; ox++) {
+            for (int oy = -1; oy <= 1; oy++) {
+                if (ox == 0 && oy == 0) continue;
+                textRenderer.render(text, x + ox, y + oy, new RenderColor(outline), false);
+            }
+        }
+        textRenderer.render(text, x, y, new RenderColor(foregroundColor(color)), false);
     }
 
     private void renderHealthTag(TextRenderer textRenderer, String value, double x, double y, int valueColor) {

@@ -21,6 +21,7 @@ import combatant.client.config.values.NumberValue;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
+import combatant.client.features.module.ModuleManager;
 import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.util.network.FakeLagController;
 
@@ -98,6 +99,10 @@ public final class FakeLag extends Module {
 
     @Override
     public void onEnable() {
+        Blink blink = ModuleManager.get(Blink.class);
+        if (blink != null && blink.isEnabled()) {
+            blink.setEnabled(false);
+        }
         syncControllerConfig();
         FakeLagController.INSTANCE.setEnabled(true);
     }

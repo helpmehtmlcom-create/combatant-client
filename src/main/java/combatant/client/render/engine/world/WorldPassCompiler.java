@@ -191,6 +191,9 @@ public final class WorldPassCompiler {
         if (depth != null && samples(depth) == requiredSamples) {
             return depth;
         }
+        if (policy == DepthPolicy.PRE_TRANSLUCENT) {
+            return null;
+        }
         GpuTextureView framebufferDepth = framebuffer != null ? framebuffer.getDepthTextureView() : null;
         return framebufferDepth != null && samples(framebufferDepth) == requiredSamples
                 ? framebufferDepth

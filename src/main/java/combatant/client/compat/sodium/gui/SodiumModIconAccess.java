@@ -6,9 +6,11 @@
  */
 package combatant.client.compat.sodium.gui;
 
+import net.caffeinemc.mods.sodium.client.config.structure.ModOptions;
 import net.minecraft.resources.Identifier;
 
 public interface SodiumModIconAccess {
     Identifier combatant$getIcon();
     boolean combatant$isIconMonochrome();
+    ModOptions combatant$getModOptions();
 }

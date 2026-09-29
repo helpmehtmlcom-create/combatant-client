@@ -43,6 +43,8 @@ public enum GuiSound implements SoundKey {
     COLOR_OPEN,
     @SoundAsset(value = "guicolorselect.wav", id = "guicolorselect")
     COLOR_SELECT(45),
+    @SoundAsset(value = "guihover.wav", id = "guihover")
+    HOVER(90),
     @SoundAsset(value = "guimodulehover.wav", id = "guimodulehover")
     MODULE_HOVER(120),
     @SoundAsset(value = "moduleopen.wav", id = "moduleopen")

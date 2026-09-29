@@ -35,6 +35,7 @@ import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import combatant.client.render.engine.uniform.impl.TextureTintUniforms;
 import combatant.client.render.effects.particle.ParticleSimulationProfile;
+import combatant.client.render.effects.mask.WorldPostProcessMasks;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -125,8 +126,13 @@ public class WorldParticles extends Module {
             num("worldParticlesColorPhase", "color_phase", 0, 0, 360);
     private final NumberValue<Integer> colorSpread =
             num("worldParticlesColorSpread", "color_spread", 90, -720, 720);
+    private final BooleanValue textureGradient =
+            visibleWhen(bool("worldParticlesTextureGradient", "texture_gradient", false), () -> !isBubbleMode());
+    private final NumberValue<Float> textureGradientAngle =
+            visibleWhen(num("worldParticlesTextureGradientAngle", "texture_gradient_angle", 90.0f, -180.0f, 180.0f),
+                    () -> !isBubbleMode() && textureGradient.get());
     private final RGBAColorValue color2 =
-            visibleWhen(color("worldParticlesColor2", "color2", "#FF55FFFF"), this::usesSecondaryColor);
+            visibleWhen(color("worldParticlesColor2", "color2", "#FF55FFFF"), () -> usesSecondaryColor() || textureGradient.get());
     private final NumberValue<Integer> maxParticles =
             num("max_particles", 100, 1, 400);
     private final NumberValue<Integer> spawnPerTick =
@@ -248,6 +254,15 @@ public class WorldParticles extends Module {
     private static void addBillboardRect(MeshBuilder mesh, double cx, double cy, double cz,
                                          float halfWidth, float halfHeight, Quaternionf camRot,
                                          float rollRadians, int argb) {
+        addBillboardRectGradient(mesh, cx, cy, cz, halfWidth, halfHeight, camRot, rollRadians,
+                argb, argb, argb, argb);
+    }
+
+    private static void addBillboardRectGradient(MeshBuilder mesh, double cx, double cy, double cz,
+                                                 float halfWidth, float halfHeight, Quaternionf camRot,
+                                                 float rollRadians,
+                                                 int bottomLeftArgb, int bottomRightArgb,
+                                                 int topRightArgb, int topLeftArgb) {
         Vector3f baseRight = new Vector3f(1.0f, 0.0f, 0.0f).rotate(camRot);
         Vector3f baseUp = new Vector3f(0.0f, 1.0f, 0.0f).rotate(camRot);
         float cos = (float) Math.cos(rollRadians);
@@ -270,10 +285,10 @@ public class WorldParticles extends Module {
         double p4z = cz - right.z() + up.z();
 
         mesh.ensureQuadCapacity();
-        int i1 = mesh.vec3(p1x, p1y, p1z).vec2(0.0, 1.0).colorArgb(argb).next();
-        int i2 = mesh.vec3(p2x, p2y, p2z).vec2(1.0, 1.0).colorArgb(argb).next();
-        int i3 = mesh.vec3(p3x, p3y, p3z).vec2(1.0, 0.0).colorArgb(argb).next();
-        int i4 = mesh.vec3(p4x, p4y, p4z).vec2(0.0, 0.0).colorArgb(argb).next();
+        int i1 = mesh.vec3(p1x, p1y, p1z).vec2(0.0, 1.0).colorArgb(bottomLeftArgb).next();
+        int i2 = mesh.vec3(p2x, p2y, p2z).vec2(1.0, 1.0).colorArgb(bottomRightArgb).next();
+        int i3 = mesh.vec3(p3x, p3y, p3z).vec2(1.0, 0.0).colorArgb(topRightArgb).next();
+        int i4 = mesh.vec3(p4x, p4y, p4z).vec2(0.0, 0.0).colorArgb(topLeftArgb).next();
         mesh.quad(i1, i2, i3, i4);
     }
 
@@ -433,18 +448,27 @@ public class WorldParticles extends Module {
     }
 
     @Override
+    public void onPrepareWorldPostProcess(float tickDelta) {
+        if (!isEnabled() || !isFunnelMode() || particles.isEmpty() || mc.player == null || mc.level == null) {
+            return;
+        }
+        submitFunnelPostMasks(tickDelta);
+    }
+
+    @Override
     public void onRenderWorldEngine(Renderer3D renderer, Renderer3D depthRenderer, float tickDelta) {
         if (!isEnabled() || particles.isEmpty() || mc.player == null || mc.level == null) {
             return;
         }
 
         try (RenderCostProfiler.Scope ignored = RenderCostProfiler.worldEffect("world_particles:" + mode.get())) {
-            boolean useDepth = depthTest.get();
-            Renderer3D.DepthMode depthMode = useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.MAIN;
             if (isFunnelMode()) {
-                renderFunnel(renderer, useDepth, depthMode, tickDelta);
+                renderFunnel(renderer, true, Renderer3D.DepthMode.PRE_DEPTH, tickDelta);
                 return;
             }
+
+            boolean useDepth = depthTest.get();
+            Renderer3D.DepthMode depthMode = useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.NONE;
 
             boolean bubbleMode = isBubbleMode();
             MeshBuilder spriteMesh = bubbleMode ? null : renderer.batchTextured(
@@ -533,9 +557,10 @@ public class WorldParticles extends Module {
 
                     if (spriteMesh != null) {
                         int spriteArgb = multiplyAlpha(baseColor, alpha * SPRITE_ALPHA_MULTIPLIER);
+                        int spriteArgb2 = multiplyAlpha(gradientColorForParticle(particle, i), alpha * SPRITE_ALPHA_MULTIPLIER);
                         float roll = particle.visualPhase + ageSeconds * QUAD_ROLL_SPEED;
-                        addBillboardQuad(spriteMesh, pos.x, pos.y, pos.z,
-                                particle.size * SPRITE_SIZE_MULTIPLIER * visualScale, camRot, roll, spriteArgb);
+                        addTexturedBillboardGradient(spriteMesh, pos.x, pos.y, pos.z,
+                                particle.size * SPRITE_SIZE_MULTIPLIER * visualScale, camRot, roll, spriteArgb, spriteArgb2);
                     }
 
                     if (lineMesh != null) {
@@ -557,17 +582,13 @@ public class WorldParticles extends Module {
                 tintMode.ordinal()
         );
 
-        MeshBuilder distortionMesh = tintedTexturedBatch(renderer, useDepth, depthMode, TextureStorage.FUNNEL_DISTORTION);
         MeshBuilder eyeMesh = tintedTexturedBatch(renderer, useDepth, depthMode, TextureStorage.FUNNEL_EYE);
         MeshBuilder bloomMesh = tintedTexturedBatch(renderer, useDepth, depthMode, TextureStorage.BLOOM);
-        if (distortionMesh == null && eyeMesh == null && bloomMesh == null) {
+        if (eyeMesh == null && bloomMesh == null) {
             return;
         }
 
         int particleCount = particles.size();
-        if (distortionMesh != null) {
-            distortionMesh.ensureCapacity(particleCount * 12, particleCount * 18);
-        }
         if (eyeMesh != null) {
             eyeMesh.ensureCapacity(particleCount * 16, particleCount * 24);
         }
@@ -585,108 +606,127 @@ public class WorldParticles extends Module {
 
             Vec3 pos = particle.interpolatePos(tickDelta);
             int baseColor = colorForParticle(particle, i);
+            int gradientColor = gradientColorForParticle(particle, i);
             float ageSeconds = particle.ageMs() / 1000.0f;
             float scale = particle.funnelScale();
             float pulse = 0.5f + 0.5f * (float) Math.sin(particle.ageMs() * 0.0048f + particle.visualPhase);
             float rimPulse = AnimationUtility.smoothstep(pulse);
-
-            if (distortionMesh != null) {
-                float outerRoll = particle.visualPhase * 0.63f - ageSeconds * particle.distortionSpin * 0.54f;
-                int outerArgb = funnelColor(baseColor, 0xFFFFFF, alpha * FUNNEL_DISTORTION_OUTER_ALPHA_MULTIPLIER * (0.82f + rimPulse * 0.18f));
-                addBillboardQuad(
-                        distortionMesh,
-                        pos.x, pos.y, pos.z,
-                        particle.size * FUNNEL_DISTORTION_OUTER_SIZE_MULTIPLIER * scale * (1.0f + rimPulse * 0.055f),
-                        camRot,
-                        outerRoll,
-                        outerArgb
-                );
-
-                float distortionRoll = particle.visualPhase + ageSeconds * particle.distortionSpin;
-                int distortionArgb = funnelColor(baseColor, 0xFFFFFF, alpha * FUNNEL_DISTORTION_ALPHA_MULTIPLIER);
-                addBillboardQuad(
-                        distortionMesh,
-                        pos.x, pos.y, pos.z,
-                        particle.size * FUNNEL_DISTORTION_SIZE_MULTIPLIER * scale,
-                        camRot,
-                        distortionRoll,
-                        distortionArgb
-                );
-
-                float innerRoll = -particle.visualPhase * 1.18f + ageSeconds * (0.18f - particle.distortionSpin * 0.35f);
-                int innerArgb = funnelColor(baseColor, 0xFFFFFF, alpha * FUNNEL_DISTORTION_INNER_ALPHA_MULTIPLIER * (1.0f - rimPulse * 0.25f));
-                addBillboardQuad(
-                        distortionMesh,
-                        pos.x, pos.y, pos.z,
-                        particle.size * FUNNEL_DISTORTION_INNER_SIZE_MULTIPLIER * scale,
-                        camRot,
-                        innerRoll,
-                        innerArgb
-                );
+            if (!funnelVisible(particle, pos, scale)) {
+                continue;
             }
 
             if (eyeMesh != null) {
                 float eyeRoll = -particle.visualPhase * 0.42f + ageSeconds * particle.eyeSpin;
                 int rimArgb = funnelColor(baseColor, 0xFFC76A, alpha * FUNNEL_RIM_ALPHA_MULTIPLIER * (0.62f + rimPulse * 0.38f));
-                addBillboardQuad(
+                int rimArgb2 = funnelColor(gradientColor, 0xFFC76A, alpha * FUNNEL_RIM_ALPHA_MULTIPLIER * (0.62f + rimPulse * 0.38f));
+                addTexturedBillboardGradient(
                         eyeMesh,
                         pos.x, pos.y, pos.z,
                         particle.size * (FUNNEL_EYE_SIZE_MULTIPLIER + 0.48f) * scale * (1.0f + rimPulse * 0.045f),
                         camRot,
                         eyeRoll - 0.18f,
-                        rimArgb
+                        rimArgb, rimArgb2
                 );
 
                 int ghostA = funnelColor(baseColor, 0x92E8FF, alpha * FUNNEL_GHOST_ALPHA_MULTIPLIER * (0.70f + rimPulse * 0.16f));
-                addBillboardQuad(
+                int ghostA2 = funnelColor(gradientColor, 0x92E8FF, alpha * FUNNEL_GHOST_ALPHA_MULTIPLIER * (0.70f + rimPulse * 0.16f));
+                addTexturedBillboardGradient(
                         eyeMesh,
                         pos.x, pos.y, pos.z,
                         particle.size * 3.74f * scale,
                         camRot,
                         eyeRoll + 0.74f,
-                        ghostA
+                        ghostA, ghostA2
                 );
 
                 int ghostB = funnelColor(baseColor, 0xFF9D47, alpha * FUNNEL_GHOST_ALPHA_MULTIPLIER * 0.68f * (1.0f - rimPulse * 0.18f));
-                addBillboardQuad(
+                int ghostB2 = funnelColor(gradientColor, 0xFF9D47, alpha * FUNNEL_GHOST_ALPHA_MULTIPLIER * 0.68f * (1.0f - rimPulse * 0.18f));
+                addTexturedBillboardGradient(
                         eyeMesh,
                         pos.x, pos.y, pos.z,
                         particle.size * 4.88f * scale,
                         camRot,
                         eyeRoll - 1.06f,
-                        ghostB
+                        ghostB, ghostB2
                 );
 
                 int eyeArgb = funnelColor(baseColor, 0xFFFFFF, alpha * FUNNEL_EYE_ALPHA_MULTIPLIER);
-                addBillboardQuad(
+                int eyeArgb2 = funnelColor(gradientColor, 0xFFFFFF, alpha * FUNNEL_EYE_ALPHA_MULTIPLIER);
+                addTexturedBillboardGradient(
                         eyeMesh,
                         pos.x, pos.y, pos.z,
                         particle.size * FUNNEL_EYE_SIZE_MULTIPLIER * scale,
                         camRot,
                         eyeRoll,
-                        eyeArgb
+                        eyeArgb, eyeArgb2
                 );
             }
 
             if (bloomMesh != null) {
-                renderFunnelLeaks(bloomMesh, particle, pos, camRot, alpha, scale, baseColor, ageSeconds);
+                renderFunnelLeaks(bloomMesh, particle, pos, camRot, alpha, scale, baseColor, gradientColor, ageSeconds);
 
                 float lifeT = particle.lifeProgress();
                 float flashCenter = 0.34f + ColorEffects.hash01(particle.visualPhase + 5.73f) * 0.38f;
                 float flash = 1.0f - AnimationUtility.smoothstep(Mth.clamp(Math.abs(lifeT - flashCenter) / 0.13f, 0.0f, 1.0f));
                 if (flash > 0.002f) {
                     int flashArgb = funnelColor(baseColor, 0x7FE8FF, alpha * FUNNEL_FLASH_ALPHA_MULTIPLIER * flash);
-                    addBillboardQuad(
+                    int flashArgb2 = funnelColor(gradientColor, 0x7FE8FF, alpha * FUNNEL_FLASH_ALPHA_MULTIPLIER * flash);
+                    addTexturedBillboardGradient(
                             bloomMesh,
                             pos.x, pos.y, pos.z,
                             particle.size * (1.45f + flash * 0.82f) * scale,
                             camRot,
                             particle.visualPhase * 0.21f,
-                            flashArgb
+                            flashArgb, flashArgb2
                     );
                 }
             }
         }
+    }
+
+    private void submitFunnelPostMasks(float tickDelta) {
+        for (Particle particle : particles) {
+            float alpha = particle.funnelAlpha();
+            if (alpha <= 0.003f) continue;
+
+            Vec3 pos = particle.interpolatePos(tickDelta);
+            float ageSeconds = particle.ageMs() / 1000.0f;
+            float scale = particle.funnelScale();
+            if (!funnelVisible(particle, pos, scale)) continue;
+
+            float pulse = 0.5f + 0.5f * (float) Math.sin(particle.ageMs() * 0.0048f + particle.visualPhase);
+            float rimPulse = AnimationUtility.smoothstep(pulse);
+            float outerRoll = particle.visualPhase * 0.63f - ageSeconds * particle.distortionSpin * 0.54f;
+            float distortionRoll = particle.visualPhase + ageSeconds * particle.distortionSpin;
+
+            WorldPostProcessMasks.distortionBillboard(
+                    TextureStorage.FUNNEL_DISTORTION,
+                    pos,
+                    particle.size * FUNNEL_DISTORTION_OUTER_SIZE_MULTIPLIER * scale * (1.0f + rimPulse * 0.055f),
+                    outerRoll,
+                    0.34f + rimPulse * 0.10f,
+                    -0.55f,
+                    alpha * 0.72f
+            );
+            WorldPostProcessMasks.distortionBillboard(
+                    TextureStorage.FUNNEL_DISTORTION,
+                    pos,
+                    particle.size * FUNNEL_DISTORTION_SIZE_MULTIPLIER * scale,
+                    distortionRoll,
+                    0.62f,
+                    0.72f,
+                    alpha * 0.92f
+            );
+        }
+    }
+
+    private static boolean funnelVisible(Particle particle, Vec3 pos, float scale) {
+        double extent = particle.size * FUNNEL_DISTORTION_OUTER_SIZE_MULTIPLIER * Math.max(0.1f, scale) * 1.52;
+        AABB box = new AABB(
+                pos.x - extent, pos.y - extent, pos.z - extent,
+                pos.x + extent, pos.y + extent, pos.z + extent
+        );
+        return Renderer3D.Culling.isInFrustum(box) && Renderer3D.Culling.isSectionVisible(box);
     }
 
     private void renderAirBubble(MeshBuilder shellMesh,
@@ -784,6 +824,7 @@ public class WorldParticles extends Module {
                                    float alpha,
                                    float scale,
                                    int baseColor,
+                                   int gradientColor,
                                    float ageSeconds) {
         for (int i = 0; i < 4; i++) {
             float seed = ColorEffects.hash01(particle.visualPhase + i * 13.17f);
@@ -800,26 +841,51 @@ public class WorldParticles extends Module {
                 default -> 0x55F7FF;
             };
 
-            addBillboardRect(
+            addTexturedBillboardRectGradient(
                     mesh,
                     leakPos.x, leakPos.y, leakPos.z,
                     particle.size * scale * (0.055f + seed * 0.035f),
                     particle.size * scale * (0.42f + seed * 0.34f),
                     camRot,
                     angle - 1.5708f,
-                    funnelColor(baseColor, leakRgb, leakAlpha)
+                    funnelColor(baseColor, leakRgb, leakAlpha),
+                    funnelColor(gradientColor, leakRgb, leakAlpha)
             );
         }
     }
 
     private int funnelColor(int baseArgb, int sourceRgb, float alphaMultiplier) {
-        return ColorEffects.argbWithBaseAlpha(baseArgb, sourceRgb, alphaMultiplier);
+        int rgb = textureGradient.get()
+                ? ColorEffects.mixRgb(sourceRgb, baseArgb & 0x00FFFFFF, 0.58f)
+                : sourceRgb;
+        return ColorEffects.argbWithBaseAlpha(baseArgb, rgb, alphaMultiplier);
     }
 
     private int colorForParticle(Particle particle, int index) {
-        int phase = colorPhase.get()
+        return particleColorAtPhase(particleColorPhase(particle, index));
+    }
+
+    private int gradientColorForParticle(Particle particle, int index) {
+        if (!textureGradient.get()) {
+            return colorForParticle(particle, index);
+        }
+        if (animatedColorMode() == AnimatedRenderColors.Mode.STATIC) {
+            return color2.getArgb();
+        }
+        int offset = colorSpread.get();
+        if (offset == 0) {
+            offset = 180;
+        }
+        return particleColorAtPhase(particleColorPhase(particle, index) + offset);
+    }
+
+    private int particleColorPhase(Particle particle, int index) {
+        return colorPhase.get()
                 + Math.round(index * colorSpread.get() / 90.0f)
                 + Math.round(particle.visualPhase * 57.29578f);
+    }
+
+    private int particleColorAtPhase(int phase) {
         return AnimatedRenderColors.resolve(
                 animatedColorMode(),
                 colorSpeed.get(),
@@ -828,6 +894,48 @@ public class WorldParticles extends Module {
                 color2.getArgb(),
                 true
         );
+    }
+
+    private void addTexturedBillboardGradient(MeshBuilder mesh, double cx, double cy, double cz,
+                                              float size, Quaternionf camRot, float rollRadians,
+                                              int startArgb, int endArgb) {
+        if (!textureGradient.get()) {
+            addBillboardQuad(mesh, cx, cy, cz, size, camRot, rollRadians, startArgb);
+            return;
+        }
+        float radians = (float) Math.toRadians(textureGradientAngle.get());
+        float dx = (float) Math.cos(radians);
+        float dy = (float) Math.sin(radians);
+        float denom = Math.max(1.0e-4f, Math.abs(dx) + Math.abs(dy));
+        addBillboardQuadGradient(mesh, cx, cy, cz, size, camRot, rollRadians,
+                gradientCorner(startArgb, endArgb, -1.0f, -1.0f, dx, dy, denom),
+                gradientCorner(startArgb, endArgb, 1.0f, -1.0f, dx, dy, denom),
+                gradientCorner(startArgb, endArgb, 1.0f, 1.0f, dx, dy, denom),
+                gradientCorner(startArgb, endArgb, -1.0f, 1.0f, dx, dy, denom));
+    }
+
+    private void addTexturedBillboardRectGradient(MeshBuilder mesh, double cx, double cy, double cz,
+                                                  float halfWidth, float halfHeight, Quaternionf camRot,
+                                                  float rollRadians, int startArgb, int endArgb) {
+        if (!textureGradient.get()) {
+            addBillboardRect(mesh, cx, cy, cz, halfWidth, halfHeight, camRot, rollRadians, startArgb);
+            return;
+        }
+        float radians = (float) Math.toRadians(textureGradientAngle.get());
+        float dx = (float) Math.cos(radians);
+        float dy = (float) Math.sin(radians);
+        float denom = Math.max(1.0e-4f, Math.abs(dx) + Math.abs(dy));
+        addBillboardRectGradient(mesh, cx, cy, cz, halfWidth, halfHeight, camRot, rollRadians,
+                gradientCorner(startArgb, endArgb, -1.0f, -1.0f, dx, dy, denom),
+                gradientCorner(startArgb, endArgb, 1.0f, -1.0f, dx, dy, denom),
+                gradientCorner(startArgb, endArgb, 1.0f, 1.0f, dx, dy, denom),
+                gradientCorner(startArgb, endArgb, -1.0f, 1.0f, dx, dy, denom));
+    }
+
+    private static int gradientCorner(int startArgb, int endArgb, float x, float y,
+                                      float dx, float dy, float denom) {
+        float t = Mth.clamp(0.5f + 0.5f * ((x * dx + y * dy) / denom), 0.0f, 1.0f);
+        return AnimatedRenderColors.mixArgb(startArgb, endArgb, t);
     }
 
     private boolean usesSecondaryColor() {

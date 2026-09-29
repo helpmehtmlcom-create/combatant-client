@@ -368,6 +368,22 @@ public enum ModuleManager {
         }
     }
 
+    /**
+     * Collects per-frame world-space post-process requests immediately before PRE_HAND post.
+     * This is deliberately separate from WorldPhase because a module may render normal geometry
+     * in END_MAIN and still contribute an invisible depth-tested post mask in the same frame.
+     */
+    public static void prepareWorldPostProcess(float tickDelta) {
+        if (!RuntimeGate.canRunRender()) return;
+        Module[] snapshot = modulesSnapshot;
+        for (Module m : snapshot) {
+            if (!m.isEnabled()) continue;
+            try (ProfilerPhase.Scope scope = ProfilerPhase.scope("module:world_post_prepare:" + m.name())) {
+                runModule(m, "world post prepare", () -> m.onPrepareWorldPostProcess(tickDelta));
+            }
+        }
+    }
+
     // ---------------------------
     // KEY HANDLING
     // ---------------------------

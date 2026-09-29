@@ -18,7 +18,6 @@ public record TransientEffectDescriptor(
         long id,
         String type,
         EffectDomain domain,
-        EffectParticipation participation,
         Vec3 position,
         long spawnTimeMs,
         long lifetimeMs,
@@ -36,7 +35,6 @@ public record TransientEffectDescriptor(
             throw new IllegalArgumentException("Transient effect type must not be blank");
         }
         domain = domain == null ? EffectDomain.BILLBOARD : domain;
-        participation = participation == null ? EffectParticipation.OVERLAY : participation;
         position = position == null ? Vec3.ZERO : position;
         lifetimeMs = Math.max(1L, lifetimeMs);
         material = material == null
