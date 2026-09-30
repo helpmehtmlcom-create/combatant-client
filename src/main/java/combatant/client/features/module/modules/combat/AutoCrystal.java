@@ -123,6 +123,13 @@ public class AutoCrystal extends Module {
                     0,
                     1000
             ), breakEnabled::get);
+    // Acting on the spawn/remove packet instead of the next tick saves up to a tick per crystal.
+    // Both only fire when the last rotation sent already points at the crystal or base block, so
+    // they never add a rotation the server did not see.
+    private final BooleanValue instantBreak =
+            visibleWhen(bool("autocrystalInstantBreak", "instant_break", true), breakEnabled::get);
+    private final BooleanValue instantPlace =
+            visibleWhen(bool("autocrystalInstantPlace", "instant_place", true), placeEnabled::get);
     private final NumberValue<Float> placeRange =
             numCommon(
                     "autocrystalPlaceRange",
@@ -1052,6 +1059,34 @@ public class AutoCrystal extends Module {
         lastBreakMs = System.currentTimeMillis();
         crystalTracker.onCrystalAttack(mc, crystal);
         crystalTracker.markNearbyCrystalsDead(mc.level, crystal);
+    }
+
+    /** Main thread, right after the client adds a crystal: hit it before the next tick comes around. */
+    public void onCrystalSpawned(EndCrystal crystal) {
+        if (!isEnabled() || mc.player == null || mc.level == null || crystal == null) return;
+        crystalTracker.removeAwaitingPositionsNear(crystal);
+        if (!breakEnabled.get() || !instantBreak.get() || target == null) return;
+        if (isDeadCrystal(crystal.getId())) return;
+        if (usesRotationSettings() && !serverRotationHits(crystal.getBoundingBox(), breakRange.get())) return;
+        // attackCrystal re-checks delay, range, min damage and self damage.
+        attackCrystal(crystal, null);
+    }
+
+    /** Main thread, right after the client removes a crystal: the spot is free again, place into it now. */
+    public void onCrystalsRemoved() {
+        if (!isEnabled() || !placeEnabled.get() || !instantPlace.get() || mc.player == null || mc.level == null) return;
+        AutoCrystalPlaceData candidate = bestCandidate;
+        if (candidate == null || target == null || findCrystalHand(mc.player) == null) return;
+        if (usesRotationSettings() && !serverRotationHits(new AABB(candidate.pos()), placeRange.get())) return;
+        // tryPlaceCrystal re-validates the spot and damage against the world as it is now.
+        tryPlaceCrystal(candidate.pos());
+    }
+
+    private boolean serverRotationHits(AABB box, double range) {
+        Rotation server = RotationManager.INSTANCE.getServerRotation();
+        if (server == null) return false;
+        Vec3 eye = mc.player.getEyePosition();
+        return box.contains(eye) || box.clip(eye, eye.add(server.directionVector().scale(range))).isPresent();
     }
 
     private boolean isCrystalBlocked(int id) {

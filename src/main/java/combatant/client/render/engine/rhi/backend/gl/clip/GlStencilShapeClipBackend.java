@@ -135,9 +135,12 @@ public final class GlStencilShapeClipBackend implements ShapeClipBackend {
 
     @Override
     public void bindPipeline(RenderPipeline pipeline, ShapeClipRenderPassContract contract) {
+        // Identifier.toString() builds a new string each call; bound once per draw, it only changes with the pipeline.
+        if (pipeline != currentPipeline || pipeline == null) {
+            currentPipelineName = pipeline == null || pipeline.getLocation() == null ? "<unknown>" : pipeline.getLocation().toString();
+        }
         currentPipeline = pipeline;
         currentPipelineContract = contract == null ? ShapeClipRenderPassContract.NONE : contract;
-        currentPipelineName = pipeline == null || pipeline.getLocation() == null ? "<unknown>" : pipeline.getLocation().toString();
         if (mode != Mode.DISABLED && currentPipelineContract == ShapeClipRenderPassContract.NONE) {
             DebugLog.warnOnce(
                     "shapeclip.stale.pipeline.contract." + currentPipelineName,
