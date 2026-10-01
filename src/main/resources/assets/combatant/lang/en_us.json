@@ -3284,6 +3284,8 @@
   "command.modules.description": "Lists modules by state or category.",
   "command.ping.description": "Shows the current server latency.",
   "command.profiler.description": "Controls rendering and runtime profilers.",
+  "command.i18naudit.description": "Writes every setting's translation key chain to a JSON file (dev builds).",
+  "command.rotdbg.description": "Toggles the rotation and packet debug log (dev builds).",
   "command.runtime.description": "Shows or changes the client runtime and panic state.",
   "command.serverinfo.description": "Shows information about the current world or server.",
   "command.staff.description": "Manages the client staff list.",

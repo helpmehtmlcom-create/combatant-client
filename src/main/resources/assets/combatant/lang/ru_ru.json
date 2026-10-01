@@ -3070,6 +3070,8 @@
   "command.modules.description": "Показывает модули по состоянию или категории.",
   "command.ping.description": "Показывает текущую задержку до сервера.",
   "command.profiler.description": "Управляет профилировщиками рендера и среды выполнения.",
+  "command.i18naudit.description": "Записывает цепочки ключей перевода всех настроек в JSON-файл (dev-сборки).",
+  "command.rotdbg.description": "Включает или выключает журнал отладки поворотов и пакетов (dev-сборки).",
   "command.runtime.description": "Показывает или изменяет состояние среды клиента и Panic.",
   "command.serverinfo.description": "Показывает информацию о текущем мире или сервере.",
   "command.staff.description": "Управляет списком персонала клиента.",
