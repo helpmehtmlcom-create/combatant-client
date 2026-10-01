@@ -67,6 +67,11 @@ public final class RotationDebugCommand implements ClientCommand {
         }
     }
 
+    // Minecraft only routes System.out.println into latest.log; printf would go to raw stdout.
+    private static void log(String format, Object... args) {
+        System.out.println(String.format(java.util.Locale.ROOT, format, args));
+    }
+
     public static final class Listener {
         private float lastYaw = Float.NaN;
         private float lastPitch = Float.NaN;
@@ -91,20 +96,20 @@ public final class RotationDebugCommand implements ClientCommand {
                     float dpitch = Float.isNaN(lastPitch) ? 0.0f : Math.abs(pitch - lastPitch);
                     lastYaw = yaw;
                     lastPitch = pitch;
-                    System.out.printf("ROTDBG tick=%d yaw=%.4f pitch=%.4f dyaw=%.4f dpitch=%.4f managed=%b%n",
+                    log("ROTDBG tick=%d yaw=%.4f pitch=%.4f dyaw=%.4f dpitch=%.4f managed=%b",
                             tick, yaw, pitch, dyaw, dpitch, RotationManager.INSTANCE.getActiveRotationTarget() != null);
                 }
-                System.out.printf("PKTDBG tick=%d type=move pos=%b rot=%b onGround=%b y=%.5f%n",
+                log("PKTDBG tick=%d type=move pos=%b rot=%b onGround=%b y=%.5f",
                         tick, move.hasPosition(), move.hasRotation(), move.isOnGround(),
                         move.hasPosition() ? move.getY(0.0) : Double.NaN);
             } else if (packet instanceof ServerboundSetCarriedItemPacket carried) {
-                System.out.printf("PKTDBG tick=%d type=slot slot=%d%n", tick, carried.getSlot());
+                log("PKTDBG tick=%d type=slot slot=%d", tick, carried.getSlot());
             } else if (packet instanceof ServerboundInteractPacket) {
-                System.out.printf("PKTDBG tick=%d type=interact%n", tick);
+                log("PKTDBG tick=%d type=interact", tick);
             } else if (packet instanceof ServerboundUseItemOnPacket || packet instanceof ServerboundUseItemPacket) {
-                System.out.printf("PKTDBG tick=%d type=use%n", tick);
+                log("PKTDBG tick=%d type=use", tick);
             } else if (packet instanceof ServerboundSwingPacket) {
-                System.out.printf("PKTDBG tick=%d type=swing%n", tick);
+                log("PKTDBG tick=%d type=swing", tick);
             }
         }
     }
