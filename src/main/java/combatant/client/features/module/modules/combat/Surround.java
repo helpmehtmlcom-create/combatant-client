@@ -16,30 +16,28 @@ import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.ModuleSubcategory;
+import combatant.client.features.module.Notifier;
 import combatant.client.features.module.WorldPhase;
+import combatant.client.features.module.modules.combat.surround.BlockPriority;
+import combatant.client.features.module.modules.combat.surround.CrystalClearer;
+import combatant.client.features.module.modules.combat.surround.ShellBlocks;
+import combatant.client.features.module.modules.combat.surround.SurroundPlanner;
+import combatant.client.features.module.modules.combat.surround.SurroundPlanner.Pos;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.util.aiming.features.MovementCorrection;
 import combatant.client.util.block.placer.BlockPlacer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
-import net.minecraft.util.Mth;
-import net.minecraft.world.InteractionHand;
-import net.minecraft.world.entity.boss.enderdragon.EndCrystal;
-import net.minecraft.world.item.BlockItem;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
+import net.minecraft.util.Util;
 import net.minecraft.world.phys.AABB;
 
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.function.Predicate;
 
 @ModuleInfo(
         id = "surround",
@@ -50,16 +48,8 @@ import java.util.function.Predicate;
         description = "module.surround.description")
 public final class Surround extends Module {
 
-    private static final Set<Block> BLOCKS = Set.of(
-            Blocks.OBSIDIAN,
-            Blocks.CRYING_OBSIDIAN,
-            Blocks.RESPAWN_ANCHOR,
-            Blocks.NETHERITE_BLOCK,
-            Blocks.ENDER_CHEST,
-            Blocks.ANVIL,
-            Blocks.CHIPPED_ANVIL,
-            Blocks.DAMAGED_ANVIL
-    );
+    /** Gap between two "out of blocks" warnings, so a fight does not flood the HUD. */
+    private static final long NO_BLOCKS_WARN_INTERVAL_MS = 3000L;
 
     private final Minecraft mc = Minecraft.getInstance();
     private final EnumValue<Mode> mode = enumSetting("surroundMode", "mode", Mode.FEET, Mode.values());
@@ -74,10 +64,18 @@ public final class Surround extends Module {
             "surroundSupport", "support", true);
     private final BooleanValue attackCrystals = bool(
             "surroundAttackCrystals", "attack_crystals", true);
+    private final NumberValue<Integer> crystalDelay = visibleWhen(
+            num("surroundCrystalDelay", "crystal_delay", 0, 0, 10), attackCrystals::get);
+    private final BooleanValue placeWhileUsing = bool(
+            "surroundPlaceWhileUsing", "place_while_using", false);
+    private final NumberValue<Integer> swapBackDelay = num(
+            "surroundSwapBackDelay", "swap_back_delay", 0, 0, 10);
     private final BooleanValue disableOnJump = boolCommon(
             "surroundDisableOnJump", "disable_on_jump", CommonSettingSchemas.PLAYER_FALL_CHECK, true);
     private final BooleanValue disableInAir = bool("surroundDisableInAir", "disable_in_air", false);
+    private final BooleanValue disableOnMove = bool("surroundDisableOnMove", "disable_on_move", false);
     private final BooleanValue autoDisable = bool("surroundAutoDisable", "auto_disable", false);
+    private final BooleanValue warnNoBlocks = bool("surroundWarnNoBlocks", "warn_no_blocks", true);
     private final EnumValue<BlockPlacer.RotationMode> rotation = enumSetting(
             "surroundRotation", "rotation", BlockPlacer.RotationMode.NORMAL, BlockPlacer.RotationMode.values());
     private final EnumValue<MovementCorrection> movementCorrection = enumSetting(
@@ -104,18 +102,22 @@ public final class Surround extends Module {
             wallRange::get,
             delay::get,
             delay::get,
-            () -> 0,
-            () -> 0,
+            swapBackDelay::get,
+            swapBackDelay::get,
             () -> 1,
             () -> rotation.get() == BlockPlacer.RotationMode.NO_ROTATION,
             () -> true,
-            () -> false,
+            placeWhileUsing::get,
             () -> false,
             blocksPerTick::get,
             rotation::get,
             movementCorrection::get
     );
+    private final CrystalClearer crystalClearer = new CrystalClearer();
     private final List<BlockPos> currentTargets = new ArrayList<>();
+    /** Columns (x, z) the player stood over when the module came on; "disable on move" watches these. */
+    private final Set<Long> homeColumns = new HashSet<>();
+    private long lastNoBlocksWarningMs;
 
     @Override
     public void onEnable() {
@@ -125,6 +127,9 @@ public final class Surround extends Module {
             return;
         }
         applyCentering(player);
+        crystalClearer.reset();
+        lastNoBlocksWarningMs = 0L;
+        rememberHome(player);
         blockPlacer.enable();
         updateTargets();
     }
@@ -133,6 +138,7 @@ public final class Surround extends Module {
     public void onDisable() {
         blockPlacer.disable();
         currentTargets.clear();
+        homeColumns.clear();
     }
 
     @Override
@@ -151,6 +157,10 @@ public final class Surround extends Module {
             setEnabled(false);
             return;
         }
+        if (disableOnMove.get() && hasLeftHome(player)) {
+            setEnabled(false);
+            return;
+        }
         if (center.get() == CenterMode.MOTION) {
             moveTowardCenter(player, 0.4D);
         }
@@ -158,9 +168,10 @@ public final class Surround extends Module {
         updateTargets();
 
         if (attackCrystals.get()) {
-            attackBlockingCrystals(player);
+            crystalClearer.clear(mc, player, currentTargets, range.get(), crystalDelay.get());
         }
 
+        warnIfOutOfBlocks(player);
         blockPlacer.tick();
 
         if (autoDisable.get() && currentTargets.isEmpty()) {
@@ -199,28 +210,30 @@ public final class Surround extends Module {
         player.setDeltaMovement(dx * strength, player.getDeltaMovement().y, dz * strength);
     }
 
-    private void attackBlockingCrystals(LocalPlayer player) {
-        if (mc.level == null || mc.gameMode == null || currentTargets.isEmpty()) return;
-        double maxRangeSqr = range.get() * range.get();
-        // A crystal is two blocks wide, so it can overlap several targets; hit it once.
-        Set<EndCrystal> blocking = new LinkedHashSet<>();
-        for (BlockPos pos : currentTargets) {
-            blocking.addAll(mc.level.getEntitiesOfClass(
-                    EndCrystal.class,
-                    new AABB(pos),
-                    c -> c.isAlive() && player.distanceToSqr(c) <= maxRangeSqr));
+    private void rememberHome(LocalPlayer player) {
+        homeColumns.clear();
+        for (Pos cell : ShellBlocks.footprint(player, dynamicHitbox.get())) {
+            homeColumns.add(columnKey(cell.x(), cell.z()));
         }
-        for (EndCrystal crystal : blocking) {
-            mc.gameMode.attack(player, crystal);
-            player.swing(InteractionHand.MAIN_HAND);
-        }
+        homeColumns.add(columnKey((int) Math.floor(player.getX()), (int) Math.floor(player.getZ())));
     }
 
-    private boolean hasSolidNeighbor(BlockPos pos) {
-        for (Direction direction : Direction.values()) {
-            if (!mc.level.getBlockState(pos.relative(direction)).canBeReplaced()) return true;
-        }
-        return false;
+    /** True once the player is over a column that was not under them when the module came on. */
+    private boolean hasLeftHome(LocalPlayer player) {
+        return !homeColumns.contains(columnKey((int) Math.floor(player.getX()), (int) Math.floor(player.getZ())));
+    }
+
+    private static long columnKey(int x, int z) {
+        return ((long) x << 32) ^ (z & 0xFFFFFFFFL);
+    }
+
+    private void warnIfOutOfBlocks(LocalPlayer player) {
+        if (!warnNoBlocks.get() || currentTargets.isEmpty()) return;
+        if (ShellBlocks.find(player, blockPriority.get()) != null) return;
+        long now = Util.getMillis();
+        if (now - lastNoBlocksWarningMs < NO_BLOCKS_WARN_INTERVAL_MS) return;
+        lastNoBlocksWarningMs = now;
+        Notifier.warning(I18n.get("notification.surround.no_blocks"));
     }
 
     private void updateTargets() {
@@ -231,56 +244,17 @@ public final class Surround extends Module {
             return;
         }
 
-        Set<BlockPos> floorPositions = new LinkedHashSet<>();
-        if (dynamicHitbox.get()) {
-            AABB bb = player.getBoundingBox().deflate(0.05, 0.0, 0.05);
-            int minX = Mth.floor(bb.minX);
-            int maxX = Mth.floor(bb.maxX);
-            int minZ = Mth.floor(bb.minZ);
-            int maxZ = Mth.floor(bb.maxZ);
-            int feetY = Mth.floor(player.getY() + 0.05);
-            for (int x = minX; x <= maxX; x++) {
-                for (int z = minZ; z <= maxZ; z++) {
-                    floorPositions.add(new BlockPos(x, feetY, z));
-                }
-            }
-        } else {
-            floorPositions.add(BlockPos.containing(player.getX(), player.getY(), player.getZ()));
-        }
-
-        Set<BlockPos> feetSides = new LinkedHashSet<>();
-        for (BlockPos floor : floorPositions) {
-            for (Direction direction : Direction.Plane.HORIZONTAL) {
-                BlockPos side = floor.relative(direction);
-                if (!floorPositions.contains(side)) {
-                    feetSides.add(side);
-                }
-            }
-        }
-
         Mode currentMode = mode.get();
         boolean floor = currentMode == Mode.FULL || currentMode == Mode.FULL_BOX;
         boolean head = currentMode == Mode.ANTI_FACE_PLACE || currentMode == Mode.FULL_BOX;
         boolean roof = currentMode == Mode.COVER || currentMode == Mode.FULL_BOX;
 
-        Set<BlockPos> candidates = new LinkedHashSet<>();
-        for (BlockPos side : feetSides) {
-            // A floating side has nothing to place against without the block under it.
-            if (floor || (support.get() && !hasSolidNeighbor(side))) candidates.add(side.below());
-            candidates.add(side);
-            if (head) candidates.add(side.above());
-        }
-        for (BlockPos pos : floorPositions) {
-            if (floor) candidates.add(pos.below());
-            if (roof) candidates.add(pos.above(2));
-        }
-
-        List<BlockPos> needed = new ArrayList<>();
-        for (BlockPos pos : candidates) {
-            if (mc.level.getBlockState(pos).canBeReplaced()) needed.add(pos);
-        }
-        // Bottom-up, so each layer has the one below it to place against.
-        needed.sort(Comparator.comparingInt(BlockPos::getY));
+        Set<Pos> footprint = ShellBlocks.footprint(player, dynamicHitbox.get());
+        List<BlockPos> needed = ShellBlocks.toBlockPos(SurroundPlanner.order(
+                SurroundPlanner.shell(footprint, floor, head, roof),
+                ShellBlocks.replaceable(mc.level),
+                SurroundPlanner.bodyCells(footprint),
+                support.get()));
 
         currentTargets.clear();
         currentTargets.addAll(needed);
@@ -289,28 +263,7 @@ public final class Surround extends Module {
 
     private BlockPlacer.PlacementSlot findPlacementSlot(BlockPos ignored) {
         LocalPlayer player = mc.player;
-        if (player == null) return null;
-
-        BlockPriority priority = blockPriority.get();
-        BlockPlacer.PlacementSlot preferred = findSlot(player, priority::matches);
-        if (preferred != null || !priority.fallsBack()) return preferred;
-        return findSlot(player, BLOCKS::contains);
-    }
-
-    private static BlockPlacer.PlacementSlot findSlot(LocalPlayer player, Predicate<Block> accepts) {
-        ItemStack offhand = player.getOffhandItem();
-        if (isBlockOf(offhand, accepts)) return new BlockPlacer.PlacementSlot(-1, InteractionHand.OFF_HAND, offhand);
-        for (int slot = 0; slot < 9; slot++) {
-            ItemStack stack = player.getInventory().getItem(slot);
-            if (isBlockOf(stack, accepts)) return new BlockPlacer.PlacementSlot(slot, InteractionHand.MAIN_HAND, stack);
-        }
-        return null;
-    }
-
-    private static boolean isBlockOf(ItemStack stack, Predicate<Block> accepts) {
-        return !stack.isEmpty()
-                && stack.getItem() instanceof BlockItem blockItem
-                && accepts.test(blockItem.getBlock());
+        return player == null ? null : ShellBlocks.find(player, blockPriority.get());
     }
 
     @Override
@@ -350,26 +303,6 @@ public final class Surround extends Module {
         TELEPORT,
         STRICT_TELEPORT,
         MOTION
-    }
-
-    public enum BlockPriority {
-        ANY,
-        OBSIDIAN_ONLY,
-        E_CHEST_ONLY,
-        PREFER_OBSIDIAN,
-        PREFER_E_CHEST;
-
-        boolean matches(Block block) {
-            return switch (this) {
-                case ANY -> BLOCKS.contains(block);
-                case OBSIDIAN_ONLY, PREFER_OBSIDIAN -> block == Blocks.OBSIDIAN || block == Blocks.CRYING_OBSIDIAN;
-                case E_CHEST_ONLY, PREFER_E_CHEST -> block == Blocks.ENDER_CHEST;
-            };
-        }
-
-        boolean fallsBack() {
-            return this == PREFER_OBSIDIAN || this == PREFER_E_CHEST;
-        }
     }
 
     public enum RenderMode {
