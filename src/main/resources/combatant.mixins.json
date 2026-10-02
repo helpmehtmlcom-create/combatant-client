@@ -178,6 +178,7 @@
     "moreculling.CullingUtilsMixin",
     "MouseMixin",
     "MultiPlayerGameModeMixin",
+    "NoSlowInputMixin",
     "NarratorManagerMixin",
     "OptionsNarratorMixin",
     "PaintingRendererMixin",
