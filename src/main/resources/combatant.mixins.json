@@ -203,6 +203,7 @@
     "ServerboundUseItemPacketMixin",
     "ShaderLoaderMixin",
     "SkyRendererMixin",
+    "sodium.SodiumArenaAggregatorStrideMixin",
     "sodium.SodiumBlockRendererMixin",
     "sodium.SodiumBlockVisibilityMixin",
     "sodium.SodiumChunkBuilderMeshingTaskMixin",

@@ -46,10 +46,13 @@ final class Blaze3dMeshArena implements AutoCloseable {
         this.vertexCapacity = vertexCapacity;
         this.indexCapacity = indexCapacity;
         this.persistentMappedWrites = persistentMappedWrites;
+        // Without persistent mapping (Sodium 0.9.2 turns ARB_buffer_storage off on NVIDIA and old
+        // Intel) uploads go through CommandEncoder.writeToBuffer, which demands USAGE_COPY_DST.
+        int writeUsage = persistentMappedWrites ? GpuBuffer.USAGE_MAP_WRITE : GpuBuffer.USAGE_COPY_DST;
         this.vertexBuffer = RenderSystem.getDevice().createBuffer(named(name, " vertices"),
-                GpuBuffer.USAGE_MAP_WRITE | GpuBuffer.USAGE_VERTEX, vertexCapacity);
+                writeUsage | GpuBuffer.USAGE_VERTEX, vertexCapacity);
         this.indexBuffer = RenderSystem.getDevice().createBuffer(named(name, " indices"),
-                GpuBuffer.USAGE_MAP_WRITE | GpuBuffer.USAGE_INDEX, indexCapacity);
+                writeUsage | GpuBuffer.USAGE_INDEX, indexCapacity);
     }
 
     private static Supplier<String> named(String name, String suffix) {
