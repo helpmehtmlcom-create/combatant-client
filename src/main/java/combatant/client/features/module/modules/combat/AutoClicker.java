@@ -18,6 +18,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
+import combatant.client.events.EventHandler;
+import combatant.client.events.impl.GameTickEvent;
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.NumberValue;
 import combatant.client.features.module.Module;
@@ -65,8 +67,13 @@ public final class AutoClicker extends Module {
         appliedMax = -1;
     }
 
-    @Override
-    public void onTick() {
+    /**
+     * Clicks from the pre-tick hook. {@code onTick} runs after the player's movement packet, which put every
+     * attack behind the flying packet of its tick; a vanilla client sends its click first, and Grim's Post check
+     * flags the other order.
+     */
+    @EventHandler
+    private void onGameTick(GameTickEvent event) {
         if (!isEnabled()) return;
 
         LocalPlayer player = mc.player;
