@@ -448,9 +448,6 @@ public final class BlockPlacer {
     }
 
     private void doPlacement(LocalPlayer player, PlacementPlan plan) {
-        currentPlacement = null;
-        blocks.remove(plan.pos());
-
         PlacementSlot slot = slotFinder.find(plan.pos());
         if (slot == null) {
             return;
@@ -460,6 +457,9 @@ public final class BlockPlacer {
         // not the raw planned target rotation.
         Rotation verificationRotation = RotationManager.INSTANCE.getServerRotation();
 
+        // The queued position is only consumed once the placement is valid. Dropping it first meant a
+        // rotation that had not reached the block yet (smoothing takes ticks, and the server rotation
+        // lags the planned one) lost the entry, so NORMAL rotation mode never placed anything.
         if (rotationModeSupplier.get() == RotationMode.NORMAL && !canReach(player, plan.target().getInteractedBlockPos(), verificationRotation)) {
             return;
         }
@@ -476,6 +476,9 @@ public final class BlockPlacer {
         if (hitResult == null) {
             return;
         }
+
+        currentPlacement = null;
+        blocks.remove(plan.pos());
 
         if (slot.hotbarSlot() >= 0) {
             InventorySwap.INSTANCE.leaseHotbar(
