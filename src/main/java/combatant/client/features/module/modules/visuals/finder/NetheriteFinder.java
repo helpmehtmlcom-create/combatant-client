@@ -30,10 +30,12 @@ import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.util.finder.FinderRender;
 import combatant.client.util.finder.LoadedChunkScanner;
 import combatant.client.util.finder.OreSimulation;
+import combatant.client.util.finder.ServerSeedCheck;
 import combatant.client.util.logging.DebugLog;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -62,14 +64,19 @@ public final class NetheriteFinder extends Module {
     private final RGBAColorValue lineColor = color("line_color", "#FFD11BF5");
 
     private final Minecraft mc = Minecraft.getInstance();
+    // A vein can reach 2 blocks past its chunk and the air check looks 1 further, so the ring of
+    // neighbours must be loaded: an unloaded chunk reads as air and would silently drop the ore.
     private final LoadedChunkScanner<List<BlockPos>> scanner =
-            new LoadedChunkScanner<>(this::predict, rangeChunks::get, 6, 3000L);
+            new LoadedChunkScanner<>(this::predict, rangeChunks::get, 6, 3000L, 1);
     private String scannedSeed = "";
+    private ClientLevel seedCheckedLevel;
+    private String seedCheckedValue = "";
 
     @Override
     public void onEnable() {
         scanner.clear();
         scannedSeed = "";
+        seedCheckedLevel = null;
         simulation();
     }
 
@@ -114,11 +121,29 @@ public final class NetheriteFinder extends Module {
         }
         if (!future.isDone()) return;
 
+        checkSeedAgainstServer();
         if (!seed.get().equals(scannedSeed)) {
             scannedSeed = seed.get();
             scanner.rescanAll();
         }
         scanner.tick(mc);
+    }
+
+    // A wrong seed still draws plausible boxes, just in the wrong places, so say so once per
+    // level and seed. A warning, not a stop: a server may send a fake seed hash.
+    private void checkSeedAgainstServer() {
+        String current = seed.get();
+        if (mc.level == seedCheckedLevel && current.equals(seedCheckedValue)) return;
+        seedCheckedLevel = mc.level;
+        seedCheckedValue = current;
+        Optional<Boolean> match = ServerSeedCheck.matches(mc.level, parseSeed(current));
+        if (match.isEmpty()) return;
+        if (match.get()) {
+            Notifier.success("NetheriteFinder: seed matches this server");
+        } else {
+            Notifier.warning("NetheriteFinder: seed does NOT match this server, boxes will be in the wrong places. "
+                    + "Set the server's real seed in the module settings.");
+        }
     }
 
     private List<BlockPos> predict(ClientLevel level, LevelChunk chunk) {

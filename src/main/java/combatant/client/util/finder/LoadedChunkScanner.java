@@ -47,6 +47,11 @@ public final class LoadedChunkScanner<R> {
         R analyze(ClientLevel level, LevelChunk chunk);
     }
 
+    @FunctionalInterface
+    interface ChunkLoaded {
+        boolean test(int chunkX, int chunkZ);
+    }
+
     // When everything in range is scanned, look for newly loaded chunks this often.
     private static final int IDLE_REFILL_TICKS = 20;
     // Re-sort the queue once the player has moved this many chunks from its centre.
@@ -57,6 +62,7 @@ public final class LoadedChunkScanner<R> {
     private final IntSupplier radiusChunks;
     private final int chunksPerTick;
     private final long nanosPerTick;
+    private final int neighborRadius;
 
     private final Map<Long, R> results = new ConcurrentHashMap<>();
     // Chunk keys that were scanned (with or without a result) and are still valid.
@@ -73,10 +79,22 @@ public final class LoadedChunkScanner<R> {
     private long nextIdleRefillTick;
 
     public LoadedChunkScanner(ChunkAnalyzer<R> analyzer, IntSupplier radiusChunks, int chunksPerTick, long microsPerTick) {
+        this(analyzer, radiusChunks, chunksPerTick, microsPerTick, 0);
+    }
+
+    /**
+     * @param neighborRadius chunks around the analyzed one that must be loaded first. Analyzers
+     *                       that read blocks across a chunk border need this: an unloaded chunk
+     *                       reads as air on the client, and a chunk is not rescanned when a
+     *                       neighbour arrives later unless this is set.
+     */
+    public LoadedChunkScanner(ChunkAnalyzer<R> analyzer, IntSupplier radiusChunks, int chunksPerTick,
+                              long microsPerTick, int neighborRadius) {
         this.analyzer = analyzer;
         this.radiusChunks = radiusChunks;
         this.chunksPerTick = chunksPerTick;
         this.nanosPerTick = microsPerTick * 1000L;
+        this.neighborRadius = Math.max(0, neighborRadius);
     }
 
     /** Current results keyed by {@link ChunkPos#pack} value. Safe to read from the render thread. */
@@ -115,7 +133,12 @@ public final class LoadedChunkScanner<R> {
         } else if (packet instanceof ClientboundSectionBlocksUpdatePacket sectionUpdate) {
             sectionUpdate.runUpdates((pos, state) -> markDirty(pos.getX() >> 4, pos.getZ() >> 4));
         } else if (packet instanceof ClientboundLevelChunkWithLightPacket chunk) {
-            markDirty(chunk.getX(), chunk.getZ());
+            // The new chunk may be the last missing neighbour of chunks that were waiting on it.
+            for (int dx = -neighborRadius; dx <= neighborRadius; dx++) {
+                for (int dz = -neighborRadius; dz <= neighborRadius; dz++) {
+                    markDirty(chunk.getX() + dx, chunk.getZ() + dz);
+                }
+            }
         }
     }
 
@@ -173,12 +196,31 @@ public final class LoadedChunkScanner<R> {
             results.remove(key);
             return false;
         }
+        // Keep any earlier result while a neighbour is missing; it is better than nothing.
+        if (!neighborsLoaded(level, key)) return false;
         R result = analyzer.analyze(level, chunk);
         scanned.put(key, Boolean.TRUE);
         if (result != null) {
             results.put(key, result);
         } else {
             results.remove(key);
+        }
+        return true;
+    }
+
+    private boolean neighborsLoaded(ClientLevel level, long key) {
+        if (neighborRadius == 0) return true;
+        return allLoaded(ChunkPos.getX(key), ChunkPos.getZ(key), neighborRadius, (x, z) -> {
+            LevelChunk neighbor = level.getChunkSource().getChunk(x, z, false);
+            return neighbor != null && !neighbor.isEmpty();
+        });
+    }
+
+    static boolean allLoaded(int chunkX, int chunkZ, int radius, ChunkLoaded loaded) {
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                if (!loaded.test(chunkX + dx, chunkZ + dz)) return false;
+            }
         }
         return true;
     }
