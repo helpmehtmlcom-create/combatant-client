@@ -52,6 +52,8 @@ import combatant.client.util.aiming.raytrace.RotationRaytrace;
 import combatant.client.util.combat.CombatRotationModeUtil;
 import combatant.client.util.combat.CombatBlockUseUtil;
 import combatant.client.util.combat.ExplosionRenderUtil;
+import combatant.client.util.combat.RubberHandUseUtil;
+import combatant.client.util.item.FoodUtil;
 import combatant.client.util.entity.simulation.PositionExtrapolation;
 import combatant.client.util.player.inventory.InventorySwap;
 import combatant.client.util.player.simulation.PlayerSimulationCache;
@@ -201,6 +203,12 @@ public class AutoCrystal extends Module {
             numCommon("autocrystalSelfPredictTicks", CommonSettingSchemas.SELF_PREDICT_TICKS, 0, 0, 20);
     private final BooleanValue ignoreTerrain =
             bool("autocrystalIgnoreTerrain", true);
+    private final BooleanValue pauseMining =
+            boolCommon("autocrystalPauseMining", "pause_mining", CommonSettingSchemas.PAUSE_MINING, false);
+    private final BooleanValue pauseEating =
+            boolCommon("autocrystalPauseEating", "pause_eating", CommonSettingSchemas.PAUSE_EATING, false);
+    private final NumberValue<Float> pauseHealth =
+            num("autocrystalPauseHealth", "pause_health", 0.0f, 0.0f, 20.0f);
     private final ModeValue attackMode =
             modeCommon(
                     "autocrystalAttackMode",
@@ -406,6 +414,11 @@ public class AutoCrystal extends Module {
             return;
         }
 
+        if (pausedWhileBusy()) {
+            RotationManager.INSTANCE.clear(this);
+            return;
+        }
+
         target = findCombatTarget();
         TargetManager.setAutoCrystalTarget(target);
         updateBestPosition();
@@ -414,6 +427,12 @@ public class AutoCrystal extends Module {
         debugState();
 
         if (tryBreakCrystal()) {
+            return;
+        }
+
+        // Low health only stops new crystals; breaking the ones already out still protects you.
+        if (belowPauseHealth()) {
+            RotationManager.INSTANCE.clear(this);
             return;
         }
 
@@ -1119,6 +1138,20 @@ public class AutoCrystal extends Module {
 
     private AutoCrystalHand findObsidianHand(LocalPlayer player) {
         return AutoCrystalInteractionUtil.findObsidianHand(player);
+    }
+
+    /** Mining or eating can be set to take priority over the crystal loop, matching AutoAnchor and AutoBed. */
+    private boolean pausedWhileBusy() {
+        if (pauseMining.get() && mc.gameMode.isDestroying()) return true;
+        return pauseEating.get()
+                && mc.player.isUsingItem()
+                && FoodUtil.isFood(mc.player.getUseItem())
+                && !RubberHandUseUtil.canBypassCurrentUse(mc);
+    }
+
+    private boolean belowPauseHealth() {
+        float floor = pauseHealth.get();
+        return floor > 0.0f && mc.player.getHealth() + mc.player.getAbsorptionAmount() < floor;
     }
 
     private boolean hasPlaceDelayElapsed() {
