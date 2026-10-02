@@ -49,6 +49,8 @@ public class Freecam extends Module {
             num("horizontalSpeed", SETTING_HORIZONTAL_SPEED, 0.8, 0.1, 5.0);
     private final NumberValue<Double> verticalSpeed =
             num("verticalSpeed", SETTING_VERTICAL_SPEED, 0.8, 0.1, 5.0);
+    private final NumberValue<Double> sprintMultiplier =
+            num("freecamSprintMultiplier", "sprint_multiplier", 2.0, 1.0, 5.0);
     public CameraType prevPerspective;
     public FreecamEntity camEntity;
 
@@ -199,7 +201,7 @@ public class Freecam extends Module {
 
         if (move.lengthSqr() != 0) {
             double speed = hSpeed();
-            if (o.keySprint.isDown()) speed *= 2.0;
+            if (o.keySprint.isDown()) speed *= sprintMultiplier.get();
             move = move.normalize().scale(speed);
         }
 
