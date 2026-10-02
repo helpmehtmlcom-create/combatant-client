@@ -52,6 +52,8 @@ import combatant.client.util.aiming.raytrace.RotationRaytrace;
 import combatant.client.util.combat.CombatRotationModeUtil;
 import combatant.client.util.combat.CombatBlockUseUtil;
 import combatant.client.util.combat.ExplosionRenderUtil;
+import combatant.client.util.combat.RubberHandUseUtil;
+import combatant.client.util.item.FoodUtil;
 import combatant.client.util.entity.simulation.PositionExtrapolation;
 import combatant.client.util.player.inventory.InventorySwap;
 import combatant.client.util.player.simulation.PlayerSimulationCache;
@@ -123,6 +125,13 @@ public class AutoCrystal extends Module {
                     0,
                     1000
             ), breakEnabled::get);
+    // Acting on the spawn/remove packet instead of the next tick saves up to a tick per crystal.
+    // Both only fire when the last rotation sent already points at the crystal or base block, so
+    // they never add a rotation the server did not see.
+    private final BooleanValue instantBreak =
+            visibleWhen(bool("autocrystalInstantBreak", "instant_break", true), breakEnabled::get);
+    private final BooleanValue instantPlace =
+            visibleWhen(bool("autocrystalInstantPlace", "instant_place", true), placeEnabled::get);
     private final NumberValue<Float> placeRange =
             numCommon(
                     "autocrystalPlaceRange",
@@ -194,6 +203,12 @@ public class AutoCrystal extends Module {
             numCommon("autocrystalSelfPredictTicks", CommonSettingSchemas.SELF_PREDICT_TICKS, 0, 0, 20);
     private final BooleanValue ignoreTerrain =
             bool("autocrystalIgnoreTerrain", true);
+    private final BooleanValue pauseMining =
+            boolCommon("autocrystalPauseMining", "pause_mining", CommonSettingSchemas.PAUSE_MINING, false);
+    private final BooleanValue pauseEating =
+            boolCommon("autocrystalPauseEating", "pause_eating", CommonSettingSchemas.PAUSE_EATING, false);
+    private final NumberValue<Float> pauseHealth =
+            num("autocrystalPauseHealth", "pause_health", 0.0f, 0.0f, 20.0f);
     private final ModeValue attackMode =
             modeCommon(
                     "autocrystalAttackMode",
@@ -399,6 +414,11 @@ public class AutoCrystal extends Module {
             return;
         }
 
+        if (pausedWhileBusy()) {
+            RotationManager.INSTANCE.clear(this);
+            return;
+        }
+
         target = findCombatTarget();
         TargetManager.setAutoCrystalTarget(target);
         updateBestPosition();
@@ -407,6 +427,12 @@ public class AutoCrystal extends Module {
         debugState();
 
         if (tryBreakCrystal()) {
+            return;
+        }
+
+        // Low health only stops new crystals; breaking the ones already out still protects you.
+        if (belowPauseHealth()) {
+            RotationManager.INSTANCE.clear(this);
             return;
         }
 
@@ -1054,6 +1080,34 @@ public class AutoCrystal extends Module {
         crystalTracker.markNearbyCrystalsDead(mc.level, crystal);
     }
 
+    /** Main thread, right after the client adds a crystal: hit it before the next tick comes around. */
+    public void onCrystalSpawned(EndCrystal crystal) {
+        if (!isEnabled() || mc.player == null || mc.level == null || crystal == null) return;
+        crystalTracker.removeAwaitingPositionsNear(crystal);
+        if (!breakEnabled.get() || !instantBreak.get() || target == null) return;
+        if (isDeadCrystal(crystal.getId())) return;
+        if (usesRotationSettings() && !serverRotationHits(crystal.getBoundingBox(), breakRange.get())) return;
+        // attackCrystal re-checks delay, range, min damage and self damage.
+        attackCrystal(crystal, null);
+    }
+
+    /** Main thread, right after the client removes a crystal: the spot is free again, place into it now. */
+    public void onCrystalsRemoved() {
+        if (!isEnabled() || !placeEnabled.get() || !instantPlace.get() || mc.player == null || mc.level == null) return;
+        AutoCrystalPlaceData candidate = bestCandidate;
+        if (candidate == null || target == null || findCrystalHand(mc.player) == null) return;
+        if (usesRotationSettings() && !serverRotationHits(new AABB(candidate.pos()), placeRange.get())) return;
+        // tryPlaceCrystal re-validates the spot and damage against the world as it is now.
+        tryPlaceCrystal(candidate.pos());
+    }
+
+    private boolean serverRotationHits(AABB box, double range) {
+        Rotation server = RotationManager.INSTANCE.getServerRotation();
+        if (server == null) return false;
+        Vec3 eye = mc.player.getEyePosition();
+        return box.contains(eye) || box.clip(eye, eye.add(server.directionVector().scale(range))).isPresent();
+    }
+
     private boolean isCrystalBlocked(int id) {
         return crystalTracker.isCrystalBlocked(mc, id);
     }
@@ -1084,6 +1138,20 @@ public class AutoCrystal extends Module {
 
     private AutoCrystalHand findObsidianHand(LocalPlayer player) {
         return AutoCrystalInteractionUtil.findObsidianHand(player);
+    }
+
+    /** Mining or eating can be set to take priority over the crystal loop, matching AutoAnchor and AutoBed. */
+    private boolean pausedWhileBusy() {
+        if (pauseMining.get() && mc.gameMode.isDestroying()) return true;
+        return pauseEating.get()
+                && mc.player.isUsingItem()
+                && FoodUtil.isFood(mc.player.getUseItem())
+                && !RubberHandUseUtil.canBypassCurrentUse(mc);
+    }
+
+    private boolean belowPauseHealth() {
+        float floor = pauseHealth.get();
+        return floor > 0.0f && mc.player.getHealth() + mc.player.getAbsorptionAmount() < floor;
     }
 
     private boolean hasPlaceDelayElapsed() {
