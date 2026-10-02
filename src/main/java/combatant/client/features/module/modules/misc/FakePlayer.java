@@ -165,6 +165,9 @@ public class FakePlayer extends Module {
 
         AttributeInstance maxHealth = fakePlayer.getAttribute(Attributes.MAX_HEALTH);
         if (maxHealth != null) maxHealth.setBaseValue(health.get());
+        // setAbsorptionAmount clamps to MAX_ABSORPTION (0 for a plain player), so raise the cap first.
+        AttributeInstance maxAbsorption = fakePlayer.getAttribute(Attributes.MAX_ABSORPTION);
+        if (maxAbsorption != null) maxAbsorption.setBaseValue(absorption.get());
         fakePlayer.setHealth(fakePlayer.getMaxHealth());
         fakePlayer.setAbsorptionAmount(absorption.get());
         fakePlayer.setId(allocateFakeEntityId());
