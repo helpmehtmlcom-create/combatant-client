@@ -103,7 +103,8 @@ public final class ChestStealer extends Module {
             generation++;
             activeContainerId = menu.containerId;
             pendingAction = false;
-            nextActionAtNs = 0L;
+            scheduleNextAction();
+            return;
         }
 
         if (pendingAction || System.nanoTime() < nextActionAtNs) return;

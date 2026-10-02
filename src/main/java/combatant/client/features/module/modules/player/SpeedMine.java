@@ -222,11 +222,11 @@ public final class SpeedMine extends Module {
             reset();
             return;
         }
-        if (mc.level != lastLevel) {
+        if (lastLevel != null && mc.level != lastLevel) {
             releaseTool();
             reset();
-            lastLevel = mc.level;
         }
+        lastLevel = mc.level;
         ticks++;
         trackServerSlot();
 
