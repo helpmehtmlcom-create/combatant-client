@@ -12,6 +12,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import combatant.client.util.anticheat.AntiCheatPreset;
 import combatant.client.events.EventHandler;
 import combatant.client.events.impl.GameTickEvent;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
@@ -82,6 +83,8 @@ public final class SpeedMine extends Module {
     // Round trip for a STOP -> block update; after this the server most likely disagreed.
     private static final int CONFIRM_TIMEOUT_TICKS = 12;
     private static final int MAX_RESTARTS = 3;
+    // Vanilla waits this many ticks after finishing a block before the next one can start.
+    private static final int BREAK_GAP_TICKS = 5;
     // A new server-held slot counts for Efficiency only after the server has ticked the player with it.
     private static final int ATTRIBUTE_SETTLE_TICKS = 2;
     // How long the tool stays leased while a parked block is due, and how often that is retried.
@@ -94,6 +97,10 @@ public final class SpeedMine extends Module {
     private static final float FACING_TOLERANCE_DEGREES = 20.0f;
     private static final int PRE_SWAP_LEASE_TICKS = ATTRIBUTE_SETTLE_TICKS + 3;
 
+    // custom = the settings below as set; grim = no rebreak, no double mine and vanilla's 5-tick gap between
+    // finished blocks (GrimAC FastBreak flags chained breaks closer than that); vanilla = every packet trick on,
+    // for servers with no anticheat.
+    private final EnumValue<AntiCheatPreset> anticheat = enumMode("anticheat_mode", AntiCheatPreset.CUSTOM);
     private final NumberValue<Float> range = num("range", 5.0f, 3.0f, 6.0f);
     // Fraction of the predicted break time before STOP. 1.0 is exact; values closer to 0.7 finish
     // sooner on servers that trust the vanilla threshold, but lag makes early STOPs park the block.
@@ -122,6 +129,7 @@ public final class SpeedMine extends Module {
     private MineTask rebreakTask;
     private int rebreakSentTick = Integer.MIN_VALUE;
     private int ticks;
+    private int lastStopTick = Integer.MIN_VALUE / 2;
     private ClientLevel lastLevel;
     // clear() restarts RotationManager's smooth return, so it must run once, not every tick.
     private boolean rotating;
@@ -139,6 +147,39 @@ public final class SpeedMine extends Module {
         reset();
     }
 
+    private SwapMode swapNow() {
+        return anticheat.get().pick(swapMode.get(), swapMode.get(), SwapMode.SILENT);
+    }
+
+    private boolean rebreakNow() {
+        return anticheat.get().pick(rebreak.get(), false, true);
+    }
+
+    private RebreakMode rebreakModeNow() {
+        return anticheat.get().pick(rebreakMode.get(), rebreakMode.get(), RebreakMode.INSTANT);
+    }
+
+    private int rebreakDelayNow() {
+        return anticheat.get().pick(rebreakDelay.get(), rebreakDelay.get(), 0);
+    }
+
+    private boolean doubleMineNow() {
+        return anticheat.get().pick(doubleMine.get(), false, true);
+    }
+
+    private float breakAtNow() {
+        return anticheat.get().pick(breakAt.get(), breakAt.get(), 1.0f);
+    }
+
+    /** True while GRIM still owes vanilla's gap after the last finished block. */
+    private boolean breakGapPending() {
+        return anticheat.get() == AntiCheatPreset.GRIM && ticks - lastStopTick < BREAK_GAP_TICKS;
+    }
+
+    private float rangeNow() {
+        return anticheat.get().pick(range.get(), range.get(), 6.0f);
+    }
+
     /**
      * Called from the game-mode mixin for every vanilla left-click on a block.
      *
@@ -148,6 +189,7 @@ public final class SpeedMine extends Module {
         LocalPlayer player = mc.player;
         if (!isEnabled() || player == null || mc.level == null || player.getAbilities().instabuild) return false;
         if (isMining(pos)) return true;
+        if (breakGapPending()) return true;
 
         BlockState state = mc.level.getBlockState(pos);
         if (state.isAir()) return false;
@@ -166,7 +208,8 @@ public final class SpeedMine extends Module {
 
     /** Starts packet-mining {@code pos} within the range setting. Used by AutoMine. */
     public boolean mine(BlockPos pos, Direction direction) {
-        return start(pos, direction, range.get());
+        if (breakGapPending()) return false;
+        return start(pos, direction, rangeNow());
     }
 
     private boolean start(BlockPos pos, Direction direction, double reach) {
@@ -209,7 +252,7 @@ public final class SpeedMine extends Module {
 
     /** True when a new {@link #mine} call would run in parallel instead of aborting the current block. */
     public boolean canDoubleMine() {
-        return doubleMine.get() && delayed == null && primary != null && !primary.stopSent;
+        return doubleMineNow() && delayed == null && primary != null && !primary.stopSent;
     }
 
     public BlockPos rebreakPos() {
@@ -260,7 +303,7 @@ public final class SpeedMine extends Module {
             onPrimaryBroken(task);
             return;
         }
-        if (!inRange(player, task.pos, range.get() + ABORT_RANGE_SLACK)) {
+        if (!inRange(player, task.pos, rangeNow() + ABORT_RANGE_SLACK)) {
             sendAction(ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK, task);
             primary = null;
             return;
@@ -271,7 +314,7 @@ public final class SpeedMine extends Module {
         // Server math is stateless: speed of whatever is held at STOP times elapsed ticks.
         float full = progressPerTick(task.pos, state, toolSlot);
         task.progress = elapsed * full;
-        if (!readyToStop(task.pos, state, toolSlot, elapsed, full, breakAt.get()) || !isFacing(player, task)) return;
+        if (!readyToStop(task.pos, state, toolSlot, elapsed, full, breakAtNow()) || !isFacing(player, task)) return;
 
         sendWithTool(toolSlot, ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK, task);
         task.stopSent = true;
@@ -292,7 +335,7 @@ public final class SpeedMine extends Module {
         int elapsed = ticks - task.startTick + 1;
         float full = progressPerTick(task.pos, state, toolSlot);
         task.progress = elapsed * full;
-        if (swapMode.get() == SwapMode.OFF || toolSlot < 0) return;
+        if (swapNow() == SwapMode.OFF || toolSlot < 0) return;
         // The server finishes a parked block at a full 1.0, never at the 0.7 STOP threshold, and it
         // re-checks every tick with whatever is held then. Hold the tool early enough that its
         // Efficiency is already applied on the tick the block comes due.
@@ -313,7 +356,7 @@ public final class SpeedMine extends Module {
     private void tickRebreak(LocalPlayer player) {
         MineTask task = rebreakTask;
         if (task == null || primary != null) return;
-        if (!inRange(player, task.pos, range.get() + ABORT_RANGE_SLACK)) return;
+        if (!inRange(player, task.pos, rangeNow() + ABORT_RANGE_SLACK)) return;
 
         BlockState state = mc.level.getBlockState(task.pos);
         if (state.isAir()) {
@@ -324,8 +367,8 @@ public final class SpeedMine extends Module {
         float full = progressPerTick(task.pos, state, toolSlot);
         if (full <= 0.0f) return;
 
-        if (rebreakMode.get() == RebreakMode.NORMAL) {
-            if (ticks - task.stopTick >= rebreakDelay.get()) restartRebreak(task);
+        if (rebreakModeNow() == RebreakMode.NORMAL) {
+            if (ticks - task.stopTick >= rebreakDelayNow()) restartRebreak(task);
             return;
         }
 
@@ -334,7 +377,7 @@ public final class SpeedMine extends Module {
             if (ticks - rebreakSentTick > CONFIRM_TIMEOUT_TICKS) restartRebreak(task);
             return;
         }
-        if (ticks - task.stopTick < rebreakDelay.get()) return;
+        if (ticks - task.stopTick < rebreakDelayNow()) return;
         if (!readyToStop(task.pos, state, toolSlot, ticks - task.startTick + 1, full, SERVER_STOP_PROGRESS)
                 || !isFacing(player, task)) return;
 
@@ -361,8 +404,8 @@ public final class SpeedMine extends Module {
     }
 
     private void holdTool(int toolSlot, int leaseTicks) {
-        if (swapMode.get() == SwapMode.OFF) return;
-        if (swapMode.get() == SwapMode.NORMAL) {
+        if (swapNow() == SwapMode.OFF) return;
+        if (swapNow() == SwapMode.NORMAL) {
             InventorySwap.INSTANCE.selectHotbar(toolSlot);
         } else {
             InventorySwap.INSTANCE.leaseHotbar(this, toolSlot, leaseTicks);
@@ -379,7 +422,7 @@ public final class SpeedMine extends Module {
 
     private void onPrimaryBroken(MineTask task) {
         primary = null;
-        if (!rebreak.get()) return;
+        if (!rebreakNow()) return;
         task.stopTick = ticks;
         rebreakTask = task;
         rebreakSentTick = Integer.MIN_VALUE;
@@ -415,12 +458,13 @@ public final class SpeedMine extends Module {
     }
 
     private void sendWithTool(int toolSlot, ServerboundPlayerActionPacket.Action action, MineTask task) {
+        if (action == ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK) lastStopTick = ticks;
         InventorySwap swap = InventorySwap.INSTANCE;
-        if (toolSlot < 0 || swapMode.get() == SwapMode.OFF || swap.serverSelectedSlot() == toolSlot) {
+        if (toolSlot < 0 || swapNow() == SwapMode.OFF || swap.serverSelectedSlot() == toolSlot) {
             sendAction(action, task);
             return;
         }
-        if (swapMode.get() == SwapMode.NORMAL) {
+        if (swapNow() == SwapMode.NORMAL) {
             swap.selectHotbar(toolSlot);
             sendAction(action, task);
             return;
@@ -481,7 +525,7 @@ public final class SpeedMine extends Module {
     }
 
     private int toolSlot(BlockPos pos, BlockState state) {
-        if (swapMode.get() == SwapMode.OFF) return InventorySwap.INSTANCE.clientSelectedSlot();
+        if (swapNow() == SwapMode.OFF) return InventorySwap.INSTANCE.clientSelectedSlot();
         int best = BreakSpeedUtil.bestHotbarSlot(mc.player, mc.level, pos, state);
         return best >= 0 ? best : InventorySwap.INSTANCE.clientSelectedSlot();
     }
@@ -514,7 +558,7 @@ public final class SpeedMine extends Module {
     }
 
     public float mineRange() {
-        return range.get();
+        return rangeNow();
     }
 
     /**
@@ -566,7 +610,7 @@ public final class SpeedMine extends Module {
         float prevWidth = RenderState.lineWidth;
         RenderState.lineWidth = 1.5f;
         try {
-            renderTask(renderer, primary, breakAt.get());
+            renderTask(renderer, primary, breakAtNow());
             renderTask(renderer, delayed, 1.0f);
             MineTask rebreakTarget = rebreakTask;
             if (rebreakTarget != null && primary == null) {
