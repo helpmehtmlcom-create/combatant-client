@@ -12,6 +12,8 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import combatant.client.events.EventHandler;
+import combatant.client.events.impl.GameTickEvent;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
@@ -214,8 +216,12 @@ public final class SpeedMine extends Module {
         return rebreakTask != null ? rebreakTask.pos : null;
     }
 
-    @Override
-    public void onTick() {
+    /**
+     * Runs at the start of the client tick, before the player's movement packet. {@code onTick} runs after it,
+     * which put every START/STOP behind that tick's flying packet and tripped GrimAC's Post check.
+     */
+    @EventHandler
+    private void onGameTick(GameTickEvent event) {
         if (!isEnabled()) return;
         LocalPlayer player = mc.player;
         if (player == null || mc.level == null || mc.getConnection() == null) {
