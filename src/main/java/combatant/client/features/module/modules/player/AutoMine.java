@@ -42,7 +42,7 @@ import combatant.client.util.screen.ClientScreen;
  * the surround has a hole it stops, because that hole is what a crystal aura needs and mining more
  * would move the server's destroy position off the rebreak block.</p>
  *
- * <p>{@code TUNNEL} is the Krypton-style miner: hold the view at a fixed angle and keep digging
+ * <p>{@code TUNNEL} is the tunnel miner: hold the view at a fixed angle and keep digging
  * whatever the crosshair hits. With SpeedMine on, the dig goes through the packet miner.</p>
  */
 @ModuleInfo(

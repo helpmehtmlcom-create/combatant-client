@@ -40,7 +40,7 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * Predicts ancient debris from the world seed (Meteor's OreSim technique, ported from
- * krypton). Anti-xray hides the ore, but with the seed the exact generation can be replayed,
+ * a reference client). Anti-xray hides the ore, but with the seed the exact generation can be replayed,
  * then filtered against the visible world so mined or exposed spots drop out.
  */
 @ModuleInfo(
