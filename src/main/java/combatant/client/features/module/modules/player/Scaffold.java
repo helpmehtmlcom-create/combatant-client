@@ -1849,8 +1849,18 @@ public class Scaffold extends Module {
         }
 
         BlockPos supportPos = target.getInteractedBlockPos();
-        Rotation rotation = ScaffoldPlacementGeometry.chooseRotation(
-                now, now.add(predictedStep(player)), supportPos, face, RotationManager.INSTANCE.getServerRotation());
+        Vec3 next = now.add(predictedStep(player));
+        Rotation serverRotation = RotationManager.INSTANCE.getServerRotation();
+        // Silent movement correction only keeps the walking direction for yaws a multiple of 45 degrees from the
+        // player's own, so aim from those first and only leave them when the block cannot be seen that way.
+        boolean silentCorrection = (rotationTiming.get() == RotationTiming.ON_TICK ? MovementCorrection.SILENT : movementCorrection.get())
+                == MovementCorrection.SILENT;
+        Rotation rotation = silentCorrection
+                ? ScaffoldPlacementGeometry.chooseRotation(now, next, supportPos, face, serverRotation, player.getYRot())
+                : null;
+        if (rotation == null) {
+            rotation = ScaffoldPlacementGeometry.chooseRotation(now, next, supportPos, face, serverRotation);
+        }
         if (rotation == null) return target;
 
         Rotation aim = rotation.normalize();

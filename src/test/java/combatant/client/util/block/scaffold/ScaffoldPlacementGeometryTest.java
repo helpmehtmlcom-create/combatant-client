@@ -77,8 +77,37 @@ final class ScaffoldPlacementGeometryTest {
         assertNotNull(chosen);
         assertTrue(ScaffoldPlacementGeometry.isSafe(now, next, chosen, SUPPORT, Direction.SOUTH, SHAPE));
         // looking back at the block the player walks away from, not sideways and not up
-        assertEquals(180.0f, Math.abs(chosen.yaw()), 0.5f);
+        assertTrue(Math.abs(chosen.yaw()) > 150.0f, "yaw " + chosen.yaw());
         assertTrue(chosen.pitch() > 40.0f && chosen.pitch() < 90.0f);
+    }
+
+    @ParameterizedTest
+    @ValueSource(doubles = {0.0, 0.1, 0.3, 0.6})
+    void anAnchoredAimOnlyUsesYawsAMultipleOf45FromThePlayersOwn(double beyondEdge) {
+        Vec3 now = eyeAt(2.0 + beyondEdge + 0.01);
+        Vec3 next = now.add(0.0, 0.0, STEP);
+
+        Rotation chosen = ScaffoldPlacementGeometry.chooseRotation(now, next, SUPPORT, Direction.SOUTH, new Rotation(0.0f, 0.0f, false), 0.0f);
+
+        assertNotNull(chosen);
+        assertTrue(ScaffoldPlacementGeometry.isSafe(now, next, chosen, SUPPORT, Direction.SOUTH, SHAPE));
+        assertEquals(0.0f, Math.abs(chosen.yaw()) % 45.0f, 1.0E-3f);
+        assertEquals(180.0f, Math.abs(chosen.yaw()), 1.0E-3f);
+    }
+
+    @Test
+    void aDiagonalBridgeFindsAnAimOnTheAnchoredYaws() {
+        // walking (-x,+z) over the corner of the platform: the block to click is the west face of (-1,-51,2)
+        BlockPos support = new BlockPos(-1, -51, 2);
+        AABB shape = new AABB(support);
+        Vec3 now = new Vec3(-1.36, -48.38, 2.22);
+        Vec3 next = now.add(-0.155, 0.0, 0.155);
+
+        Rotation chosen = ScaffoldPlacementGeometry.chooseRotation(now, next, support, Direction.WEST, new Rotation(-135.0f, 68.0f, false), 0.0f);
+
+        assertNotNull(chosen);
+        assertTrue(ScaffoldPlacementGeometry.isSafe(now, next, chosen, support, Direction.WEST, shape));
+        assertEquals(0.0f, Math.abs(chosen.yaw()) % 45.0f, 1.0E-3f);
     }
 
     @Test

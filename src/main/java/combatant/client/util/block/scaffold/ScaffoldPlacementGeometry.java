@@ -15,6 +15,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -39,7 +40,11 @@ public final class ScaffoldPlacementGeometry {
     private static final double OVERSHOOT = 0.35;
     private static final double SAFE_INSET = 0.08;
     private static final double[] INSETS = {0.35, 0.25, 0.15, SAFE_INSET, 0.0};
-    private static final double[] DEPTH_SAMPLES = {0.1, 0.3, 0.5, 0.7, 0.9};
+    private static final float TURN_SLACK = 6.0f;
+    private static final float YAW_SLACK = 10.0f;
+    private static final float PITCH_STEP = 1.5f;
+    private static final int FREE_YAW_STEPS = 3;
+    private static final float FREE_YAW_STEP = 8.0f;
 
     private ScaffoldPlacementGeometry() {
     }
@@ -85,50 +90,112 @@ public final class ScaffoldPlacementGeometry {
         return rayHitsBox(eyeNow, direction, cube) && rayHitsBox(eyeNext, direction, cube);
     }
 
-    /**
-     * Picks the rotation that keeps the ray on the block from now until the end of the tick with the most room to
-     * spare, preferring (in this order) enough room to absorb a movement misprediction, a ray that enters through the
-     * clicked face, more room, and the smallest turn from {@code current}. Returns null when no aim works.
-     */
+    /** Free-aim variant of {@link #chooseRotation(Vec3, Vec3, BlockPos, Direction, Rotation, Float)}. */
     public static Rotation chooseRotation(Vec3 eyeNow, Vec3 eyeNext, BlockPos pos, Direction face, Rotation current) {
+        return chooseRotation(eyeNow, eyeNext, pos, face, current, null);
+    }
+
+    /**
+     * Picks the rotation that keeps the ray on the block from the eye now until the end of the tick with room to
+     * spare. Among the aims that keep at least {@link #SAFE_INSET} of room it prefers a ray that enters through the
+     * clicked face, then the smallest turn from {@code current} (candidates within {@link #TURN_SLACK} degrees of the
+     * smallest turn count as equal, so the head does not creep to the edge of what is allowed), then the most room.
+     *
+     * <p>{@code yawAnchor} is the player's own yaw when the movement is silently corrected to the sent rotation: that
+     * correction only reproduces the intended walking direction for yaws that are a multiple of 45 degrees away from
+     * the player's, anything else turns into a sideways drift of the same size as the error. Then only those yaws are
+     * tried. With {@code null} the yaw is free and stays within a few degrees of looking straight at the block.
+     * Returns null when no aim works.
+     */
+    public static Rotation chooseRotation(Vec3 eyeNow, Vec3 eyeNext, BlockPos pos, Direction face, Rotation current, Float yawAnchor) {
         Vec3 mid = eyeNow.add(eyeNext).scale(0.5);
         Vec3 overshoot = eyeNext.add(eyeNext.subtract(eyeNow).scale(OVERSHOOT));
         Vec3[] eyes = {eyeNow, eyeNext, overshoot};
+        AABB cube = new AABB(pos);
 
-        double[] xs = samples(Direction.Axis.X, face, mid.x - pos.getX());
-        double[] ys = samples(Direction.Axis.Y, face, mid.y - pos.getY());
-        double[] zs = samples(Direction.Axis.Z, face, mid.z - pos.getZ());
-
-        Rotation best = null;
-        boolean bestSafe = false;
-        boolean bestFace = false;
-        double bestInset = -1.0;
-        float bestTurn = Float.MAX_VALUE;
-
-        for (double sx : xs) {
-            for (double sy : ys) {
-                for (double sz : zs) {
-                    Vec3 aim = new Vec3(pos.getX() + sx, pos.getY() + sy, pos.getZ() + sz);
-                    Rotation rotation = aimAt(aim, mid, current);
-                    Vec3 direction = rotation.directionVector();
-                    double inset = robustInset(eyes, direction, pos);
-                    if (inset < 0.0) {
-                        continue;
-                    }
-                    boolean safe = inset >= SAFE_INSET;
-                    boolean faceFirst = firstHitFace(eyeNow, direction, pos) == face;
-                    float turn = current == null ? 0.0f : current.angleTo(rotation);
-                    if (best == null || better(safe, faceFirst, inset, turn, bestSafe, bestFace, bestInset, bestTurn)) {
-                        best = rotation;
-                        bestSafe = safe;
-                        bestFace = faceFirst;
-                        bestInset = inset;
-                        bestTurn = turn;
-                    }
+        float straight = straightAtBlockYaw(mid, pos, face);
+        List<Candidate> candidates = new ArrayList<>();
+        for (float yaw : candidateYaws(straight, yawAnchor)) {
+            for (float pitch = -90.0f; pitch <= 90.0f; pitch += PITCH_STEP) {
+                Rotation rotation = new Rotation(yaw, pitch, false);
+                Vec3 direction = rotation.directionVector();
+                if (!rayHitsBox(eyeNow, direction, cube) || !rayHitsBox(eyeNext, direction, cube)) {
+                    continue;
                 }
+                double inset = robustInset(eyes, direction, pos);
+                if (inset < 0.0) {
+                    continue;
+                }
+                boolean faceFirst = firstHitFace(eyeNow, direction, pos) == face;
+                float turn = current == null ? 0.0f : current.angleTo(rotation);
+                candidates.add(new Candidate(rotation, inset, faceFirst, turn, Math.abs(Mth.wrapDegrees(yaw - straight))));
             }
         }
-        return best;
+        if (candidates.isEmpty()) {
+            return null;
+        }
+
+        List<Candidate> pool = filterIfAny(candidates, c -> c.inset >= SAFE_INSET);
+        pool = filterIfAny(pool, c -> c.faceFirst);
+        // Look as straight at the block as the allowed yaws permit: a 45 degree squint is just as safe but pointless.
+        float smallestDeviation = Float.MAX_VALUE;
+        for (Candidate c : pool) {
+            smallestDeviation = Math.min(smallestDeviation, c.yawDeviation);
+        }
+        float deviationLimit = smallestDeviation + YAW_SLACK;
+        pool = filterIfAny(pool, c -> c.yawDeviation <= deviationLimit);
+        float smallestTurn = Float.MAX_VALUE;
+        for (Candidate c : pool) {
+            smallestTurn = Math.min(smallestTurn, c.turn);
+        }
+        float limit = smallestTurn + TURN_SLACK;
+        Candidate best = null;
+        for (Candidate c : pool) {
+            if (c.turn > limit) {
+                continue;
+            }
+            if (best == null || c.inset > best.inset + 1.0E-9 || (Math.abs(c.inset - best.inset) <= 1.0E-9 && c.turn < best.turn)) {
+                best = c;
+            }
+        }
+        return best.rotation;
+    }
+
+    /** Yaw that looks straight at the block: level with the eye along the face, half way through it along its normal. */
+    private static float straightAtBlockYaw(Vec3 mid, BlockPos pos, Direction face) {
+        double x = face.getAxis() == Direction.Axis.X ? 0.5 : Mth.clamp(mid.x - pos.getX(), 0.12, 0.88);
+        double z = face.getAxis() == Direction.Axis.Z ? 0.5 : Mth.clamp(mid.z - pos.getZ(), 0.12, 0.88);
+        Vec3 aim = new Vec3(pos.getX() + x, mid.y, pos.getZ() + z);
+        Vec3 delta = aim.subtract(mid);
+        return Math.hypot(delta.x, delta.z) < 1.0E-3 ? 0.0f : Rotation.lookingAt(aim, mid).yaw();
+    }
+
+    private static float[] candidateYaws(float straight, Float yawAnchor) {
+        if (yawAnchor != null) {
+            float[] yaws = new float[8];
+            for (int i = 0; i < yaws.length; i++) {
+                yaws[i] = Mth.wrapDegrees(yawAnchor + 45.0f * i);
+            }
+            return yaws;
+        }
+        float[] yaws = new float[2 * FREE_YAW_STEPS + 1];
+        for (int i = 0; i < yaws.length; i++) {
+            yaws[i] = Mth.wrapDegrees(straight + (i - FREE_YAW_STEPS) * FREE_YAW_STEP);
+        }
+        return yaws;
+    }
+
+    private static List<Candidate> filterIfAny(List<Candidate> pool, java.util.function.Predicate<Candidate> keep) {
+        List<Candidate> kept = new ArrayList<>();
+        for (Candidate c : pool) {
+            if (keep.test(c)) {
+                kept.add(c);
+            }
+        }
+        return kept.isEmpty() ? pool : kept;
+    }
+
+    private record Candidate(Rotation rotation, double inset, boolean faceFirst, float turn, float yawDeviation) {
     }
 
     /**
@@ -150,28 +217,6 @@ public final class ScaffoldPlacementGeometry {
         return lo > hi ? (min + max) * 0.5 : Mth.clamp(value, lo, hi);
     }
 
-    /**
-     * Candidate aim coordinates along one axis (relative to the block). Along the face normal and vertically the
-     * whole block depth is tried; along the remaining horizontal axis the aim stays level with the eye so the view
-     * points straight at the block instead of wandering sideways.
-     */
-    private static double[] samples(Direction.Axis axis, Direction face, double eyeRelative) {
-        if (axis == Direction.Axis.Y || axis == face.getAxis()) {
-            return DEPTH_SAMPLES;
-        }
-        return new double[]{Mth.clamp(eyeRelative, 0.12, 0.88)};
-    }
-
-    private static Rotation aimAt(Vec3 aim, Vec3 from, Rotation current) {
-        Vec3 delta = aim.subtract(from);
-        Rotation rotation = Rotation.lookingAt(aim, from);
-        if (Math.hypot(delta.x, delta.z) < 1.0E-3 && current != null) {
-            // Looking straight down or up: any yaw does it, so keep the one already on the server.
-            return new Rotation(current.yaw(), rotation.pitch(), false);
-        }
-        return rotation;
-    }
-
     /** Largest inset of the block for which every eye's ray still hits it, or -1 when even the full block is missed. */
     private static double robustInset(Vec3[] eyes, Vec3 direction, BlockPos pos) {
         AABB cube = new AABB(pos);
@@ -189,19 +234,5 @@ public final class ScaffoldPlacementGeometry {
             }
         }
         return -1.0;
-    }
-
-    private static boolean better(boolean safe, boolean faceFirst, double inset, float turn,
-                                  boolean bestSafe, boolean bestFace, double bestInset, float bestTurn) {
-        if (safe != bestSafe) {
-            return safe;
-        }
-        if (faceFirst != bestFace) {
-            return faceFirst;
-        }
-        if (Math.abs(inset - bestInset) > 1.0E-9) {
-            return inset > bestInset;
-        }
-        return turn < bestTurn;
     }
 }
