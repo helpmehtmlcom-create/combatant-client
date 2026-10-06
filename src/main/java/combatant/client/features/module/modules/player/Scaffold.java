@@ -314,6 +314,7 @@ public class Scaffold extends Module {
     private boolean rawBackward;
     private boolean rawLeft;
     private boolean rawRight;
+    private float rawInputBaseYaw = Float.NaN;
     private int strafeMoveTicks;
     private int ticksUntilTellyJump;
     private int tellyJumpTicks;
@@ -954,10 +955,30 @@ public class Scaffold extends Module {
         LocalPlayer player = player();
         if (!canOperate(player)) return;
 
-        rawForward = event.isForward();
-        rawBackward = event.isBackward();
-        rawLeft = event.isLeft();
-        rawRight = event.isRight();
+        // The event already carries the silent movement correction (KeyboardInput applies it when the input is
+        // read), expressed relative to the SENT yaw. Reading it as if it were relative to the player's yaw turned a
+        // plain "walk forward" into a direction that changed with every step of the rotation smoothing, so the line
+        // to bridge along, the predicted edge and the chosen face all wandered while the aim was turning. The keys
+        // are what the player means; input that does not come from the keys (AutoWalk and friends write it into the
+        // event) is read against the yaw the movement is actually corrected to.
+        var options = Minecraft.getInstance().options;
+        boolean fromKeys = options.keyUp.isDown() || options.keyDown.isDown() || options.keyLeft.isDown() || options.keyRight.isDown();
+        if (fromKeys) {
+            rawForward = options.keyUp.isDown();
+            rawBackward = options.keyDown.isDown();
+            rawLeft = options.keyLeft.isDown();
+            rawRight = options.keyRight.isDown();
+            rawInputBaseYaw = Float.NaN;
+        } else {
+            rawForward = event.isForward();
+            rawBackward = event.isBackward();
+            rawLeft = event.isLeft();
+            rawRight = event.isRight();
+            var activeTarget = RotationManager.INSTANCE.getActiveRotationTarget();
+            rawInputBaseYaw = activeTarget != null && activeTarget.movementCorrection == MovementCorrection.SILENT && activeTarget.freeCorrection
+                    ? RotationManager.INSTANCE.getMovementRotation().yaw()
+                    : Float.NaN;
+        }
         currentOptimalLine = hasRawInput()
                 ? movementPlanner.getOptimalMovementLine(player, getRawMovementDirectionYaw(player, player.getYRot()))
                 : null;
@@ -2170,7 +2191,7 @@ public class Scaffold extends Module {
 
         if (!forwards && !backwards && !left && !right) return fallbackYaw;
 
-        float actualYaw = fallbackYaw;
+        float actualYaw = Float.isNaN(rawInputBaseYaw) ? fallbackYaw : rawInputBaseYaw;
         float forward = 1.0f;
 
         if (backwards) {
