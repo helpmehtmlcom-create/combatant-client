@@ -107,7 +107,8 @@ public class AutoCrystal extends Module {
     private final BooleanValue renderSelfDamage = boolCommon("autocrystalRenderSelfDamage", CommonSettingSchemas.RENDER_SELF_DAMAGE, true);
     private final BooleanValue drawDamage = boolCommon("autocrystalRenderDamage", CommonSettingSchemas.RENDER_DAMAGE, true);
     // custom = the settings below as set; grim = place range 4.5 and hit range 3.0, the limits GrimAC enforces
-    // (FarPlace, Reach); vanilla = 6.0 everywhere with instant place/break, for servers with no anticheat.
+    // (FarPlace, Reach), and no instant place/break (see effInstantBreak); vanilla = 6.0 everywhere with instant
+    // place/break, for servers with no anticheat.
     private final EnumValue<AntiCheatPreset> anticheat = enumCommon("anticheat_mode", CommonSettingSchemas.ANTICHEAT_MODE, AntiCheatPreset.CUSTOM);
     private final BooleanValue placeEnabled = boolCommon("autocrystalPlace", CommonSettingSchemas.PLACE, true);
     private final NumberValue<Integer> placeDelay =
@@ -361,12 +362,17 @@ public class AutoCrystal extends Module {
         return anticheat.get().limit(breakWallRange.get(), (float) AntiCheatPreset.GRIM_ENTITY_RANGE, (float) AntiCheatPreset.VANILLA_ENTITY_RANGE);
     }
 
+    // The instant paths run from AutoCrystalPacketMixin whenever the client applies a crystal spawn or removal, which
+    // is between two ticks: the attack or placement leaves after the previous tick's movement packet and ahead of a
+    // pong. GrimAC's Post check flags that order, and RotationPlace judges the placement against the next tick's
+    // rotation rather than the one the rotation check above used. The tick loop does the same job a tick later from
+    // the rotation action, ahead of the movement packet, so the grim preset leaves it to the loop.
     private boolean effInstantBreak() {
-        return anticheat.get().pick(instantBreak.get(), instantBreak.get(), true);
+        return anticheat.get().pick(instantBreak.get(), false, true);
     }
 
     private boolean effInstantPlace() {
-        return anticheat.get().pick(instantPlace.get(), instantPlace.get(), true);
+        return anticheat.get().pick(instantPlace.get(), false, true);
     }
 
     @Override
