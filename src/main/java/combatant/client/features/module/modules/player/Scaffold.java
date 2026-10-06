@@ -1865,7 +1865,7 @@ public class Scaffold extends Module {
         }
         if (rotation == null) return target;
 
-        Rotation aim = rotation.normalize();
+        Rotation aim = ScaffoldPlacementGeometry.avoidHalfTurn(rotation, player.getYRot(), serverRotation).normalize();
         return target.withAim(ScaffoldPlacementGeometry.clickPoint(now, aim, supportPos, face, shape), aim);
     }
 

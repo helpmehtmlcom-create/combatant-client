@@ -96,6 +96,28 @@ final class ScaffoldPlacementGeometryTest {
     }
 
     @Test
+    void aYawAtTheHalfTurnIsMovedInsideItOnTheSideTheServerAlreadyHas() {
+        Rotation atTheBoundary = new Rotation(-180.0f, 65.0f, false);
+
+        Rotation fromThePositiveSide = ScaffoldPlacementGeometry.avoidHalfTurn(atTheBoundary, 0.0f, new Rotation(179.9f, 60.0f, false));
+        Rotation fromTheNegativeSide = ScaffoldPlacementGeometry.avoidHalfTurn(atTheBoundary, 0.0f, new Rotation(-179.9f, 60.0f, false));
+
+        assertEquals(179.8f, fromThePositiveSide.yaw(), 1.0E-3f);
+        assertEquals(-179.8f, fromTheNegativeSide.yaw(), 1.0E-3f);
+        assertEquals(65.0f, fromThePositiveSide.pitch(), 1.0E-6f);
+    }
+
+    @Test
+    void aYawPastTheHalfTurnAndOneWellInsideAreHandledAroundThePlayersOwnYaw() {
+        // the player's yaw is 90: the half turn from it is at -90 / 270
+        Rotation past = ScaffoldPlacementGeometry.avoidHalfTurn(new Rotation(-90.05f, 70.0f, false), 90.0f, null);
+        Rotation inside = ScaffoldPlacementGeometry.avoidHalfTurn(new Rotation(-45.0f, 70.0f, false), 90.0f, null);
+
+        assertEquals(Math.abs(net.minecraft.util.Mth.wrapDegrees(past.yaw() - 90.0f)), 179.8f, 1.0E-3f);
+        assertEquals(-45.0f, inside.yaw(), 1.0E-6f);
+    }
+
+    @Test
     void aDiagonalBridgeFindsAnAimOnTheAnchoredYaws() {
         // walking (-x,+z) over the corner of the platform: the block to click is the west face of (-1,-51,2)
         BlockPos support = new BlockPos(-1, -51, 2);

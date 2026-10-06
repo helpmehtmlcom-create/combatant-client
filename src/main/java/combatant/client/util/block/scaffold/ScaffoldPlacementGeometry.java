@@ -42,6 +42,7 @@ public final class ScaffoldPlacementGeometry {
     private static final double[] INSETS = {0.35, 0.25, 0.15, SAFE_INSET, 0.0};
     private static final float TURN_SLACK = 6.0f;
     private static final float YAW_SLACK = 10.0f;
+    private static final float HALF_TURN_MARGIN = 0.2f;
     private static final float PITCH_STEP = 1.5f;
     private static final int FREE_YAW_STEPS = 3;
     private static final float FREE_YAW_STEP = 8.0f;
@@ -196,6 +197,25 @@ public final class ScaffoldPlacementGeometry {
     }
 
     private record Candidate(Rotation rotation, double inset, boolean faceFirst, float turn, float yawDeviation) {
+    }
+
+    /**
+     * Moves a yaw that points (nearly) straight away from the player's own yaw a hair inside the half turn, on the
+     * side the server already has. The sent yaw is carried as an unwrapped number: one that lands just past the
+     * half turn (-180.01) makes the smooth return to the player's yaw go the long way round to -360, and the first
+     * movement packet after it jumps back by 360, which GrimAC's AimModulo360 reports. Landing a little inside
+     * returns the short way. Moonwalking aims exactly there, so this applies to every bridge.
+     */
+    public static Rotation avoidHalfTurn(Rotation rotation, float playerYaw, Rotation serverRotation) {
+        float relative = Mth.wrapDegrees(rotation.yaw() - playerYaw);
+        float limit = 180.0f - HALF_TURN_MARGIN;
+        if (Math.abs(relative) <= limit) {
+            return rotation;
+        }
+        float side = serverRotation != null && Math.abs(Mth.wrapDegrees(serverRotation.yaw() - playerYaw)) > 90.0f
+                ? Math.signum(Mth.wrapDegrees(serverRotation.yaw() - playerYaw))
+                : Math.signum(relative);
+        return new Rotation(playerYaw + (side == 0.0f ? limit : side * limit), rotation.pitch(), false);
     }
 
     /**
