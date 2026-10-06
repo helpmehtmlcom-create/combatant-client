@@ -918,7 +918,9 @@ public class Scaffold extends Module {
 
         // Strict on-tick snaps to the aim for the placement tick through that tick's own movement packet instead of
         // sending extra ones: a second or third movement packet in a tick is a Timer violation on its own.
-        List<RotationProcessor> processors = onTick ? List.of() : buildRotationProcessors();
+        List<RotationProcessor> processors = onTick || smoothingCannotArriveInTime(player, currentTarget)
+                ? List.of()
+                : buildRotationProcessors();
         MovementCorrection correction = onTick ? MovementCorrection.SILENT : movementCorrection.get();
         ScaffoldPlacementTarget targetSnapshot = currentTarget;
         RotationTarget target = new RotationTarget(
@@ -1865,6 +1867,36 @@ public class Scaffold extends Module {
 
         Rotation aim = rotation.normalize();
         return target.withAim(ScaffoldPlacementGeometry.clickPoint(now, aim, supportPos, face, shape), aim);
+    }
+
+    /**
+     * The angle smoothing has to be done turning by the tick the eye passes the face plane, or the click waits for it
+     * while the player walks off the block. The estimate is the smoothing's own, so a slow setting or a standing start
+     * (the smoothing eases in from zero) simply turns the head in one step at the moment it is needed and not before.
+     */
+    private boolean smoothingCannotArriveInTime(LocalPlayer player, ScaffoldPlacementTarget target) {
+        if (!strictGeometry.get() || player == null || target == null) return false;
+
+        AngleSmooth smooth = selectAngleSmooth();
+        AABB shape = supportShape(player, target);
+        if (smooth == null || shape == null || target.getRotation() == null) return false;
+
+        Rotation from = RotationManager.INSTANCE.getCurrentRotation();
+        if (from == null) {
+            from = new Rotation(player.getYRot(), player.getXRot(), true);
+        }
+        int ticksToTurn = smooth.calculateTicks(from, target.getRotation());
+        if (ticksToTurn <= 0) return false;
+
+        Direction face = target.getDirection();
+        double outward = ScaffoldPlacementGeometry.outwardDistance(player.getEyePosition(), face, shape);
+        if (outward >= ScaffoldPlacementGeometry.FACE_MARGIN) return true;
+
+        Vec3 step = predictedStep(player);
+        double approach = step.x * face.getStepX() + step.y * face.getStepY() + step.z * face.getStepZ();
+        if (approach <= 1.0E-3) return false;
+        int ticksToFace = (int) Math.ceil((ScaffoldPlacementGeometry.FACE_MARGIN - outward) / approach);
+        return ticksToTurn >= ticksToFace;
     }
 
     private BlockHitResult resolveStrictHit(LocalPlayer player, ScaffoldPlacementTarget target, Rotation rotation) {
