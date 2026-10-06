@@ -1236,6 +1236,7 @@
   "setting.scaffold.auto_block_slot_reset_delay": "Auto block slot reset delay",
   "setting.scaffold.auto_block_do_not_use_below_count": "Auto block do not use below count",
   "setting.scaffold.prediction": "Prediction",
+  "setting.scaffold.strict_geometry": "Strict geometry",
   "setting.scaffold.consider_inventory": "Consider inventory",
   "setting.scaffold.delay": "Extra delay (ticks)",
   "setting.scaffold.down": "Down",

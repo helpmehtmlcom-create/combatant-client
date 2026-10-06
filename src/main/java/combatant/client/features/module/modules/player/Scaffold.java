@@ -39,6 +39,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.CollisionContext;
 import combatant.client.config.SettingDef;
 import combatant.client.config.values.*;
 import combatant.client.events.EventHandler;
@@ -119,6 +120,8 @@ public class Scaffold extends Module {
             new BooleanValue("auto_block_always", false);
     private final BooleanValue prediction =
             new BooleanValue("prediction", true);
+    private final BooleanValue strictGeometry =
+            new BooleanValue("strict_geometry", true);
     private final BooleanValue considerInventory =
             new BooleanValue("consider_inventory", false);
     private final BooleanValue down =
@@ -550,6 +553,7 @@ public class Scaffold extends Module {
         defs.add(SettingDef.number(autoBlockSlotResetDelay).visibleWhen(autoBlock::get));
         defs.add(SettingDef.number(autoBlockDoNotUseBelowCount).visibleWhen(autoBlock::get));
         defs.add(SettingDef.bool(prediction));
+        defs.add(SettingDef.bool(strictGeometry));
         defs.add(SettingDef.bool(considerInventory).visibleWhen(() -> rotationTiming.get() == RotationTiming.NORMAL));
         defs.add(SettingDef.number(placementSpeed).common(CommonSettingSchemas.PLACEMENT_SPEED));
         defs.add(SettingDef.number(delay));
@@ -1379,6 +1383,14 @@ public class Scaffold extends Module {
     ) {
         if (player == null || target == null || currentRotation == null) return null;
 
+        if (strictGeometry.get()) {
+            BlockHitResult strictHit = resolveStrictHit(player, target, currentRotation);
+            if (strictHit != null) {
+                return strictHit;
+            }
+            return shouldGoDown(player) ? target.toHitResult() : null;
+        }
+
         BlockHitResult crosshairTarget = traceScaffoldTarget(player, currentRotation);
         if (target.matches(crosshairTarget)) {
             return crosshairTarget;
@@ -1393,6 +1405,10 @@ public class Scaffold extends Module {
             Rotation currentRotation
     ) {
         if (player == null || target == null || currentRotation == null) return null;
+
+        if (strictGeometry.get() && technique.get() == Technique.EXPAND) {
+            return resolveStrictHit(player, target, currentRotation);
+        }
 
         BlockHitResult crosshairTarget = traceScaffoldTarget(player, currentRotation);
         if (target.matches(crosshairTarget)) {
@@ -1451,6 +1467,9 @@ public class Scaffold extends Module {
             return null;
         }
         if (target.getDirection().getAxis() == Direction.Axis.Y) {
+            return null;
+        }
+        if (strictGeometry.get()) {
             return null;
         }
 
@@ -1786,7 +1805,7 @@ public class Scaffold extends Module {
             return null;
         }
 
-        return findNormalPlacementTargetAt(
+        return refineStrictTarget(player, findNormalPlacementTargetAt(
                 player,
                 stack,
                 targetedPos,
@@ -1794,7 +1813,79 @@ public class Scaffold extends Module {
                 comparator,
                 facePositionFactory,
                 placementEyePos
-        );
+        ), placementEyePos);
+    }
+
+    /**
+     * With strict geometry the rotation and click point come from {@link ScaffoldPlacementGeometry}: an aim whose
+     * ray keeps hitting the supporting block from the eye now and from the eye after this tick's movement, which is
+     * where a ray-checking anticheat measures the sent rotation. Before the eye is on the outer side of the face
+     * (the player is still walking towards the edge) the aim is computed for the predicted placement position, so the
+     * rotation smoothing has time to arrive.
+     */
+    private ScaffoldPlacementTarget refineStrictTarget(LocalPlayer player, ScaffoldPlacementTarget target, Vec3 predictedEye) {
+        if (!strictGeometry.get() || target == null || player == null) return target;
+
+        AABB shape = supportShape(player, target);
+        if (shape == null) return target;
+
+        Direction face = target.getDirection();
+        Vec3 now = player.getEyePosition();
+        if (ScaffoldPlacementGeometry.outwardDistance(now, face, shape) < ScaffoldPlacementGeometry.FACE_MARGIN) {
+            now = predictedEye;
+        }
+        if (now == null || ScaffoldPlacementGeometry.outwardDistance(now, face, shape) < ScaffoldPlacementGeometry.FACE_MARGIN) {
+            return target;
+        }
+
+        BlockPos supportPos = target.getInteractedBlockPos();
+        Rotation rotation = ScaffoldPlacementGeometry.chooseRotation(
+                now, now.add(predictedStep(player)), supportPos, face, RotationManager.INSTANCE.getServerRotation());
+        if (rotation == null) return target;
+
+        Rotation aim = rotation.normalize();
+        return target.withAim(ScaffoldPlacementGeometry.clickPoint(now, aim, supportPos, face, shape), aim);
+    }
+
+    private BlockHitResult resolveStrictHit(LocalPlayer player, ScaffoldPlacementTarget target, Rotation rotation) {
+        if (player == null || target == null || rotation == null) return null;
+
+        AABB shape = supportShape(player, target);
+        if (shape == null) return null;
+
+        Vec3 eye = player.getEyePosition();
+        Vec3 next = eye.add(predictedStep(player));
+        BlockPos supportPos = target.getInteractedBlockPos();
+        Direction face = target.getDirection();
+        if (!ScaffoldPlacementGeometry.isSafe(eye, next, rotation, supportPos, face, shape)) {
+            return null;
+        }
+
+        return new BlockHitResult(ScaffoldPlacementGeometry.clickPoint(eye, rotation, supportPos, face, shape), face, supportPos, false);
+    }
+
+    private AABB supportShape(LocalPlayer player, ScaffoldPlacementTarget target) {
+        if (player == null || player.level() == null || target == null) return null;
+        BlockPos pos = target.getInteractedBlockPos();
+        var shape = player.level().getBlockState(pos).getShape(player.level(), pos, CollisionContext.of(player));
+        return shape.isEmpty() ? null : shape.bounds().move(pos);
+    }
+
+    /**
+     * Where the eye moves during the tick that is about to be simulated. At the start of a tick the delta movement
+     * is last tick's velocity after friction, and the movement keys add one more acceleration before the move.
+     */
+    private Vec3 predictedStep(LocalPlayer player) {
+        Vec3 velocity = player.getDeltaMovement();
+        double dx = velocity.x;
+        double dz = velocity.z;
+        if (hasRawInput()) {
+            double acceleration = (player.onGround() ? player.getSpeed() : (player.isSprinting() ? 0.026 : 0.02)) * 0.98;
+            double yaw = Math.toRadians(getRawMovementDirectionYaw(player, player.getYRot()));
+            dx -= Math.sin(yaw) * acceleration;
+            dz += Math.cos(yaw) * acceleration;
+        }
+        return new Vec3(dx, player.onGround() ? 0.0 : velocity.y, dz);
     }
 
     private List<BlockPos> movementAlignedNormalOffsets(LocalPlayer player, BlockPos targetedPos, List<BlockPos> offsets) {
@@ -1864,7 +1955,7 @@ public class Scaffold extends Module {
             if (target == null) continue;
             Vec3 blockCenter = Vec3.atCenterOf(target.getPlacedBlockPos());
             Rotation rotation = Rotation.lookingAt(blockCenter, placementEyePos);
-            return target.withRotation(rotation);
+            return refineStrictTarget(player, target.withRotation(rotation), placementEyePos);
         }
         return null;
     }
