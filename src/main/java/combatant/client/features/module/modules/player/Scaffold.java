@@ -905,14 +905,21 @@ public class Scaffold extends Module {
 
         LocalPlayer player = player();
         boolean hasTarget = refreshCurrentTarget(player);
-        if (rotationTiming.get() != RotationTiming.NORMAL) return;
+        boolean onTick = rotationTiming.get() == RotationTiming.ON_TICK;
+        // Legacy on-tick placement rotates with extra look packets around the click (see executeOnTickPlacement).
+        if (onTick && !strictGeometry.get()) return;
 
         if (!hasTarget) {
-            requestNormalStrictMoonwalkRotation(player);
+            if (!onTick) {
+                requestNormalStrictMoonwalkRotation(player);
+            }
             return;
         }
 
-        List<RotationProcessor> processors = buildRotationProcessors();
+        // Strict on-tick snaps to the aim for the placement tick through that tick's own movement packet instead of
+        // sending extra ones: a second or third movement packet in a tick is a Timer violation on its own.
+        List<RotationProcessor> processors = onTick ? List.of() : buildRotationProcessors();
+        MovementCorrection correction = onTick ? MovementCorrection.SILENT : movementCorrection.get();
         ScaffoldPlacementTarget targetSnapshot = currentTarget;
         RotationTarget target = new RotationTarget(
                 targetSnapshot.getRotation(),
@@ -921,7 +928,7 @@ public class Scaffold extends Module {
                 2,
                 4.0f,
                 considerInventory.get(),
-                movementCorrection.get(),
+                correction,
                 new RestrictedSingleUseAction(() -> executeScheduledNormalPlacement(
                         targetSnapshot,
                         RotationManager.INSTANCE.getCurrentRotation() != null
@@ -1042,13 +1049,16 @@ public class Scaffold extends Module {
     @EventHandler
     private void onPostPlayerUpdate(PostPlayerUpdateEvent event) {
         LocalPlayer player = player();
-        if (!canOperate(player) || rotationTiming.get() != RotationTiming.ON_TICK) return;
+        if (!canOperate(player) || rotationTiming.get() != RotationTiming.ON_TICK || strictGeometry.get()) return;
         executeOnTickPlacement(player);
     }
 
     private boolean handleNormalOnTickPlacement(LocalPlayer player, MovementInputEvent event) {
         if (player == null || event == null) return false;
         if (technique.get() != Technique.NORMAL || rotationTiming.get() != RotationTiming.ON_TICK) return false;
+        // Strict geometry places from the rotation update at the start of the tick, and cannot place before the eye
+        // is past the edge, so holding the player back here would leave him standing short of it forever.
+        if (strictGeometry.get()) return false;
         if (shouldGoDown(player) || player.getAbilities().flying) return false;
         if (!normalOnTickPlacementRequired(player)) return false;
 
