@@ -310,6 +310,8 @@ public class Scaffold extends Module {
     private ScaffoldPlacementTarget currentTarget;
     private int placementY;
     private int delayLeft;
+    /** Counts client ticks while the module runs; the placement cadence is measured in these. */
+    private long clientTick;
     private boolean wasPlaced;
     private int towerAirTicks;
     private double towerJumpBaseY = Double.NaN;
@@ -730,6 +732,7 @@ public class Scaffold extends Module {
             }
         }
 
+        clientTick++;
         if (delayLeft > 0) delayLeft--;
         InventorySwap.INSTANCE.tick();
         if (player.onGround()) {
@@ -1382,7 +1385,7 @@ public class Scaffold extends Module {
         movementPrediction.onPlace(currentOptimalLine, previousFallOffPos, player.position());
         lastPlacedRenderPos = currentTarget.getPlacedBlockPos();
         lastPlacedRenderMillis = System.currentTimeMillis();
-        placementGate.recordSuccessfulPlacement(System.nanoTime(), blocksToEagle.get());
+        placementGate.recordSuccessfulPlacement(clientTick, blocksToEagle.get());
         delayLeft = delay.get();
         currentTarget = null;
         return true;
@@ -2116,7 +2119,7 @@ public class Scaffold extends Module {
     }
 
     private boolean isPlacementCadenceReady() {
-        return placementGate.isPlacementReady(System.nanoTime(), placementSpeed.get(), delayLeft);
+        return placementGate.isPlacementReady(clientTick, placementSpeed.get(), delayLeft);
     }
 
     private void handleTower(LocalPlayer player) {
