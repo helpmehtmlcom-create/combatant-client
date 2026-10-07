@@ -80,6 +80,12 @@ import java.util.List;
         description = "module.scaffold.description")
 public class Scaffold extends Module {
     private static final boolean DEBUG_LOGS = true;
+    /**
+     * How far behind the player along the bridging line (in blocks) a candidate block may be centred and still count.
+     * Strict geometry waits until the eye is past the block edge, and on a diagonal line the two cells that can be
+     * placed there are by then about 0.2 behind the player's projection onto the line.
+     */
+    private static final double MIN_CANDIDATE_PROGRESS = -0.45;
     private static final List<BlockPos> NORMAL_OFFSETS = commonOffsets(0, -1, 1);
     private static final List<BlockPos> DOWN_OFFSETS = commonOffsets(0, -1, 1, -2, 2);
     private final EnumValue<RotationTiming> rotationTiming =
@@ -1958,7 +1964,7 @@ public class Scaffold extends Module {
         for (BlockPos offset : offsets) {
             BlockPos candidate = targetedPos.offset(offset);
             double progress = Vec3.atCenterOf(candidate).subtract(reference).dot(direction);
-            if (progress >= -0.15) {
+            if (progress >= MIN_CANDIDATE_PROGRESS) {
                 aligned.add(offset);
             }
         }
@@ -2459,7 +2465,9 @@ public class Scaffold extends Module {
             projected = projected.add(direction.scale(0.18 + tickDelta * 0.12));
         }
 
-        return currentOptimalLine.getNearestPointTo(projected);
+        // Only a player held on the line (stabilize movement) will actually be there; otherwise snapping to the line
+        // puts the predicted position up to half a block off the path he really walks.
+        return stabilizeMovement.get() ? currentOptimalLine.getNearestPointTo(projected) : projected;
     }
 
     private boolean isBlockBelow(LocalPlayer player) {

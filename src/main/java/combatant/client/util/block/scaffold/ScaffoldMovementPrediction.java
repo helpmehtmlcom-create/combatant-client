@@ -208,8 +208,10 @@ public final class ScaffoldMovementPrediction {
     public Vec3 getFallOffPositionOnLine(LocalPlayer player, ScaffoldLine optimalLine) {
         if (player == null || optimalLine == null) return null;
 
-        Vec3 nearest = optimalLine.getNearestPointTo(player.position());
-        Vec3 fromLine = nearest.add(0.0, -0.1, 0.0);
+        // Walk along the line's direction from where the player actually is. Projecting him onto the line first put
+        // the predicted edge on the line itself, half a block off his real path when he is not held on the line
+        // (diagonal bridging without stabilize movement).
+        Vec3 fromLine = player.position().add(0.0, -0.1, 0.0);
         Vec3 toLine = fromLine.add(optimalLine.direction().normalize().scale(3.0));
 
         Vec3 edgeCollision = findEdgeCollision(player, fromLine, toLine, 0.5f);
