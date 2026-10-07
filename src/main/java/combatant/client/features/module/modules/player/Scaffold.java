@@ -137,7 +137,7 @@ public class Scaffold extends Module {
     private final BooleanValue eagleOnlyOnGround =
             new BooleanValue("eagle_only_on_ground", true);
     private final NumberValue<Double> placementSpeed =
-            new NumberValue<>("placement_speed", 6.0, 1.0, 20.0);
+            new NumberValue<>("placement_speed", 20.0, 1.0, 20.0);
     private final NumberValue<Integer> delay =
             new NumberValue<>("delay", 0, 0, 20);
     private final NumberValue<Integer> autoBlockSlotResetDelay =
