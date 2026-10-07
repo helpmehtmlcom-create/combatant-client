@@ -322,6 +322,7 @@
   "setting.speed.legit_multiplier": "Множитель легита",
   "setting.speed.jump_acceleration": "Ускорение прыжка",
   "setting.speed.entity_boost_strength": "Сила буста от сущностей",
+  "setting.speed.mode.option.bhop": "Банни-хоп",
   "setting.windjump.item_usage_mode": "Режим использования",
   "setting.windjump.item_usage_mode.option.UNLOCKED": "Свободный",
   "setting.windjump.item_usage_mode.option.LEGIT": "Легит",
