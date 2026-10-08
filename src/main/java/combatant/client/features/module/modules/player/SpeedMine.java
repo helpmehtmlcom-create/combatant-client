@@ -97,9 +97,10 @@ public final class SpeedMine extends Module {
     private static final float FACING_TOLERANCE_DEGREES = 20.0f;
     private static final int PRE_SWAP_LEASE_TICKS = ATTRIBUTE_SETTLE_TICKS + 3;
 
-    // custom = the settings below as set; grim = no rebreak, no double mine and vanilla's 5-tick gap between
-    // finished blocks (GrimAC FastBreak flags chained breaks closer than that); vanilla = every packet trick on,
-    // for servers with no anticheat.
+    // custom = the settings below as set; grim = range at most 4.5 (GrimAC FarBreak), an arm swing with every
+    // START/STOP (NoSwingBreak), STOP only at the full break time, no rebreak, no double mine and vanilla's 5-tick
+    // gap between finished blocks (GrimAC FastBreak flags early STOPs and chained breaks closer than that);
+    // vanilla = every packet trick on, for servers with no anticheat.
     private final EnumValue<AntiCheatPreset> anticheat = enumMode("anticheat_mode", AntiCheatPreset.CUSTOM);
     private final NumberValue<Float> range = num("range", 5.0f, 3.0f, 6.0f);
     // Fraction of the predicted break time before STOP. 1.0 is exact; values closer to 0.7 finish
@@ -167,8 +168,9 @@ public final class SpeedMine extends Module {
         return anticheat.get().pick(doubleMine.get(), false, true);
     }
 
+    /** GrimAC FastBreak adds every STOP sent 25 ms or more before the predicted break time to its balance. */
     private float breakAtNow() {
-        return anticheat.get().pick(breakAt.get(), breakAt.get(), 1.0f);
+        return anticheat.get().pick(breakAt.get(), 1.0f, 1.0f);
     }
 
     /** True while GRIM still owes vanilla's gap after the last finished block. */
@@ -177,7 +179,7 @@ public final class SpeedMine extends Module {
     }
 
     private float rangeNow() {
-        return anticheat.get().pick(range.get(), range.get(), 6.0f);
+        return anticheat.get().limit(range.get(), (float) AntiCheatPreset.GRIM_BLOCK_RANGE, (float) AntiCheatPreset.VANILLA_BLOCK_RANGE);
     }
 
     /**
@@ -231,7 +233,7 @@ public final class SpeedMine extends Module {
         // The server's destroyPos moves with this START, so the old rebreak target is gone.
         rebreakTask = null;
         sendAction(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK, primary);
-        if (swing.get()) player.swing(InteractionHand.MAIN_HAND);
+        if (swing.get() && anticheat.get() != AntiCheatPreset.GRIM) player.swing(InteractionHand.MAIN_HAND);
         return true;
     }
 
@@ -475,6 +477,12 @@ public final class SpeedMine extends Module {
     private void sendAction(ServerboundPlayerActionPacket.Action action, MineTask task) {
         if (mc.getConnection() == null) return;
         mc.getConnection().send(new ServerboundPlayerActionPacket(action, task.pos, task.direction));
+        // GrimAC NoSwingBreak flags a START or STOP that has no arm swing in the same tick.
+        if (anticheat.get() == AntiCheatPreset.GRIM
+                && action != ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK
+                && mc.player != null) {
+            mc.player.swing(InteractionHand.MAIN_HAND);
+        }
     }
 
     /** The primary may be holding the same lease for its own STOP; leave it to expire in that case. */
@@ -488,7 +496,7 @@ public final class SpeedMine extends Module {
 
     private void updateRotation(LocalPlayer player) {
         MineTask task = rotationTask();
-        if (!rotate.get() || task == null) {
+        if (!rotateNow() || task == null) {
             if (rotating) RotationManager.INSTANCE.clear(this);
             rotating = false;
             return;
@@ -513,10 +521,23 @@ public final class SpeedMine extends Module {
         return null;
     }
 
+    /** GrimAC RotationBreak checks every START/STOP against the sent rotation, so GRIM always rotates. */
+    private boolean rotateNow() {
+        return anticheat.get().pick(rotate.get(), true, rotate.get());
+    }
+
     private boolean isFacing(LocalPlayer player, MineTask task) {
-        if (!rotate.get()) return true;
+        if (!rotateNow()) return true;
         Rotation server = RotationManager.INSTANCE.getServerRotation();
-        return server == null || server.angleTo(wantedRotation(player, task)) <= FACING_TOLERANCE_DEGREES;
+        if (server == null) return true;
+        if (anticheat.get() == AntiCheatPreset.GRIM) {
+            // RotationBreak wants the eye ray along the sent rotation to hit the block, not just point near it.
+            AABB box = new AABB(task.pos);
+            Vec3 eye = player.getEyePosition();
+            return box.contains(eye)
+                    || box.clip(eye, eye.add(server.directionVector().scale(AntiCheatPreset.GRIM_BLOCK_RANGE))).isPresent();
+        }
+        return server.angleTo(wantedRotation(player, task)) <= FACING_TOLERANCE_DEGREES;
     }
 
     private static Rotation wantedRotation(LocalPlayer player, MineTask task) {

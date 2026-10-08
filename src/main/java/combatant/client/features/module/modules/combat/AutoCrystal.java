@@ -107,7 +107,8 @@ public class AutoCrystal extends Module {
     private final BooleanValue renderSelfDamage = boolCommon("autocrystalRenderSelfDamage", CommonSettingSchemas.RENDER_SELF_DAMAGE, true);
     private final BooleanValue drawDamage = boolCommon("autocrystalRenderDamage", CommonSettingSchemas.RENDER_DAMAGE, true);
     // custom = the settings below as set; grim = place range 4.5 and hit range 3.0, the limits GrimAC enforces
-    // (FarPlace, Reach); vanilla = 6.0 everywhere with instant place/break, for servers with no anticheat.
+    // (FarPlace, Reach); vanilla = the vanilla server's limits (5.5 place, 6.0 hit) with instant place/break,
+    // for servers with no anticheat.
     private final EnumValue<AntiCheatPreset> anticheat = enumMode("anticheat_mode", AntiCheatPreset.CUSTOM);
     private final BooleanValue placeEnabled = boolCommon("autocrystalPlace", CommonSettingSchemas.PLACE, true);
     private final NumberValue<Integer> placeDelay =
@@ -346,19 +347,19 @@ public class AutoCrystal extends Module {
     }
 
     private float effPlaceRange() {
-        return anticheat.get().limit(placeRange.get(), 4.5f, 6.0f);
+        return anticheat.get().limit(placeRange.get(), (float) AntiCheatPreset.GRIM_BLOCK_RANGE, (float) AntiCheatPreset.VANILLA_BLOCK_RANGE);
     }
 
     private float effWallRange() {
-        return anticheat.get().limit(wallRange.get(), 3.0f, 6.0f);
+        return anticheat.get().limit(wallRange.get(), 3.0f, (float) AntiCheatPreset.VANILLA_BLOCK_RANGE);
     }
 
     private float effBreakRange() {
-        return anticheat.get().limit(breakRange.get(), 3.0f, 6.0f);
+        return anticheat.get().limit(breakRange.get(), (float) AntiCheatPreset.GRIM_ENTITY_RANGE, (float) AntiCheatPreset.VANILLA_ENTITY_RANGE);
     }
 
     private float effBreakWallRange() {
-        return anticheat.get().limit(breakWallRange.get(), 3.0f, 6.0f);
+        return anticheat.get().limit(breakWallRange.get(), (float) AntiCheatPreset.GRIM_ENTITY_RANGE, (float) AntiCheatPreset.VANILLA_ENTITY_RANGE);
     }
 
     private boolean effInstantBreak() {

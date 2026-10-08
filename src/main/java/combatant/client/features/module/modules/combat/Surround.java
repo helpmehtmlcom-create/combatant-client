@@ -25,6 +25,7 @@ import combatant.client.features.module.modules.combat.surround.SurroundPlanner;
 import combatant.client.features.module.modules.combat.surround.SurroundPlanner.Pos;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.util.aiming.features.MovementCorrection;
+import combatant.client.util.anticheat.AntiCheatPreset;
 import combatant.client.util.block.placer.BlockPlacer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -52,6 +53,9 @@ public final class Surround extends Module {
     private static final long NO_BLOCKS_WARN_INTERVAL_MS = 3000L;
 
     private final Minecraft mc = Minecraft.getInstance();
+    // custom = the settings below as set; grim = place range <= 4.5, wall range 0, rotation NORMAL, 1 block/tick;
+    // vanilla = 5.5 range/wall range, NO_ROTATION, max blocks/tick, 6.0 crystal clear reach.
+    private final EnumValue<AntiCheatPreset> anticheat = enumMode("anticheat_mode", AntiCheatPreset.CUSTOM);
     private final EnumValue<Mode> mode = enumSetting("surroundMode", "mode", Mode.FEET, Mode.values());
     private final EnumValue<CenterMode> center = enumSetting("surroundCenter", "center", CenterMode.NONE, CenterMode.values());
     private final EnumValue<BlockPriority> blockPriority = enumSetting(
@@ -98,19 +102,19 @@ public final class Surround extends Module {
     private final BlockPlacer blockPlacer = new BlockPlacer(
             this, this, 10,
             this::findPlacementSlot,
-            range::get,
-            wallRange::get,
+            this::effPlaceRange,
+            this::effWallRange,
             delay::get,
             delay::get,
             swapBackDelay::get,
             swapBackDelay::get,
             () -> 1,
-            () -> rotation.get() == BlockPlacer.RotationMode.NO_ROTATION,
+            this::effConstructFailResult,
             () -> true,
             placeWhileUsing::get,
             () -> false,
-            blocksPerTick::get,
-            rotation::get,
+            this::effBlocksPerTick,
+            this::effRotation,
             movementCorrection::get
     );
     private final CrystalClearer crystalClearer = new CrystalClearer();
@@ -168,7 +172,7 @@ public final class Surround extends Module {
         updateTargets();
 
         if (attackCrystals.get()) {
-            crystalClearer.clear(mc, player, currentTargets, range.get(), crystalDelay.get());
+            crystalClearer.clear(mc, player, currentTargets, effCrystalRange(), crystalDelay.get());
         }
 
         warnIfOutOfBlocks(player);
@@ -264,6 +268,30 @@ public final class Surround extends Module {
     private BlockPlacer.PlacementSlot findPlacementSlot(BlockPos ignored) {
         LocalPlayer player = mc.player;
         return player == null ? null : ShellBlocks.find(player, blockPriority.get());
+    }
+
+    private double effPlaceRange() {
+        return anticheat.get().limit(range.get(), AntiCheatPreset.GRIM_BLOCK_RANGE, AntiCheatPreset.VANILLA_BLOCK_RANGE);
+    }
+
+    private double effWallRange() {
+        return anticheat.get().limit(wallRange.get(), 0.0D, AntiCheatPreset.VANILLA_BLOCK_RANGE);
+    }
+
+    private double effCrystalRange() {
+        return anticheat.get().limit(range.get(), AntiCheatPreset.GRIM_ENTITY_RANGE, AntiCheatPreset.VANILLA_ENTITY_RANGE);
+    }
+
+    private BlockPlacer.RotationMode effRotation() {
+        return anticheat.get().pick(rotation.get(), BlockPlacer.RotationMode.NORMAL, BlockPlacer.RotationMode.NO_ROTATION);
+    }
+
+    private boolean effConstructFailResult() {
+        return effRotation() == BlockPlacer.RotationMode.NO_ROTATION;
+    }
+
+    private int effBlocksPerTick() {
+        return anticheat.get().limit(blocksPerTick.get(), 1, blocksPerTick.getMax());
     }
 
     @Override

@@ -1176,7 +1176,7 @@ public class KillAura extends Module {
     }
 
     private double effectiveRange() {
-        return anticheat.get().limit(range.get(), 3.0, 6.0);
+        return anticheat.get().limit(range.get(), AntiCheatPreset.GRIM_ENTITY_RANGE, AntiCheatPreset.VANILLA_ENTITY_RANGE);
     }
 
     /** GrimAC flags TimerLimit for the default and none resets while the player moves; legit and packet stay clean. */
