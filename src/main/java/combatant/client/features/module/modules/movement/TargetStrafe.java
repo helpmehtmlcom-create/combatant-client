@@ -27,6 +27,7 @@ import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.combat.KillAura;
 import combatant.client.util.aiming.RotationManager;
+import combatant.client.util.anticheat.AntiCheatPreset;
 import combatant.client.util.combat.SprintController;
 
 @ModuleInfo(
@@ -37,6 +38,9 @@ import combatant.client.util.combat.SprintController;
 public final class TargetStrafe extends Module {
 
     private final Minecraft mc = Minecraft.getInstance();
+    // custom = the mode below as set; grim = the Grim mode (matrix writes the velocity directly: GrimAC Simulation
+    // and GroundSpoof flag it every tick); vanilla = matrix, for servers with no anticheat.
+    private final EnumValue<AntiCheatPreset> anticheat = enumMode("anticheat_mode", AntiCheatPreset.CUSTOM);
     private final EnumValue<StrafeMode> mode =
             enumMode("mode", StrafeMode.MATRIX, StrafeMode.MATRIX, StrafeMode.GRIM);
     private final EnumValue<PointType> grimPointType =
@@ -284,12 +288,16 @@ public final class TargetStrafe extends Module {
         SprintController.INSTANCE.requestStartSprinting(mc, player, hasForwardMovement(angleDiff));
     }
 
+    private StrafeMode effectiveMode() {
+        return anticheat.get().pick(mode.get(), StrafeMode.GRIM, StrafeMode.MATRIX);
+    }
+
     private boolean isMatrixMode() {
-        return mode.get() == StrafeMode.MATRIX;
+        return effectiveMode() == StrafeMode.MATRIX;
     }
 
     private boolean isGrimMode() {
-        return mode.get() == StrafeMode.GRIM;
+        return effectiveMode() == StrafeMode.GRIM;
     }
 
     private boolean usesGrimRadius() {
