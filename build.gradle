@@ -124,6 +124,11 @@ configurations {
 }
 
 loom {
+    runs {
+        client {
+            vmArgs "-XX:TieredStopAtLevel=1", "-Xverify:none"
+        }
+    }
     mods {
         "combatant" {
             sourceSet sourceSets.main
