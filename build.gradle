@@ -126,7 +126,7 @@ configurations {
 loom {
     runs {
         client {
-            vmArgs "-XX:TieredStopAtLevel=1", "-Xverify:none"
+            vmArgs "-XX:TieredStopAtLevel=1", "-Xverify:none", "-XX:+UseParallelGC"
         }
     }
     mods {
