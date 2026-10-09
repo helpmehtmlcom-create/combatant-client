@@ -80,6 +80,14 @@ import java.util.List;
         description = "module.scaffold.description")
 public class Scaffold extends Module {
     private static final boolean DEBUG_LOGS = true;
+    /**
+     * How far behind the player along the bridging line (in blocks) a candidate block may be centred and still count.
+     * Strict geometry waits until the eye is past the block edge, and on a diagonal line the two cells that can be
+     * placed there are by then about 0.2 behind the player's projection onto the line.
+     */
+    private static final double MIN_CANDIDATE_PROGRESS = -0.45;
+    private static final double JUMP_IMPULSE = 0.42;
+    private static final double JUMP_SPRINT_BOOST = 0.2;
     private static final List<BlockPos> NORMAL_OFFSETS = commonOffsets(0, -1, 1);
     private static final List<BlockPos> DOWN_OFFSETS = commonOffsets(0, -1, 1, -2, 2);
     private final EnumValue<RotationTiming> rotationTiming =
@@ -131,7 +139,7 @@ public class Scaffold extends Module {
     private final BooleanValue eagleOnlyOnGround =
             new BooleanValue("eagle_only_on_ground", true);
     private final NumberValue<Double> placementSpeed =
-            new NumberValue<>("placement_speed", 6.0, 1.0, 20.0);
+            new NumberValue<>("placement_speed", 20.0, 1.0, 20.0);
     private final NumberValue<Integer> delay =
             new NumberValue<>("delay", 0, 0, 20);
     private final NumberValue<Integer> autoBlockSlotResetDelay =
@@ -310,6 +318,8 @@ public class Scaffold extends Module {
     private ScaffoldPlacementTarget currentTarget;
     private int placementY;
     private int delayLeft;
+    /** Counts client ticks while the module runs; the placement cadence is measured in these. */
+    private long clientTick;
     private boolean wasPlaced;
     private int towerAirTicks;
     private double towerJumpBaseY = Double.NaN;
@@ -730,6 +740,7 @@ public class Scaffold extends Module {
             }
         }
 
+        clientTick++;
         if (delayLeft > 0) delayLeft--;
         InventorySwap.INSTANCE.tick();
         if (player.onGround()) {
@@ -1382,7 +1393,7 @@ public class Scaffold extends Module {
         movementPrediction.onPlace(currentOptimalLine, previousFallOffPos, player.position());
         lastPlacedRenderPos = currentTarget.getPlacedBlockPos();
         lastPlacedRenderMillis = System.currentTimeMillis();
-        placementGate.recordSuccessfulPlacement(System.nanoTime(), blocksToEagle.get());
+        placementGate.recordSuccessfulPlacement(clientTick, blocksToEagle.get());
         delayLeft = delay.get();
         currentTarget = null;
         return true;
@@ -1925,19 +1936,37 @@ public class Scaffold extends Module {
 
     /**
      * Where the eye moves during the tick that is about to be simulated. At the start of a tick the delta movement
-     * is last tick's velocity after friction, and the movement keys add one more acceleration before the move.
+     * is last tick's velocity after friction, and the movement keys add one more acceleration before the move. A jump
+     * adds its own impulse (and the sprint boost along the walking direction) to a tick that starts on the ground:
+     * the player rises 0.42 in that single tick, which is the difference between a ray that still hits the block
+     * afterwards and one that passes over it.
      */
     private Vec3 predictedStep(LocalPlayer player) {
         Vec3 velocity = player.getDeltaMovement();
         double dx = velocity.x;
         double dz = velocity.z;
+        boolean jumping = jumpsThisTick(player);
         if (hasRawInput()) {
             double acceleration = (player.onGround() ? player.getSpeed() : (player.isSprinting() ? 0.026 : 0.02)) * 0.98;
             double yaw = Math.toRadians(getRawMovementDirectionYaw(player, player.getYRot()));
+            if (jumping && player.isSprinting()) {
+                acceleration += JUMP_SPRINT_BOOST;
+            }
             dx -= Math.sin(yaw) * acceleration;
             dz += Math.cos(yaw) * acceleration;
         }
-        return new Vec3(dx, player.onGround() ? 0.0 : velocity.y, dz);
+        return new Vec3(dx, jumping ? JUMP_IMPULSE : (player.onGround() ? 0.0 : velocity.y), dz);
+    }
+
+    /** Whether the player leaves the ground in the tick about to run: the jump key, or telly's own jump. */
+    private boolean jumpsThisTick(LocalPlayer player) {
+        if (!player.onGround()) return false;
+        if (Minecraft.getInstance().options.keyJump.isDown()) return true;
+        if (!telly.get() || technique.get() != Technique.NORMAL || !isMoving(player) || blockCount(player) <= 0) return false;
+        return switch (tellyResetMode.get()) {
+            case REVERSE -> true;
+            case RESET -> shouldTellyJumpNow(player);
+        };
     }
 
     private List<BlockPos> movementAlignedNormalOffsets(LocalPlayer player, BlockPos targetedPos, List<BlockPos> offsets) {
@@ -1955,7 +1984,7 @@ public class Scaffold extends Module {
         for (BlockPos offset : offsets) {
             BlockPos candidate = targetedPos.offset(offset);
             double progress = Vec3.atCenterOf(candidate).subtract(reference).dot(direction);
-            if (progress >= -0.15) {
+            if (progress >= MIN_CANDIDATE_PROGRESS) {
                 aligned.add(offset);
             }
         }
@@ -2116,7 +2145,7 @@ public class Scaffold extends Module {
     }
 
     private boolean isPlacementCadenceReady() {
-        return placementGate.isPlacementReady(System.nanoTime(), placementSpeed.get(), delayLeft);
+        return placementGate.isPlacementReady(clientTick, placementSpeed.get(), delayLeft);
     }
 
     private void handleTower(LocalPlayer player) {
@@ -2456,7 +2485,9 @@ public class Scaffold extends Module {
             projected = projected.add(direction.scale(0.18 + tickDelta * 0.12));
         }
 
-        return currentOptimalLine.getNearestPointTo(projected);
+        // Only a player held on the line (stabilize movement) will actually be there; otherwise snapping to the line
+        // puts the predicted position up to half a block off the path he really walks.
+        return stabilizeMovement.get() ? currentOptimalLine.getNearestPointTo(projected) : projected;
     }
 
     private boolean isBlockBelow(LocalPlayer player) {
