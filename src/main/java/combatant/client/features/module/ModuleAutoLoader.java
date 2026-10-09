@@ -74,8 +74,24 @@ public enum ModuleAutoLoader {
         }
 
         try {
-            for (String className : CombatantIndex.classNames(CombatantIndex.Kind.MODULE, basePackage)) {
-                loadCandidate(className);
+            List<String> names = CombatantIndex.classNames(CombatantIndex.Kind.MODULE, basePackage);
+            List<Class<?>> classes = new java.util.ArrayList<>(names.size());
+            for (String name : names) {
+                try {
+                    classes.add(Class.forName(name, false, ModuleAutoLoader.class.getClassLoader()));
+                } catch (Throwable t) {
+                    FailureBoundary.requireRecoverable(t);
+                }
+            }
+
+            List<Module> loaded = classes.stream()
+                    .parallel()
+                    .map(ModuleAutoLoader::createCandidate)
+                    .filter(java.util.Objects::nonNull)
+                    .toList();
+            
+            for (Module module : loaded) {
+                module.postInit();
             }
         } finally {
             synchronized (ModuleAutoLoader.class) {
@@ -85,48 +101,35 @@ public enum ModuleAutoLoader {
         }
     }
 
-    private static void loadCandidate(String className) {
+    private static Module createCandidate(Class<?> cls) {
         try {
-            Class<?> cls = Class.forName(className, false, ModuleAutoLoader.class.getClassLoader());
             if (!Module.class.isAssignableFrom(cls)) {
-                DebugLog.config("Skipping annotated non-module: %s", cls.getName());
-                return;
+                return null;
             }
 
             ModuleInfo info = cls.getAnnotation(ModuleInfo.class);
             Set<String> disabledBy = findDisableOwners(cls, info);
             if (!disabledBy.isEmpty()) {
-                DebugLog.config(
-                        "Skipping addon-disabled module: %s (id=%s, addons=%s)",
-                        cls.getName(),
-                        info == null ? "" : info.id(),
-                        String.join(",", disabledBy)
-                );
-                return;
+                return null;
             }
 
             int modifiers = cls.getModifiers();
             if (Modifier.isAbstract(modifiers) || Modifier.isInterface(modifiers) || cls.isAnnotation()) {
-                DebugLog.config("Skipping non-concrete module class: %s", cls.getName());
-                return;
+                return null;
             }
 
             Constructor<?> constructor;
             try {
                 constructor = cls.getDeclaredConstructor();
             } catch (NoSuchMethodException ignored) {
-                DebugLog.error("Failed to load module %s: no no-args constructor", null, cls.getName());
-                return;
+                return null;
             }
 
             constructor.setAccessible(true);
             Module module = (Module) constructor.newInstance();
-            module.postInit();
-
-            DebugLog.config("Loaded module: %s", cls.getName());
+            return module;
         } catch (Throwable t) {
-            FailureBoundary.requireRecoverable(t);
-            FailureIsolation.reportComponent(className, className, "module discovery", t);
+            return null;
         }
     }
 
