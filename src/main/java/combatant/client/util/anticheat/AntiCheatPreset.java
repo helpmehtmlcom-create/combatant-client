@@ -18,8 +18,8 @@ import combatant.client.config.values.EnumValue;
 public enum AntiCheatPreset implements EnumValue.IdProvider {
     CUSTOM("custom"),
     GRIM("grim"),
+    VULCAN("vulcan"),
     VANILLA("vanilla");
-
     /** GrimAC Reach: the entity_interaction_range attribute, 3.0 in survival. */
     public static final double GRIM_ENTITY_RANGE = 3.0;
     /**
@@ -27,11 +27,14 @@ public enum AntiCheatPreset implements EnumValue.IdProvider {
      * the eye to the nearest point of the clicked block.
      */
     public static final double GRIM_BLOCK_RANGE = 4.5;
+    /** Vulcan Reach: strictly clamped to 3.0 blocks in survival. */
+    public static final double VULCAN_ENTITY_RANGE = 3.0;
+    /** Vulcan FarPlace: 4.5 blocks reach. */
+    public static final double VULCAN_BLOCK_RANGE = 4.5;
     /** Vanilla server: entity interactions within entity_interaction_range + 3.0 of the target's box. */
     public static final double VANILLA_ENTITY_RANGE = 6.0;
     /** Vanilla server: use-item-on and dig actions within block_interaction_range + 1.0 of the block's box. */
     public static final double VANILLA_BLOCK_RANGE = 5.5;
-
     private final String id;
 
     AntiCheatPreset(String id) {
@@ -43,33 +46,69 @@ public enum AntiCheatPreset implements EnumValue.IdProvider {
         return id;
     }
 
-    /** The player's value, never above {@code grimMax} under GRIM, and {@code vanillaValue} under VANILLA. */
-    public double limit(double user, double grimMax, double vanillaValue) {
+    /** The player's value, capped per anticheat preset. */
+    public double limit(double user, double grimMax, double vulcanMax, double vanillaValue) {
         return switch (this) {
             case CUSTOM -> user;
             case GRIM -> Math.min(user, grimMax);
+            case VULCAN -> Math.min(user, vulcanMax);
             case VANILLA -> vanillaValue;
         };
+    }
+
+    public double limit(double user, double grimMax, double vanillaValue) {
+        return limit(user, grimMax, grimMax, vanillaValue);
+    }
+
+    public float limit(float user, float grimMax, float vulcanMax, float vanillaValue) {
+        return (float) limit((double) user, (double) grimMax, (double) vulcanMax, (double) vanillaValue);
     }
 
     public float limit(float user, float grimMax, float vanillaValue) {
-        return (float) limit((double) user, (double) grimMax, (double) vanillaValue);
+        return (float) limit((double) user, (double) grimMax, (double) grimMax, (double) vanillaValue);
     }
 
-    public int limit(int user, int grimMax, int vanillaValue) {
+    public int limit(int user, int grimMax, int vulcanMax, int vanillaValue) {
         return switch (this) {
             case CUSTOM -> user;
             case GRIM -> Math.min(user, grimMax);
+            case VULCAN -> Math.min(user, vulcanMax);
             case VANILLA -> vanillaValue;
         };
     }
 
-    /** One value per preset. */
-    public <T> T pick(T user, T grim, T vanilla) {
+    public int limit(int user, int grimMax, int vanillaValue) {
+        return limit(user, grimMax, grimMax, vanillaValue);
+    }
+
+    /** One value per preset with dedicated Vulcan option. */
+    public <T> T pick(T user, T grim, T vulcan, T vanilla) {
         return switch (this) {
             case CUSTOM -> user;
             case GRIM -> grim;
+            case VULCAN -> vulcan;
             case VANILLA -> vanilla;
         };
+    }
+
+    /** One value per preset defaulting Vulcan to grim safe behavior. */
+    public <T> T pick(T user, T grim, T vanilla) {
+        return pick(user, grim, grim, vanilla);
+    }
+
+    public boolean isGrim() {
+        return this == GRIM;
+    }
+
+    public boolean isVulcan() {
+        return this == VULCAN;
+    }
+
+    public boolean isVanilla() {
+        return this == VANILLA;
+    }
+
+    public boolean isStrict() {
+        return this == GRIM || this == VULCAN;
     }
 }
