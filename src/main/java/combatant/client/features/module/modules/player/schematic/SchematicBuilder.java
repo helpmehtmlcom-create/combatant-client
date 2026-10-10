@@ -458,8 +458,10 @@ public final class SchematicBuilder extends Module {
                 }
                 if (count < MAX_CANDIDATES) {
                     candidateCells[count] = cell;
-                    // Lower layers first so blocks can lean on what is below them, then nearest first.
-                    candidateDistance[count] = (y - low) * 1000.0 + distSq;
+                    // Lower layers first so blocks can lean on what is below them, then farthest first: a block
+                    // can only hide the faces of cells behind it, so placing near cells first walls off the far
+                    // ones (the corners of a ring around the player become unclickable).
+                    candidateDistance[count] = (y - low) * 1000.0 + (reachSq - distSq);
                     count++;
                 }
             }
