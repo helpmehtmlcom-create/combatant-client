@@ -326,6 +326,9 @@ public final class SchematicBuilder extends Module {
                 plan.face(), hit.getLocation(), facingRotation);
         if (predicted == null || predicted.getBlock() != work.expected.getBlock()) return false;
         boolean exact = predicted == work.expected;
+        // The ray reaches the planned face before the rotation settles on the planned point; clicking then puts
+        // a stair or slab in the wrong half. Wait for the exact click, but not past half the plan timeout.
+        if (!exact && plan.exact() && pendingAge < PLAN_TIMEOUT_TICKS / 2) return false;
         if (!exact && approximate.get() == ApproximateMode.SKIP) {
             retryAfter.put(plan.target().asLong(), ticks + RETRY_AFTER_TICKS);
             pending = null;
