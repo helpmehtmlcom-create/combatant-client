@@ -192,6 +192,12 @@ public class BlockESP extends Module {
     private final Set<Long> queuedReconcileTargets = ConcurrentHashMap.newKeySet();
     private volatile Map<BlockPos, Target> renderTargets = new ConcurrentHashMap<>();
     private ClientLevel lastWorld;
+    private final List<Vec3> tracerCenters = new ArrayList<>();
+    private final List<Boolean> tracerVisible = new ArrayList<>();
+    private Map<BlockPos, Target> tracerMapSource;
+    private long tracerTick = Long.MIN_VALUE;
+    private int tracerSize;
+    private boolean tracerCluster;
     private BlockScanMode lastMode;
     private int lastSearchBlocksHash;
     private int lastScanSignature = Integer.MIN_VALUE;
@@ -754,24 +760,43 @@ public class BlockESP extends Module {
             return;
         }
 
-        if (!clusterTracersValue.get()) {
-            for (Target target : renderTargets.values()) {
-                if (!withinDistance(target.pos) || !isCurrentTargetBlock(target.pos)) {
-                    continue;
+        boolean cluster = clusterTracersValue.get();
+        Map<BlockPos, Target> targets = renderTargets;
+        long tick = mc.level == null ? Long.MIN_VALUE : mc.level.getGameTime();
+        if (tracerMapSource != targets || tracerTick != tick || tracerSize != targets.size() || tracerCluster != cluster) {
+            tracerMapSource = targets;
+            tracerTick = tick;
+            tracerSize = targets.size();
+            tracerCluster = cluster;
+            tracerCenters.clear();
+            tracerVisible.clear();
+            if (!cluster) {
+                for (Target target : targets.values()) {
+                    if (!withinDistance(target.pos) || !isCurrentTargetBlock(target.pos)) {
+                        continue;
+                    }
+                    tracerCenters.add(Vec3.atCenterOf(target.pos));
+                    tracerVisible.add(target.visible);
                 }
-                int color = target.visible ? visibleColor.getArgb() : chunkColor.getArgb();
-                tracers.render3DTracersRaw(renderer, tickDelta, List.of(Vec3.atCenterOf(target.pos)), color);
+            } else {
+                List<List<Target>> clusters = buildClusters(targets.values().stream()
+                        .filter(target -> withinDistance(target.pos) && isCurrentTargetBlock(target.pos))
+                        .toList());
+                for (List<Target> group : clusters) {
+                    tracerCenters.add(clusterCenter(group));
+                    tracerVisible.add(group.stream().anyMatch(target -> target.visible));
+                }
             }
-            return;
         }
 
-        List<List<Target>> clusters = buildClusters(renderTargets.values().stream()
-                .filter(target -> withinDistance(target.pos) && isCurrentTargetBlock(target.pos))
-                .toList());
-        for (List<Target> cluster : clusters) {
-            boolean anyVisible = cluster.stream().anyMatch(target -> target.visible);
-            int color = anyVisible ? visibleColor.getArgb() : chunkColor.getArgb();
-            tracers.render3DTracersRaw(renderer, tickDelta, List.of(clusterCenter(cluster)), color);
+        if (tracerCenters.isEmpty()) {
+            return;
+        }
+        int visibleArgb = visibleColor.getArgb();
+        int chunkArgb = chunkColor.getArgb();
+        for (int i = 0, n = tracerCenters.size(); i < n; i++) {
+            tracers.render3DTracersRaw(renderer, tickDelta, List.of(tracerCenters.get(i)),
+                    tracerVisible.get(i) ? visibleArgb : chunkArgb);
         }
     }
 
