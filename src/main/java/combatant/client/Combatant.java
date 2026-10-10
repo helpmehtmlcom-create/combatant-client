@@ -528,7 +528,6 @@ public class Combatant implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        long initStart = System.currentTimeMillis();
         NativeMemoryGuard.initialize();
         CombatantRenderEngineBootstrap.init();
         PostProcessManager.register(new NetherPortalRiftPass());
@@ -545,11 +544,6 @@ public class Combatant implements ClientModInitializer {
         CommandManager.init();
         MediaSessionService.get().init();
         ClientLifecycleEvents.CLIENT_STARTED.register(client -> RenderPrewarmManager.onClientStarted());
-        ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
-            long initEnd = System.currentTimeMillis();
-            System.out.println("METRIC startup_time=" + (initEnd - initStart));
-            client.stop();
-        });
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
             // Stop all Combatant callbacks before native-backed subsystems begin one-way shutdown.
             // Minecraft can still extract one final GUI frame while disconnecting.
