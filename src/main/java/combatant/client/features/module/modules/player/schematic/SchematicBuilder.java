@@ -9,8 +9,10 @@ package combatant.client.features.module.modules.player.schematic;
 
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.EnumValue;
+import combatant.client.config.values.ItemIdSetValue;
 import combatant.client.config.values.NumberValue;
 import combatant.client.events.EventHandler;
+import combatant.client.events.impl.MovementInputEvent;
 import combatant.client.events.impl.RotationUpdateEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
@@ -28,6 +30,7 @@ import combatant.client.util.schematic.Schematic;
 import combatant.client.util.schematic.SchematicDiff;
 import combatant.client.util.schematic.SchematicMaterials;
 import combatant.client.util.schematic.SchematicState;
+import combatant.client.util.schematic.walk.WalkTerrain;
 import combatant.client.util.screen.ClientScreen;
 import combatant.client.util.server.DonutSmp;
 import net.minecraft.client.Minecraft;
@@ -48,8 +51,10 @@ import net.minecraft.world.phys.Vec3;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -92,6 +97,9 @@ public final class SchematicBuilder extends Module {
         PAUSED,
         MISSING_MATERIALS,
         OUT_OF_REACH,
+        WALKING,
+        PILLARING,
+        CLEARING,
         DONE
     }
 
@@ -111,6 +119,14 @@ public final class SchematicBuilder extends Module {
     private final BooleanValue strictLayers = bool("strict_layers", true);
     private final EnumValue<ApproximateMode> approximate = enumMode("approximate_states", ApproximateMode.PLACE);
     private final BooleanValue stopOnDamage = bool("stop_on_damage", false);
+    private final NumberValue<Float> pauseHealth = num("pause_health", 6.0f, 0.0f, 20.0f);
+    private final BooleanValue autoWalk = bool("auto_walk", true);
+    private final NumberValue<Integer> stuckTimeout = visibleWhen(num("stuck_timeout", 100, 40, 400), autoWalk::get);
+    private final BooleanValue autoJumpPillar = visibleWhen(bool("auto_jump_pillar", true), autoWalk::get);
+    private final ItemIdSetValue helperBlocks =
+            visibleWhen(itemList("helper_blocks"), () -> autoWalk.get() && autoJumpPillar.get());
+    private final BooleanValue removeHelpers =
+            visibleWhen(bool("remove_helpers", true), () -> autoWalk.get() && autoJumpPillar.get());
     private final BooleanValue donutSmpSafe = bool("donutsmp_safe", true);
     private final EnumValue<AntiCheatPreset> anticheat = enumMode("anticheat_mode", AntiCheatPreset.CUSTOM);
 
@@ -124,6 +140,13 @@ public final class SchematicBuilder extends Module {
     private final Map<Long, Integer> retryAfter = new HashMap<>();
     private final int[] candidateCells = new int[MAX_CANDIDATES];
     private final double[] candidateDistance = new double[MAX_CANDIDATES];
+    private final BuildMover mover = new BuildMover(mc, new MoverHost());
+    private int[] footprint;
+    private boolean aimedThisTick;
+
+    {
+        helperBlocks.set(new LinkedHashSet<>(List.of("minecraft:cobblestone", "minecraft:dirt")));
+    }
 
     private Pending pending;
     private int pendingAge;
@@ -166,6 +189,8 @@ public final class SchematicBuilder extends Module {
         lastLevel = mc.level;
         completedLayerNotified = -1;
         lastShortfallTick = Integer.MIN_VALUE;
+        mover.clearAll();
+        footprint = null;
     }
 
     public Status status() {
@@ -178,6 +203,13 @@ public final class SchematicBuilder extends Module {
 
     public int approximateCount() {
         return approximatePlaced;
+    }
+
+    /** Walk statistics for diagnostics: routes planned, route cells, blocks walked, pillar blocks, helpers broken, aborts. */
+    public String moverSummary() {
+        return String.format(java.util.Locale.ROOT, "routes=%d routeCells=%d walked=%.1f pillar=%d helpersRemoved=%d aborts=%d %s",
+                mover.routes(), mover.routeCells(), mover.walked(), mover.pillarBlocks(), mover.helpersRemoved(),
+                mover.aborts(), mover);
     }
 
     private boolean donutRules() {
@@ -219,6 +251,7 @@ public final class SchematicBuilder extends Module {
             return;
         }
         lastHealth = player.getHealth();
+        mover.trackDistance(player);
         state.tickDiff(mc, 256, 256);
         retryAfter.values().removeIf(until -> until <= ticks);
         if (ticks - lastShortfallTick >= SHORTFALL_INTERVAL) {
@@ -243,23 +276,35 @@ public final class SchematicBuilder extends Module {
             status = Status.NO_SCHEMATIC;
             return false;
         }
-        if (ClientScreen.current() != null || player.isUsingItem()) {
+        if (ClientScreen.current() != null || player.isUsingItem()
+                || pauseHealth.get() > 0.0f && player.getHealth() <= pauseHealth.get()) {
             status = Status.PAUSED;
             return false;
         }
         return true;
     }
 
+    @EventHandler
+    private void onMovementInput(MovementInputEvent event) {
+        LocalPlayer player = mc.player;
+        if (!isEnabled() || player == null || !autoWalk.get()) return;
+        mover.applyInput(event, player);
+    }
+
     private void pre() {
         LocalPlayer player = mc.player;
+        aimedThisTick = false;
         if (!canWork(player)) {
             pending = null;
+            mover.pause();
             RotationManager.INSTANCE.release(this);
             return;
         }
         if (cooldown > 0) cooldown--;
         if (pending != null && (++pendingAge > PLAN_TIMEOUT_TICKS || !stillValid(player, pending))) {
-            if (pendingAge > PLAN_TIMEOUT_TICKS) retryAfter.put(pending.plan.target().asLong(), ticks + RETRY_AFTER_TICKS);
+            if (pendingAge > PLAN_TIMEOUT_TICKS && !pending.helper) {
+                retryAfter.put(pending.plan.target().asLong(), ticks + RETRY_AFTER_TICKS);
+            }
             pending = null;
         }
         // Planning during the cooldown lets the rotation travel to the next block while the delay runs out.
@@ -267,12 +312,43 @@ public final class SchematicBuilder extends Module {
             pending = choose(player);
             pendingAge = 0;
         }
+        if (pending == null && autoWalk.get()) {
+            pending = move(player);
+            pendingAge = 0;
+        } else if (pending != null && autoWalk.get()) {
+            mover.holdForClick();
+        }
         if (pending == null) {
-            RotationManager.INSTANCE.release(this);
+            if (!aimedThisTick) RotationManager.INSTANCE.release(this);
             return;
         }
-        status = Status.WORKING;
-        if (effectiveRotate()) requestRotation(pending.plan.rotation());
+        status = pending.helper ? Status.PILLARING : Status.WORKING;
+        if (effectiveRotate() || pending.helper) requestRotation(pending.plan.rotation());
+    }
+
+    /** Nothing to click from here: let the mover walk, climb or clear up, and report what it is doing. */
+    private Pending move(LocalPlayer player) {
+        if (status == Status.DONE) {
+            if (removeHelpers.get() && mover.hasHelpers() && mover.tickClear(player, effectiveRange())) {
+                status = Status.CLEARING;
+            } else {
+                mover.pause();
+            }
+            return null;
+        }
+        if (status != Status.OUT_OF_REACH) {
+            mover.pause();
+            return null;
+        }
+        BuildMover.HelperClick click = mover.tickBuild(player);
+        status = switch (mover.mode()) {
+            case WALKING -> Status.WALKING;
+            case PILLARING -> Status.PILLARING;
+            default -> Status.OUT_OF_REACH;
+        };
+        if (click == null) return null;
+        ItemStack stack = player.getInventory().getItem(click.hotbarSlot());
+        return new Pending(click.plan(), click.expected(), stack.getItem(), click.hotbarSlot(), true);
     }
 
     private void requestRotation(Rotation rotation) {
@@ -325,6 +401,7 @@ public final class SchematicBuilder extends Module {
         BlockState predicted = BuildPlanner.simulate(player, mc.level, stack, plan.target(), plan.support(),
                 plan.face(), hit.getLocation(), facingRotation);
         if (predicted == null || predicted.getBlock() != work.expected.getBlock()) return false;
+        if (work.helper) return placeHelper(player, work, hit);
         boolean exact = predicted == work.expected;
         // The ray reaches the planned face before the rotation settles on the planned point; clicking then puts
         // a stair or slab in the wrong half. Wait for the exact click, but not past half the plan timeout.
@@ -342,8 +419,23 @@ public final class SchematicBuilder extends Module {
             player.swing(InteractionHand.MAIN_HAND);
             placed++;
             if (!exact) approximatePlaced++;
+            mover.onPlaced();
         }
         retryAfter.put(plan.target().asLong(), ticks + RECENT_PLACE_TICKS);
+        cooldown = nextDelay();
+        return true;
+    }
+
+    /** A support block under the feet mid-jump: no exactness rules, but it is remembered for clean-up. */
+    private boolean placeHelper(LocalPlayer player, Pending work, BlockHitResult hit) {
+        BuildPlanner.Plan plan = work.plan;
+        selectSlot(work.hotbarSlot);
+        InteractionResult result = mc.gameMode.useItemOn(player, InteractionHand.MAIN_HAND,
+                new BlockHitResult(hit.getLocation(), plan.face(), plan.support(), false));
+        if (result != null && result.consumesAction()) {
+            player.swing(InteractionHand.MAIN_HAND);
+            mover.onHelperPlaced(plan.target(), work.expected.getBlock());
+        }
         cooldown = nextDelay();
         return true;
     }
@@ -357,6 +449,8 @@ public final class SchematicBuilder extends Module {
     }
 
     private boolean stillValid(LocalPlayer player, Pending work) {
+        // A support click only makes sense while the feet are above the cell it fills.
+        if (work.helper && player.getY() < work.plan.target().getY() + 1.0) return false;
         BlockState current = mc.level.getBlockState(work.plan.target());
         if (!current.canBeReplaced()) return false;
         if (mc.level.getBlockState(work.plan.support()).canBeReplaced()) return false;
@@ -368,7 +462,10 @@ public final class SchematicBuilder extends Module {
 
     private Pending choose(LocalPlayer player) {
         SchematicDiff diff = state.diff(mc.level);
-        if (diff == null) return null;
+        if (diff == null) {
+            status = Status.IDLE;
+            return null;
+        }
         int layer = workingLayer(diff);
         if (layer < 0) return null;
         int high = strictLayers.get() ? layer : Math.max(layer, state.visibleHigh());
@@ -392,7 +489,10 @@ public final class SchematicBuilder extends Module {
             Item item = SchematicMaterials.itemFor(expected);
             int hotbar = hotbarSlotFor(player, item);
             if (hotbar < 0) {
-                if (restock.get() && restockFromInventory(player, item)) return null;
+                if (restock.get() && restockFromInventory(player, item)) {
+                    status = Status.WORKING;
+                    return null;
+                }
                 continue;
             }
             BlockPos target = diff.worldPos(cell, scratch).immutable();
@@ -403,7 +503,7 @@ public final class SchematicBuilder extends Module {
                 retryAfter.put(target.asLong(), ticks + RETRY_AFTER_TICKS);
                 continue;
             }
-            return new Pending(plan, expected, item, hotbar);
+            return new Pending(plan, expected, item, hotbar, false);
         }
         status = Status.OUT_OF_REACH;
         return null;
@@ -557,6 +657,81 @@ public final class SchematicBuilder extends Module {
         Notifier.warning(I18n.get("module.schematicbuilder.notify.missing", list.toString()));
     }
 
-    private record Pending(BuildPlanner.Plan plan, BlockState expected, Item item, int hotbarSlot) {
+    /**
+     * Missing cells of the working layers that the inventory has material for, as packed world positions; the
+     * walker plans where to stand from these.
+     */
+    private int walkTargets(LocalPlayer player, long[] out) {
+        SchematicDiff diff = state.currentDiff();
+        Schematic schematic = state.schematic();
+        if (diff == null || schematic == null || mc.level == null) return 0;
+        footprint = state.placement().worldBounds(schematic.sizeX(), schematic.sizeY(), schematic.sizeZ());
+        int layer = state.layer();
+        int high = strictLayers.get() ? layer : Math.max(layer, state.visibleHigh());
+        int count = 0;
+        for (int y = layer; y <= high && count < out.length; y++) {
+            for (int cell = diff.layerStart(y), end = diff.layerEnd(y); cell < end && count < out.length; cell++) {
+                byte status = diff.status(cell);
+                if (status == SchematicDiff.CORRECT || status == SchematicDiff.WRONG) continue;
+                if (diff.refresh(mc.level, cell) != SchematicDiff.MISSING) continue;
+                BlockState expected = diff.expectedState(cell);
+                Item item = SchematicMaterials.itemFor(expected);
+                if (item == Items.AIR || SchematicMaterials.itemsPerCell(expected) == 0) continue;
+                if (SchematicMaterials.countInInventory(player, item) == 0) continue;
+                diff.worldPos(cell, scratch);
+                if (retryAfter.containsKey(scratch.asLong())) continue;
+                out[count++] = WalkTerrain.pack(scratch.getX(), scratch.getY(), scratch.getZ());
+            }
+        }
+        return count;
+    }
+
+    private final class MoverHost implements BuildMover.Host {
+        @Override
+        public int walkTargets(LocalPlayer player, long[] out) {
+            return SchematicBuilder.this.walkTargets(player, out);
+        }
+
+        @Override
+        public double reach() {
+            return effectiveRange();
+        }
+
+        @Override
+        public boolean inFootprint(long cell) {
+            int[] b = footprint;
+            if (b == null) return false;
+            int x = WalkTerrain.unpackX(cell), y = WalkTerrain.unpackY(cell), z = WalkTerrain.unpackZ(cell);
+            return x >= b[0] && y >= b[1] && z >= b[2] && x <= b[3] && y <= b[4] && z <= b[5];
+        }
+
+        @Override
+        public void aim(Rotation rotation) {
+            aimedThisTick = true;
+            requestRotation(rotation);
+        }
+
+        @Override
+        public int stuckTimeout() {
+            return stuckTimeout.get();
+        }
+
+        @Override
+        public boolean pillarEnabled() {
+            return autoJumpPillar.get();
+        }
+
+        @Override
+        public Set<String> helperIds() {
+            return helperBlocks.get();
+        }
+
+        @Override
+        public void releaseHotbar() {
+            InventorySwap.INSTANCE.releaseHotbar(SchematicBuilder.this);
+        }
+    }
+
+    private record Pending(BuildPlanner.Plan plan, BlockState expected, Item item, int hotbarSlot, boolean helper) {
     }
 }
