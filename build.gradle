@@ -124,11 +124,6 @@ configurations {
 }
 
 loom {
-    runs {
-        client {
-            vmArgs "-Xverify:none", "-XX:+UseParallelGC"
-        }
-    }
     mods {
         "combatant" {
             sourceSet sourceSets.main
