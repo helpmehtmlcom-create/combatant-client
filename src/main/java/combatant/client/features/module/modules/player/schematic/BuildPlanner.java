@@ -51,6 +51,9 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 final class BuildPlanner {
 
     private static final double[] FACE_OFFSETS = {0.0, -0.3, 0.3};
+    // The vertical centre of a side face is the top/bottom boundary for stairs, slabs and trapdoors: a click
+    // planned there flips half on the smallest rotation rounding, so side faces are aimed clear of it.
+    private static final double[] SIDE_HEIGHTS = {-0.25, 0.25};
 
     private BuildPlanner() {
     }
@@ -86,8 +89,9 @@ final class BuildPlanner {
         if (facing <= 0.0) return null;
 
         Plan best = null;
+        double[] heights = face.getAxis() == Direction.Axis.Y ? FACE_OFFSETS : SIDE_HEIGHTS;
         for (double u : FACE_OFFSETS) {
-            for (double v : FACE_OFFSETS) {
+            for (double v : heights) {
                 Vec3 point = pointOnFace(center, face, u, v);
                 double distanceSq = eyes.distanceToSqr(point);
                 if (distanceSq > rangeSq) continue;
