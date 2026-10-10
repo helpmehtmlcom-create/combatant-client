@@ -62,7 +62,7 @@ final class SchematicLayerGrid {
         ensureRuns(schematic, layer, diff);
         float cs = cellSize;
         Renderer2D.COLOR.quad(originX, originY, cs * schematic.sizeX(), cs * schematic.sizeZ(),
-                SchematicUi.withAlpha(0x0A0D12, Math.round(alpha * 200f)));
+                SchematicUi.withAlpha(SchematicUi.WELL, Math.round(alpha * 200f)));
         for (int i = 0; i < runCount; i++) {
             float x = originX + runX[i] * cs;
             float y = originY + runZ[i] * cs;
@@ -97,6 +97,12 @@ final class SchematicLayerGrid {
     int paletteColor(Schematic schematic, int paletteIndex) {
         ensurePalette(schematic);
         return paletteIndex >= 0 && paletteIndex < paletteColors.length ? paletteColors[paletteIndex] : 0;
+    }
+
+    /** Map colour per palette index, shared with the 3D view so both pictures agree. */
+    int[] paletteColors(Schematic schematic) {
+        ensurePalette(schematic);
+        return paletteColors;
     }
 
     private void ensurePalette(Schematic schematic) {

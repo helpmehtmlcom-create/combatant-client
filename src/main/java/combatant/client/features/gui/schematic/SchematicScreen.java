@@ -8,6 +8,7 @@
 package combatant.client.features.gui.schematic;
 
 import combatant.client.features.gui.hud.HudRenderUtil;
+import combatant.client.features.gui.schematic.view3d.FaceList;
 import combatant.client.features.module.ModuleManager;
 import combatant.client.features.module.modules.player.schematic.SchematicBuilder;
 import combatant.client.features.theme.Theme;
@@ -50,8 +51,9 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * The schematic menu: file browser on the left, the selected layer drawn top-down in the middle with a layer
- * strip that doubles as the slider, and placement, builder and material controls on the right.
+ * The schematic menu: file browser on the left, the build as an orbitable 3D model (or the selected layer
+ * top-down) in the middle with a layer strip that doubles as the slider, and placement, builder and material
+ * controls on the right.
  */
 public final class SchematicScreen extends Screen {
 
@@ -59,17 +61,21 @@ public final class SchematicScreen extends Screen {
     private static final float PAD = 18f;
     private static final float GAP = 8f;
     private static final float BUTTON_H = 36f;
-    private static final float ROW_H = 52f;
-    private static final float MATERIAL_ROW_H = 30f;
+    private static final float OVERLAY_H = 28f;
+    private static final float ROW_H = 54f;
+    private static final float MATERIAL_ROW_H = 36f;
     private static final float STRIP_W = 72f;
+    private static final float OPEN_SLIDE = 26f;
     private static final int[] PLAY_SPEEDS = {1, 2, 4, 8};
     private static final long HAVE_REFRESH_NANOS = 500_000_000L;
+    private static final long BUBBLE_HOLD_NANOS = 900_000_000L;
 
     private enum Btn {
         CLOSE, REFRESH, LOAD, OPEN_FOLDER,
         ORIGIN_HERE, ORIGIN_LOOK, ROTATE, MIRROR, BUILDER, PROJECTION, LAYER_MODE, UNLOAD,
         LAYER_DOWN10, LAYER_DOWN, PLAY, SPEED, LAYER_UP, LAYER_UP10,
-        TAB_LAYER, TAB_TOTAL
+        TAB_LAYER, TAB_TOTAL,
+        TAB_3D, TAB_2D, VIEW_MODE, AUTO_ROTATE, RESET_VIEW
     }
 
     private static final Btn[] BUTTONS = Btn.values();
@@ -77,6 +83,7 @@ public final class SchematicScreen extends Screen {
     private final Screen parent;
     private final SchematicUi ui = new SchematicUi();
     private final SchematicLayerGrid grid = new SchematicLayerGrid();
+    private final SchematicViewport viewport = new SchematicViewport();
     private final SchematicState state = SchematicState.INSTANCE;
     private final SchematicLibrary library = SchematicLibrary.INSTANCE;
     private final float[] bx = new float[BUTTONS.length];
@@ -86,6 +93,7 @@ public final class SchematicScreen extends Screen {
     private final boolean[] bShown = new boolean[BUTTONS.length];
     private final float[] hover = new float[BUTTONS.length];
     private final float[] press = new float[BUTTONS.length];
+    private final float[] rowHover = new float[64];
 
     private float fixedWidth;
     private float fixedHeight;
@@ -95,13 +103,16 @@ public final class SchematicScreen extends Screen {
     private float searchX, searchY, searchW, searchH;
     private float listY, listH;
     private float gridX, gridY, gridW, gridH;
+    private float insetX, insetY, insetS;
+    private float gapX, gapY, gapW;
     private float stripX, stripY, stripH;
     private float progressY;
     private float infoY;
     private float materialsY, materialsH;
-    private float bodyH, smallH, titleH;
+    private float bodyH, smallH, titleH, tinyH;
     private float mouseX, mouseY;
     private float openAnim;
+    private float frameDt;
 
     private List<SchematicHeader> filtered = List.of();
     private int filteredGeneration = -1;
@@ -123,7 +134,15 @@ public final class SchematicScreen extends Screen {
     private int speedIndex = 1;
     private float playAccumulator;
     private boolean draggingStrip;
+    private boolean draggingGap;
     private long lastFrameNanos;
+
+    private boolean view3d = true;
+    private float viewFade = 1f;
+    private float thumbLayer;
+    private float bubble;
+    private int bubbleLayer = -1;
+    private long bubbleNanos;
 
     public SchematicScreen(Screen parent) {
         super(Component.translatable("screen.combatant.schematic.title"));
@@ -141,10 +160,12 @@ public final class SchematicScreen extends Screen {
         bodyH = ui.height(SchematicUi.BODY);
         smallH = ui.height(SchematicUi.SMALL);
         titleH = ui.height(SchematicUi.TITLE);
+        tinyH = ui.height(SchematicUi.TINY);
         library.refresh();
         if (selectedPath == null && state.schematic() != null) {
             selectedPath = library.directory().resolve(state.schematic().fileName() + LitematicReader.EXTENSION);
         }
+        thumbLayer = state.layer();
     }
 
     @Override
@@ -169,6 +190,7 @@ public final class SchematicScreen extends Screen {
     @Override
     public void extractRenderState(GuiGraphicsExtractor context, int mx, int my, float delta) {
         updateUiMetrics();
+        SchematicUi.syncTheme();
         if (minecraft != null) MenuBackgroundRenderer.renderConfigured(minecraft);
         mouseX = toFixed(mx);
         mouseY = toFixed(my);
@@ -179,8 +201,8 @@ public final class SchematicScreen extends Screen {
         Renderer2D.COLOR.begin();
         try {
             float alpha = AnimationUtility.easeOutCubic(openAnim);
-            renderDimmer();
-            ui.panel(panelX, panelY, panelW, panelH, 14f, alpha);
+            renderDimmer(alpha);
+            ui.panel(panelX, panelY, panelW, panelH, 16f, alpha);
             renderHeader(alpha);
             renderLeft(alpha);
             renderCentre(alpha);
@@ -198,7 +220,7 @@ public final class SchematicScreen extends Screen {
         panelW = Math.min(fixedWidth - 60f, 1760f);
         panelH = Math.min(fixedHeight - 60f, 1000f);
         panelX = (fixedWidth - panelW) * 0.5f;
-        panelY = (fixedHeight - panelH) * 0.5f;
+        panelY = (fixedHeight - panelH) * 0.5f + (1f - AnimationUtility.easeOutCubic(openAnim)) * OPEN_SLIDE;
         contentY = panelY + HEADER_H;
         contentBottom = panelY + panelH - PAD;
         leftW = clamp(panelW * 0.21f, 280f, 380f);
@@ -247,8 +269,28 @@ public final class SchematicScreen extends Screen {
         stripX = centreX + centreW - STRIP_W;
         stripY = gridY;
         stripH = gridH;
+        if (state.hasSchematic()) {
+            place(Btn.TAB_3D, centreX + centreW - 112f - 4f, contentY, 56f, 30f);
+            place(Btn.TAB_2D, centreX + centreW - 56f, contentY, 56f, 30f);
+        }
+        insetS = clamp(Math.min(gridW, gridH) * 0.28f, 90f, 220f);
+        insetX = gridX + 10f;
+        insetY = gridY + gridH - 10f - insetS;
+        gapW = 170f;
+        gapX = gridX + gridW - 12f - gapW;
+        gapY = gridY + 10f + tinyH + 8f;
+        if (view3dActive()) {
+            place(Btn.VIEW_MODE, gridX + 10f, gridY + 10f, 132f, OVERLAY_H);
+            place(Btn.AUTO_ROTATE, gridX + 10f + 132f + 6f, gridY + 10f, 108f, OVERLAY_H);
+            place(Btn.RESET_VIEW, gridX + 10f + 246f + 6f, gridY + 10f, 92f, OVERLAY_H);
+        }
         Schematic schematic = state.schematic();
-        if (schematic != null) grid.layout(schematic, gridX, gridY, gridW, gridH);
+        if (schematic == null) return;
+        if (view3d) {
+            grid.layout(schematic, insetX + 6f, insetY + 6f, insetS - 12f, insetS - 12f);
+        } else {
+            grid.layout(schematic, gridX + 8f, gridY + 8f, gridW - 16f, gridH - 16f);
+        }
     }
 
     private void layoutRight() {
@@ -280,17 +322,46 @@ public final class SchematicScreen extends Screen {
         return bShown[i] && SchematicUi.inside(mouseX, mouseY, bx[i], by[i], bw[i], bh[i]);
     }
 
+    private boolean view3dActive() {
+        return view3d && state.hasSchematic() && SchematicActions.loadingPath() == null;
+    }
+
+    private boolean overViewportChrome(float mx, float my) {
+        if (over(Btn.VIEW_MODE) || over(Btn.AUTO_ROTATE) || over(Btn.RESET_VIEW)) return true;
+        if (SchematicUi.inside(mx, my, insetX, insetY, insetS, insetS)) return true;
+        return viewport.mode().exploded() && SchematicUi.inside(mx, my, gapX - 6f, gridY + 6f, gapW + 12f, gapY - gridY + 14f);
+    }
+
+    private boolean insideViewport(float mx, float my) {
+        return SchematicUi.inside(mx, my, gridX, gridY, gridW, gridH);
+    }
+
     private void animate() {
         long now = System.nanoTime();
         float dt = lastFrameNanos == 0L ? 0f : Math.min(0.1f, (now - lastFrameNanos) / 1.0e9f);
         lastFrameNanos = now;
+        frameDt = dt;
         openAnim = AnimationUtility.snap(AnimationUtility.approach(openAnim, 1f, dt, 7f), 1f, 0.001f);
+        viewFade = AnimationUtility.snap(AnimationUtility.approach(viewFade, 1f, dt, 9f), 1f, 0.001f);
         for (Btn id : BUTTONS) {
             int i = id.ordinal();
             hover[i] = AnimationUtility.snap(AnimationUtility.approach(hover[i], over(id) ? 1f : 0f, dt, 12f), over(id) ? 1f : 0f, 0.001f);
             press[i] = AnimationUtility.snap(AnimationUtility.approach(press[i], 0f, dt, 8f), 0f, 0.001f);
         }
+        animateStrip(dt, now);
         advancePlayback(dt);
+    }
+
+    private void animateStrip(float dt, long now) {
+        int layer = state.layer();
+        thumbLayer = AnimationUtility.snap(AnimationUtility.approach(thumbLayer, layer, dt, 14f), layer, 0.01f);
+        if (layer != bubbleLayer) {
+            bubbleLayer = layer;
+            bubbleNanos = now;
+        }
+        boolean show = draggingStrip || SchematicUi.inside(mouseX, mouseY, stripX, stripY, STRIP_W, stripH)
+                || now - bubbleNanos < BUBBLE_HOLD_NANOS;
+        bubble = AnimationUtility.snap(AnimationUtility.approach(bubble, show ? 1f : 0f, dt, 10f), show ? 1f : 0f, 0.001f);
     }
 
     private void advancePlayback(float dt) {
@@ -305,24 +376,33 @@ public final class SchematicScreen extends Screen {
 
     // ---------------------------------------------------------------- header + left
 
-    private void renderDimmer() {
+    private void renderDimmer(float alpha) {
         Themes.Theme t = Theme.theme();
-        int soft = SchematicUi.withAlpha(HudRenderUtil.mixColor(t.windowBg(), 0xFF000000, 0.46f), 150);
-        int deep = SchematicUi.withAlpha(HudRenderUtil.mixColor(t.windowBg(), 0xFF000000, 0.70f), 190);
+        int soft = SchematicUi.withAlpha(HudRenderUtil.mixColor(t.windowBg(), 0xFF000000, 0.46f), Math.round(150f * alpha));
+        int deep = SchematicUi.withAlpha(HudRenderUtil.mixColor(t.windowBg(), 0xFF000000, 0.70f), Math.round(190f * alpha));
         Renderer2D.COLOR.quad(0, 0, fixedWidth, fixedHeight, soft, soft, deep, deep);
     }
 
     private void renderHeader(float alpha) {
         float y = panelY + (HEADER_H - titleH) * 0.5f;
-        ui.text(tr("screen.combatant.schematic.title"), panelX + PAD, y, SchematicUi.TITLE, SchematicUi.scaleAlpha(SchematicUi.TEXT, alpha), true);
+        Renderer2D.COLOR.roundedRect(panelX + PAD, panelY + (HEADER_H - 22f) * 0.5f, 4f, 22f, 2f, SchematicUi.scaleAlpha(SchematicUi.ACCENT, alpha));
+        ui.text(tr("screen.combatant.schematic.title"), panelX + PAD + 14f, y, SchematicUi.TITLE, SchematicUi.scaleAlpha(SchematicUi.TEXT, alpha), true);
         Schematic schematic = state.schematic();
         String sub = schematic == null ? tr("screen.combatant.schematic.none_loaded")
                 : schematic.name() + "  ·  " + schematic.sizeX() + "x" + schematic.sizeY() + "x" + schematic.sizeZ();
         float titleW = ui.width(tr("screen.combatant.schematic.title"), SchematicUi.TITLE, true);
-        ui.text(ui.ellipsize(sub, SchematicUi.BODY, panelW * 0.5f), panelX + PAD + titleW + 20f, panelY + (HEADER_H - bodyH) * 0.5f,
+        ui.text(ui.ellipsize(sub, SchematicUi.BODY, panelW * 0.4f), panelX + PAD + 14f + titleW + 20f, panelY + (HEADER_H - bodyH) * 0.5f,
                 SchematicUi.BODY, SchematicUi.scaleAlpha(SchematicUi.MUTED, alpha), false);
+        String keys = ui.ellipsize(tr("screen.combatant.schematic.keys_hint"), SchematicUi.TINY, panelW * 0.3f);
+        ui.textRight(keys, panelX + panelW - PAD - 44f - 16f, panelY + (HEADER_H - tinyH) * 0.5f, SchematicUi.TINY,
+                SchematicUi.scaleAlpha(SchematicUi.FAINT, alpha), false);
         drawButton(Btn.CLOSE, "X", false, true, alpha);
-        Renderer2D.COLOR.quad(panelX + PAD, contentY - 10f, panelW - PAD * 2f, 1f, SchematicUi.withAlpha(SchematicUi.STROKE, Math.round(alpha * 180f)));
+        float lineY = contentY - 10f;
+        int edge = SchematicUi.withAlpha(SchematicUi.STROKE, 0);
+        int mid = SchematicUi.withAlpha(SchematicUi.mix(SchematicUi.STROKE, SchematicUi.ACCENT, 0.3f), Math.round(alpha * 200f));
+        float half = (panelW - PAD * 2f) * 0.5f;
+        Renderer2D.COLOR.quad(panelX + PAD, lineY, half, 1f, edge, mid, mid, edge);
+        Renderer2D.COLOR.quad(panelX + PAD + half, lineY, half, 1f, mid, edge, edge, mid);
     }
 
     private void renderLeft(float alpha) {
@@ -332,15 +412,9 @@ public final class SchematicScreen extends Screen {
         refreshFiltered();
         int visible = Math.max(1, (int) ((listH - 8f) / ROW_H));
         listFirst = clampInt(listFirst, 0, Math.max(0, filtered.size() - visible));
-        if (filtered.isEmpty()) {
-            String empty = library.isScanning() ? tr("screen.combatant.schematic.scanning") : tr("screen.combatant.schematic.empty");
-            ui.text(ui.ellipsize(empty, SchematicUi.SMALL, leftW - 24f), leftX + 12f, listY + 14f, SchematicUi.SMALL,
-                    SchematicUi.scaleAlpha(SchematicUi.MUTED, alpha), false);
-            ui.text(tr("screen.combatant.schematic.empty_hint"), leftX + 12f, listY + 20f + smallH, SchematicUi.TINY,
-                    SchematicUi.scaleAlpha(SchematicUi.FAINT, alpha), false);
-        }
+        if (filtered.isEmpty()) renderEmptyList(alpha);
         for (int i = 0; i < visible && listFirst + i < filtered.size(); i++) {
-            renderRow(filtered.get(listFirst + i), listY + 4f + i * ROW_H, alpha);
+            renderRow(filtered.get(listFirst + i), listY + 4f + i * ROW_H, i, alpha);
         }
         if (filtered.size() > visible) renderScrollbar(leftX + leftW - 5f, listY + 6f, listH - 12f, listFirst, visible, filtered.size(), alpha);
         boolean canLoad = selectedPath != null && SchematicActions.loadingPath() == null;
@@ -348,10 +422,26 @@ public final class SchematicScreen extends Screen {
         drawButton(Btn.OPEN_FOLDER, tr("screen.combatant.schematic.open_folder"), false, true, alpha);
     }
 
+    private void renderEmptyList(float alpha) {
+        float cx = leftX + leftW * 0.5f;
+        float cy = listY + Math.min(listH * 0.35f, 120f);
+        if (library.isScanning()) {
+            float spin = (System.nanoTime() / 1_000_000L % 1200L) / 1200f * 360f;
+            Renderer2D.COLOR.arcStroke(cx, cy, 16f, 3f, spin, spin + 260f, SchematicUi.scaleAlpha(SchematicUi.ACCENT, alpha));
+        } else {
+            SchematicViewport.drawCubeIcon(cx, cy, 18f, SchematicUi.mix(SchematicUi.SURFACE_HOVER, SchematicUi.ACCENT, 0.35f), alpha);
+        }
+        String empty = library.isScanning() ? tr("screen.combatant.schematic.scanning") : tr("screen.combatant.schematic.empty");
+        ui.textCentered(ui.ellipsize(empty, SchematicUi.SMALL, leftW - 24f), cx, cy + 32f, SchematicUi.SMALL,
+                SchematicUi.scaleAlpha(SchematicUi.MUTED, alpha), false);
+        ui.textCentered(ui.ellipsize(tr("screen.combatant.schematic.empty_hint"), SchematicUi.TINY, leftW - 24f), cx, cy + 38f + smallH,
+                SchematicUi.TINY, SchematicUi.scaleAlpha(SchematicUi.FAINT, alpha), false);
+    }
+
     private void renderSearch(float alpha) {
         int stroke = searchFocused ? SchematicUi.ACCENT : SchematicUi.STROKE;
-        Renderer2D.COLOR.roundedRect(searchX, searchY, searchW, searchH, 6f, SchematicUi.scaleAlpha(SchematicUi.SURFACE, alpha));
-        Renderer2D.COLOR.roundedRectStroke(searchX, searchY, searchW, searchH, 6f, 1f, SchematicUi.scaleAlpha(stroke, alpha));
+        Renderer2D.COLOR.roundedRect(searchX, searchY, searchW, searchH, 8f, SchematicUi.scaleAlpha(SchematicUi.WELL, alpha * 0.9f));
+        Renderer2D.COLOR.roundedRectStroke(searchX, searchY, searchW, searchH, 8f, 1f, SchematicUi.scaleAlpha(stroke, alpha));
         String shown = search.isEmpty() && !searchFocused ? tr("screen.combatant.schematic.search") : search;
         if (searchFocused && AnimationUtility.blink(500L)) shown += "|";
         int color = search.isEmpty() && !searchFocused ? SchematicUi.FAINT : SchematicUi.TEXT;
@@ -359,23 +449,40 @@ public final class SchematicScreen extends Screen {
                 SchematicUi.BODY, SchematicUi.scaleAlpha(color, alpha), false);
     }
 
-    private void renderRow(SchematicHeader header, float y, float alpha) {
+    private void renderRow(SchematicHeader header, float y, int slot, float alpha) {
         float x = leftX + 4f;
         float w = leftW - 14f;
+        float rh = ROW_H - 4f;
         boolean selected = header.path().equals(selectedPath);
-        boolean hovered = SchematicUi.inside(mouseX, mouseY, x, y, w, ROW_H - 4f);
+        boolean hovered = SchematicUi.inside(mouseX, mouseY, x, y, w, rh);
         boolean active = state.schematic() != null && LitematicReader.baseName(header.path()).equals(state.schematic().fileName());
-        if (selected || hovered) {
-            int fill = selected ? 0xFF1A2A36 : SchematicUi.SURFACE_HOVER;
-            Renderer2D.COLOR.roundedRect(x, y, w, ROW_H - 4f, 6f, SchematicUi.scaleAlpha(fill, alpha));
+        float h = 0f;
+        if (slot < rowHover.length) {
+            rowHover[slot] = AnimationUtility.approach(rowHover[slot], hovered ? 1f : 0f, frameDt, 14f);
+            h = rowHover[slot];
         }
-        if (active) Renderer2D.COLOR.roundedRect(x + 2f, y + 8f, 3f, ROW_H - 20f, 1.5f, SchematicUi.scaleAlpha(SchematicUi.GOOD, alpha));
+        int fill = selected ? SchematicUi.mix(SchematicUi.SURFACE, SchematicUi.ACCENT, 0.16f + h * 0.05f) : SchematicUi.SURFACE_HOVER;
+        float fillAlpha = selected ? 1f : h;
+        if (fillAlpha > 0.01f) Renderer2D.COLOR.roundedRect(x, y, w, rh, 8f, SchematicUi.scaleAlpha(fill, alpha * fillAlpha));
+        if (selected) Renderer2D.COLOR.roundedRect(x + 1f, y + 9f, 3f, rh - 18f, 1.5f, SchematicUi.scaleAlpha(SchematicUi.ACCENT, alpha));
         int nameColor = header.failed() ? SchematicUi.BAD : selected ? SchematicUi.mix(SchematicUi.TEXT, SchematicUi.ACCENT, 0.4f) : SchematicUi.TEXT;
-        ui.text(ui.ellipsize(header.name(), SchematicUi.BODY, w - 20f), x + 12f, y + 6f, SchematicUi.BODY, SchematicUi.scaleAlpha(nameColor, alpha), false);
-        String detail = header.failed() ? header.error()
-                : header.dimensions() + "  ·  " + (header.totalBlocks() >= 0 ? tr("screen.combatant.schematic.blocks_count", header.totalBlocks()) : header.fileName());
-        ui.text(ui.ellipsize(detail, SchematicUi.TINY, w - 20f), x + 12f, y + 10f + bodyH, SchematicUi.TINY,
-                SchematicUi.scaleAlpha(SchematicUi.MUTED, alpha), false);
+        ui.text(ui.ellipsize(header.name(), SchematicUi.BODY, w - 36f), x + 12f + h * 2f, y + 6f, SchematicUi.BODY, SchematicUi.scaleAlpha(nameColor, alpha), false);
+        if (active) {
+            Renderer2D.COLOR.circle(x + w - 12f, y + 6f + bodyH * 0.5f, 6f, SchematicUi.withAlpha(SchematicUi.GOOD, Math.round(alpha * 50f)));
+            Renderer2D.COLOR.circle(x + w - 12f, y + 6f + bodyH * 0.5f, 3f, SchematicUi.scaleAlpha(SchematicUi.GOOD, alpha));
+        }
+        float chipY = y + 11f + bodyH;
+        if (header.failed()) {
+            float cw = ui.chip(x + 12f, chipY, tr("screen.combatant.schematic.row_failed"), SchematicUi.BAD, alpha);
+            ui.text(ui.ellipsize(header.error(), SchematicUi.TINY, w - cw - 28f), x + 18f + cw, chipY + 2f, SchematicUi.TINY,
+                    SchematicUi.scaleAlpha(SchematicUi.MUTED, alpha), false);
+            return;
+        }
+        float cx = x + 12f;
+        cx += ui.chip(cx, chipY, header.dimensions(), SchematicUi.ACCENT, alpha) + 6f;
+        if (header.totalBlocks() >= 0) {
+            ui.chip(cx, chipY, tr("screen.combatant.schematic.blocks_count", header.totalBlocks()), SchematicUi.GOOD, alpha);
+        }
     }
 
     private void renderScrollbar(float x, float y, float h, int first, int visible, int total, float alpha) {
@@ -408,34 +515,117 @@ public final class SchematicScreen extends Screen {
             return;
         }
         if (schematic == null) {
-            ui.section(centreX, gridY, centreW, gridH, alpha);
-            float cy = gridY + gridH * 0.5f;
-            ui.textCentered(tr("screen.combatant.schematic.pick_file"), centreX + centreW * 0.5f, cy - bodyH, SchematicUi.BODY,
-                    SchematicUi.scaleAlpha(SchematicUi.MUTED, alpha), false);
-            String error = SchematicActions.lastError();
-            if (!error.isEmpty()) {
-                ui.textCentered(ui.ellipsize(error, SchematicUi.SMALL, centreW - 40f), centreX + centreW * 0.5f, cy + 8f,
-                        SchematicUi.SMALL, SchematicUi.scaleAlpha(SchematicUi.BAD, alpha), false);
-            }
+            renderNothingLoaded(alpha);
             return;
         }
         renderLayerTitle(schematic, alpha);
+        drawButton(Btn.TAB_3D, tr("screen.combatant.schematic.view.tab_3d"), view3d, true, alpha);
+        drawButton(Btn.TAB_2D, tr("screen.combatant.schematic.view.tab_2d"), !view3d, true, alpha);
         SchematicDiff diff = state.currentDiff();
         if (diff != null && diff.schematic() != schematic) diff = null;
-        grid.render(schematic, state.layer(), diff, alpha);
+        float viewAlpha = alpha * (0.35f + 0.65f * AnimationUtility.easeOutCubic(viewFade));
+        if (view3d) {
+            render3d(schematic, diff, viewAlpha);
+        } else {
+            ui.well(gridX, gridY, gridW, gridH, 10f, alpha);
+            grid.render(schematic, state.layer(), diff, viewAlpha);
+        }
         renderStrip(schematic, diff, alpha);
         renderProgress(diff, alpha);
         renderControls(alpha);
     }
 
+    private void renderNothingLoaded(float alpha) {
+        ui.well(centreX, gridY, centreW, gridH, 10f, alpha);
+        float cx = centreX + centreW * 0.5f;
+        float cy = gridY + gridH * 0.5f - 30f;
+        String error = SchematicActions.lastError();
+        int iconColor = error.isEmpty() ? SchematicUi.mix(SchematicUi.SURFACE_HOVER, SchematicUi.ACCENT, 0.45f)
+                : SchematicUi.mix(SchematicUi.SURFACE_HOVER, SchematicUi.BAD, 0.55f);
+        float bob = (float) Math.sin(System.nanoTime() / 1.0e9 * 1.6) * 3f;
+        SchematicViewport.drawCubeIcon(cx, cy + bob, 26f, iconColor, alpha);
+        if (error.isEmpty()) {
+            ui.textCentered(tr("screen.combatant.schematic.pick_file"), cx, cy + 48f, SchematicUi.BODY,
+                    SchematicUi.scaleAlpha(SchematicUi.MUTED, alpha), false);
+            return;
+        }
+        ui.textCentered(tr("screen.combatant.schematic.load_error"), cx, cy + 46f, SchematicUi.BODY,
+                SchematicUi.scaleAlpha(SchematicUi.BAD, alpha), true);
+        ui.textCentered(ui.ellipsize(error, SchematicUi.SMALL, centreW - 40f), cx, cy + 54f + bodyH,
+                SchematicUi.SMALL, SchematicUi.scaleAlpha(SchematicUi.MUTED, alpha), false);
+    }
+
     private void renderLoading(Path loading, float alpha) {
-        ui.section(centreX, gridY, centreW, gridH, alpha);
+        ui.well(centreX, gridY, centreW, gridH, 10f, alpha);
         float cx = centreX + centreW * 0.5f;
         float cy = gridY + gridH * 0.5f - 20f;
         float spin = (System.nanoTime() / 1_000_000L % 1200L) / 1200f * 360f;
-        Renderer2D.COLOR.arcStroke(cx, cy, 22f, 4f, spin, spin + 260f, SchematicUi.scaleAlpha(SchematicUi.ACCENT, alpha));
-        ui.textCentered(tr("screen.combatant.schematic.loading", loading.getFileName().toString()), cx, cy + 40f,
+        Renderer2D.COLOR.circleStroke(cx, cy, 28f, 4f, SchematicUi.withAlpha(SchematicUi.ACCENT, Math.round(alpha * 40f)));
+        Renderer2D.COLOR.arcStroke(cx, cy, 28f, 4f, spin, spin + 260f, SchematicUi.scaleAlpha(SchematicUi.ACCENT, alpha));
+        SchematicViewport.drawCubeIcon(cx, cy, 11f, SchematicUi.mix(SchematicUi.SURFACE_HOVER, SchematicUi.ACCENT, 0.5f), alpha);
+        ui.textCentered(tr("screen.combatant.schematic.loading", loading.getFileName().toString()), cx, cy + 46f,
                 SchematicUi.BODY, SchematicUi.scaleAlpha(SchematicUi.MUTED, alpha), false);
+    }
+
+    private void render3d(Schematic schematic, SchematicDiff diff, float alpha) {
+        ui.well(gridX, gridY, gridW, gridH, 10f, alpha);
+        boolean inside = insideViewport(mouseX, mouseY) && !overViewportChrome(mouseX, mouseY) && !draggingStrip && !draggingGap;
+        viewport.render(schematic, grid.paletteColors(schematic), state.layer(), diff, gridX, gridY, gridW, gridH,
+                frameDt, mouseX, mouseY, inside, alpha);
+        if (viewport.faces() == null) {
+            float spin = (System.nanoTime() / 1_000_000L % 1200L) / 1200f * 360f;
+            float cx = gridX + gridW * 0.5f, cy = gridY + gridH * 0.5f;
+            Renderer2D.COLOR.arcStroke(cx, cy, 20f, 3f, spin, spin + 260f, SchematicUi.scaleAlpha(SchematicUi.ACCENT, alpha));
+            ui.textCentered(tr("screen.combatant.schematic.view.building"), cx, cy + 32f, SchematicUi.SMALL,
+                    SchematicUi.scaleAlpha(SchematicUi.MUTED, alpha), false);
+        }
+        renderViewChrome(alpha);
+        renderInset(schematic, diff, alpha);
+    }
+
+    private void renderViewChrome(float alpha) {
+        String mode = tr("screen.combatant.schematic.view.mode." + viewport.mode().name().toLowerCase(Locale.ROOT));
+        drawButton(Btn.VIEW_MODE, mode, false, true, alpha);
+        drawButton(Btn.AUTO_ROTATE, tr("screen.combatant.schematic.view.auto_rotate"), viewport.autoRotate(), true, alpha);
+        drawButton(Btn.RESET_VIEW, tr("screen.combatant.schematic.view.reset"), false, true, alpha);
+        if (viewport.mode().exploded()) renderGapSlider(alpha);
+        FaceList faces = viewport.faces();
+        float right = gridX + gridW - 12f;
+        float bottom = gridY + gridH - 10f - tinyH;
+        ui.textRight(ui.ellipsize(tr("screen.combatant.schematic.view.hint"), SchematicUi.TINY, gridW - insetS - 40f), right, bottom,
+                SchematicUi.TINY, SchematicUi.scaleAlpha(SchematicUi.FAINT, alpha), false);
+        if (faces == null) return;
+        String stats = tr("screen.combatant.schematic.view.faces", formatCount(faces.count()));
+        if (faces.lodStep() > 1) stats += "  ·  " + tr("screen.combatant.schematic.view.lod", faces.lodStep());
+        if (faces.truncated()) stats += "  ·  " + tr("screen.combatant.schematic.view.truncated");
+        if (viewport.meshing()) stats = tr("screen.combatant.schematic.view.building") + "  ·  " + stats;
+        int color = faces.truncated() ? SchematicUi.WARN : SchematicUi.MUTED;
+        ui.textRight(stats, right, bottom - tinyH - 4f, SchematicUi.TINY, SchematicUi.scaleAlpha(color, alpha), false);
+    }
+
+    private void renderGapSlider(float alpha) {
+        String label = tr("screen.combatant.schematic.view.gap", String.format(Locale.ROOT, "%.2f", viewport.gap()));
+        ui.text(label, gapX, gridY + 12f, SchematicUi.TINY, SchematicUi.scaleAlpha(SchematicUi.MUTED, alpha), false);
+        float t = viewport.gap() / SchematicViewport.MAX_GAP;
+        Renderer2D.COLOR.roundedRect(gapX, gapY, gapW, 4f, 2f, SchematicUi.scaleAlpha(SchematicUi.SURFACE_HOVER, alpha));
+        Renderer2D.COLOR.roundedRect(gapX, gapY, Math.max(4f, gapW * t), 4f, 2f, SchematicUi.scaleAlpha(SchematicUi.ACCENT, alpha));
+        boolean hot = draggingGap || SchematicUi.inside(mouseX, mouseY, gapX - 6f, gapY - 8f, gapW + 12f, 20f);
+        float r = hot ? 7f : 6f;
+        Renderer2D.COLOR.circle(gapX + gapW * t, gapY + 2f, r + 3f, SchematicUi.withAlpha(SchematicUi.ACCENT, Math.round(alpha * (hot ? 60f : 30f))));
+        Renderer2D.COLOR.circle(gapX + gapW * t, gapY + 2f, r, SchematicUi.scaleAlpha(SchematicUi.TEXT, alpha));
+    }
+
+    private void renderInset(Schematic schematic, SchematicDiff diff, float alpha) {
+        boolean hot = SchematicUi.inside(mouseX, mouseY, insetX, insetY, insetS, insetS);
+        ui.section(insetX, insetY, insetS, insetS, alpha * 0.95f);
+        if (hot) Renderer2D.COLOR.roundedRectStroke(insetX, insetY, insetS, insetS, 10f, 1f, SchematicUi.scaleAlpha(SchematicUi.ACCENT, alpha));
+        grid.render(schematic, state.layer(), diff, alpha);
+        ui.text(tr("screen.combatant.schematic.view.tab_2d"), insetX + 8f, insetY + 6f, SchematicUi.TINY,
+                SchematicUi.scaleAlpha(SchematicUi.MUTED, alpha), true);
+    }
+
+    private static String formatCount(int count) {
+        return count >= 10_000 ? String.format(Locale.ROOT, "%.1fk", count / 1000f) : String.valueOf(count);
     }
 
     private void renderLayerTitle(Schematic schematic, float alpha) {
@@ -448,7 +638,7 @@ public final class SchematicScreen extends Screen {
         ui.text(blocks + "  ·  " + mode + worldY, centreX, contentY + titleH + 6f, SchematicUi.SMALL,
                 SchematicUi.scaleAlpha(SchematicUi.MUTED, alpha), false);
         if (playing) {
-            ui.textRight(tr("screen.combatant.schematic.playing", PLAY_SPEEDS[speedIndex]), centreX + centreW, contentY + 6f,
+            ui.textRight(tr("screen.combatant.schematic.playing", PLAY_SPEEDS[speedIndex]), centreX + centreW - 128f, contentY + 6f,
                     SchematicUi.SMALL, SchematicUi.scaleAlpha(SchematicUi.ACCENT, alpha), false);
         }
     }
@@ -474,13 +664,31 @@ public final class SchematicScreen extends Screen {
             Renderer2D.COLOR.quad(stripX + 6f, y + Math.min(0.5f, rowH * 0.1f), w, Math.max(1f, rowH - Math.min(1f, rowH * 0.2f)),
                     SchematicUi.scaleAlpha(color, alpha));
         }
-        float markerY = stripY + stripH - 4f - (state.layer() + 0.5f) * (stripH - 8f) / layers;
-        Renderer2D.COLOR.quad(stripX + 2f, markerY - 1f, STRIP_W - 4f, 2f, SchematicUi.scaleAlpha(SchematicUi.ACCENT, alpha));
-        Renderer2D.COLOR.circle(stripX + STRIP_W - 6f, markerY, 5f, SchematicUi.scaleAlpha(SchematicUi.ACCENT, alpha));
+        renderStripThumb(layers, alpha);
+    }
+
+    private void renderStripThumb(int layers, float alpha) {
+        float markerY = stripY + stripH - 4f - (thumbLayer + 0.5f) * (stripH - 8f) / layers;
+        boolean hot = draggingStrip || SchematicUi.inside(mouseX, mouseY, stripX, stripY, STRIP_W, stripH);
+        float th = hot ? 6f : 4f;
+        Renderer2D.COLOR.roundedRectSoftShadow(stripX + 2f, markerY - th * 0.5f, STRIP_W - 4f, th, th * 0.5f, 10f, 0.03f * alpha,
+                SchematicUi.withAlpha(SchematicUi.ACCENT, Math.round(alpha * 90f)));
+        Renderer2D.COLOR.roundedRect(stripX + 2f, markerY - th * 0.5f, STRIP_W - 4f, th, th * 0.5f, SchematicUi.scaleAlpha(SchematicUi.ACCENT, alpha));
+        if (bubble <= 0.01f) return;
+        float a = alpha * bubble;
+        String label = String.valueOf(state.layer() + 1);
+        float bw = Math.max(34f, ui.width(label, SchematicUi.SMALL, true) + 16f);
+        float bh = smallH + 10f;
+        float bxPos = stripX - 8f - bw + (1f - AnimationUtility.easeOutBack(bubble)) * 10f;
+        float byPos = clamp(markerY - bh * 0.5f, stripY, stripY + stripH - bh);
+        Renderer2D.COLOR.roundedRectSoftShadow(bxPos, byPos, bw, bh, bh * 0.5f, 12f, 0.03f * a, SchematicUi.withAlpha(0x000000, Math.round(a * 110f)));
+        Renderer2D.COLOR.roundedRect(bxPos, byPos, bw, bh, bh * 0.5f, SchematicUi.scaleAlpha(SchematicUi.mix(SchematicUi.SURFACE, SchematicUi.ACCENT, 0.3f), a));
+        Renderer2D.COLOR.roundedRectStroke(bxPos, byPos, bw, bh, bh * 0.5f, 1f, SchematicUi.scaleAlpha(SchematicUi.ACCENT, a));
+        ui.textCentered(label, bxPos + bw * 0.5f, byPos + 5f, SchematicUi.SMALL, SchematicUi.scaleAlpha(SchematicUi.TEXT, a), true);
     }
 
     private static int stripColor(SchematicDiff diff, int from, int to, boolean inWindow) {
-        int base = inWindow ? 0xFF6E8BA3 : 0xFF3A4352;
+        int base = inWindow ? SchematicUi.mix(SchematicUi.MUTED, SchematicUi.ACCENT, 0.35f) : SchematicUi.mix(SchematicUi.SURFACE_HOVER, SchematicUi.MUTED, 0.3f);
         if (diff == null) return base;
         int total = 0, correct = 0;
         for (int y = from; y <= to; y++) {
@@ -495,7 +703,7 @@ public final class SchematicScreen extends Screen {
         float barY = progressY;
         float barH = 12f;
         float w = centreW;
-        Renderer2D.COLOR.roundedRect(centreX, barY, w, barH, 6f, SchematicUi.withAlpha(0x0A0D12, Math.round(alpha * 220f)));
+        ui.well(centreX, barY, w, barH, 6f, alpha);
         if (diff == null) {
             ui.text(tr("screen.combatant.schematic.progress_unplaced"), centreX, barY + barH + 6f, SchematicUi.SMALL,
                     SchematicUi.scaleAlpha(SchematicUi.FAINT, alpha), false);
@@ -612,7 +820,8 @@ public final class SchematicScreen extends Screen {
         refreshMaterials();
         if (materials.isEmpty()) {
             String text = tr(state.hasSchematic() ? "screen.combatant.schematic.materials_none" : "screen.combatant.schematic.none_loaded");
-            ui.text(text, rightX + 12f, materialsY + 12f, SchematicUi.SMALL, SchematicUi.scaleAlpha(SchematicUi.FAINT, alpha), false);
+            ui.textCentered(text, rightX + rightW * 0.5f, materialsY + Math.min(materialsH * 0.4f, 60f), SchematicUi.SMALL,
+                    SchematicUi.scaleAlpha(SchematicUi.FAINT, alpha), false);
             return;
         }
         int visible = Math.max(1, (int) ((materialsH - 8f) / MATERIAL_ROW_H));
@@ -639,17 +848,26 @@ public final class SchematicScreen extends Screen {
         int have = materialHave[index];
         float x = rightX + 6f;
         float w = rightW - 16f;
+        float rh = MATERIAL_ROW_H - 2f;
         if (builderMissing) {
-            Renderer2D.COLOR.roundedRect(x, y, w, MATERIAL_ROW_H - 2f, 5f, SchematicUi.withAlpha(0x3A1416, Math.round(alpha * 200f)));
+            Renderer2D.COLOR.roundedRect(x, y, w, rh, 6f, SchematicUi.scaleAlpha(SchematicUi.mix(SchematicUi.SURFACE, SchematicUi.BAD, 0.22f), alpha));
+        } else if (SchematicUi.inside(mouseX, mouseY, x, y, w, rh)) {
+            Renderer2D.COLOR.roundedRect(x, y, w, rh, 6f, SchematicUi.scaleAlpha(SchematicUi.SURFACE_HOVER, alpha));
         }
-        Renderer2D.COLOR.item(materialStacks.get(index), x + 4f, y + (MATERIAL_ROW_H - 2f - 20f) * 0.5f, 1.25f, index);
+        Renderer2D.COLOR.item(materialStacks.get(index), x + 4f, y + (rh - 20f) * 0.5f, 1.25f, index);
         String counts = have + " / " + entry.count();
         float countsW = ui.width(counts, SchematicUi.SMALL, false);
-        float textY = y + (MATERIAL_ROW_H - 2f - smallH) * 0.5f;
+        float textY = y + 4f;
         ui.text(ui.ellipsize(materialStacks.get(index).getHoverName().getString(), SchematicUi.SMALL, w - countsW - 44f),
                 x + 32f, textY, SchematicUi.SMALL, SchematicUi.scaleAlpha(SchematicUi.TEXT, alpha), false);
-        int color = have >= entry.count() ? SchematicUi.GOOD : SchematicUi.BAD;
+        boolean done = have >= entry.count();
+        int color = done ? SchematicUi.GOOD : SchematicUi.BAD;
         ui.textRight(counts, x + w - 4f, textY, SchematicUi.SMALL, SchematicUi.scaleAlpha(color, alpha), false);
+        float fraction = entry.count() <= 0 ? 1f : Math.min(1f, (float) have / entry.count());
+        float barX = x + 32f, barW = w - 36f, barY = y + rh - 8f;
+        Renderer2D.COLOR.roundedRect(barX, barY, barW, 3f, 1.5f, SchematicUi.scaleAlpha(SchematicUi.WELL, alpha));
+        int fill = done ? SchematicUi.GOOD : SchematicUi.mix(SchematicUi.BAD, SchematicUi.WARN, fraction);
+        if (fraction > 0f) Renderer2D.COLOR.roundedRect(barX, barY, Math.max(3f, barW * fraction), 3f, 1.5f, SchematicUi.scaleAlpha(fill, alpha));
     }
 
     private void refreshMaterials() {
@@ -683,32 +901,48 @@ public final class SchematicScreen extends Screen {
 
     private void renderTooltip(float alpha) {
         Schematic schematic = state.schematic();
-        if (schematic == null || SchematicActions.loadingPath() != null || draggingStrip) return;
-        int[] cell = grid.cellAt(schematic, mouseX, mouseY);
+        if (schematic == null || SchematicActions.loadingPath() != null || draggingStrip || draggingGap || viewport.dragging()) return;
+        if (view3d && viewport.hovered() >= 0) {
+            int index = viewport.hovered();
+            int x = schematic.xOf(index), y = schematic.yOf(index), z = schematic.zOf(index);
+            drawTooltip(schematic, x, y, z, y != state.layer(), alpha);
+            return;
+        }
+        boolean gridShown = !view3d || SchematicUi.inside(mouseX, mouseY, insetX, insetY, insetS, insetS);
+        int[] cell = gridShown ? grid.cellAt(schematic, mouseX, mouseY) : null;
         if (cell == null) return;
-        int layer = state.layer();
-        int palette = schematic.paletteIndex(cell[0], layer, cell[1]);
+        drawTooltip(schematic, cell[0], state.layer(), cell[1], false, alpha);
+    }
+
+    private void drawTooltip(Schematic schematic, int cx, int cy, int cz, boolean clickHint, float alpha) {
+        int palette = schematic.paletteIndex(cx, cy, cz);
         if (palette == 0) return;
         BlockState block = schematic.paletteState(palette);
         String name = block.getBlock().getName().getString();
         String id = schematic.paletteId(palette);
-        String coords = tr("screen.combatant.schematic.tooltip.local", cell[0], layer, cell[1]);
+        String coords = tr("screen.combatant.schematic.tooltip.local", cx, cy, cz);
         SchematicPlacement placement = state.placement();
         if (placement != null) {
-            BlockPos world = placement.toWorld(cell[0], layer, cell[1]);
+            BlockPos world = placement.toWorld(cx, cy, cz);
             coords += "  ·  " + tr("screen.combatant.schematic.tooltip.world", world.getX(), world.getY(), world.getZ());
         }
+        String hint = clickHint ? tr("screen.combatant.schematic.tooltip.click_layer", cy + 1) : "";
         float w = Math.max(ui.width(name, SchematicUi.BODY, true), Math.max(ui.width(id, SchematicUi.TINY, false),
-                ui.width(coords, SchematicUi.TINY, false))) + 24f;
-        float h = bodyH + smallH * 2f + 24f;
+                Math.max(ui.width(coords, SchematicUi.TINY, false), ui.width(hint, SchematicUi.TINY, false)))) + 24f;
+        float h = bodyH + smallH * 2f + 24f + (hint.isEmpty() ? 0f : smallH + 2f);
         float x = Math.min(mouseX + 16f, fixedWidth - w - 8f);
         float y = Math.min(mouseY + 16f, fixedHeight - h - 8f);
+        int swatch = grid.paletteColor(schematic, palette);
         Renderer2D.COLOR.roundedRectSoftShadow(x, y, w, h, 8f, 14f, 0.04f, SchematicUi.withAlpha(0x000000, 120));
-        Renderer2D.COLOR.roundedRect(x, y, w, h, 8f, SchematicUi.withAlpha(0x0E1219, Math.round(alpha * 245f)));
-        Renderer2D.COLOR.roundedRectStroke(x, y, w, h, 8f, 1f, SchematicUi.withAlpha(grid.paletteColor(schematic, palette), Math.round(alpha * 220f)));
+        Renderer2D.COLOR.roundedRect(x, y, w, h, 8f, SchematicUi.withAlpha(SchematicUi.PANEL_BOTTOM, Math.round(alpha * 245f)));
+        Renderer2D.COLOR.roundedRectStroke(x, y, w, h, 8f, 1f, SchematicUi.withAlpha(swatch, Math.round(alpha * 220f)));
+        Renderer2D.COLOR.roundedRect(x + 1f, y + 10f, 3f, h - 20f, 1.5f, SchematicUi.withAlpha(swatch, Math.round(alpha * 255f)));
         ui.text(name, x + 12f, y + 8f, SchematicUi.BODY, SchematicUi.scaleAlpha(SchematicUi.TEXT, alpha), true);
         ui.text(id, x + 12f, y + 12f + bodyH, SchematicUi.TINY, SchematicUi.scaleAlpha(SchematicUi.MUTED, alpha), false);
         ui.text(coords, x + 12f, y + 16f + bodyH + smallH, SchematicUi.TINY, SchematicUi.scaleAlpha(SchematicUi.MUTED, alpha), false);
+        if (!hint.isEmpty()) {
+            ui.text(hint, x + 12f, y + 18f + bodyH + smallH * 2f, SchematicUi.TINY, SchematicUi.scaleAlpha(SchematicUi.ACCENT, alpha), false);
+        }
     }
 
     private void drawButton(Btn id, String label, boolean active, boolean enabled, float alpha) {
@@ -725,7 +959,11 @@ public final class SchematicScreen extends Screen {
         float my = toFixed((float) click.y());
         mouseX = mx;
         mouseY = my;
-        if (click.button() != 0) return true;
+        if (click.button() != 0) {
+            boolean pan = click.button() == 1 || click.button() == 2;
+            if (pan && view3dActive() && insideViewport(mx, my) && !overViewportChrome(mx, my)) viewport.beginDrag(click.button(), mx, my);
+            return true;
+        }
         searchFocused = SchematicUi.inside(mx, my, searchX, searchY, searchW, searchH);
         for (Btn id : BUTTONS) {
             if (over(id)) {
@@ -738,8 +976,25 @@ public final class SchematicScreen extends Screen {
         if (state.hasSchematic() && SchematicUi.inside(mx, my, stripX, stripY, STRIP_W, stripH)) {
             draggingStrip = true;
             setLayerFromStrip(my);
+            return true;
         }
+        if (view3dActive()) clickViewport(mx, my, doubled);
         return true;
+    }
+
+    private void clickViewport(float mx, float my, boolean doubled) {
+        if (viewport.mode().exploded() && SchematicUi.inside(mx, my, gapX - 6f, gapY - 8f, gapW + 12f, 20f)) {
+            draggingGap = true;
+            setGapFrom(mx);
+            return;
+        }
+        if (SchematicUi.inside(mx, my, insetX, insetY, insetS, insetS)) {
+            setView3d(false);
+            return;
+        }
+        if (!insideViewport(mx, my)) return;
+        if (doubled) viewport.resetCamera();
+        viewport.beginDrag(0, mx, my);
     }
 
     private boolean clickList(float mx, float my, boolean doubled) {
@@ -776,7 +1031,18 @@ public final class SchematicScreen extends Screen {
             case LAYER_UP10 -> state.stepLayer(10);
             case TAB_LAYER -> materialsTotal = false;
             case TAB_TOTAL -> materialsTotal = true;
+            case TAB_3D -> setView3d(true);
+            case TAB_2D -> setView3d(false);
+            case VIEW_MODE -> viewport.cycleMode();
+            case AUTO_ROTATE -> viewport.toggleAutoRotate();
+            case RESET_VIEW -> viewport.resetCamera();
         }
+    }
+
+    private void setView3d(boolean next) {
+        if (view3d == next) return;
+        view3d = next;
+        viewFade = 0f;
     }
 
     private void togglePlay() {
@@ -791,10 +1057,24 @@ public final class SchematicScreen extends Screen {
         state.setLayer((int) Math.floor(t * layers));
     }
 
+    private void setGapFrom(float mx) {
+        viewport.setGap((mx - gapX) / gapW * SchematicViewport.MAX_GAP);
+    }
+
     @Override
     public boolean mouseDragged(MouseButtonEvent click, double dx, double dy) {
+        float mx = toFixed((float) click.x());
+        float my = toFixed((float) click.y());
         if (draggingStrip) {
-            setLayerFromStrip(toFixed((float) click.y()));
+            setLayerFromStrip(my);
+            return true;
+        }
+        if (draggingGap) {
+            setGapFrom(mx);
+            return true;
+        }
+        if (viewport.dragging()) {
+            viewport.drag(mx, my);
             return true;
         }
         return super.mouseDragged(click, dx, dy);
@@ -803,6 +1083,11 @@ public final class SchematicScreen extends Screen {
     @Override
     public boolean mouseReleased(MouseButtonEvent click) {
         draggingStrip = false;
+        draggingGap = false;
+        if (viewport.dragging()) {
+            int layer = viewport.endDrag(toFixed((float) click.x()), toFixed((float) click.y()));
+            if (layer >= 0) state.setLayer(layer);
+        }
         return super.mouseReleased(click);
     }
 
@@ -816,6 +1101,8 @@ public final class SchematicScreen extends Screen {
             listFirst -= direction;
         } else if (SchematicUi.inside(mx, my, rightX, materialsY, rightW, materialsH)) {
             materialsFirst -= direction;
+        } else if (view3dActive() && insideViewport(mx, my) && !ctrlDown()) {
+            viewport.zoom(direction);
         } else if (SchematicUi.inside(mx, my, centreX, contentY, centreW, contentBottom - contentY)) {
             state.stepLayer(direction * (shiftDown() ? 10 : 1));
         }
@@ -846,6 +1133,9 @@ public final class SchematicScreen extends Screen {
             case GLFW.GLFW_KEY_END -> state.setLayer(state.layerCount() - 1);
             case GLFW.GLFW_KEY_SPACE -> togglePlay();
             case GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> SchematicActions.load(selectedPath);
+            case GLFW.GLFW_KEY_R -> viewport.resetCamera();
+            case GLFW.GLFW_KEY_T -> setView3d(!view3d);
+            case GLFW.GLFW_KEY_E -> viewport.cycleMode();
             default -> {
                 return super.keyPressed(input);
             }
@@ -873,9 +1163,15 @@ public final class SchematicScreen extends Screen {
     }
 
     private boolean shiftDown() {
-        if (minecraft == null) return false;
-        return InputConstants.isKeyDown(minecraft.getWindow(), GLFW.GLFW_KEY_LEFT_SHIFT)
-                || InputConstants.isKeyDown(minecraft.getWindow(), GLFW.GLFW_KEY_RIGHT_SHIFT);
+        return keyDown(GLFW.GLFW_KEY_LEFT_SHIFT) || keyDown(GLFW.GLFW_KEY_RIGHT_SHIFT);
+    }
+
+    private boolean ctrlDown() {
+        return keyDown(GLFW.GLFW_KEY_LEFT_CONTROL) || keyDown(GLFW.GLFW_KEY_RIGHT_CONTROL);
+    }
+
+    private boolean keyDown(int key) {
+        return minecraft != null && InputConstants.isKeyDown(minecraft.getWindow(), key);
     }
 
     // ---------------------------------------------------------------- metrics

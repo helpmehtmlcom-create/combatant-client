@@ -26,6 +26,8 @@ public final class OrbitCamera {
     private float yaw = DEFAULT_YAW, pitch = DEFAULT_PITCH, distance = 10f, panX, panY;
     private float targetYaw = DEFAULT_YAW, targetPitch = DEFAULT_PITCH, targetDistance = 10f, targetPanX, targetPanY;
     private float centreX, centreY, centreZ, radius = 1f;
+    private float targetCentreX, targetCentreY, targetCentreZ;
+    private boolean framed;
 
     private float eyeX, eyeY, eyeZ;
     private float rightX, rightY, rightZ;
@@ -33,17 +35,33 @@ public final class OrbitCamera {
     private float forwardX, forwardY, forwardZ;
     private float focal = 1f, originX, originY;
 
-    /** Points the camera at a new box; the distance is refit only when the box size changes. */
+    /**
+     * Aims at a box. The first call after {@link #clearFrame} jumps there; later calls (an exploded view growing,
+     * say) ease the centre and scale the zoom with the box so the framing the user chose is kept.
+     */
     public void frame(float cx, float cy, float cz, float boundingRadius) {
-        centreX = cx;
-        centreY = cy;
-        centreZ = cz;
+        targetCentreX = cx;
+        targetCentreY = cy;
+        targetCentreZ = cz;
         float next = Math.max(0.5f, boundingRadius);
-        if (Math.abs(next - radius) > 1.0e-3f) {
+        if (!framed) {
+            framed = true;
             radius = next;
+            centreX = cx;
+            centreY = cy;
+            centreZ = cz;
             targetDistance = fitDistance();
             distance = targetDistance;
+            return;
         }
+        if (Math.abs(next - radius) > 1.0e-3f) {
+            targetDistance *= next / radius;
+            radius = next;
+        }
+    }
+
+    public void clearFrame() {
+        framed = false;
     }
 
     public void reset() {
@@ -55,6 +73,9 @@ public final class OrbitCamera {
     }
 
     public void snap() {
+        centreX = targetCentreX;
+        centreY = targetCentreY;
+        centreZ = targetCentreZ;
         yaw = targetYaw;
         pitch = targetPitch;
         distance = targetDistance;
@@ -84,6 +105,9 @@ public final class OrbitCamera {
         distance += (targetDistance - distance) * k;
         panX += (targetPanX - panX) * k;
         panY += (targetPanY - panY) * k;
+        centreX += (targetCentreX - centreX) * k;
+        centreY += (targetCentreY - centreY) * k;
+        centreZ += (targetCentreZ - centreZ) * k;
         // Keep the angles small so endless auto-rotation never costs float precision.
         if (Math.abs(yaw) > TWO_PI * 4f) {
             float wrap = (float) Math.floor(yaw / TWO_PI) * TWO_PI;
