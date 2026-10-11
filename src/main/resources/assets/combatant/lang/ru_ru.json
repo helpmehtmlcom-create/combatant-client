@@ -4991,6 +4991,7 @@
   "setting.airjump.mode.option.maintain_level": "Сохранять высоту",
   "setting.scaffold.movement_correction.option.strict": "Строгая",
   "setting.scaffold.rotation_timing.option.on_tick": "На тике",
+  "setting.scaffold.strict_geometry": "Строгая геометрия",
   "setting.speed.mode.option.bhop": "Банни-хоп",
   "setting.autocrystal.pause_health": "Не ставить кристаллы при здоровье ниже (0 = выкл.)",
   "command.i18naudit.description": "Записывает цепочки ключей перевода всех настроек в JSON-файл (dev-сборки).",
