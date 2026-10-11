@@ -32,6 +32,7 @@ import combatant.client.features.gui.hud.nondraggable.StaticHudElementRegistry;
 import combatant.client.features.gui.hud.nondraggable.impl.DynamicIsland;
 import combatant.client.features.module.ModuleManager;
 import combatant.client.features.module.Modules;
+import combatant.client.features.module.modules.combat.AimAssist;
 import combatant.client.features.module.modules.visuals.Freecam;
 import combatant.client.features.module.modules.visuals.FreeLook;
 import combatant.client.features.module.modules.visuals.Zoom;
@@ -212,6 +213,12 @@ public class MouseMixin {
             return;
         }
 
+        // Notify direct-camera aim assistance only for physical mouse motion.
+        // Its own player.turn() calls bypass MouseHandler and cannot feed back.
+        AimAssist aimAssist = Modules.get(AimAssist.class);
+        if (aimAssist != null && aimAssist.isEnabled()) {
+            aimAssist.onManualMouseTurn(dx, dy);
+        }
         player.turn(dx, dy);
     }
 

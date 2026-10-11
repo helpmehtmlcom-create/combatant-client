@@ -16,7 +16,7 @@ import com.mojang.blaze3d.textures.GpuTextureView;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.core.ViewportContext;
 import combatant.client.render.engine.msaa.MsaaFramebuffer;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.UiRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.engine.profiler.UiPipelineTelemetry;
 import combatant.client.render.engine.renderer.MeshRenderer;
@@ -293,7 +293,7 @@ public final class UiMsaaClipLayer {
         UIBatchUniforms.update(viewport.framebufferWidth(), viewport.framebufferHeight());
         MeshRenderer.begin()
                 .attachments(layer.parentColor(), null)
-                .pipeline(CombatantRenderPipelines.UI_TEXTURED_PREMULTIPLIED_ALPHA)
+                .pipeline(UiRenderPipelines.UI_TEXTURED_PREMULTIPLIED_ALPHA)
                 .mesh(compositeMesh)
                 .uniform("UIBatch", UIBatchUniforms.get())
                 .sampler("u_Texture", resolveTarget.getColorTextureView(), sampler)
@@ -306,7 +306,7 @@ public final class UiMsaaClipLayer {
                 && underlayView != layer.parentColor()) {
             MeshRenderer.begin()
                     .attachments(underlayView, null)
-                    .pipeline(CombatantRenderPipelines.UI_TEXTURED_PREMULTIPLIED_ALPHA)
+                    .pipeline(UiRenderPipelines.UI_TEXTURED_PREMULTIPLIED_ALPHA)
                     .mesh(compositeMesh)
                     .uniform("UIBatch", UIBatchUniforms.get())
                     .sampler("u_Texture", resolveTarget.getColorTextureView(), sampler)

@@ -313,6 +313,8 @@ public final class Renderer3D {
     public enum DepthMode {
         MAIN,
         PRE_DEPTH,
+        /** Entity depth without terrain depth. */
+        ENTITY_ONLY,
         NONE
     }
 

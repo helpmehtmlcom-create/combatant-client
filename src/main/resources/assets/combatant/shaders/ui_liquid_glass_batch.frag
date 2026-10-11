@@ -7,6 +7,10 @@
  * Copyright (c) 2026 pivosos2007.
  *
  * Licensed under the GNU General Public License v3.0.
+ *
+ * The LIQUID_REFRACTION optical model adapts the SDF deformation, edge-factor and
+ * refraction direction used by liquidGL 3.0.0 (commit 88f681ab7035fd55b04f63edff1841e32c4199e9),
+ * Copyright (c) NaughtyDuk, MIT. See THIRD_PARTY_LICENSES/liquidGL-MIT.txt.
  */
 
 in vec2 v_TexCoord;
@@ -18,31 +22,71 @@ in vec4 v_Params2;
 in vec4 v_Params3;
 in vec4 v_Params4;
 in vec4 v_Params5;
-in vec4 v_Params6;
+flat in vec4 v_Params6;
 in vec4 v_Params7;
+in vec4 v_Params8;
+in vec4 v_Params9;
+in vec4 v_Params10;
+in vec4 v_Params11;
 
 out vec4 fragColor;
 
-uniform sampler2D u_Texture;     // clean scene/background source
-uniform sampler2D u_BlurTexture; // existing prepared UI blur source
+uniform sampler2D u_Texture;
+uniform sampler2D u_BlurTexture;
+uniform sampler2D u_StackTexture;
 
 #ifdef COMBATANT_UI_UNDERLAY
 uniform sampler2D u_UiUnderlayTexture;
 layout (std140) uniform UIBackdrop {
-    vec4 uUiBackdrop; // x = UI underlay mix
+    vec4 uUiBackdrop;
 };
 #endif
 
 layout (std140) uniform UIBatch {
-    vec4 uScreen; // xy = framebuffer size, zw = logical size
+    vec4 uScreen;
     vec4 uLayer;
 };
 
 layout (std140) uniform UIBlend {
-    vec4 uBlendParams; // x = mode, y = strength, z = pivot, w = softness
+    vec4 uBlendParams;
     vec4 uBlendTone0;
     vec4 uBlendTone1;
 };
+
+layout (std140) uniform UIGlassFrame {
+    vec4 uGlassPointer;
+    vec4 uGlassMotion;
+    vec4 uGlassClock;
+};
+
+layout (std140) uniform UIGlassStack {
+    vec4 uStackMeta;
+    vec4 uStackBounds[4];
+};
+
+float stackRegionMask(vec2 sampleUv, vec2 logicalSize) {
+    if (uStackMeta.x < 0.5) return 0.0;
+    vec2 logicalPos = vec2(sampleUv.x, 1.0 - sampleUv.y) * logicalSize;
+    float coverage = 0.0;
+    for (int i = 0; i < 4; ++i) {
+        if (float(i) >= uStackMeta.x) break;
+        vec4 rect = uStackBounds[i];
+        vec2 edge = min(logicalPos - rect.xy, rect.xy + rect.zw - logicalPos);
+        float signedInside = min(edge.x, edge.y);
+        float aa = max(uStackMeta.y, 0.75);
+        coverage = max(coverage, smoothstep(-aa, aa, signedInside));
+    }
+    return coverage;
+}
+
+vec4 sampleLiquidScene(vec2 sampleUv, vec2 logicalSize) {
+    vec2 safeUv = clamp(sampleUv, vec2(0.001), vec2(0.999));
+    vec4 background = texture(u_BlurTexture, safeUv);
+    float region = stackRegionMask(safeUv, logicalSize);
+    if (region <= 0.001) return background;
+    vec4 lower = texture(u_StackTexture, safeUv) * region;
+    return lower + background * (1.0 - lower.a);
+}
 
 #moj_import <combatant:ui_backdrop_blend.glsl>
 
@@ -51,16 +95,11 @@ layout (std140) uniform UIBlend {
 #endif
 
 float roundedBoxSDF(vec2 p, vec2 halfSize, vec4 r, float smoothness) {
-    // r order: TL, TR, BR, BL
-    //
-    // p is centered logical coord:
-    // x < 0 = left,  x > 0 = right
-    // y < 0 = top,   y > 0 = bottom
     float radius;
     if (p.x < 0.0) {
-        radius = (p.y < 0.0) ? r.x : r.w; // TL : BL
+        radius = (p.y < 0.0) ? r.x : r.w;
     } else {
-        radius = (p.y < 0.0) ? r.y : r.z; // TR : BR
+        radius = (p.y < 0.0) ? r.y : r.z;
     }
 
     vec2 q = abs(p) - halfSize + radius;
@@ -72,9 +111,12 @@ float roundedBoxSDF(vec2 p, vec2 halfSize, vec4 r, float smoothness) {
     return min(max(q.x, q.y), 0.0) + len - radius;
 }
 
+float sdRoundBox(vec2 p, vec2 b, float r) {
+    vec2 q = abs(p) - b + r;
+    return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+}
+
 float decodeDistort(float packedValue, out float cornerSmoothness, out float blurAlpha, out bool squircle) {
-    // Packed payload: rounded boxes use smoothness*10000; squircles use the 200000 marker
-    // with exponent hundredths in the following bucket. Small values remain valid for compatibility.
     squircle = packedValue >= 200000.0;
     if (squircle) {
         packedValue -= 200000.0;
@@ -237,86 +279,29 @@ vec2 safeNormalize(vec2 v, vec2 fallback) {
     return v * inversesqrt(len2);
 }
 
+vec2 cornerNormal(vec2 p, vec2 b, float r, vec2 fallback) {
+    vec2 q = abs(p) - b + r;
+    vec2 m = max(q, 0.0);
+    float l = length(m);
+    if (l <= 0.0) return fallback;
+    float w = smoothstep(0.0, max(r * 0.5, 1.0), min(m.x, m.y));
+    if (w <= 0.0) return fallback;
+    vec2 s = vec2(p.x < 0.0 ? -1.0 : 1.0, p.y < 0.0 ? -1.0 : 1.0);
+    return normalize(mix(fallback, s * (m / l), w));
+}
+
 vec2 warpedLocal(vec4 local) {
     float invW = abs(local.z) > 0.000001 ? local.z : 1.0;
     return local.xy / invW;
 }
 
-float fresnelTerm(float signedPower, float edgeGradient) {
-    float power = max(abs(signedPower), 0.001);
-    float base = (signedPower < 0.0) ? edgeGradient : (1.0 - edgeGradient);
-    base = clamp(base, 0.001, 1.0);
-
-    if (power > 20.0) {
-        return clamp(exp(power * log(base)), 0.0, 1.0);
-    }
-
-    return clamp(pow(base, power), 0.0, 1.0);
-}
-
-void decodeFresnelPayload(float packedValue, out float fresnelMix, out float prismStrength, out float prismPhase) {
-    fresnelMix = clamp(packedValue, 0.0, 1.0);
-    prismStrength = 0.0;
-    prismPhase = 0.0;
-    if (packedValue < 1.5) return;
-
-    float payload = max(0.0, packedValue - 2.0);
-    float phaseBucket = floor(payload / 256.0 + 0.0001);
-    float strengthPayload = payload - phaseBucket * 256.0;
-    float strengthBucket = floor(strengthPayload / 2.0 + 0.0001);
-    fresnelMix = clamp(strengthPayload - strengthBucket * 2.0, 0.0, 1.0);
-    prismStrength = clamp(strengthBucket / 100.0, 0.0, 1.0);
-    prismPhase = clamp(phaseBucket / 100.0, 0.0, 1.0);
-}
-
-const vec3 LUMA_WEIGHTS = vec3(0.2126, 0.7152, 0.0722);
-
-float luminance(vec3 c) {
-    return dot(c, LUMA_WEIGHTS);
-}
-
-float prismStripe(float distanceToSweep, float center, float halfWidth, float feather) {
-    return 1.0 - smoothstep(halfWidth, halfWidth + feather, abs(distanceToSweep - center));
-}
-
-float prismHash(vec2 p) {
-    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
-}
-
-vec3 decodePackedRgb(float packedValue) {
-    float packedRgb = clamp(floor(packedValue + 0.5), 0.0, 16777215.0);
-    float r = floor(packedRgb / 65536.0);
-    packedRgb -= r * 65536.0;
-    float g = floor(packedRgb / 256.0);
-    float b = packedRgb - g * 256.0;
-    return vec3(r, g, b) / 255.0;
-}
-
-vec3 lookupGlassColor(vec3 scene, vec3 tint) {
-    float sourceLuma = max(luminance(scene), 0.0001);
-    float peak = max(scene.r, max(scene.g, scene.b));
-
-    // Limit glare by scaling the original RGB uniformly. Rebuilding the color
-    // around a gray luminance axis made glass visibly desaturated.
-    float brightWeight = smoothstep(0.52, 0.92, sourceLuma);
-    float glareWeight = smoothstep(0.78, 1.00, peak);
-    float targetLuma = mix(sourceLuma, 0.48 + 0.20 * sqrt(sourceLuma), brightWeight);
-    targetLuma *= 1.0 - glareWeight * 0.055;
-    vec3 mapped = scene * (targetLuma / sourceLuma);
-
-    // Blur naturally loses saturation. Restore a small amount without changing
-    // the mapped luminance or forcing every material toward neutral gray.
-    float mappedLuma = luminance(mapped);
-    mapped = vec3(mappedLuma) + (mapped - vec3(mappedLuma)) * (1.05 + brightWeight * 0.08);
-
-    // Tint contributes hue, not additional brightness.
-    float tintLuma = luminance(tint);
-    vec3 tintChroma = tint - vec3(tintLuma);
-    mapped += tintChroma * (0.055 + brightWeight * 0.035);
-
-    return clamp(mapped, 0.0, 1.0);
+vec2 deformGlassPoint(vec2 point, vec2 size, vec2 pointerCenter,
+                      float interactionRadius, vec2 displacement) {
+    if (interactionRadius <= 0.0 || dot(displacement, displacement) <= 1e-8) return point;
+    vec2 interactionCenter = (pointerCenter - 0.5) * size;
+    float reach = max(interactionRadius * min(size.x, size.y), 0.0001);
+    float influence = 1.0 - smoothstep(0.0, reach, length(point - interactionCenter));
+    return point - displacement * size * influence;
 }
 
 void main() {
@@ -325,13 +310,23 @@ void main() {
     vec2 logicalSize = max(screen.zw, vec2(1.0));
     vec2 logicalScale = logicalSize / fbSize;
 
-    // Perspective-correct global logical coordinates also keep scene sampling stable
-    // when this material is rendered through a bounded local MSAA target.
     vec2 frag = warpedLocal(v_Local);
 
     vec2 size = max(v_Rect.zw, vec2(1.0));
     vec2 center = v_Rect.xy + size * 0.5;
-    vec2 pos = frag - center;
+    vec2 originalPos = frag - center;
+    int glassVariant = int(floor(v_Params8.x + 0.5));
+    bool localInteraction = v_Params11.w < 0.0;
+    float magnification = clamp(abs(v_Params11.w), 0.65, 1.8);
+    uint opticalBits = uint(v_Params6.z);
+    float spectralAberration = clamp(v_Params7.x, 0.0, 0.95);
+    int chromaticMotion = int(opticalBits & 3u);
+    vec2 opticalTiltDeg = vec2(float((opticalBits >> 8u) & 127u) - 64.0,
+                               float((opticalBits >> 15u) & 127u) - 64.0) * 0.25;
+    bool shapeDeformation = ((opticalBits >> 22u) & 1u) != 0u;
+    bool directionalSpecular = ((opticalBits >> 23u) & 1u) != 0u;
+    float interactionRadius = clamp(v_Params9.y, 0.0, 2.0);
+    vec2 interactionDisplacement = localInteraction ? v_Params10.zw : vec2(0.0);
     vec4 radius = normalizeRadii(v_Params, size);
 
     float cornerSmoothness;
@@ -340,6 +335,12 @@ void main() {
     float distortStrength = decodeDistort(max(v_TexCoord.y, 0.0), cornerSmoothness, blurAlpha, squircle);
     bool customShape = v_Params6.w > 0.5;
     vec2 halfSize = size * 0.5 - ((squircle || customShape) ? 0.0 : 1.0);
+
+    vec2 deformedPos = localInteraction
+            ? deformGlassPoint(originalPos, size, v_Params10.xy,
+                               interactionRadius, interactionDisplacement)
+            : originalPos;
+    vec2 pos = shapeDeformation ? deformedPos : originalPos;
 
     float selfDistance = glassShapeSDF(pos, halfSize, radius, cornerSmoothness, squircle);
 #ifdef COMBATANT_ANALYTIC_CLIP
@@ -350,12 +351,9 @@ void main() {
     float d = selfDistance;
 #endif
 
-    // d already contains the final visible SDF (including analytic clip when present).
-    // Screen-space derivatives therefore replace four additional SDF evaluations and four
-    // additional clip-distance evaluations while keeping the normal tied to the visible edge.
     vec2 dScreenGradient = vec2(
-        dFdx(d) / max(logicalScale.x, 1e-6),
-        dFdy(d) / max(logicalScale.y, 1e-6)
+        dFdx(selfDistance) / max(logicalScale.x, 1e-6),
+        dFdy(selfDistance) / max(logicalScale.y, 1e-6)
     );
     vec2 fallbackSdfNormal = safeNormalize(pos, vec2(0.0, -1.0));
     vec2 uvNormal = safeNormalize(dScreenGradient,
@@ -368,274 +366,146 @@ void main() {
         discard;
     }
 
-    float thickness = max(v_Params2.x, 1.0);
-    float distToEdge = abs(d);
-    float edgeGradient = 1.0 - clamp(distToEdge / thickness, 0.0, 1.0);
-    bool edgeActive = edgeGradient > 0.025;
-    float fresnel = edgeActive ? fresnelTerm(v_Params2.y, edgeGradient) : 0.0;
-    float wideRim = edgeActive ? smoothstep(0.04, 0.92, edgeGradient) : 0.0;
+    float localRadius = pos.x < 0.0
+            ? (pos.y < 0.0 ? radius.x : radius.w)
+            : (pos.y < 0.0 ? radius.y : radius.z);
+    float opticalInsideDistance = (!customShape && !squircle)
+            ? -sdRoundBox(pos, size * 0.5, localRadius)
+            : max(-selfDistance, 0.0);
+    float liquidBevelPx = max(v_Params8.z * min(size.x, size.y), 0.001);
+    if (glassVariant == 4) liquidBevelPx *= 1.65;
+    float liquidEdge = 1.0 - smoothstep(0.0, liquidBevelPx, opticalInsideDistance);
 
     vec2 uv = vec2(
         frag.x / logicalSize.x,
         1.0 - frag.y / logicalSize.y
     );
 
-    float fresnelMix;
-    float prismStrength;
-    float prismPhase;
-    decodeFresnelPayload(v_TexCoord.x, fresnelMix, prismStrength, prismPhase);
-
-#ifdef COMBATANT_LIGHT_GLASS
-    bool prismActive = false;
-    prismStrength = 0.0;
-#else
-    // Full glass keeps the travelling prism/caustic animation across the whole surface.
-    // Rim/chromatic work is still edge-only below; ordinary non-prismatic glass is routed
-    // to COMBATANT_LIGHT_GLASS and compiles this path out entirely.
-    bool prismActive = prismStrength > 0.01;
-#endif
-
-    float frostedJitterPx = clamp(v_Params7.x, 0.0, 4.0);
-    vec2 surfaceUv = pos / size + 0.5;
-    vec2 surfaceKey = vec2(0.0);
-    if (frostedJitterPx > 0.001 || prismActive) {
-        // Stable per-surface randomization. Position is quantized coarsely so animated
-        // geometry does not sparkle, while neighbouring surfaces still differ.
-        surfaceKey = vec2(
-            floor((v_Rect.x + size.x * 0.31) / 24.0),
-            floor((size.x * 0.37 + size.y * 0.63) / 16.0)
-        );
+    vec2 centerUv;
+    vec2 liquidOffset = vec2(0.0);
+    vec2 p = pos / max(size.y, 1.0);
+    vec2 refractNormal = (!customShape && !squircle)
+            ? cornerNormal(pos, size * 0.5, localRadius,
+                    safeNormalize(p + vec2(0.000001), sdfNormal))
+            : sdfNormal;
+    if (localInteraction && interactionRadius > 0.0
+            && dot(interactionDisplacement, interactionDisplacement) > 1e-8) {
+        vec2 stepX = vec2(0.5, 0.0);
+        vec2 stepY = vec2(0.0, 0.5);
+        vec2 dxp = deformGlassPoint(originalPos + stepX, size, v_Params10.xy,
+                                    interactionRadius, interactionDisplacement);
+        vec2 dxm = deformGlassPoint(originalPos - stepX, size, v_Params10.xy,
+                                    interactionRadius, interactionDisplacement);
+        vec2 dyp = deformGlassPoint(originalPos + stepY, size, v_Params10.xy,
+                                    interactionRadius, interactionDisplacement);
+        vec2 dym = deformGlassPoint(originalPos - stepY, size, v_Params10.xy,
+                                    interactionRadius, interactionDisplacement);
+        float dxpDistance = (!customShape && !squircle)
+                ? sdRoundBox(dxp, size * 0.5, localRadius)
+                : glassShapeSDF(dxp, halfSize, radius, cornerSmoothness, squircle);
+        float dxmDistance = (!customShape && !squircle)
+                ? sdRoundBox(dxm, size * 0.5, localRadius)
+                : glassShapeSDF(dxm, halfSize, radius, cornerSmoothness, squircle);
+        float dypDistance = (!customShape && !squircle)
+                ? sdRoundBox(dyp, size * 0.5, localRadius)
+                : glassShapeSDF(dyp, halfSize, radius, cornerSmoothness, squircle);
+        float dymDistance = (!customShape && !squircle)
+                ? sdRoundBox(dym, size * 0.5, localRadius)
+                : glassShapeSDF(dym, halfSize, radius, cornerSmoothness, squircle);
+        vec2 gradient = vec2(dxpDistance - dxmDistance, dypDistance - dymDistance);
+        if (dot(gradient, gradient) > 1e-8) {
+            refractNormal = normalize(mix(refractNormal, normalize(gradient),
+                    min(length(deformedPos - originalPos), 1.0)));
+        }
     }
 
-    float prismBand = 0.0;
-#ifndef COMBATANT_LIGHT_GLASS
-    float prismEnvelope = 0.0;
-    float prismCrest = 0.0;
-    float prismEcho = 0.0;
-    float alongSweep = 0.0;
-    float waveSlope = 0.0;
-    float wavePhaseA = 0.0;
-    float wavePhaseB = 0.0;
-    float fillWaveB = 0.0;
-    float strengthSeed = 0.5;
-    float colorSeed = 0.5;
+    float offsetAmount = liquidEdge * v_Params8.y
+            + pow(liquidEdge, 10.0) * v_Params8.w;
+    float centerBlend = smoothstep(0.15, 0.45, length(p));
+    liquidOffset = vec2(refractNormal.x, -refractNormal.y)
+            * offsetAmount * centerBlend;
 
-    // Full-glass caustics are intentionally evaluated across the surface: the travelling
-    // sweep is itself the visible mask. Non-prismatic materials never enter this shader
-    // path, so ordinary glass still avoids all of this math.
-    if (prismActive) {
-        strengthSeed = prismHash(surfaceKey + vec2(7.1, 19.7));
-        float waveSeed = prismHash(surfaceKey + vec2(31.3, 5.9));
-        colorSeed = prismHash(surfaceKey + vec2(13.7, 47.1));
-        float fillSeed = prismHash(surfaceKey + vec2(61.9, 23.3));
-        prismStrength = clamp(prismStrength * mix(0.62, 1.18, strengthSeed), 0.0, 1.0);
+    vec2 lensUv = (frag - v_Rect.xy) / size;
+    vec2 localUv = (lensUv - 0.5) / magnification + 0.5;
+    vec2 mappedPosition = v_Rect.xy + localUv * size;
+    centerUv = vec2(mappedPosition.x / logicalSize.x,
+                    1.0 - mappedPosition.y / logicalSize.y) + liquidOffset;
 
-        float sweepCoord = surfaceUv.x * 0.72 + surfaceUv.y * 0.28;
-        float sweepDistance = sweepCoord - prismPhase;
-        alongSweep = surfaceUv.x * -0.28 + surfaceUv.y * 0.72;
-        wavePhaseA = alongSweep * mix(13.5, 18.5, waveSeed)
-                + prismPhase * 5.0 + waveSeed * 6.2831853;
-        wavePhaseB = alongSweep * mix(31.0, 42.0, fillSeed)
-                - prismPhase * 8.0 + fillSeed * 6.2831853;
-        float waveAmplitudeA = mix(0.010, 0.019, waveSeed);
-        float waveAmplitudeB = mix(0.0030, 0.0065, fillSeed);
-        float waveFrequencyA = mix(13.5, 18.5, waveSeed);
-        float waveFrequencyB = mix(31.0, 42.0, fillSeed);
-        float waveOffsetA = sin(wavePhaseA) * waveAmplitudeA;
-        float waveOffsetB = sin(wavePhaseB) * waveAmplitudeB;
-        float liquidSweepDistance = sweepDistance + waveOffsetA + waveOffsetB;
-        waveSlope = cos(wavePhaseA) * (waveAmplitudeA * waveFrequencyA)
-                + cos(wavePhaseB) * (waveAmplitudeB * waveFrequencyB);
+    vec2 tiltOffset = vec2(tan(radians(opticalTiltDeg.y)),
+                           -tan(radians(opticalTiltDeg.x))) * 0.05;
+    centerUv = clamp(centerUv - tiltOffset, vec2(0.001), vec2(0.999));
 
-        float widthVariance = mix(0.78, 1.28, fillSeed);
-        float prismEnvelopeDistance = liquidSweepDistance / (0.175 * widthVariance);
-        float primaryEnvelope = exp(-prismEnvelopeDistance * prismEnvelopeDistance);
-        float secondaryOffset = mix(0.060, 0.108, waveSeed);
-        float secondaryDistance = (liquidSweepDistance - secondaryOffset - sin(wavePhaseA * 0.63) * 0.018)
-                / (0.125 * mix(0.82, 1.22, colorSeed));
-        float secondaryEnvelope = exp(-secondaryDistance * secondaryDistance);
-        float fillWaveA = 0.5 + 0.5 * sin(alongSweep * mix(6.5, 11.0, fillSeed)
-                + prismPhase * 3.0 + sin(wavePhaseB) * 0.48 + waveSeed * 5.0);
-        fillWaveB = 0.5 + 0.5 * sin(alongSweep * mix(12.0, 19.0, colorSeed)
-                - prismPhase * 4.0 + liquidSweepDistance * 12.0 + fillSeed * 4.0);
-        float unevenFloor = mix(0.20, 0.42, strengthSeed);
-        float unevenFill = unevenFloor + (1.0 - unevenFloor)
-                * mix(fillWaveA, fillWaveB, 0.28 + 0.38 * fillSeed * fillWaveA);
-        prismEnvelope = max(primaryEnvelope, secondaryEnvelope * 0.72)
-                * prismStrength * unevenFill;
-
-        float waveVariation = 0.66 + 0.34 * sin(alongSweep * 18.0 + sin(wavePhaseA) * 1.10);
-        prismCrest = prismStripe(liquidSweepDistance, 0.000, 0.008, 0.021)
-                * prismStrength * waveVariation;
-        prismEcho = prismStripe(liquidSweepDistance, 0.058, 0.010, 0.026)
-                * prismStrength * (0.72 - waveVariation * 0.20);
-        prismBand = max(prismEnvelope * 0.72, max(prismCrest * 0.58, prismEcho * 0.48));
-    }
-#endif
-
-    // Center path: screen-locked refraction + prepared blur + clean scene. Mirror/chromatic
-    // rim work remains edge-only; full-glass caustics are composited separately below.
-    float centerDistortPx = distortStrength * min(fbSize.x, fbSize.y) * 0.42 * (1.0 + prismBand * 1.10);
-    float edgeRefraction = edgeActive ? smoothstep(0.42, 0.98, edgeGradient) : 0.0;
-    edgeRefraction *= edgeRefraction;
-    vec2 centerUv = clamp(uv + uvNormal * (centerDistortPx / fbSize) * edgeRefraction,
-            vec2(0.001), vec2(0.999));
-
-    if (frostedJitterPx > 0.001) {
-        vec2 frostCell = floor((frag - v_Rect.xy) * 0.75);
-        float frostX = prismHash(frostCell + surfaceKey * 3.17 + vec2(17.0, 41.0)) - 0.5;
-        float frostY = prismHash(frostCell.yx + surfaceKey * 5.03 + vec2(59.0, 11.0)) - 0.5;
-        vec2 frostOffset = vec2(frostX, frostY) * (2.0 * frostedJitterPx) / fbSize;
-        centerUv = clamp(centerUv + frostOffset, vec2(0.001), vec2(0.999));
+    float edgeFocus = smoothstep(0.16, 0.96, liquidEdge);
+    vec2 refractAxis = safeNormalize(vec2(refractNormal.x, -refractNormal.y), vec2(1.0, 0.0));
+    float minLogicalScale = max(min(logicalScale.x, logicalScale.y), 1e-6);
+    float bevelWidthFramebufferPx = liquidBevelPx / minLogicalScale;
+    float lensSplitLimitPx = min(size.x / max(logicalScale.x, 1e-6),
+                                      size.y / max(logicalScale.y, 1e-6)) * 0.42;
+    float splitLimitPx = min(bevelWidthFramebufferPx * 0.5, lensSplitLimitPx);
+    vec2 rawChroma = liquidOffset * spectralAberration;
+    float rawStaticSplitPx = length(rawChroma * fbSize);
+    float resolvedStaticSplitPx = splitLimitPx
+            * tanh(rawStaticSplitPx / max(splitLimitPx, 0.001));
+    vec2 chroma = refractAxis * resolvedStaticSplitPx / fbSize;
+    float chromaCoverage = spectralAberration > 0.001 ? 1.0 : 0.0;
+    if (chromaticMotion == 1) {
+        float time = uGlassClock.x;
+        float playbackImpulse = clamp(max(v_Params11.x, v_Params11.y), 0.0, 1.0);
+        float activity = smoothstep(0.02, 0.32, playbackImpulse);
+        float primaryWave = sin(time * 1.36 + lensUv.x * 8.0 - lensUv.y * 4.5);
+        float secondaryWave = sin(time * 0.83 - lensUv.x * 3.5 + lensUv.y * 6.0 + 1.2);
+        vec2 direction = safeNormalize(vec2(
+                cos(time * 0.91 + lensUv.y * 5.2 + primaryWave * 0.42),
+                sin(time * 1.07 - lensUv.x * 4.6 + secondaryWave * 0.38)),
+                refractAxis);
+        float waveScale = mix(0.68, 1.32,
+                0.5 + 0.5 * sin(time * 1.08 + lensUv.x * 6.2 + lensUv.y * 3.7));
+        float splitPx = min(
+                bevelWidthFramebufferPx * spectralAberration * waveScale,
+                lensSplitLimitPx) * activity;
+        chroma = direction * splitPx / fbSize;
+        chromaCoverage = mix(0.62, 1.0, edgeFocus) * activity;
+    } else if (chromaticMotion == 2) {
+        float activity = clamp(max(v_Params11.x, v_Params11.y), 0.0, 1.0);
+        float impactLimitPx = min(
+                bevelWidthFramebufferPx * mix(0.5, 1.0, activity),
+                lensSplitLimitPx);
+        float splitPx = impactLimitPx
+                * tanh(rawStaticSplitPx / max(impactLimitPx, 0.001));
+        chroma = refractAxis * splitPx / fbSize;
+        chromaCoverage = smoothstep(0.0, 0.24, liquidEdge)
+                * mix(0.72, 1.0, activity);
     }
 
-    vec4 blurColor = texture(u_BlurTexture, centerUv);
-    vec4 cleanColor = texture(u_Texture, centerUv);
-#ifdef COMBATANT_UI_UNDERLAY
-    vec4 uiUnderlay = texture(u_UiUnderlayTexture, centerUv);
-    float uiCoverage = clamp(uiUnderlay.a * uUiBackdrop.x, 0.0, 1.0);
-    vec3 uiUnderlayColor = uiUnderlay.rgb / max(uiUnderlay.a, 0.0001);
-#endif
-
+    vec3 centerScene = sampleLiquidScene(centerUv, logicalSize).rgb;
     vec3 tint = clamp(v_Color.rgb, 0.0, 1.0);
-    float clarityMix = clamp(0.004 + fresnelMix * 0.045, 0.0, 0.055);
-    vec3 centerScene = mix(blurColor.rgb, cleanColor.rgb, clarityMix);
-    float sourceSceneLuma = luminance(centerScene);
-    float brightScene = smoothstep(0.48, 0.82, sourceSceneLuma);
-    vec3 centerColor = lookupGlassColor(centerScene, tint);
-    vec3 finalColor = centerColor;
 
-    float innerGlowStrength = clamp(v_Params7.y, 0.0, 1.0);
-    float innerGlowSizePx = max(v_Params7.z, 0.0);
-    bool needsNormalLighting = edgeActive || (innerGlowStrength > 0.001 && innerGlowSizePx > 0.001);
-    float topLight = needsNormalLighting
-            ? clamp(dot(sdfNormal, normalize(vec2(-0.35, -1.0))) * 0.5 + 0.5, 0.0, 1.0)
-            : 0.5;
-
-    float hairline = 1.0 - smoothstep(0.0, aa * 1.55, abs(d));
-
-    if (edgeActive) {
-        float bottomShade = clamp(dot(sdfNormal, normalize(vec2(0.20, 1.0))) * 0.5 + 0.5, 0.0, 1.0);
-        float mirrorPx = thickness * (1.90 + 2.50 * fresnel) + centerDistortPx * 0.55;
-        vec2 mirrorUv = clamp(uv + uvNormal * (mirrorPx / fbSize), vec2(0.001), vec2(0.999));
-        vec4 mirrorColor = texture(u_Texture, mirrorUv);
-        vec4 blurMirrorColor = texture(u_BlurTexture, mirrorUv);
-
-        vec3 rimSceneColor;
-#ifdef COMBATANT_LIGHT_GLASS
-        // Lightweight glass keeps one sharp + one blurred rim sample and compiles out all
-        // chromatic/prism code. This is the normal path for prismStrength == 0 materials.
-        float cleanRimT = smoothstep(0.28, 0.72, fresnelMix);
-        rimSceneColor = mix(lookupGlassColor(blurMirrorColor.rgb, tint),
-                lookupGlassColor(mirrorColor.rgb, tint), cleanRimT);
-#else
-        float chromaOffsetPx = 1.65 + prismBand * 7.50;
-        vec2 chromaUvR = clamp(mirrorUv + uvNormal * (chromaOffsetPx / fbSize), vec2(0.001), vec2(0.999));
-        vec2 chromaUvB = clamp(mirrorUv - uvNormal * (chromaOffsetPx / fbSize), vec2(0.001), vec2(0.999));
-        vec3 chromaMirror = vec3(
-            texture(u_Texture, chromaUvR).r,
-            mirrorColor.g,
-            texture(u_Texture, chromaUvB).b
-        );
-
-        vec2 rimTangent = vec2(-uvNormal.y, uvNormal.x);
-        float rimBlurPx = 2.20 + 3.80 * fresnel + thickness * 0.11;
-        vec2 rimNormalStep = uvNormal * (rimBlurPx / fbSize);
-        vec2 rimTangentStep = rimTangent * (rimBlurPx / fbSize);
-        vec3 blurRimWide = blurMirrorColor.rgb * 0.36;
-        blurRimWide += texture(u_BlurTexture, clamp(mirrorUv + rimNormalStep, vec2(0.001), vec2(0.999))).rgb * 0.16;
-        blurRimWide += texture(u_BlurTexture, clamp(mirrorUv - rimNormalStep, vec2(0.001), vec2(0.999))).rgb * 0.16;
-        blurRimWide += texture(u_BlurTexture, clamp(mirrorUv + rimTangentStep, vec2(0.001), vec2(0.999))).rgb * 0.16;
-        blurRimWide += texture(u_BlurTexture, clamp(mirrorUv - rimTangentStep, vec2(0.001), vec2(0.999))).rgb * 0.16;
-
-        float cleanRimT = smoothstep(0.28, 0.72, fresnelMix);
-        rimSceneColor = mix(lookupGlassColor(blurRimWide, tint),
-                lookupGlassColor(chromaMirror, tint), cleanRimT);
-#endif
-        rimSceneColor *= 1.0 - bottomShade * fresnel * 0.14;
-
-        float rimSceneMix = clamp((fresnel * 0.46 + wideRim * 0.08) * fresnelMix, 0.0, 0.62);
-        finalColor = mix(finalColor, rimSceneColor, rimSceneMix);
-
-        vec3 rimHighlight = mix(vec3(0.88, 0.95, 1.0), tint, 0.24 + brightScene * 0.10);
-        float whiteRim = clamp(fresnel * (0.16 + 0.23 * topLight)
-                + hairline * (0.09 + 0.18 * topLight), 0.0, 0.34);
-        whiteRim *= 1.0 - brightScene * 0.42;
-        finalColor = mix(finalColor, rimHighlight, whiteRim);
-
-        float specMix = hairline * (0.10 + 0.20 * topLight) * (0.60 + 0.40 * fresnelMix);
-        specMix *= 1.0 - brightScene * 0.52;
-        finalColor = mix(finalColor, rimHighlight, specMix);
-
+    float lowerGlassCoverage = stackRegionMask(centerUv, logicalSize)
+            * texture(u_StackTexture, centerUv).a;
+    float stackedContactShadow = lowerGlassCoverage * pow(liquidEdge, 3.0)
+            * clamp(uStackMeta.z, 0.0, 0.4);
+    float tintStrength = clamp(v_Params2.w, 0.0, 1.0);
+    vec3 finalColor = mix(centerScene, centerScene * tint, tintStrength);
+    float bodyTransmission = 1.0;
+    if (glassVariant == 2 || glassVariant == 3) {
+        float body = smoothstep(0.0, max(liquidBevelPx, 1.0), max(-d, 0.0));
+        float absorption = glassVariant == 2 ? 0.19 : 0.09;
+        bodyTransmission = 1.0 - absorption * body;
     }
-
-#ifndef COMBATANT_LIGHT_GLASS
-    // The travelling caustic belongs to the glass body, not the SDF rim. Keeping this
-    // outside edgeActive preserves the original full-surface sweep/phase animation.
-    if (prismActive) {
-        vec2 liquidNormalLocal = normalize(vec2(0.72, 0.28) + vec2(-0.28, 0.72) * waveSlope);
-        vec2 prismAxis = vec2(liquidNormalLocal.x, -liquidNormalLocal.y);
-        vec2 prismSceneOffset = prismAxis * ((1.75 + 6.25 * prismBand) / fbSize);
-        vec3 prismScene = vec3(
-            texture(u_Texture, clamp(centerUv + prismSceneOffset, vec2(0.001), vec2(0.999))).r,
-            cleanColor.g,
-            texture(u_Texture, clamp(centerUv - prismSceneOffset, vec2(0.001), vec2(0.999))).b
-        );
-        vec3 refractedPrism = lookupGlassColor(prismScene, tint);
-        finalColor = mix(finalColor, refractedPrism, prismEnvelope * (0.20 + 0.12 * wideRim));
-
-        float colorInterference = 0.5 + 0.5 * sin(alongSweep * mix(9.0, 15.0, colorSeed)
-                + prismPhase * 4.5 + sin(wavePhaseB) * 0.42 + colorSeed * 6.2831853);
-        vec3 coolCaustic = mix(vec3(0.30, 0.84, 1.00), vec3(0.68, 0.38, 1.00), colorInterference);
-        vec3 warmCaustic = mix(vec3(1.00, 0.58, 0.28), vec3(1.00, 0.38, 0.72), colorInterference);
-        float surfaceWarmBias = mix(0.08, 0.62, colorSeed);
-        vec3 crestColor = mix(coolCaustic, warmCaustic,
-                clamp(surfaceWarmBias + sin(wavePhaseA) * 0.16, 0.0, 1.0));
-        vec3 fillColor = mix(coolCaustic, warmCaustic,
-                clamp(surfaceWarmBias * 0.72 + fillWaveB * 0.34, 0.0, 1.0));
-        float fillIntensity = mix(0.76, 1.20, strengthSeed);
-        float fillMix = clamp(prismEnvelope * fillIntensity * (0.15 + 0.08 * wideRim), 0.0, 0.25);
-        finalColor = mix(finalColor, fillColor, fillMix);
-        float crestMix = clamp(prismCrest * (0.10 + 0.06 * wideRim), 0.0, 0.16);
-        finalColor = mix(finalColor, crestColor, crestMix);
-        finalColor = mix(finalColor, coolCaustic, prismEcho * (0.05 + 0.035 * wideRim));
-        finalColor = mix(finalColor, vec3(0.98, 1.0, 1.0),
-                prismCrest * (0.025 + 0.035 * wideRim));
-    }
-#endif
-
-    // Explicit inner-glow modifier remains independent from prism/rim quality.
-    if (innerGlowStrength > 0.001 && innerGlowSizePx > 0.001) {
-        float insideDistance = max(-d, 0.0);
-        float innerGlowMask = (1.0 - smoothstep(0.0, innerGlowSizePx, insideDistance)) * step(d, 0.0);
-        vec3 innerGlowColor = decodePackedRgb(v_Params7.w);
-        float glowMix = clamp(innerGlowMask * innerGlowStrength * (0.34 + 0.18 * topLight), 0.0, 0.52);
-        finalColor = mix(finalColor, innerGlowColor, glowMix);
-    }
-
-    float fresnelAlpha = clamp(v_Params2.z, 0.0, 1.0);
-    float baseAlpha = clamp(v_Params2.w, 0.0, 1.0);
-    baseAlpha = clamp(baseAlpha + brightScene * (0.035 + 0.045 * (1.0 - fresnelMix)), 0.0, 1.0);
-    float edgeAlpha = clamp(fresnel * (0.25 + 0.75 * fresnelMix) + hairline * 0.40, 0.0, 1.0);
-
-    float materialAlpha = mix(baseAlpha, fresnelAlpha, edgeAlpha) * shapeAlpha * v_Color.a;
-    float blurLayerAlpha = blurAlpha * shapeAlpha;
-    float finalAlpha = materialAlpha + blurLayerAlpha * (1.0 - materialAlpha);
+    float edgeBand = edgeFocus * edgeFocus;
+    float directionalShade = directionalSpecular
+            ? 0.020 + 0.025 * (1.0 - dot(refractNormal, normalize(vec2(-0.48, 0.88)))) * 0.5
+            : 0.020;
+    float surfaceTransmission = bodyTransmission * (1.0 - edgeBand * directionalShade);
+    finalColor *= surfaceTransmission;
+    float finalAlpha = shapeAlpha * v_Color.a;
     if (finalAlpha <= 0.001) {
         discard;
     }
+    if (stackedContactShadow > 0.001) {
+        finalColor *= 1.0 - stackedContactShadow;
+    }
 
-    vec3 blurLayerColor = blurColor.rgb;
-#ifdef COMBATANT_UI_UNDERLAY
-    // UI is a backdrop contribution, not an optical input to the glass material.
-    blurLayerColor = mix(blurLayerColor, uiUnderlayColor, uiCoverage);
-#endif
-    finalColor = (blurLayerColor * blurLayerAlpha * (1.0 - materialAlpha)
-            + finalColor * materialAlpha) / max(finalAlpha, 1e-5);
-
-    // Optional reusable backdrop compositor. NORMAL is bit-for-bit the ordinary glass source.
-    // Other modes operate on the destination snapshot, while fixed-function alpha remains only
-    // the final Porter-Duff coverage stage.
     vec3 blendBackdrop = texture(u_Texture, uv).rgb;
 #ifdef COMBATANT_UI_UNDERLAY
     vec4 blendUi = texture(u_UiUnderlayTexture, uv);
@@ -652,6 +522,20 @@ void main() {
             uBlendTone1
     );
 
-
+    if (chromaCoverage > 0.001 && dot(chroma, chroma) > 1e-12) {
+        vec3 dispersedScene = vec3(
+                sampleLiquidScene(centerUv - chroma, logicalSize).r,
+                centerScene.g,
+                sampleLiquidScene(centerUv + chroma, logicalSize).b);
+        vec3 dispersedColor = mix(dispersedScene, dispersedScene * tint, tintStrength)
+                * surfaceTransmission;
+        if (stackedContactShadow > 0.001) {
+            dispersedColor *= 1.0 - stackedContactShadow;
+        }
+        dispersedColor = combatantResolveBackdropBlend(
+                blendBackdrop, clamp(dispersedColor, 0.0, 1.0), tint,
+                uBlendParams, uBlendTone0, uBlendTone1);
+        finalColor = mix(finalColor, dispersedColor, clamp(chromaCoverage, 0.0, 1.0));
+    }
     fragColor = vec4(clamp(finalColor, 0.0, 1.0), finalAlpha);
 }

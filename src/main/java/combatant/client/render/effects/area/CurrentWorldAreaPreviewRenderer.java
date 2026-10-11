@@ -7,7 +7,7 @@
 
 package combatant.client.render.effects.area;
 
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import net.minecraft.util.Mth;
@@ -30,13 +30,13 @@ public final class CurrentWorldAreaPreviewRenderer {
                 : Renderer3D.DepthMode.MAIN;
         MeshBuilder fill = descriptor.fillOpacity() > 0.0f
                 ? renderer.batch(
-                descriptor.depthTest() ? CombatantRenderPipelines.WORLD_COLORED_DEPTH : CombatantRenderPipelines.WORLD_COLORED,
+                descriptor.depthTest() ? WorldRenderPipelines.WORLD_COLORED_DEPTH : WorldRenderPipelines.WORLD_COLORED,
                 depthMode
         )
                 : null;
         MeshBuilder stroke = descriptor.strokeOpacity() > 0.0f
                 ? renderer.batch(
-                descriptor.depthTest() ? CombatantRenderPipelines.WORLD_COLORED_LINES_DEPTH : CombatantRenderPipelines.WORLD_COLORED_LINES,
+                descriptor.depthTest() ? WorldRenderPipelines.WORLD_COLORED_LINES_DEPTH : WorldRenderPipelines.WORLD_COLORED_LINES,
                 depthMode
         )
                 : null;

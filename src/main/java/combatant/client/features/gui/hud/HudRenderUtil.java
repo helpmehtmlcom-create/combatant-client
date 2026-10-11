@@ -12,6 +12,14 @@ import combatant.client.features.theme.Theme;
 import combatant.client.features.theme.Themes;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.renderer.Renderer2D;
+import combatant.client.render.engine.core.ViewportContext;
+import combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest;
+import combatant.client.render.engine.renderer.ui.draw.UiGlassInteraction;
+import combatant.client.render.engine.renderer.ui.draw.UiGlassOpticsSpec;
+import combatant.client.render.engine.renderer.ui.draw.UiLiquidGlassMaterial;
+import combatant.client.render.engine.renderer.ui.runtime.core.UiMaterialInteractionState;
+import net.minecraft.client.Minecraft;
+import org.lwjgl.glfw.GLFW;
 
 /**
  * Shared helpers for HUD widget visuals.
@@ -72,6 +80,70 @@ public enum HudRenderUtil {
                 AnimationUtility.clamp(alpha, 0.0f, 1.0f));
     }
 
+    public static void drawReactiveGlass(float x, float y, float w, float h,
+                                         float radius, float scale, boolean large,
+                                         float blurAlpha, float glassAlpha,
+                                         UiMaterialInteractionState owner,
+                                         UiGlassOpticsSpec optics, boolean stacked) {
+        drawReactiveGlass(x, y, w, h, radius, scale, large, blurAlpha, glassAlpha,
+                owner, optics, stacked, 0f);
+    }
+
+    public static void drawReactiveGlass(float x, float y, float w, float h,
+                                         float radius, float scale, boolean large,
+                                         float blurAlpha, float glassAlpha,
+                                         UiMaterialInteractionState owner,
+                                         UiGlassOpticsSpec optics, boolean stacked,
+                                         float frostPx) {
+        drawReactiveGlass(x, y, w, h, radius, scale, large, blurAlpha, glassAlpha,
+                owner, optics, stacked, frostPx, 0f);
+    }
+
+    public static void drawReactiveGlass(float x, float y, float w, float h,
+                                         float radius, float scale, boolean large,
+                                         float blurAlpha, float glassAlpha,
+                                         UiMaterialInteractionState owner,
+                                         UiGlassOpticsSpec optics, boolean stacked,
+                                         float frostPx, float hoverTiltDegrees) {
+        if (w <= 0f || h <= 0f) return;
+        UiGlassOpticsSpec spec = optics != null ? optics : UiGlassOpticsSpec.LIQUID;
+        if (blurAlpha <= 0.001f && glassAlpha <= 0.001f) return;
+        UiGlassInteraction interaction = new UiGlassInteraction(0.5f, 0.5f, 0f, 0f, 0f, 0f, 0f, true);
+        Minecraft mc = Minecraft.getInstance();
+        if (owner != null && mc != null && mc.getWindow() != null && mc.mouseHandler != null) {
+            float rawWidth = Math.max(1, mc.getWindow().getScreenWidth());
+            float rawHeight = Math.max(1, mc.getWindow().getScreenHeight());
+            ViewportContext viewport = ViewportContext.current();
+            float viewportWidth = viewport != null ? Math.max(1f, viewport.width()) : rawWidth;
+            float viewportHeight = viewport != null ? Math.max(1f, viewport.height()) : rawHeight;
+            float mouseX = (float) mc.mouseHandler.xpos() / rawWidth * viewportWidth;
+            float mouseY = (float) mc.mouseHandler.ypos() / rawHeight * viewportHeight;
+            boolean down = GLFW.glfwGetMouseButton(mc.getWindow().handle(), GLFW.GLFW_MOUSE_BUTTON_LEFT)
+                    == GLFW.GLFW_PRESS;
+            interaction = owner.sample(mouseX, mouseY, down, x, y, w, h,
+                    spec.interactionViscosity(), spec.interactionStrength(), System.nanoTime());
+        }
+        UiGlassOpticsSpec effectiveOptics = spec;
+        if (hoverTiltDegrees > 0.001f && spec.interactionStrength() > 0f && interaction.local()) {
+            float response = Math.min(1.0f, interaction.activity() + interaction.press() * 0.35f);
+            float leanX = (interaction.y() - 0.5f) * 2f * hoverTiltDegrees * response;
+            float leanY = (interaction.x() - 0.5f) * 2f * hoverTiltDegrees * response;
+            effectiveOptics = spec.withTilt(spec.tiltXDegrees() + leanX, spec.tiltYDegrees() + leanY);
+        }
+        UiLiquidGlassMaterial material = UiLiquidGlassMaterial.DEFAULT
+                .withOptics(effectiveOptics).withInteraction(interaction).withFrostedJitter(frostPx);
+        Runnable draw = () -> drawLiquidGlass(x, y, w, h, radius, scale, large,
+                blurAlpha, glassAlpha);
+        Renderer2D renderer = Renderer2D.COLOR;
+        Runnable materialDraw = () -> renderer.withLiquidGlassMaterial(material, draw);
+        if (stacked) {
+            renderer.withLiquidGlassSceneSource(
+                    UiBackdropRequest.SceneSource.STACKED_LENSES, materialDraw);
+        } else {
+            materialDraw.run();
+        }
+    }
+
     public static void drawLiquidGlass(float x,
                                        float y,
                                        float w,
@@ -94,36 +166,21 @@ public enum HudRenderUtil {
                                        float glassAlpha) {
         if (blurAlpha <= 0.001f && glassAlpha <= 0.001f) return;
 
-        float blurStrength = AnimationUtility.clamp(blurAlpha, 0.0f, 1.0f);
         float materialAlpha = AnimationUtility.clamp(glassAlpha, 0.0f, 1.0f);
         float safeScale = Math.max(0.001f, scale);
-
-        if (materialAlpha <= 0.001f) {
-            drawBackdropBlur(x, y, w, h, radius, large, blurStrength);
-            return;
-        }
-
-        float fresnelPower = large ? -22.0f : -18.0f;
-        float thickness = (large ? 13.0f : 11.0f) * safeScale;
-        float baseAlpha = large ? 0.74f : 0.82f;
-        float fresnelMix = large ? 0.34f : 0.38f;
-        float distort = large ? 0.155f : 0.135f;
+        if (materialAlpha <= 0.001f) return;
+        Renderer2D.LiquidGlassPreset preset = large
+                ? Renderer2D.LiquidGlassPreset.HUD_LARGE
+                : Renderer2D.LiquidGlassPreset.HUD_SMALL;
 
         Renderer2D.COLOR.liquidGlassRect(
-                x,
-                y,
-                w,
-                h,
+                x, y, w, h,
                 radius,
-                thickness,
                 0xFFFFFFFF,
                 materialAlpha,
-                blurStrength,
-                fresnelPower,
                 1.0f,
-                baseAlpha,
-                fresnelMix,
-                distort * materialAlpha,
+                preset,
+                safeScale,
                 0.0f
         );
     }
@@ -186,40 +243,21 @@ public enum HudRenderUtil {
                                               int tintArgb) {
         if (blurAlpha <= 0.001f && glassAlpha <= 0.001f) return;
 
-        float blurStrength = AnimationUtility.clamp(blurAlpha, 0.0f, 1.0f);
         float materialAlpha = AnimationUtility.clamp(glassAlpha, 0.0f, 1.0f);
         float safeScale = Math.max(0.001f, scale);
-
-        if (materialAlpha <= 0.001f) {
-            drawBackdropBlurCorners(
-                    x, y, w, h, radiusTL, radiusTR, radiusBR, radiusBL, large, blurStrength);
-            return;
-        }
-
-        float fresnelPower = large ? -22.0f : -18.0f;
-        float thickness = (large ? 13.0f : 11.0f) * safeScale;
-        float baseAlpha = large ? 0.74f : 0.82f;
-        float fresnelMix = large ? 0.34f : 0.38f;
-        float distort = large ? 0.155f : 0.135f;
+        if (materialAlpha <= 0.001f) return;
+        Renderer2D.LiquidGlassPreset preset = large
+                ? Renderer2D.LiquidGlassPreset.HUD_LARGE
+                : Renderer2D.LiquidGlassPreset.HUD_SMALL;
 
         Renderer2D.COLOR.liquidGlassRectCorners(
-                x,
-                y,
-                w,
-                h,
-                radiusTL,
-                radiusTR,
-                radiusBR,
-                radiusBL,
-                thickness,
+                x, y, w, h,
+                radiusTL, radiusTR, radiusBR, radiusBL,
                 tintArgb,
                 materialAlpha,
-                blurStrength,
-                fresnelPower,
                 1.0f,
-                baseAlpha,
-                fresnelMix,
-                distort * materialAlpha,
+                preset,
+                safeScale,
                 0.0f
         );
     }

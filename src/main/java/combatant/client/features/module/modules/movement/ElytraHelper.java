@@ -27,6 +27,8 @@ import combatant.client.config.values.NumberValue;
 import combatant.client.events.EventHandler;
 import combatant.client.events.impl.EventSync;
 import combatant.client.events.impl.MovementInputEvent;
+import combatant.client.features.gui.hud.actions.HudAction;
+import combatant.client.features.gui.hud.actions.HudActionRegistry;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
@@ -77,11 +79,46 @@ public class ElytraHelper extends Module {
     private int queuedAutoTakeoffJumpTicks = 0;
     // Delay before START_FALL_FLYING during auto takeoff
     private int glideDelayTicks = 0;
+    private static final int FIREWORK_HUD_GLIDE_GRACE_TICKS = 24;
+    private LocalPlayer fireworkHudPlayer;
+    private int lastFireworkGlideTick = Integer.MIN_VALUE;
 
     {
         setDefaultBind("LEFT_CTRL+R");
         addAction(ACTION_SWAP_ELYTRA, "R");
         addAction(ACTION_USE_FIREWORK, "F");
+    }
+
+    @HudAction(id = ACTION_SWAP_ELYTRA, label = "Elytra", description = "Swap equipped chest item", icon = "arrow-left-right")
+    public HudActionRegistry.State hudElytra() {
+        LocalPlayer player = client.player;
+        boolean equipped = player != null && player.getItemBySlot(EquipmentSlot.CHEST).is(Items.ELYTRA);
+        boolean swappable = player != null && (equipped
+                ? findPreviousOrAnyChest(player) >= 0 : findElytra(player) >= 0);
+        return new HudActionRegistry.State(new ItemStack(Items.ELYTRA), swappable,
+                equipped && swappable, false, 0.0f);
+    }
+
+    @HudAction(id = ACTION_USE_FIREWORK, label = "Firework", description = "Use rocket while gliding", icon = "rocket")
+    public HudActionRegistry.State hudFirework() {
+        LocalPlayer player = client.player;
+        if (player != fireworkHudPlayer) {
+            fireworkHudPlayer = player;
+            lastFireworkGlideTick = Integer.MIN_VALUE;
+        }
+        boolean flying = player != null && player.isFallFlying();
+        if (flying) lastFireworkGlideTick = player.tickCount;
+        boolean recentGlide = player != null && lastFireworkGlideTick != Integer.MIN_VALUE
+                && player.tickCount >= lastFireworkGlideTick
+                && player.tickCount - lastFireworkGlideTick <= FIREWORK_HUD_GLIDE_GRACE_TICKS;
+        boolean hasRockets = HudActionRegistry.hasItem(player, Items.FIREWORK_ROCKET);
+        boolean eligible = hasRockets && (flying || recentGlide || pendingAutoTakeoff || pendingFirework);
+        boolean cooldown = CooldownsState.MANAGER.isInPvp()
+                && CooldownsState.MANAGER.isCooling(Items.FIREWORK_ROCKET)
+                || !FireworkUseController.INSTANCE.canPassCooldown(MANUAL_FIREWORK_COOLDOWN_TICKS);
+        boolean queued = pendingFirework || queuedFireworkUse;
+        return new HudActionRegistry.State(new ItemStack(Items.FIREWORK_ROCKET), eligible,
+                queued && hasRockets, flying && hasRockets && !cooldown, cooldown ? 1.0f : 0.0f);
     }
 
     private boolean isRecastActive() {
@@ -141,6 +178,8 @@ public class ElytraHelper extends Module {
         pendingFirework = false;
         queuedFireworkUse = false;
         glideDelayTicks = 0;
+        fireworkHudPlayer = null;
+        lastFireworkGlideTick = Integer.MIN_VALUE;
         ElytraRecastUtil.INSTANCE.reset(this);
     }
 

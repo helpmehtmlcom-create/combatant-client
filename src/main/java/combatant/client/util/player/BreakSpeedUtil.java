@@ -108,6 +108,26 @@ public final class BreakSpeedUtil {
         return bestSlot;
     }
 
+    /** As above, but do not select a tool unable to harvest blocks requiring the correct tier. */
+    public static int bestHotbarSlot(LocalPlayer player, ClientLevel level, BlockPos pos, BlockState state,
+                                     boolean requireCorrectTool) {
+        if (!requireCorrectTool || !state.requiresCorrectToolForDrops()) {
+            return bestHotbarSlot(player, level, pos, state);
+        }
+        int best = -1;
+        float bestProgress = 0.0f;
+        for (int slot = 0; slot < 9; slot++) {
+            ItemStack stack = player.getInventory().getItem(slot);
+            if (!stack.isCorrectToolForDrops(state)) continue;
+            float progress = progressPerTick(player, level, pos, state, stack);
+            if (progress > bestProgress) {
+                bestProgress = progress;
+                best = slot;
+            }
+        }
+        return best;
+    }
+
     private static int efficiencyLevel(ClientLevel level, ItemStack stack) {
         if (stack.isEmpty()) return 0;
         Registry<Enchantment> registry = level.registryAccess().lookupOrThrow(Registries.ENCHANTMENT);

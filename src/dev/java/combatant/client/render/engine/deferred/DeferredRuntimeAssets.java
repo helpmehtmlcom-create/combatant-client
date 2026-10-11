@@ -73,7 +73,7 @@ public enum DeferredRuntimeAssets {
                     .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/deferred_temporal_present"))
                     .withDomain(PipelineDomain.FULLSCREEN)
                     .withVertexFormat(CombatantVertexFormats.POS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
-                    .withVertexShader(CombatantRenderPipelines.SHADER_DAMAGE_TINT_VERT)
+                    .withVertexShader(Identifier.fromNamespaceAndPath("combatant", "shaders/damage_tint.vert"))
                     .withFragmentShader(TEMPORAL_PRESENT_FRAGMENT)
                     .withSampler("u_Source")
                     .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)

@@ -200,6 +200,20 @@ public interface TextRenderer {
                                                   double boundsWidth,
                                                   double boundsHeight,
                                                   RenderPipeline pipelineOverride) {
+        return renderLiquidGlassQuadGradient(text, x, y, gradient, boundsX, boundsY,
+                boundsWidth, boundsHeight, pipelineOverride, null);
+    }
+
+    default double renderLiquidGlassQuadGradient(String text,
+                                                  double x,
+                                                  double y,
+                                                  Font.GlyphQuadGradient gradient,
+                                                  double boundsX,
+                                                  double boundsY,
+                                                  double boundsWidth,
+                                                  double boundsHeight,
+                                                  RenderPipeline pipelineOverride,
+                                                  UiBackdropRequest backdrop) {
         return renderQuadGradient(text, x, y, gradient, false);
     }
 

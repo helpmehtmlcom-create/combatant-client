@@ -52,6 +52,29 @@ public enum CommonSettingSchemas {
     public static final CommonSettingSchema FADE_TIME = key("fade_time");
     public static final CommonSettingSchema MODE = key("mode");
 
+    // Shared placement controls used by Surround and SelfTrap.
+    public static final CommonSettingSchema SHELL_BLOCK_PRIORITY = key("shell.block_priority");
+    public static final CommonSettingSchema SHELL_BLOCKS_PER_TICK = key("shell.blocks_per_tick");
+    public static final CommonSettingSchema SHELL_DYNAMIC_HITBOX = key("shell.dynamic_hitbox");
+    public static final CommonSettingSchema SHELL_SUPPORT = key("shell.support");
+    public static final CommonSettingSchema SHELL_ATTACK_CRYSTALS = key("shell.attack_crystals");
+    public static final CommonSettingSchema SHELL_CRYSTAL_DELAY = key("shell.crystal_delay");
+    public static final CommonSettingSchema SHELL_PLACE_WHILE_USING = key("shell.place_while_using");
+    public static final CommonSettingSchema SHELL_SWAP_BACK_DELAY = key("shell.swap_back_delay");
+    public static final CommonSettingSchema SHELL_DISABLE_IN_AIR = key("shell.disable_in_air");
+    public static final CommonSettingSchema SHELL_WARN_NO_BLOCKS = key("shell.warn_no_blocks");
+
+    // Finder primitives: shared semantics, even when their defaults differ.
+    public static final CommonSettingSchema FINDER_SCAN_RADIUS = key("finder.scan_radius");
+    public static final CommonSettingSchema FINDER_MARKER_Y = key("finder.marker_y");
+    public static final CommonSettingSchema FINDER_MIN_MARKER_DISTANCE = key("finder.min_marker_distance");
+    public static final CommonSettingSchema FINDER_TRACERS = key("finder.tracers");
+    public static final CommonSettingSchema FINDER_BEAMS = key("finder.beams");
+    public static final CommonSettingSchema FINDER_CHAT_ALERTS = key("finder.chat_alerts");
+    public static final CommonSettingSchema FINDER_SOUND_ALERTS = key("finder.sound_alerts");
+    public static final CommonSettingSchema FINDER_REMEMBER_SECONDS = key("finder.remember_seconds");
+    public static final CommonSettingSchema FINDER_ALERT_COOLDOWN = key("finder.alert_cooldown");
+
     // Sprint Reset
     public static final CommonSettingSchema COMBAT_CRITICALS = key("combat.criticals");
     public static final CommonSettingSchema COMBAT_SPRINT_RESET = key("combat.sprint_reset");

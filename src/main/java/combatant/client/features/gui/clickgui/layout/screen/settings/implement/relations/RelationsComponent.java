@@ -7,6 +7,8 @@
 
 package combatant.client.features.gui.clickgui.layout.screen.settings.implement.relations;
 
+import combatant.client.util.text.SingleLineTextInput;
+
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.gui.clickgui.ClickGuiSearch;
 import combatant.client.features.gui.clickgui.sound.GuiSound;
@@ -57,6 +59,23 @@ public final class RelationsComponent {
     private String prefixInput = "";
     private String suffixInput = "";
     private String containsInput = "";
+    private final EnumMap<ActiveField, SingleLineTextInput> textInputs = new EnumMap<>(ActiveField.class);
+    private float inputScale = 1f;
+
+    private SingleLineTextInput input(ActiveField field) {
+        return textInputs.computeIfAbsent(field, key -> new SingleLineTextInput(key == ActiveField.PLAYER ? 32 : 48));
+    }
+
+    private void syncTextFromInput(ActiveField field) {
+        String next = input(field).text();
+        switch (field) {
+            case PLAYER -> playerInput = next;
+            case PREFIX -> prefixInput = next;
+            case SUFFIX -> suffixInput = next;
+            case CONTAINS -> containsInput = next;
+            default -> { }
+        }
+    }
     private String statusMessage;
     private long statusUntilMs;
 
@@ -93,6 +112,11 @@ public final class RelationsComponent {
     private float listW;
     private float listH;
 
+    private float heuristicsScroll;
+    private float smoothedHeuristicsScroll;
+    private float heuristicsMaxScroll;
+    private Rect heuristicsViewport = Rect.ZERO;
+
     private float modeAnim;
     private float friendsHoverAnim;
     private float enemiesHoverAnim;
@@ -117,6 +141,10 @@ public final class RelationsComponent {
     public void resetScroll() {
         scroll = 0f;
         smoothedScroll = 0f;
+        heuristicsScroll = 0f;
+        smoothedHeuristicsScroll = 0f;
+        heuristicsMaxScroll = 0f;
+        heuristicsViewport = Rect.ZERO;
         draggingScrollbar = false;
         activeField = ActiveField.NONE;
         onlinePicker.close();
@@ -129,6 +157,7 @@ public final class RelationsComponent {
     }
 
     public void render(float menuX, float menuY, float menuW, float menuH, float mx, float my, float scale) {
+        inputScale = scale;
         cardHits.clear();
         chipHits.clear();
         resetTransientRects();
@@ -180,6 +209,10 @@ public final class RelationsComponent {
             onlinePicker.scroll(mx, my, amount);
             return;
         }
+        if (tab == RelationTab.STAFF && heuristicsViewport.contains(mx, my)) {
+            heuristicsScroll += (float) (amount * 22f);
+            return;
+        }
         if (!ClickGuiMath.insideRect(mx, my, listX, listY, listW, listH)) return;
         scroll += (float) (amount * 22f);
     }
@@ -195,6 +228,9 @@ public final class RelationsComponent {
             if (onlinePicker.isOpen()) {
                 activeField = ActiveField.NONE;
                 onlinePicker.focusSearch();
+                onlinePicker.editor().layout(playerInputRect.x() + 4f * inputScale,
+                        playerInputRect.w() - 9f * inputScale, ClickGuiRenderer.getInterRegular(), 6.3f * inputScale);
+                onlinePicker.editor().beginDrag(mx, false);
                 movementInputBlocked = onlinePicker.blocksMovementInput();
                 clearStatus();
                 return true;
@@ -248,17 +284,19 @@ public final class RelationsComponent {
                 GuiSound.booleanFeedback(cfg.enabled());
                 return true;
             }
-            if (prefixInputRect.contains(mx, my)) return focusField(ActiveField.PREFIX);
-            if (suffixInputRect.contains(mx, my)) return focusField(ActiveField.SUFFIX);
-            if (containsInputRect.contains(mx, my)) return focusField(ActiveField.CONTAINS);
-            if (prefixAddButton.contains(mx, my)) return commitHeuristic(ActiveField.PREFIX);
-            if (suffixAddButton.contains(mx, my)) return commitHeuristic(ActiveField.SUFFIX);
-            if (containsAddButton.contains(mx, my)) return commitHeuristic(ActiveField.CONTAINS);
+            if (heuristicsViewport.contains(mx, my)) {
+                if (prefixInputRect.contains(mx, my)) return focusField(ActiveField.PREFIX);
+                if (suffixInputRect.contains(mx, my)) return focusField(ActiveField.SUFFIX);
+                if (containsInputRect.contains(mx, my)) return focusField(ActiveField.CONTAINS);
+                if (prefixAddButton.contains(mx, my)) return commitHeuristic(ActiveField.PREFIX);
+                if (suffixAddButton.contains(mx, my)) return commitHeuristic(ActiveField.SUFFIX);
+                if (containsAddButton.contains(mx, my)) return commitHeuristic(ActiveField.CONTAINS);
 
-            for (ChipHit hit : chipHits) {
-                if (!hit.delete().contains(mx, my)) continue;
-                removeHeuristic(hit.kind(), hit.value());
-                return true;
+                for (ChipHit hit : chipHits) {
+                    if (!hit.delete().contains(mx, my)) continue;
+                    removeHeuristic(hit.kind(), hit.value());
+                    return true;
+                }
             }
         }
 
@@ -303,14 +341,7 @@ public final class RelationsComponent {
             else commitHeuristic(activeField);
             return true;
         }
-        if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
-            setFieldText(activeField, dropLast(fieldText(activeField)));
-            return true;
-        }
-        if (ctrl && keyCode == GLFW.GLFW_KEY_V) {
-            appendToField(activeField, ClipboardUtil.get());
-            return true;
-        }
+        if (input(activeField).keyPressed(keyCode, modifiers)) syncTextFromInput(activeField);
         return true;
     }
 
@@ -320,7 +351,8 @@ public final class RelationsComponent {
             return true;
         }
         if (activeField == ActiveField.NONE) return false;
-        if (chr >= 32 && chr != 127) appendToField(activeField, String.valueOf(chr));
+        input(activeField).type(chr);
+        syncTextFromInput(activeField);
         return true;
     }
 
@@ -901,31 +933,99 @@ public final class RelationsComponent {
                 LayoutRender2D.alpha(palette.menuLineLow(), 0.24f)
         );
 
-        float rowsY = y + 33f * scale;
-        float available = Math.max(1f, y + h - pad - rowsY);
-        float rowGap = 4f * scale;
-        float rowH = Math.max(34f * scale, (available - rowGap * 2f) / 3f);
+        float viewportY = y + 32f * scale;
+        float viewportH = Math.max(1f, y + h - pad - viewportY);
+        float scrollbarReserve = 5f * scale;
+        float contentX = x + pad;
+        float contentW = Math.max(1f, w - pad * 2f - scrollbarReserve);
+        heuristicsViewport = new Rect(contentX, viewportY, Math.max(1f, w - pad * 2f), viewportH);
 
-        renderHeuristicRow(
-                ActiveField.PREFIX,
-                tr("heuristics.prefixes", "Prefixes"),
-                cfg.prefixes(),
-                x + pad, rowsY, w - pad * 2f, rowH, mx, my, scale, palette
-        );
-        rowsY += rowH + rowGap;
-        renderHeuristicRow(
-                ActiveField.SUFFIX,
-                tr("heuristics.suffixes", "Suffixes"),
-                cfg.suffixes(),
-                x + pad, rowsY, w - pad * 2f, rowH, mx, my, scale, palette
-        );
-        rowsY += rowH + rowGap;
-        renderHeuristicRow(
-                ActiveField.CONTAINS,
-                tr("heuristics.contains", "Contains"),
-                cfg.contains(),
-                x + pad, rowsY, w - pad * 2f, rowH, mx, my, scale, palette
-        );
+        float rowGap = 4f * scale;
+        float prefixH = heuristicRowHeight(cfg.prefixes(), contentW, scale);
+        float suffixH = heuristicRowHeight(cfg.suffixes(), contentW, scale);
+        float containsH = heuristicRowHeight(cfg.contains(), contentW, scale);
+        float contentH = prefixH + suffixH + containsH + rowGap * 2f;
+        heuristicsMaxScroll = Math.max(0f, contentH - viewportH);
+        heuristicsScroll = ClickGuiMath.clamp(heuristicsScroll, -heuristicsMaxScroll, 0f);
+        smoothedHeuristicsScroll = AnimationUtility.approach(smoothedHeuristicsScroll, heuristicsScroll, 0.24f);
+        smoothedHeuristicsScroll = AnimationUtility.snap(smoothedHeuristicsScroll, heuristicsScroll, 0.05f);
+
+        float rowY = viewportY + smoothedHeuristicsScroll;
+        boolean clipped = ScissorFunction.pushRaw(heuristicsViewport.x(), heuristicsViewport.y(), heuristicsViewport.w(), heuristicsViewport.h());
+        try {
+            renderHeuristicRow(
+                    ActiveField.PREFIX,
+                    tr("heuristics.prefixes", "Prefixes"),
+                    cfg.prefixes(),
+                    contentX, rowY, contentW, prefixH, mx, my, scale, palette
+            );
+            rowY += prefixH + rowGap;
+            renderHeuristicRow(
+                    ActiveField.SUFFIX,
+                    tr("heuristics.suffixes", "Suffixes"),
+                    cfg.suffixes(),
+                    contentX, rowY, contentW, suffixH, mx, my, scale, palette
+            );
+            rowY += suffixH + rowGap;
+            renderHeuristicRow(
+                    ActiveField.CONTAINS,
+                    tr("heuristics.contains", "Contains"),
+                    cfg.contains(),
+                    contentX, rowY, contentW, containsH, mx, my, scale, palette
+            );
+        } finally {
+            if (clipped) ScissorFunction.pop();
+        }
+
+        renderHeuristicsScrollbar(x + w - pad - 2.5f * scale, viewportY, 2.0f * scale, viewportH, scale, palette);
+    }
+
+    private float heuristicRowHeight(Set<String> entries, float w, float scale) {
+        List<String> sortedEntries = sorted(entries);
+        if (sortedEntries.isEmpty()) return 34f * scale;
+
+        float innerPad = 5.5f * scale;
+        float chipGap = 3f * scale;
+        float chipH = 13f * scale;
+        float maxX = Math.max(1f, w - innerPad * 2f);
+        float lineW = 0f;
+        int lines = 1;
+
+        for (String entry : sortedEntries) {
+            float textSize = 5.25f * scale;
+            float maxTextW = Math.max(12f * scale, maxX - 18f * scale);
+            String fitted = ClickGuiRenderer.fitText(ClickGuiRenderer.getInterRegular(), entry, textSize, maxTextW);
+            float chipW = Math.min(
+                    ClickGuiRenderer.textWidth(ClickGuiRenderer.getInterRegular(), fitted, textSize) + 18f * scale,
+                    maxX
+            );
+            if (lineW > 0f && lineW + chipGap + chipW > maxX) {
+                lines++;
+                lineW = chipW;
+            } else {
+                lineW += (lineW > 0f ? chipGap : 0f) + chipW;
+            }
+        }
+
+        float lineGap = 2.7f * scale;
+        float chipsH = lines * chipH + Math.max(0, lines - 1) * lineGap;
+        return 34f * scale + chipsH + 4f * scale;
+    }
+
+    private void renderHeuristicsScrollbar(float x,
+                                           float y,
+                                           float w,
+                                           float h,
+                                           float scale,
+                                           SettingsGuiPalette palette) {
+        if (heuristicsMaxScroll <= 0.5f || h <= 1f) return;
+        float thumbH = Math.max(16f * scale, h * (h / (heuristicsMaxScroll + h)));
+        float ratio = heuristicsMaxScroll <= 0f ? 0f : -smoothedHeuristicsScroll / heuristicsMaxScroll;
+        float thumbY = y + (h - thumbH) * AnimationUtility.clamp(ratio, 0f, 1f);
+        int track = SettingsGuiPalette.withAlpha(palette.controlSurfaceHover(), 48);
+        int thumb = SettingsGuiPalette.withAlpha(SettingsGuiPalette.mix(palette.panelMuted(), tab.color(), 0.16f), 132);
+        LayoutRender2D.roundedQuad(x, y, w, h, w * 0.5f, track, track, track, track);
+        LayoutRender2D.roundedQuad(x, thumbY, w, thumbH, w * 0.5f, thumb, thumb, thumb, thumb);
     }
 
     private void renderHeuristicRow(ActiveField kind,
@@ -939,7 +1039,7 @@ public final class RelationsComponent {
                                     float my,
                                     float scale,
                                     SettingsGuiPalette palette) {
-        boolean rowHovered = ClickGuiMath.insideRect(mx, my, x, y, w, h);
+        boolean rowHovered = heuristicsViewport.contains(mx, my) && ClickGuiMath.insideRect(mx, my, x, y, w, h);
         float rowHover = animateMapValue(heuristicRowHoverAnim, kind, rowHovered, 12f);
         int rowA = SettingsGuiPalette.withAlpha(
                 SettingsGuiPalette.mix(palette.controlSurface(), tab.color(), 0.012f + rowHover * 0.035f),
@@ -990,8 +1090,11 @@ public final class RelationsComponent {
         Rect field = new Rect(x + innerPad, fieldY, fieldW, fieldH);
         Rect add = new Rect(field.x() + field.w() + 3.5f * scale, fieldY, addW, fieldH);
         setHeuristicRects(kind, field, add);
-        drawInput("rule:" + kind.name(), field, fieldText(kind), tr("placeholder.rule", "Rule"), activeField == kind, mx, my, scale, palette);
-        float addHover = animateMapValue(heuristicAddHoverAnim, kind, add.contains(mx, my), 14f);
+        boolean pointerInsideViewport = heuristicsViewport.contains(mx, my);
+        float controlMx = pointerInsideViewport ? mx : -100000f;
+        float controlMy = pointerInsideViewport ? my : -100000f;
+        drawInput("rule:" + kind.name(), field, fieldText(kind), tr("placeholder.rule", "Rule"), activeField == kind, controlMx, controlMy, scale, palette);
+        float addHover = animateMapValue(heuristicAddHoverAnim, kind, pointerInsideViewport && add.contains(mx, my), 14f);
         drawSmallAddButton(add, addHover, scale, palette);
 
         List<String> sortedEntries = sorted(entries);
@@ -1003,12 +1106,10 @@ public final class RelationsComponent {
         float chipsY = fieldY + fieldH + 4f * scale;
         float chipX = x + innerPad;
         float maxX = x + w - innerPad;
-        float maxY = y + h - 3.5f * scale;
-        int shown = 0;
 
         for (String entry : sortedEntries) {
             float textSize = 5.25f * scale;
-            float maxTextW = Math.max(12f * scale, w * 0.52f);
+            float maxTextW = Math.max(12f * scale, w - innerPad * 2f - 18f * scale);
             String fitted = ClickGuiRenderer.fitText(ClickGuiRenderer.getInterRegular(), entry, textSize, maxTextW);
             float chipW = ClickGuiRenderer.textWidth(ClickGuiRenderer.getInterRegular(), fitted, textSize) + 18f * scale;
             chipW = Math.min(chipW, w - innerPad * 2f);
@@ -1017,10 +1118,9 @@ public final class RelationsComponent {
                 chipX = x + innerPad;
                 chipsY += chipH + lineGap;
             }
-            if (chipsY + chipH > maxY) break;
 
             Rect chip = new Rect(chipX, chipsY, chipW, chipH);
-            boolean chipHovered = chip.contains(mx, my);
+            boolean chipHovered = heuristicsViewport.contains(mx, my) && chip.contains(mx, my);
             String chipKey = kind.name() + ':' + entry.toLowerCase(Locale.ROOT);
             float chipHover = animateMapValue(chipHoverAnim, chipKey, chipHovered, 15f);
             if (chipHovered) SystemCursor.set(SystemCursor.CursorType.HAND);
@@ -1068,30 +1168,6 @@ public final class RelationsComponent {
 
             chipHits.add(new ChipHit(kind, entry, chip));
             chipX += chipW + chipGap;
-            shown++;
-        }
-
-        if (shown < sortedEntries.size() && chipsY + chipH <= maxY) {
-            String overflow = "+" + (sortedEntries.size() - shown);
-            float overflowSize = 5f * scale;
-            float overflowW = ClickGuiRenderer.textWidth(relationHeaderBold(), overflow, overflowSize) + 9f * scale;
-            if (chipX + overflowW > maxX && chipX > x + innerPad + 0.5f * scale) {
-                chipX = x + innerPad;
-                chipsY += chipH + lineGap;
-            }
-            if (chipsY + chipH <= maxY) {
-                int overflowBg = SettingsGuiPalette.withAlpha(palette.panelPillBase(), 108);
-                LayoutRender2D.roundedQuad(chipX, chipsY, overflowW, chipH, chipH * 0.38f,
-                        overflowBg, overflowBg, overflowBg, overflowBg);
-                ClickGuiRenderer.drawText(
-                        relationHeaderBold(), overflow,
-                        chipX + 4.5f * scale,
-                        chipsY + (chipH - ClickGuiRenderer.textHeight(relationHeaderBold(), overflowSize)) * 0.5f,
-                        overflowSize,
-                        palette.panelMuted(),
-                        false
-                );
-            }
         }
     }
 
@@ -1292,35 +1368,26 @@ public final class RelationsComponent {
                         : SettingsGuiPalette.withAlpha(palette.glassEdgeSoft(), Math.round(70f + 38f * hoverAnim))
         );
 
+        SingleLineTextInput editor = switch (animationKey) {
+            case "player" -> onlinePicker.isOpen() ? onlinePicker.editor() : input(ActiveField.PLAYER);
+            case "rule:PREFIX" -> input(ActiveField.PREFIX);
+            case "rule:SUFFIX" -> input(ActiveField.SUFFIX);
+            case "rule:CONTAINS" -> input(ActiveField.CONTAINS);
+            default -> null;
+        };
         boolean empty = value == null || value.isEmpty();
-        String raw = empty ? (active ? "" : placeholder) : value;
-        int color = empty && !active ? palette.panelMuted() : palette.panelText();
         float size = 6.3f * scale;
-        String text = ClickGuiRenderer.fitText(ClickGuiRenderer.getInterRegular(), raw, size, rect.w() - 9f * scale);
+        float textX = rect.x() + 4f * scale;
         float textY = rect.y() + (rect.h() - ClickGuiRenderer.textHeight(ClickGuiRenderer.getInterRegular(), size)) * 0.5f;
-
         boolean clipped = ScissorFunction.pushRaw(rect.x(), rect.y(), rect.w(), rect.h());
         try {
-            if (!text.isEmpty()) {
-                ClickGuiRenderer.drawText(
-                        ClickGuiRenderer.getInterRegular(),
-                        text,
-                        rect.x() + 4f * scale,
-                        textY,
-                        size,
-                        color,
-                        false
-                );
-            }
-            if (active && ((System.currentTimeMillis() / 500L) & 1L) == 0L) {
-                float tw = ClickGuiRenderer.textWidth(ClickGuiRenderer.getInterRegular(), text, size);
-                LayoutRender2D.rect(
-                        rect.x() + Math.min(tw + 5f * scale, rect.w() - 2.5f * scale),
-                        rect.y() + 3f * scale,
-                        0.6f * scale,
-                        rect.h() - 6f * scale,
-                        palette.panelText()
-                );
+            if (empty && !active) {
+                ClickGuiRenderer.drawText(ClickGuiRenderer.getInterRegular(),
+                        ClickGuiRenderer.fitText(ClickGuiRenderer.getInterRegular(), placeholder, size, rect.w() - 9f * scale),
+                        textX, textY, size, palette.panelMuted(), false);
+            } else if (editor != null) {
+                editor.render(textX, textY, rect.w() - 9f * scale, rect.h(), ClickGuiRenderer.getInterRegular(),
+                        size, palette.panelText(), SettingsGuiPalette.withAlpha(tab.color(), 125), active);
             }
         } finally {
             if (clipped) ScissorFunction.pop();
@@ -1495,6 +1562,19 @@ public final class RelationsComponent {
 
     private boolean focusField(ActiveField field) {
         activeField = field;
+        Rect rect = switch (field) {
+            case PLAYER -> playerInputRect;
+            case PREFIX -> prefixInputRect;
+            case SUFFIX -> suffixInputRect;
+            case CONTAINS -> containsInputRect;
+            default -> Rect.ZERO;
+        };
+        if (rect.w() > 0) {
+            SingleLineTextInput editor = input(field);
+            editor.layout(rect.x() + 4f * inputScale, rect.w() - 9f * inputScale,
+                    ClickGuiRenderer.getInterRegular(), 6.3f * inputScale);
+            editor.beginDrag(ClickGuiRenderer.getMouseX(), false);
+        }
         movementInputBlocked = true;
         clearStatus();
         return true;
@@ -1526,6 +1606,9 @@ public final class RelationsComponent {
             activeField = ActiveField.NONE;
             scroll = 0f;
             smoothedScroll = 0f;
+            heuristicsScroll = 0f;
+            smoothedHeuristicsScroll = 0f;
+            heuristicsMaxScroll = 0f;
             draggingScrollbar = false;
             if (onlinePicker.isVisible()) {
                 onlinePicker.open(tab.pickerMode());
@@ -1545,7 +1628,7 @@ public final class RelationsComponent {
         }
 
         if (tab.add(cleaned)) {
-            playerInput = "";
+            setFieldText(ActiveField.PLAYER, "");
             selectedName = cleaned;
             activeField = ActiveField.NONE;
             movementInputBlocked = false;
@@ -1647,6 +1730,7 @@ public final class RelationsComponent {
 
     private void setFieldText(ActiveField field, String value) {
         String next = value == null ? "" : value;
+        if (field != ActiveField.NONE) input(field).setText(next);
         switch (field) {
             case PLAYER -> playerInput = next;
             case PREFIX -> prefixInput = next;
@@ -1805,6 +1889,7 @@ public final class RelationsComponent {
         prefixAddButton = Rect.ZERO;
         suffixAddButton = Rect.ZERO;
         containsAddButton = Rect.ZERO;
+        heuristicsViewport = Rect.ZERO;
     }
 
     private enum ActiveField {

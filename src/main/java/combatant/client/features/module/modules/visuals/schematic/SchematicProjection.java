@@ -18,7 +18,7 @@ import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.render.engine.RenderState;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import combatant.client.util.schematic.SchematicDiff;
@@ -256,13 +256,13 @@ public final class SchematicProjection extends Module {
     public void onRenderWorldEngine(Renderer3D renderer, Renderer3D depthRenderer, float tickDelta) {
         if (!isEnabled() || renderer == null || boxCount == 0) return;
         Renderer3D.DepthMode depth = throughWalls.get() ? Renderer3D.DepthMode.NONE : Renderer3D.DepthMode.MAIN;
-        MeshBuilder tris = renderer.batch(CombatantRenderPipelines.WORLD_COLORED, depth);
+        MeshBuilder tris = renderer.batch(WorldRenderPipelines.WORLD_COLORED, depth);
         MeshBuilder lines = null;
         if (outline.get()) {
             float previous = RenderState.lineWidth;
             try {
                 RenderState.lineWidth = 1.5f;
-                lines = renderer.batch(CombatantRenderPipelines.WORLD_COLORED_LINES, depth);
+                lines = renderer.batch(WorldRenderPipelines.WORLD_COLORED_LINES, depth);
             } finally {
                 RenderState.lineWidth = previous;
             }

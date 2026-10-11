@@ -7,6 +7,8 @@
 
 package combatant.client.features.module.modules.visuals.finder;
 
+import combatant.client.config.common.CommonSettingSchemas;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -72,14 +74,14 @@ public abstract class ChunkFinderModule<R extends ChunkFinderModule.Hit> extends
 
     protected ChunkFinderModule(int defaultMinMarkerDistance, String defaultFillHex, String defaultLineHex,
                                 int chunksPerTick, long microsPerTick) {
-        this.scanRadius = num("scan_radius", MAX_SCAN_RADIUS, 2, MAX_SCAN_RADIUS);
-        this.markerY = num("marker_y", 63, -64, 320);
-        this.minMarkerDistance = num("min_marker_distance", defaultMinMarkerDistance, 0, 48);
-        this.tracers = bool("tracers", true);
+        this.scanRadius = numCommon("scan_radius", CommonSettingSchemas.FINDER_SCAN_RADIUS, MAX_SCAN_RADIUS, 2, MAX_SCAN_RADIUS);
+        this.markerY = numCommon("marker_y", CommonSettingSchemas.FINDER_MARKER_Y, 63, -64, 320);
+        this.minMarkerDistance = numCommon("min_marker_distance", CommonSettingSchemas.FINDER_MIN_MARKER_DISTANCE, defaultMinMarkerDistance, 0, 48);
+        this.tracers = boolCommon("tracers", CommonSettingSchemas.FINDER_TRACERS, true);
         // A plate at one height is easy to miss from above or below; a beam is visible anywhere.
-        this.beams = bool("beams", false);
-        this.chatAlerts = bool("chat_alerts", true);
-        this.soundAlerts = bool("sound_alerts", true);
+        this.beams = boolCommon("beams", CommonSettingSchemas.FINDER_BEAMS, false);
+        this.chatAlerts = boolCommon("chat_alerts", CommonSettingSchemas.FINDER_CHAT_ALERTS, true);
+        this.soundAlerts = boolCommon("sound_alerts", CommonSettingSchemas.FINDER_SOUND_ALERTS, true);
         this.fillColor = color("fill_color", defaultFillHex);
         this.lineColor = color("line_color", defaultLineHex);
         this.scanner = new LoadedChunkScanner<>(this::analyzeChunk, this::scanRadius, chunksPerTick, microsPerTick);

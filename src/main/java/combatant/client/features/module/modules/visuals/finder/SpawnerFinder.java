@@ -7,6 +7,8 @@
 
 package combatant.client.features.module.modules.visuals.finder;
 
+import combatant.client.config.common.CommonSettingSchemas;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -69,10 +71,9 @@ public final class SpawnerFinder extends Module {
     private final NumberValue<Integer> maxDistance = num("max_distance", 128, 16, 512);
     private final BooleanValue nametags = bool("nametags", true);
     private final BooleanValue activationRing = bool("activation_ring", true);
-    private final BooleanValue tracers = bool("tracers", false);
+    private final BooleanValue tracers = boolCommon("tracers", CommonSettingSchemas.FINDER_TRACERS, false);
     private final BooleanValue trialSpawners = bool("trial_spawners", true);
-    private final BooleanValue chatAlerts = bool("chat_alerts", true);
-    private final BooleanValue soundAlerts = bool("sound_alerts", true);
+    private final BooleanValue chatAlerts = boolCommon("chat_alerts", CommonSettingSchemas.FINDER_CHAT_ALERTS, true);
     private final RGBAColorValue boxColor = color("box_color", "#FFFF5050");
     private final RGBAColorValue ringColor = color("ring_color", "#90FF5050");
     // Shows at a glance which spawners are running because you stand in their range.
@@ -120,7 +121,7 @@ public final class SpawnerFinder extends Module {
                 if (alerted.add(spawner.pos.asLong())) {
                     FinderAlerts.found(getDisplayName(), spawner.type + " spawner",
                             spawner.pos.getX(), spawner.pos.getY(), spawner.pos.getZ(),
-                            chatAlerts.get(), soundAlerts.get());
+                            chatAlerts.get(), false);
                 }
             }
         }

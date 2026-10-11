@@ -24,6 +24,7 @@ import combatant.client.features.module.modules.combat.surround.ShellBlocks;
 import combatant.client.features.module.modules.combat.surround.SurroundPlanner;
 import combatant.client.features.module.modules.combat.surround.SurroundPlanner.Pos;
 import combatant.client.render.engine.renderer.Renderer3D;
+import combatant.client.render.helpers.PlacementPreviewRenderer;
 import combatant.client.util.aiming.features.MovementCorrection;
 import combatant.client.util.anticheat.AntiCheatPreset;
 import combatant.client.util.block.placer.BlockPlacer;
@@ -31,6 +32,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.util.Util;
 import net.minecraft.world.phys.AABB;
@@ -58,28 +61,32 @@ public final class Surround extends Module {
     private final EnumValue<AntiCheatPreset> anticheat = enumMode("anticheat_mode", AntiCheatPreset.CUSTOM);
     private final EnumValue<Mode> mode = enumSetting("surroundMode", "mode", Mode.FEET, Mode.values());
     private final EnumValue<CenterMode> center = enumSetting("surroundCenter", "center", CenterMode.NONE, CenterMode.values());
-    private final EnumValue<BlockPriority> blockPriority = enumSetting(
-            "surroundBlockPriority", "block_priority", BlockPriority.ANY, BlockPriority.values());
-    private final NumberValue<Integer> blocksPerTick = num(
-            "surroundBlocksPerTick", "blocks_per_tick", 4, 1, 8);
-    private final BooleanValue dynamicHitbox = bool(
-            "surroundDynamicHitbox", "dynamic_hitbox", true);
-    private final BooleanValue support = bool(
-            "surroundSupport", "support", true);
-    private final BooleanValue attackCrystals = bool(
-            "surroundAttackCrystals", "attack_crystals", true);
+    private final EnumValue<BlockPriority> blockPriority = enumCommon(
+            "surroundBlockPriority", "block_priority",
+            CommonSettingSchemas.SHELL_BLOCK_PRIORITY, BlockPriority.ANY, BlockPriority.values());
+    private final NumberValue<Integer> blocksPerTick = numCommon(
+            "surroundBlocksPerTick", "blocks_per_tick", CommonSettingSchemas.SHELL_BLOCKS_PER_TICK, 4, 1, 8);
+    private final BooleanValue dynamicHitbox = boolCommon(
+            "surroundDynamicHitbox", "dynamic_hitbox", CommonSettingSchemas.SHELL_DYNAMIC_HITBOX, true);
+    private final BooleanValue support = boolCommon("surroundSupport", "support", CommonSettingSchemas.SHELL_SUPPORT, true);
+    private final BooleanValue attackCrystals = boolCommon(
+            "surroundAttackCrystals", "attack_crystals", CommonSettingSchemas.SHELL_ATTACK_CRYSTALS, true);
     private final NumberValue<Integer> crystalDelay = visibleWhen(
-            num("surroundCrystalDelay", "crystal_delay", 0, 0, 10), attackCrystals::get);
-    private final BooleanValue placeWhileUsing = bool(
-            "surroundPlaceWhileUsing", "place_while_using", false);
-    private final NumberValue<Integer> swapBackDelay = num(
-            "surroundSwapBackDelay", "swap_back_delay", 0, 0, 10);
+            numCommon("surroundCrystalDelay", "crystal_delay",
+                    CommonSettingSchemas.SHELL_CRYSTAL_DELAY, 0, 0, 10),
+            attackCrystals::get);
+    private final BooleanValue placeWhileUsing = boolCommon(
+            "surroundPlaceWhileUsing", "place_while_using", CommonSettingSchemas.SHELL_PLACE_WHILE_USING, false);
+    private final NumberValue<Integer> swapBackDelay = numCommon(
+            "surroundSwapBackDelay", "swap_back_delay", CommonSettingSchemas.SHELL_SWAP_BACK_DELAY, 0, 0, 10);
     private final BooleanValue disableOnJump = boolCommon(
             "surroundDisableOnJump", "disable_on_jump", CommonSettingSchemas.PLAYER_FALL_CHECK, true);
-    private final BooleanValue disableInAir = bool("surroundDisableInAir", "disable_in_air", false);
+    private final BooleanValue disableInAir = boolCommon(
+            "surroundDisableInAir", "disable_in_air", CommonSettingSchemas.SHELL_DISABLE_IN_AIR, false);
     private final BooleanValue disableOnMove = bool("surroundDisableOnMove", "disable_on_move", false);
     private final BooleanValue autoDisable = bool("surroundAutoDisable", "auto_disable", false);
-    private final BooleanValue warnNoBlocks = bool("surroundWarnNoBlocks", "warn_no_blocks", true);
+    private final BooleanValue warnNoBlocks = boolCommon(
+            "surroundWarnNoBlocks", "warn_no_blocks", CommonSettingSchemas.SHELL_WARN_NO_BLOCKS, true);
     private final EnumValue<BlockPlacer.RotationMode> rotation = enumSetting(
             "surroundRotation", "rotation", BlockPlacer.RotationMode.NORMAL, BlockPlacer.RotationMode.values());
     private final EnumValue<MovementCorrection> movementCorrection = enumSetting(
@@ -90,10 +97,6 @@ public final class Surround extends Module {
             "surroundWallRange", "wall_range", CommonSettingSchemas.COMBAT_WALL_RANGE, 3.0D, 0.0D, 6.0D);
     private final NumberValue<Integer> delay = num("surroundDelay", "delay", 0, 0, 10);
     private final BooleanValue render = bool("surroundRender", "render", true);
-    private final EnumValue<RenderMode> renderMode = enumSetting(
-            "surroundRenderMode", "render_mode", RenderMode.BOTH, RenderMode.values());
-    private final NumberValue<Float> slabHeight = num(
-            "surroundSlabHeight", "slab_height", 0.25F, 0.05F, 1.0F);
     private final RGBAColorValue fillColor = color("surroundFillColor", "fill_color", "#285A9C44");
     private final RGBAColorValue lineColor = color("surroundLineColor", "line_color", "#55AAFFFF");
     private final NumberValue<Float> lineWidth = numCommon(
@@ -119,6 +122,7 @@ public final class Surround extends Module {
     );
     private final CrystalClearer crystalClearer = new CrystalClearer();
     private final List<BlockPos> currentTargets = new ArrayList<>();
+    private final PlacementPreviewRenderer placementPreview = new PlacementPreviewRenderer();
     /** Columns (x, z) the player stood over when the module came on; "disable on move" watches these. */
     private final Set<Long> homeColumns = new HashSet<>();
     private long lastNoBlocksWarningMs;
@@ -134,13 +138,16 @@ public final class Surround extends Module {
         crystalClearer.reset();
         lastNoBlocksWarningMs = 0L;
         rememberHome(player);
+        placementPreview.reset();
         blockPlacer.enable();
         updateTargets();
+        if (render.get()) placementPreview.tick(mc.level, currentTargets, previewBlockState(), lineColor.getArgb());
     }
 
     @Override
     public void onDisable() {
         blockPlacer.disable();
+        placementPreview.reset();
         currentTargets.clear();
         homeColumns.clear();
     }
@@ -176,7 +183,9 @@ public final class Surround extends Module {
         }
 
         warnIfOutOfBlocks(player);
+        if (render.get()) placementPreview.tick(mc.level, currentTargets, previewBlockState(), lineColor.getArgb());
         blockPlacer.tick();
+        if (render.get()) placementPreview.tick(mc.level, currentTargets, previewBlockState(), lineColor.getArgb());
 
         if (autoDisable.get() && currentTargets.isEmpty()) {
             setEnabled(false);
@@ -301,22 +310,17 @@ public final class Surround extends Module {
 
     @Override
     public void onRenderWorldEngine(Renderer3D renderer, Renderer3D depthRenderer, float tickDelta) {
-        if (!isEnabled() || !render.get() || currentTargets.isEmpty()) return;
-        RenderMode rm = renderMode.get();
-        boolean fill = rm != RenderMode.OUTLINE;
-        boolean outline = rm != RenderMode.BOX;
-        double height = rm == RenderMode.SLAB ? slabHeight.get() : 1.0D;
-        int fillArgb = fillColor.getArgb();
-        int lineArgb = lineColor.getArgb();
-        float width = lineWidth.get();
-
-        for (BlockPos pos : currentTargets) {
-            AABB box = new AABB(pos.getX(), pos.getY(), pos.getZ(),
-                    pos.getX() + 1.0D, pos.getY() + height, pos.getZ() + 1.0D);
-            if (fill) renderer.filledBox(box, fillArgb);
-            if (outline) renderer.outlineBox(box, lineArgb, width);
-        }
+        if (!isEnabled() || !render.get() || mc.level == null) return;
+        placementPreview.render(renderer, mc.level, currentTargets, previewBlockState(),
+                fillColor.getArgb(), lineColor.getArgb(), lineWidth.get());
     }
+
+    private BlockState previewBlockState() {
+        BlockPlacer.PlacementSlot slot = mc.player == null ? null : ShellBlocks.find(mc.player, blockPriority.get());
+        return slot != null && slot.stack().getItem() instanceof BlockItem item
+                ? item.getBlock().defaultBlockState() : null;
+    }
+
 
     public enum Mode {
         FEET,
@@ -333,10 +337,4 @@ public final class Surround extends Module {
         MOTION
     }
 
-    public enum RenderMode {
-        BOX,
-        OUTLINE,
-        BOTH,
-        SLAB
-    }
 }

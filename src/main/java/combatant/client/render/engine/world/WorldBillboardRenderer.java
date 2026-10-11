@@ -14,7 +14,7 @@ import org.joml.Vector3f;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.core.CombatantWorldMatrices;
 import combatant.client.render.engine.color.RenderColor;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.renderer.ui.ItemBatchRenderer;
 import combatant.client.render.engine.text.TextRenderer;
@@ -225,7 +225,7 @@ public enum WorldBillboardRenderer {
                                       double worldScale,
                                       int argb) {
         if (width <= 0.0 || height <= 0.0) return;
-        MeshBuilder mesh = renderer.batch(CombatantRenderPipelines.WORLD_COLORED, Renderer3D.DepthMode.NONE);
+        MeshBuilder mesh = renderer.batch(WorldRenderPipelines.WORLD_COLORED, Renderer3D.DepthMode.NONE);
         if (mesh == null) return;
 
         Vec3 right = basis.right();
@@ -297,7 +297,7 @@ public enum WorldBillboardRenderer {
         if (finalAlpha <= 0) return;
 
         MeshBuilder mesh = renderer.batchTextured(
-                CombatantRenderPipelines.WORLD_TEXTURED,
+                WorldRenderPipelines.WORLD_TEXTURED,
                 textureId,
                 Renderer3D.DepthMode.NONE
         );
@@ -333,7 +333,7 @@ public enum WorldBillboardRenderer {
         }
 
         MeshBuilder mesh = renderer.batchTextured(
-                CombatantRenderPipelines.WORLD_TEXTURED_PREMULTIPLIED_ALPHA,
+                WorldRenderPipelines.WORLD_TEXTURED_PREMULTIPLIED_ALPHA,
                 sprite.textureView(),
                 sprite.sampler(),
                 Renderer3D.DepthMode.NONE
@@ -369,7 +369,7 @@ public enum WorldBillboardRenderer {
                 || worldScale <= 0.0 || ((argb >>> 24) & 0xFF) <= 0) {
             return;
         }
-        MeshBuilder mesh = renderer.batch(CombatantRenderPipelines.WORLD_BILLBOARD_SDF, Renderer3D.DepthMode.NONE);
+        MeshBuilder mesh = renderer.batch(WorldRenderPipelines.WORLD_BILLBOARD_SDF, Renderer3D.DepthMode.NONE);
         if (mesh == null) return;
 
         double safeRadius = Math.max(0.0, Math.min(radius, Math.min(width, height) * 0.5));

@@ -24,6 +24,7 @@ import combatant.client.features.module.modules.combat.surround.ShellBlocks;
 import combatant.client.features.module.modules.combat.surround.SurroundPlanner;
 import combatant.client.features.module.modules.combat.surround.SurroundPlanner.Pos;
 import combatant.client.render.engine.renderer.Renderer3D;
+import combatant.client.render.helpers.PlacementPreviewRenderer;
 import combatant.client.util.aiming.features.MovementCorrection;
 import combatant.client.util.anticheat.AntiCheatPreset;
 import combatant.client.util.block.placer.BlockPlacer;
@@ -31,6 +32,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.util.Util;
 import net.minecraft.world.phys.AABB;
 
@@ -55,26 +58,30 @@ public final class SelfTrap extends Module {
     // vanilla = 5.5 range/wall range, NO_ROTATION, max blocks/tick, 6.0 crystal clear reach.
     private final EnumValue<AntiCheatPreset> anticheat = enumMode("anticheat_mode", AntiCheatPreset.CUSTOM);
     private final EnumValue<Mode> mode = enumSetting("selfTrapMode", "mode", Mode.HEAD, Mode.values());
-    private final EnumValue<BlockPriority> blockPriority = enumSetting(
-            "selfTrapBlockPriority", "block_priority", BlockPriority.ANY, BlockPriority.values());
-    private final NumberValue<Integer> blocksPerTick = num(
-            "selfTrapBlocksPerTick", "blocks_per_tick", 4, 1, 8);
-    private final BooleanValue dynamicHitbox = bool(
-            "selfTrapDynamicHitbox", "dynamic_hitbox", true);
-    private final BooleanValue support = bool(
-            "selfTrapSupport", "support", true);
-    private final BooleanValue attackCrystals = bool(
-            "selfTrapAttackCrystals", "attack_crystals", true);
+    private final EnumValue<BlockPriority> blockPriority = enumCommon(
+            "selfTrapBlockPriority", "block_priority",
+            CommonSettingSchemas.SHELL_BLOCK_PRIORITY, BlockPriority.ANY, BlockPriority.values());
+    private final NumberValue<Integer> blocksPerTick = numCommon(
+            "selfTrapBlocksPerTick", "blocks_per_tick", CommonSettingSchemas.SHELL_BLOCKS_PER_TICK, 4, 1, 8);
+    private final BooleanValue dynamicHitbox = boolCommon(
+            "selfTrapDynamicHitbox", "dynamic_hitbox", CommonSettingSchemas.SHELL_DYNAMIC_HITBOX, true);
+    private final BooleanValue support = boolCommon("selfTrapSupport", "support", CommonSettingSchemas.SHELL_SUPPORT, true);
+    private final BooleanValue attackCrystals = boolCommon(
+            "selfTrapAttackCrystals", "attack_crystals", CommonSettingSchemas.SHELL_ATTACK_CRYSTALS, true);
     private final NumberValue<Integer> crystalDelay = visibleWhen(
-            num("selfTrapCrystalDelay", "crystal_delay", 0, 0, 10), attackCrystals::get);
-    private final BooleanValue placeWhileUsing = bool(
-            "selfTrapPlaceWhileUsing", "place_while_using", false);
-    private final NumberValue<Integer> swapBackDelay = num(
-            "selfTrapSwapBackDelay", "swap_back_delay", 0, 0, 10);
+            numCommon("selfTrapCrystalDelay", "crystal_delay",
+                    CommonSettingSchemas.SHELL_CRYSTAL_DELAY, 0, 0, 10),
+            attackCrystals::get);
+    private final BooleanValue placeWhileUsing = boolCommon(
+            "selfTrapPlaceWhileUsing", "place_while_using", CommonSettingSchemas.SHELL_PLACE_WHILE_USING, false);
+    private final NumberValue<Integer> swapBackDelay = numCommon(
+            "selfTrapSwapBackDelay", "swap_back_delay", CommonSettingSchemas.SHELL_SWAP_BACK_DELAY, 0, 0, 10);
     private final BooleanValue disableOnJump = bool("selfTrapDisableOnJump", "disable_on_jump", true);
-    private final BooleanValue disableInAir = bool("selfTrapDisableInAir", "disable_in_air", false);
+    private final BooleanValue disableInAir = boolCommon(
+            "selfTrapDisableInAir", "disable_in_air", CommonSettingSchemas.SHELL_DISABLE_IN_AIR, false);
     private final BooleanValue autoDisable = bool("selfTrapAutoDisable", "auto_disable", false);
-    private final BooleanValue warnNoBlocks = bool("selfTrapWarnNoBlocks", "warn_no_blocks", true);
+    private final BooleanValue warnNoBlocks = boolCommon(
+            "selfTrapWarnNoBlocks", "warn_no_blocks", CommonSettingSchemas.SHELL_WARN_NO_BLOCKS, true);
     private final EnumValue<BlockPlacer.RotationMode> rotation = enumSetting(
             "selfTrapRotation", "rotation", BlockPlacer.RotationMode.NORMAL, BlockPlacer.RotationMode.values());
     private final EnumValue<MovementCorrection> movementCorrection = enumSetting(
@@ -110,6 +117,7 @@ public final class SelfTrap extends Module {
     );
     private final CrystalClearer crystalClearer = new CrystalClearer();
     private final List<BlockPos> currentTargets = new ArrayList<>();
+    private final PlacementPreviewRenderer placementPreview = new PlacementPreviewRenderer();
     private long lastNoBlocksWarningMs;
 
     @Override
@@ -120,13 +128,16 @@ public final class SelfTrap extends Module {
         }
         crystalClearer.reset();
         lastNoBlocksWarningMs = 0L;
+        placementPreview.reset();
         blockPlacer.enable();
         updateTargets();
+        if (render.get()) placementPreview.tick(mc.level, currentTargets, previewBlockState(), lineColor.getArgb());
     }
 
     @Override
     public void onDisable() {
         blockPlacer.disable();
+        placementPreview.reset();
         currentTargets.clear();
     }
 
@@ -154,7 +165,9 @@ public final class SelfTrap extends Module {
         }
 
         warnIfOutOfBlocks(player);
+        if (render.get()) placementPreview.tick(mc.level, currentTargets, previewBlockState(), lineColor.getArgb());
         blockPlacer.tick();
+        if (render.get()) placementPreview.tick(mc.level, currentTargets, previewBlockState(), lineColor.getArgb());
 
         if (autoDisable.get() && currentTargets.isEmpty()) setEnabled(false);
     }
@@ -225,13 +238,17 @@ public final class SelfTrap extends Module {
 
     @Override
     public void onRenderWorldEngine(Renderer3D renderer, Renderer3D depthRenderer, float tickDelta) {
-        if (!isEnabled() || !render.get() || currentTargets.isEmpty()) return;
-        for (BlockPos pos : currentTargets) {
-            AABB box = new AABB(pos);
-            renderer.filledBox(box, fillColor.getArgb());
-            renderer.outlineBox(box, lineColor.getArgb(), lineWidth.get());
-        }
+        if (!isEnabled() || !render.get() || mc.level == null) return;
+        placementPreview.render(renderer, mc.level, currentTargets, previewBlockState(),
+                fillColor.getArgb(), lineColor.getArgb(), lineWidth.get());
     }
+
+    private BlockState previewBlockState() {
+        BlockPlacer.PlacementSlot slot = mc.player == null ? null : ShellBlocks.find(mc.player, blockPriority.get());
+        return slot != null && slot.stack().getItem() instanceof BlockItem item
+                ? item.getBlock().defaultBlockState() : null;
+    }
+
 
     public enum Mode {
         /** Just the roof over your head. */

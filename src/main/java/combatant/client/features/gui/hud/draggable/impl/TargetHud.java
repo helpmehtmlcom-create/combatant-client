@@ -48,6 +48,8 @@ import combatant.client.render.engine.math.HudScale;
 import combatant.client.render.engine.profiler.ProfilerPhase;
 import combatant.client.render.engine.profiler.RenderProfiler2D;
 import combatant.client.render.engine.renderer.Renderer2D;
+import combatant.client.render.engine.renderer.ui.draw.UiGlassOpticsSpec;
+import combatant.client.render.engine.renderer.ui.runtime.core.UiMaterialInteractionState;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.helpers.ScissorFunction;
 import combatant.client.util.player.PlayerHealthResolver;
@@ -74,6 +76,18 @@ public final class TargetHud extends DraggableHudElement {
         defaultLayout(7.6799927f, 721.12f, "CENTER", "FREE");
     }
 
+
+    private final UiMaterialInteractionState mainGlassFluid = new UiMaterialInteractionState();
+    private long lastGlassHitTime;
+    private int lastGlassHitEntityId = Integer.MIN_VALUE;
+    private float glassHitLevel;
+    private static final float GLASS_HIT_DECAY_SECONDS = 0.13f;
+    private static final UiGlassOpticsSpec TARGET_GLASS = UiGlassOpticsSpec.LIQUID
+            .withRefraction(0.022f).withBevel(0.22f, 0.130f)
+            .withFluid(0.37f, 0.54f).withCleanReveal(0.72f)
+            .withInteractionStrength(0.92f).withChromaticAberration(0.75f)
+            .withMagnification(1.018f).withShapeDeformation(false).withSpecular(false)
+            .withChromaticMotion(UiGlassOpticsSpec.ChromaticMotion.IMPACT_EDGE);
 
     private static final float BASE_WIDTH = 112.0f;
     private static final float BASE_HEIGHT = 40.0f;
@@ -474,9 +488,9 @@ public final class TargetHud extends DraggableHudElement {
         defs.add(SettingDef.colorNoAlpha(hitOuter).visibleWhen(this::isCustomMode));
         defs.add(SettingDef.colorNoAlpha(hitInner).visibleWhen(this::isCustomMode));
         defs.add(SettingDef.mode(bgEffect));
-        defs.add(SettingDef.number(blurAlpha).visibleWhen(this::hasEffect));
+        defs.add(SettingDef.number(blurAlpha).visibleWhen(this::isBlurEffect));
         defs.add(SettingDef.bool(hitAnim));
-        defs.add(SettingDef.number(hitPulse).visibleWhen(hitAnim::get));
+        defs.add(SettingDef.number(hitPulse).visibleWhen(() -> hitAnim.get() && !isGlassEffect()));
     }
 
     @Override
@@ -513,11 +527,14 @@ public final class TargetHud extends DraggableHudElement {
 
             if (!shouldShow && visibilityAnimation <= 0.001f) {
                 displayTarget = null;
+                glassHitLevel = 0f;
+                lastGlassHitEntityId = Integer.MIN_VALUE;
                 width = 0f;
                 height = 0f;
                 return;
             }
             if (displayTarget == null) return;
+            updateGlassHitReaction(displayTarget, now, dt);
 
             updatePalette();
 
@@ -534,7 +551,7 @@ public final class TargetHud extends DraggableHudElement {
             float equipmentTarget = hasEquipment ? 1.0f : 0.0f;
             equipmentAnimation = AnimationUtility.approach(equipmentAnimation, equipmentTarget, dt, EQUIPMENT_SPEED);
             equipmentAnimation = AnimationUtility.snap(equipmentAnimation, equipmentTarget, 0.001f);
-            float scalePulse = hitAnim.get()
+            float scalePulse = hitAnim.get() && !isGlassEffect()
                     ? 1.0f + hitPulseFactor * 0.018f * hitPulse.get().floatValue()
                     : 1.0f;
             float widgetScale = HudRenderUtil.visibilityScale(visibilityAnimation);
@@ -595,7 +612,9 @@ public final class TargetHud extends DraggableHudElement {
                         isThemeMode() && strokeGradient.get(), strokeAlpha.get(), alphaFactor
                 );
             }
-            drawHitPulse(renderer, panelX, panelY, panelW, panelH, panelRadius, alphaFactor, hitPulseFactor);
+            if (!glassEnabled) {
+                drawHitPulse(renderer, panelX, panelY, panelW, panelH, panelRadius, alphaFactor, hitPulseFactor);
+            }
             drawFace(renderer, textRenderer, ctx, displayTarget, panelX, panelY, scaleFactor, alphaFactor, totemPopSnapshot);
             drawContent(renderer, textRenderer, displayTarget, panelX, panelY, panelDrawW, scaleFactor, alphaFactor, now, dt);
             if (effectsAnimation > 0.01f) {
@@ -714,10 +733,7 @@ public final class TargetHud extends DraggableHudElement {
                                 float radius,
                                 float alphaFactor,
                                 boolean glassEnabled) {
-        if (glassEnabled) {
-            renderer.roundedRect(x, y, width, height, radius, 1.0f, HudRenderUtil.glassPanelBackground(alphaFactor));
-            return;
-        }
+        if (glassEnabled) return;
 
         int primary = HudRenderUtil.scaleAlpha(uiBgPrimary, alphaFactor);
         int secondary = HudRenderUtil.scaleAlpha(uiBgSecondary, alphaFactor);
@@ -1501,10 +1517,45 @@ public final class TargetHud extends DraggableHudElement {
         Renderer2D.COLOR.blurRect(x, y, width, height, radius, quality, brightness, alpha, 0xFFFFFF);
     }
 
+    private void updateGlassHitReaction(LivingEntity target, long now, float deltaSeconds) {
+        if (!isGlassEffect()) {
+            glassHitLevel = 0f;
+            lastGlassHitEntityId = Integer.MIN_VALUE;
+            return;
+        }
+        int entityId = target.getId();
+        if (lastGlassHitEntityId != entityId) {
+            lastGlassHitEntityId = entityId;
+            lastGlassHitTime = 0L;
+            glassHitLevel = 0f;
+        }
+        Long hitTime = HIT_FLASH_MS_BY_ID.get(entityId);
+        if (hitTime != null && hitTime > lastGlassHitTime
+                && hitTime <= now && now - hitTime <= 300L) {
+            lastGlassHitTime = hitTime;
+            glassHitLevel = 1.0f;
+        } else if (glassHitLevel > 0f) {
+            float dt = Float.isFinite(deltaSeconds) ? Math.max(0f, Math.min(0.10f, deltaSeconds)) : 0f;
+            glassHitLevel *= (float) Math.exp(-dt / GLASS_HIT_DECAY_SECONDS);
+            if (glassHitLevel < 0.003f) glassHitLevel = 0f;
+        }
+    }
+
     private void drawGlass(float x, float y, float width, float height, float radius, float alphaFactor) {
-        float blurStrength = (blurAlpha.get() / 255.0f) * alphaFactor;
         float glassScale = PANEL_RADIUS <= 0.0f ? 1.0f : radius / PANEL_RADIUS;
-        HudRenderUtil.drawLiquidGlass(x, y, width, height, radius, glassScale, true, blurStrength, alphaFactor);
+        float hit = AnimationUtility.clamp01(glassHitLevel);
+        if (hit > 0.0f) {
+            mainGlassFluid.opticalActivity(hit);
+        }
+        UiGlassOpticsSpec optics = hit > 0.0f
+                ? TARGET_GLASS
+                        .withRefraction(AnimationUtility.lerp(TARGET_GLASS.refraction(), 0.080f, hit))
+                        .withBevel(AnimationUtility.lerp(TARGET_GLASS.bevelWidth(), 0.306f, hit),
+                                AnimationUtility.lerp(TARGET_GLASS.bevelDepth(), 0.150f, hit))
+                : TARGET_GLASS;
+        HudRenderUtil.drawReactiveGlass(x, y, width, height, radius, glassScale, true,
+                alphaFactor, alphaFactor,
+                mainGlassFluid, optics, false, 0f, 0.65f);
         if (isGradientPanelStyle()) {
             float strength = themeGradientStrength.get() / 100.0f;
             HudRenderUtil.ThemeGradient panelGradient = HudRenderUtil.themePanelGradient(
@@ -1532,8 +1583,12 @@ public final class TargetHud extends DraggableHudElement {
                                float radius,
                                float scaleFactor,
                                float alphaFactor) {
-        float blurStrength = (blurAlpha.get() / 255.0f) * alphaFactor;
-        HudRenderUtil.drawLiquidGlass(x, y, width, height, radius, scaleFactor, true, blurStrength, alphaFactor);
+        UiGlassOpticsSpec chipOptics = TARGET_GLASS
+                .withRefraction(0.016f).withBevel(0.22f, 0.060f)
+                .withInteractionStrength(0f).withChromaticAberration(0.38f);
+        HudRenderUtil.drawReactiveGlass(x, y, width, height, radius, scaleFactor, true,
+                alphaFactor, alphaFactor,
+                null, chipOptics, true, 0f, 0f);
     }
 
     private void drawItem(Renderer2D renderer,

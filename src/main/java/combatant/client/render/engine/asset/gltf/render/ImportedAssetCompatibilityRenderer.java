@@ -18,7 +18,7 @@ import combatant.client.render.engine.asset.gltf.runtime.GltfPrimitivePlacement;
 import combatant.client.render.engine.asset.gltf.runtime.GltfSceneInstanceAsset;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.core.CombatantRenderSystem;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.RigRenderPipelines;
 import combatant.client.render.engine.rhi.RhiDrawCommand;
 import combatant.client.render.engine.renderer.MeshRenderer;
 import combatant.client.render.engine.scene.SceneDrawClass;
@@ -168,8 +168,8 @@ public final class ImportedAssetCompatibilityRenderer {
             boolean mirrored = instance.mirroredTransform() ^ placement.mirroredWinding();
             boolean cull = !material.doubleSided() && !mirrored;
             RenderPipeline pipeline = cull
-                    ? CombatantRenderPipelines.ASSET_COMPATIBILITY_TRANSLUCENT_CULL
-                    : CombatantRenderPipelines.ASSET_COMPATIBILITY_TRANSLUCENT_DOUBLE_SIDED;
+                    ? RigRenderPipelines.ASSET_COMPATIBILITY_TRANSLUCENT_CULL
+                    : RigRenderPipelines.ASSET_COMPATIBILITY_TRANSLUCENT_DOUBLE_SIDED;
 
             GltfGpuTexture base = residency.colorOrWhite(material.baseColorTexture());
             GltfGpuTexture mr = residency.dataOrWhite(material.metallicRoughnessTexture());
@@ -225,11 +225,11 @@ public final class ImportedAssetCompatibilityRenderer {
             boolean noDepth = instance.drawClass() == SceneDrawClass.WORLD_OVERLAY;
             RenderPipeline pipeline = noDepth
                     ? (cull
-                        ? CombatantRenderPipelines.ASSET_COMPATIBILITY_TRANSLUCENT_NO_DEPTH_CULL
-                        : CombatantRenderPipelines.ASSET_COMPATIBILITY_TRANSLUCENT_NO_DEPTH_DOUBLE_SIDED)
+                        ? RigRenderPipelines.ASSET_COMPATIBILITY_TRANSLUCENT_NO_DEPTH_CULL
+                        : RigRenderPipelines.ASSET_COMPATIBILITY_TRANSLUCENT_NO_DEPTH_DOUBLE_SIDED)
                     : (cull
-                        ? CombatantRenderPipelines.ASSET_COMPATIBILITY_TRANSLUCENT_CULL
-                        : CombatantRenderPipelines.ASSET_COMPATIBILITY_TRANSLUCENT_DOUBLE_SIDED);
+                        ? RigRenderPipelines.ASSET_COMPATIBILITY_TRANSLUCENT_CULL
+                        : RigRenderPipelines.ASSET_COMPATIBILITY_TRANSLUCENT_DOUBLE_SIDED);
 
             GltfGpuTexture base = residency.colorOrWhite(material.baseColorTexture());
             GltfGpuTexture mr = residency.dataOrWhite(material.metallicRoughnessTexture());

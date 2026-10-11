@@ -17,6 +17,8 @@ import combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest;
 import combatant.client.render.engine.renderer.ui.blend.UiBackdropBlendSpec;
 
 import java.util.Objects;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class DrawBatch {
     public final UiBatchType type;
@@ -30,6 +32,10 @@ public final class DrawBatch {
     public float blurOffsetPx = Renderer2D.DEFAULT_KAWASE_OFFSET_PX;
     public UiBackdropRequest backdropRequest = UiBackdropRequest.NONE;
     public UiBackdropBlendSpec backdropBlend = UiBackdropBlendSpec.NORMAL;
+    /** Tight logical bounds of GLASS geometry, not the inflated blur capture rectangle. */
+    public combatant.client.render.engine.renderer.ui.draw.UiRect glassBounds;
+    /** Exact submitted primitive bounds, preserved even when adjacent glass quads are batched. */
+    public final List<combatant.client.render.engine.renderer.ui.draw.UiRect> glassRegions = new ArrayList<>();
     public UiClipSnapshot clipSnapshot = UiClipSnapshot.NONE;
     public UiScissorSnapshot scissorSnapshot = UiScissorSnapshot.NONE;
 
@@ -48,6 +54,8 @@ public final class DrawBatch {
         this.blurQuality = Renderer2D.DEFAULT_BLUR_QUALITY;
         this.blurOffsetPx = Renderer2D.DEFAULT_KAWASE_OFFSET_PX;
         this.backdropRequest = UiBackdropRequest.NONE;
+        this.glassBounds = null;
+        this.glassRegions.clear();
         this.backdropBlend = UiBackdropBlendSpec.NORMAL;
         this.scissorSnapshot = scissorSnapshot != null ? scissorSnapshot : UiScissorSnapshot.NONE;
         this.clipSnapshot = clipSnapshot != null ? clipSnapshot : UiClipSnapshot.NONE;
@@ -83,6 +91,17 @@ public final class DrawBatch {
         this.backdropBlend = backdropBlend != null ? backdropBlend : UiBackdropBlendSpec.NORMAL;
     }
 
+    public void includeGlassBounds(combatant.client.render.engine.renderer.ui.draw.UiRect bounds) {
+        if (bounds == null || bounds.empty()) return;
+        glassRegions.add(bounds);
+        if (glassBounds == null) { glassBounds = bounds; return; }
+        float x0 = Math.min(glassBounds.x(), bounds.x());
+        float y0 = Math.min(glassBounds.y(), bounds.y());
+        float x1 = Math.max(glassBounds.x() + glassBounds.width(), bounds.x() + bounds.width());
+        float y1 = Math.max(glassBounds.y() + glassBounds.height(), bounds.y() + bounds.height());
+        glassBounds = new combatant.client.render.engine.renderer.ui.draw.UiRect(x0, y0, x1 - x0, y1 - y0);
+    }
+
     public boolean canMerge(UiBatchType type, GpuTextureView view, GpuSampler sampler,
                             UiScissorSnapshot scissorSnapshot, UiClipSnapshot clipSnapshot) {
         if (this.type != type || !sameState(this.scissorSnapshot, scissorSnapshot)
@@ -112,6 +131,12 @@ public final class DrawBatch {
                                 UiBackdropRequest backdropRequest,
                                 UiBackdropBlendSpec backdropBlend,
                                 UiScissorSnapshot scissorSnapshot, UiClipSnapshot clipSnapshot) {
+        // Stacked lenses depend on prior writes to the same target. Merging two
+        // stacked lenses would discard their required ordered snapshot boundary.
+        if (type.usesPreparedGlass() && backdropRequest != null
+                && backdropRequest.sceneSource() == UiBackdropRequest.SceneSource.STACKED_LENSES) {
+            return false;
+        }
         Renderer2D.BlurQuality normalizedQuality = quality != null ? quality : Renderer2D.DEFAULT_BLUR_QUALITY;
         float normalizedOffset = Float.isFinite(offsetPx) ? Math.max(0.0f, offsetPx) : Renderer2D.DEFAULT_KAWASE_OFFSET_PX;
         return canMerge(type, view, sampler, scissorSnapshot, clipSnapshot)
