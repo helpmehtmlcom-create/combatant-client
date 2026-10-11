@@ -121,6 +121,16 @@ public final class RedstoneRules {
         return null;
     }
 
+    /**
+     * The side a hopper feeds into: its facing comes from the clicked face, so a sideways hopper can only be
+     * placed by clicking the block it points at. {@code null} for anything else and for hoppers facing down.
+     */
+    public static Direction feedsInto(BlockState state) {
+        if (!(state.getBlock() instanceof HopperBlock)) return null;
+        Direction facing = state.getValue(HopperBlock.FACING);
+        return facing == Direction.DOWN ? null : facing;
+    }
+
     /** Sand, gravel, concrete powder, anvils and scaffolding fall (or break) without the block under them. */
     public static boolean needsBlockBelow(BlockState state) {
         Block block = state.getBlock();

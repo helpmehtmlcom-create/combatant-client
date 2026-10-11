@@ -90,6 +90,9 @@ final class BuildMover {
 
         /** Ends the builder's silent hotbar lease so a tool switch is what the server sees. */
         void releaseHotbar();
+
+        /** Whether a target is worth walking to these eyes for; pistons and observers need a particular look. */
+        boolean lookAllows(long target, double eyeX, double eyeY, double eyeZ);
     }
 
     /** A support block click the builder should send this tick. */
@@ -343,7 +346,7 @@ final class BuildMover {
         WalkPathfinder.Flood flood = WalkPathfinder.flood(terrain, start, MAX_DROP, FLOOD_COST, FLOOD_NODES);
         double reach = host.reach() - PLAN_MARGIN;
         StandingSpotChooser.Spot next = StandingSpotChooser.choose(terrain, flood, targets, count,
-                StandingSpotChooser.Mode.PLACE, reach, spot, rejected::contains);
+                StandingSpotChooser.Mode.PLACE, reach, spot, rejected::contains, host::lookAllows);
         int lowest = Integer.MAX_VALUE;
         for (int i = 0; i < count; i++) lowest = Math.min(lowest, WalkTerrain.unpackY(targets[i]));
         if (next == null || next.y() < lowest) lowGroundLayer = lowest;
@@ -576,7 +579,8 @@ final class BuildMover {
         if (mc.level.getBlockState(support).canBeReplaced()) return null;
         Rotation rotation = Rotation.lookingAt(down, player.getEyePosition());
         double distanceSq = player.getEyePosition().distanceToSqr(down);
-        BuildPlanner.Plan plan = new BuildPlanner.Plan(target, support, Direction.UP, down, rotation, false, distanceSq);
+        BuildPlanner.Plan plan = new BuildPlanner.Plan(target, support, Direction.UP, down, rotation, false,
+                distanceSq, false);
         return new HelperClick(plan, slot, blockItem.getBlock().defaultBlockState());
     }
 
