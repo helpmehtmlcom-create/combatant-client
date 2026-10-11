@@ -161,6 +161,8 @@ final class BuildMover {
     private int helpersRemoved;
     private int aborts;
     private int pillarJumps;
+    /** The layer (world y) for which no standing spot level with it reaches anything: build it from below. */
+    private int lowGroundLayer = Integer.MIN_VALUE;
 
     BuildMover(Minecraft mc, Host host) {
         this.mc = mc;
@@ -204,6 +206,16 @@ final class BuildMover {
     }
 
     /**
+     * Whether to hold back clicks on the layer at world height {@code layerY} while the feet are below it. From
+     * the ground the outer ring of a solid layer is in reach first, and placing it walls off the step that leads
+     * onto the layer below, stranding the player under the rest. Climbing up first keeps that step. Once the
+     * walker found no spot level with the layer, building from below is all that is left.
+     */
+    boolean climbBeforePlacing(LocalPlayer player, int layerY) {
+        return feetY(player) < layerY && lowGroundLayer != layerY;
+    }
+
+    /**
      * A pillar jump is in the air: its support click is due within a few ticks and nothing else may take the
      * click or the rotation, or the block is missed and the jump wasted.
      */
@@ -227,6 +239,7 @@ final class BuildMover {
         abortCooldown = 0;
         rejected.clear();
         warnedUnreachable = false;
+        lowGroundLayer = Integer.MIN_VALUE;
     }
 
     /** Module switched off: everything goes, the counters too. */
@@ -331,6 +344,9 @@ final class BuildMover {
         double reach = host.reach() - PLAN_MARGIN;
         StandingSpotChooser.Spot next = StandingSpotChooser.choose(terrain, flood, targets, count,
                 StandingSpotChooser.Mode.PLACE, reach, spot, rejected::contains);
+        int lowest = Integer.MAX_VALUE;
+        for (int i = 0; i < count; i++) lowest = Math.min(lowest, WalkTerrain.unpackY(targets[i]));
+        if (next == null || next.y() < lowest) lowGroundLayer = lowest;
         if (next != null) {
             spot = next;
             startRoute(flood.pathTo(next.key()), next.key(), Mode.WALKING);
@@ -893,6 +909,8 @@ final class BuildMover {
         if (hasGoal) parts.add("goal=" + BlockPos.of(goal).toShortString());
         if (pillar != null) parts.add("pillar=" + pillar);
         parts.add("helpers=" + helpers.size());
+        if (!rejected.isEmpty()) parts.add("rejected=" + rejected.size());
+        if (abortCooldown > 0 || replanWait > 0) parts.add("wait=" + abortCooldown + "/" + replanWait);
         return String.join(" ", parts);
     }
 }

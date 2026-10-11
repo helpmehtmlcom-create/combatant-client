@@ -570,6 +570,7 @@ public final class SchematicBuilder extends Module {
 
     private int collectCandidates(LocalPlayer player, SchematicDiff diff, int low, int high) {
         missingThisTick = false;
+        if (autoWalk.get() && player.onGround() && mover.climbBeforePlacing(player, state.placement().worldY(low))) return 0;
         Vec3 eyes = player.getEyePosition();
         Rotation facing = RotationManager.INSTANCE.getCurrentRotation();
         if (facing == null) facing = new Rotation(player.getYRot(), player.getXRot());
