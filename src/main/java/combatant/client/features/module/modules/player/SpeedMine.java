@@ -31,6 +31,7 @@ import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.render.engine.RenderState;
+import combatant.client.render.engine.renderer.GlowSurfaces;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.util.aiming.RotationManager;
 import combatant.client.util.aiming.RotationTarget;
@@ -650,22 +651,8 @@ public final class SpeedMine extends Module {
         int argb = ready ? readyColor.getArgb() : miningColor.getArgb();
         double inset = 0.5 * (1.0 - done);
         AABB box = new AABB(task.pos).deflate(inset);
-        fillBox(renderer, box, argb);
+        GlowSurfaces.box(renderer, box, argb, argb, 0.7f, ready ? 0.0f : 1.0f, false, true, false);
         BlockOutlineRenderer.renderBox(renderer, new AABB(task.pos), argb | 0xFF000000);
-    }
-
-    private static void fillBox(Renderer3D renderer, AABB box, int argb) {
-        int a = (argb >>> 24) & 0xFF;
-        int r = (argb >>> 16) & 0xFF;
-        int g = (argb >>> 8) & 0xFF;
-        int b = argb & 0xFF;
-        double x0 = box.minX, y0 = box.minY, z0 = box.minZ, x1 = box.maxX, y1 = box.maxY, z1 = box.maxZ;
-        renderer.quad(x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1, r, g, b, a);
-        renderer.quad(x0, y1, z0, x0, y1, z1, x1, y1, z1, x1, y1, z0, r, g, b, a);
-        renderer.quad(x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1, r, g, b, a);
-        renderer.quad(x0, y0, z0, x0, y1, z0, x1, y1, z0, x1, y0, z0, r, g, b, a);
-        renderer.quad(x1, y0, z0, x1, y1, z0, x1, y1, z1, x1, y0, z1, r, g, b, a);
-        renderer.quad(x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0, r, g, b, a);
     }
 
     private void reset() {

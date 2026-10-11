@@ -26,6 +26,7 @@ import combatant.client.config.values.*;
 import combatant.client.features.gui.clickgui.settings.TextListSetting;
 import combatant.client.features.module.*;
 import combatant.client.render.engine.RenderState;
+import combatant.client.render.engine.renderer.GlowSurfaces;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.util.block.*;
 import combatant.client.util.logging.DebugLog;
@@ -156,6 +157,10 @@ public class BlockESP extends Module {
                     BlockOutlineShapeMode.values()
             );
 
+    private final BooleanValue glowFill =
+            bool("blockEspGlowFill", "glow_fill", true);
+    private final NumberValue<Float> glowAlpha =
+            visibleWhen(num("blockEspGlowAlpha", "glow_alpha", 0.16f, 0.0f, 1.0f), glowFill::get);
     private final NumberValue<Float> lineWidth =
             numCommon(
                     "blockEspLineWidth",
@@ -715,6 +720,10 @@ public class BlockESP extends Module {
 
                 int color = 0xFF000000 | (target.visible ? visibleRgb : chunkRgb);
                 BlockOutlineRenderer.render(renderer, mc.level, target.pos, state, shapeMode, color);
+                if (glowFill.get()) {
+                    int fill = ((int) (Math.min(1.0f, glowAlpha.get()) * 255.0f) << 24) | (color & 0x00FFFFFF);
+                    GlowSurfaces.box(renderer, new AABB(target.pos), fill, fill, 0.55f, 1.0f, false, true, false);
+                }
             }
         } finally {
             RenderState.lineWidth = previousLineWidth;
