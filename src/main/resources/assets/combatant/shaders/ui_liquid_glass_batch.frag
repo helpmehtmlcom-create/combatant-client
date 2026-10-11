@@ -111,6 +111,11 @@ float roundedBoxSDF(vec2 p, vec2 halfSize, vec4 r, float smoothness) {
     return min(max(q.x, q.y), 0.0) + len - radius;
 }
 
+float sdRoundBox(vec2 p, vec2 b, float r) {
+    vec2 q = abs(p) - b + r;
+    return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+}
+
 float decodeDistort(float packedValue, out float cornerSmoothness, out float blurAlpha, out bool squircle) {
     squircle = packedValue >= 200000.0;
     if (squircle) {
@@ -274,6 +279,17 @@ vec2 safeNormalize(vec2 v, vec2 fallback) {
     return v * inversesqrt(len2);
 }
 
+vec2 cornerNormal(vec2 p, vec2 b, float r, vec2 fallback) {
+    vec2 q = abs(p) - b + r;
+    vec2 m = max(q, 0.0);
+    float l = length(m);
+    if (l <= 0.0) return fallback;
+    float w = smoothstep(0.0, max(r * 0.5, 1.0), min(m.x, m.y));
+    if (w <= 0.0) return fallback;
+    vec2 s = vec2(p.x < 0.0 ? -1.0 : 1.0, p.y < 0.0 ? -1.0 : 1.0);
+    return normalize(mix(fallback, s * (m / l), w));
+}
+
 vec2 warpedLocal(vec4 local) {
     float invW = abs(local.z) > 0.000001 ? local.z : 1.0;
     return local.xy / invW;
@@ -350,9 +366,15 @@ void main() {
         discard;
     }
 
+    float localRadius = pos.x < 0.0
+            ? (pos.y < 0.0 ? radius.x : radius.w)
+            : (pos.y < 0.0 ? radius.y : radius.z);
+    float opticalInsideDistance = (!customShape && !squircle)
+            ? -sdRoundBox(pos, size * 0.5, localRadius)
+            : max(-selfDistance, 0.0);
     float liquidBevelPx = max(v_Params8.z * min(size.x, size.y), 0.001);
     if (glassVariant == 4) liquidBevelPx *= 1.65;
-    float liquidEdge = 1.0 - smoothstep(0.0, liquidBevelPx, max(-selfDistance, 0.0));
+    float liquidEdge = 1.0 - smoothstep(0.0, liquidBevelPx, opticalInsideDistance);
 
     vec2 uv = vec2(
         frag.x / logicalSize.x,
@@ -362,7 +384,10 @@ void main() {
     vec2 centerUv;
     vec2 liquidOffset = vec2(0.0);
     vec2 p = pos / max(size.y, 1.0);
-    vec2 refractNormal = sdfNormal;
+    vec2 refractNormal = (!customShape && !squircle)
+            ? cornerNormal(pos, size * 0.5, localRadius,
+                    safeNormalize(p + vec2(0.000001), sdfNormal))
+            : sdfNormal;
     if (localInteraction && interactionRadius > 0.0
             && dot(interactionDisplacement, interactionDisplacement) > 1e-8) {
         vec2 stepX = vec2(0.5, 0.0);
@@ -375,11 +400,19 @@ void main() {
                                     interactionRadius, interactionDisplacement);
         vec2 dym = deformGlassPoint(originalPos - stepY, size, v_Params10.xy,
                                     interactionRadius, interactionDisplacement);
-        vec2 gradient = vec2(
-                glassShapeSDF(dxp, halfSize, radius, cornerSmoothness, squircle)
-                        - glassShapeSDF(dxm, halfSize, radius, cornerSmoothness, squircle),
-                glassShapeSDF(dyp, halfSize, radius, cornerSmoothness, squircle)
-                        - glassShapeSDF(dym, halfSize, radius, cornerSmoothness, squircle));
+        float dxpDistance = (!customShape && !squircle)
+                ? sdRoundBox(dxp, size * 0.5, localRadius)
+                : glassShapeSDF(dxp, halfSize, radius, cornerSmoothness, squircle);
+        float dxmDistance = (!customShape && !squircle)
+                ? sdRoundBox(dxm, size * 0.5, localRadius)
+                : glassShapeSDF(dxm, halfSize, radius, cornerSmoothness, squircle);
+        float dypDistance = (!customShape && !squircle)
+                ? sdRoundBox(dyp, size * 0.5, localRadius)
+                : glassShapeSDF(dyp, halfSize, radius, cornerSmoothness, squircle);
+        float dymDistance = (!customShape && !squircle)
+                ? sdRoundBox(dym, size * 0.5, localRadius)
+                : glassShapeSDF(dym, halfSize, radius, cornerSmoothness, squircle);
+        vec2 gradient = vec2(dxpDistance - dxmDistance, dypDistance - dymDistance);
         if (dot(gradient, gradient) > 1e-8) {
             refractNormal = normalize(mix(refractNormal, normalize(gradient),
                     min(length(deformedPos - originalPos), 1.0)));
@@ -404,42 +437,44 @@ void main() {
 
     float edgeFocus = smoothstep(0.16, 0.96, liquidEdge);
     vec2 refractAxis = safeNormalize(vec2(refractNormal.x, -refractNormal.y), vec2(1.0, 0.0));
-    float splitLimitPx = min(26.0, min(size.x / max(logicalScale.x, 1e-6),
-                                           size.y / max(logicalScale.y, 1e-6)) * 0.42);
-    float splitPx = min(3.0 + spectralAberration * 36.0, splitLimitPx);
-    vec2 chroma = refractAxis * (splitPx * edgeFocus / fbSize);
-    float chromaCoverage = clamp(spectralAberration * 2.5, 0.0, 1.0) * edgeFocus;
+    float minLogicalScale = max(min(logicalScale.x, logicalScale.y), 1e-6);
+    float bevelWidthFramebufferPx = liquidBevelPx / minLogicalScale;
+    float lensSplitLimitPx = min(size.x / max(logicalScale.x, 1e-6),
+                                      size.y / max(logicalScale.y, 1e-6)) * 0.42;
+    float splitLimitPx = min(bevelWidthFramebufferPx * 0.5, lensSplitLimitPx);
+    vec2 rawChroma = liquidOffset * spectralAberration;
+    float rawStaticSplitPx = length(rawChroma * fbSize);
+    float resolvedStaticSplitPx = splitLimitPx
+            * tanh(rawStaticSplitPx / max(splitLimitPx, 0.001));
+    vec2 chroma = refractAxis * resolvedStaticSplitPx / fbSize;
+    float chromaCoverage = spectralAberration > 0.001 ? 1.0 : 0.0;
     if (chromaticMotion == 1) {
         float time = uGlassClock.x;
-        vec2 flowCenter = vec2(
-                0.5 + sin(time * 0.47) * 0.29,
-                0.5 + cos(time * 0.39 + 1.1) * 0.24);
-        vec2 field = (lensUv - flowCenter) / vec2(0.46, 0.72);
-        float blob = 1.0 - smoothstep(0.20, 1.0, length(field));
-        float playbackImpulse = clamp(v_Params11.y, 0.0, 1.0);
-        float activity = mix(0.65, 1.0, smoothstep(0.02, 0.32, playbackImpulse));
+        float playbackImpulse = clamp(max(v_Params11.x, v_Params11.y), 0.0, 1.0);
+        float activity = smoothstep(0.02, 0.32, playbackImpulse);
+        float primaryWave = sin(time * 1.36 + lensUv.x * 8.0 - lensUv.y * 4.5);
+        float secondaryWave = sin(time * 0.83 - lensUv.x * 3.5 + lensUv.y * 6.0 + 1.2);
         vec2 direction = safeNormalize(vec2(
-                cos(time * 0.83 + field.y * 0.65),
-                sin(time * 0.67 - field.x * 0.55)), refractAxis);
-        splitPx = min(12.0 + spectralAberration * 44.0, splitLimitPx);
+                cos(time * 0.91 + lensUv.y * 5.2 + primaryWave * 0.42),
+                sin(time * 1.07 - lensUv.x * 4.6 + secondaryWave * 0.38)),
+                refractAxis);
+        float waveScale = mix(0.68, 1.32,
+                0.5 + 0.5 * sin(time * 1.08 + lensUv.x * 6.2 + lensUv.y * 3.7));
+        float splitPx = min(
+                bevelWidthFramebufferPx * spectralAberration * waveScale,
+                lensSplitLimitPx) * activity;
         chroma = direction * splitPx / fbSize;
-        chromaCoverage = blob * activity * clamp(spectralAberration * 2.5, 0.0, 1.0);
+        chromaCoverage = mix(0.62, 1.0, edgeFocus) * activity;
     } else if (chromaticMotion == 2) {
-        vec2 field = (lensUv - v_Params10.xy) * size / max(min(size.x, size.y), 1.0);
-        float activity = clamp(v_Params11.y, 0.0, 1.0);
-        float progress = 1.0 - activity;
-        vec2 farCorner = max(v_Params10.xy, vec2(1.0) - v_Params10.xy) * size;
-        float waveReach = length(farCorner) / max(min(size.x, size.y), 1.0);
-        float radius = mix(0.05, waveReach, smoothstep(0.0, 1.0, progress));
-        float width = mix(0.24, 0.43, progress);
-        float wave = 1.0 - smoothstep(width, width + 0.07,
-                abs(length(field) - radius));
-        float envelope = sin(progress * 3.14159265);
-        vec2 direction = safeNormalize(vec2(field.x, -field.y), refractAxis);
-        splitPx = min(14.0 + spectralAberration * 42.0, splitLimitPx);
-        chroma = direction * splitPx / fbSize;
-        chromaCoverage = wave * mix(0.55, 1.0, edgeFocus)
-                * envelope * clamp(spectralAberration * 2.5, 0.0, 1.0);
+        float activity = clamp(max(v_Params11.x, v_Params11.y), 0.0, 1.0);
+        float impactLimitPx = min(
+                bevelWidthFramebufferPx * mix(0.5, 1.0, activity),
+                lensSplitLimitPx);
+        float splitPx = impactLimitPx
+                * tanh(rawStaticSplitPx / max(impactLimitPx, 0.001));
+        chroma = refractAxis * splitPx / fbSize;
+        chromaCoverage = smoothstep(0.0, 0.24, liquidEdge)
+                * mix(0.72, 1.0, activity);
     }
 
     vec3 centerScene = sampleLiquidScene(centerUv, logicalSize).rgb;
@@ -501,18 +536,6 @@ void main() {
                 blendBackdrop, clamp(dispersedColor, 0.0, 1.0), tint,
                 uBlendParams, uBlendTone0, uBlendTone1);
         finalColor = mix(finalColor, dispersedColor, clamp(chromaCoverage, 0.0, 1.0));
-        if (chromaticMotion == 1 || chromaticMotion == 2) {
-            float opticalPhase = atan(chroma.y, chroma.x)
-                    + dot(lensUv, vec2(3.7, -2.9)) + uGlassClock.x * 0.78;
-            vec3 spectralResponse = vec3(
-                    cos(opticalPhase),
-                    cos(opticalPhase - 2.0943951),
-                    cos(opticalPhase + 2.0943951));
-            float opticalLuma = dot(centerScene, vec3(0.2126, 0.7152, 0.0722));
-            float prismEnergy = chromaCoverage * smoothstep(0.01, 0.40, spectralAberration)
-                    * (0.065 + 0.022 * sqrt(max(opticalLuma, 0.0)));
-            finalColor += spectralResponse * prismEnergy;
-        }
     }
     fragColor = vec4(clamp(finalColor, 0.0, 1.0), finalAlpha);
 }

@@ -18,7 +18,7 @@ import net.minecraft.client.Minecraft;
 import org.joml.Matrix4f;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.core.CombatantRenderSystem;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.PostProcessRenderPipelines;
 import combatant.client.render.engine.postprocess.graph.PostProcessGraph;
 import combatant.client.render.engine.profiler.RenderCostProfiler;
 import combatant.client.render.engine.renderer.FullScreenRenderer;
@@ -117,7 +117,7 @@ public enum PostProcessManager {
             CombatantRenderSystem.rhi().drawFullscreen(
                     FullscreenDrawCommand.builder("Combatant PostProcess Copy")
                             .colorAttachment(dst)
-                            .pipeline(CombatantRenderPipelines.POSTPROCESS_COPY)
+                            .pipeline(PostProcessRenderPipelines.POSTPROCESS_COPY)
                             .sampler("u_Texture", src, sampler)
                             .build()
             );

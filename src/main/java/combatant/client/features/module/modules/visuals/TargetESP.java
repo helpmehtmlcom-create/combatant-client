@@ -33,7 +33,7 @@ import combatant.client.render.engine.TextureStorage;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.animation.AnimatedRenderColors;
 import combatant.client.render.engine.math.RenderMath;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.effects.lens.WorldTargetLenses;
 import combatant.client.render.effects.orbit.WorldOrbitGravity;
@@ -241,7 +241,7 @@ public class TargetESP extends Module {
         int tubeSegments = 10;
 
         MeshBuilder mesh = renderer.batch(
-                CombatantRenderPipelines.WORLD_TARGET_RING_DEPTH,
+                WorldRenderPipelines.WORLD_TARGET_RING_DEPTH,
                 Renderer3D.DepthMode.ENTITY_ONLY
         );
         if (mesh == null) return;
@@ -359,7 +359,7 @@ public class TargetESP extends Module {
         if (renderer == null || target == null || palette == null) return;
         Renderer3D.DepthMode depthMode = Renderer3D.DepthMode.ENTITY_ONLY;
         MeshBuilder mesh = renderer.batchTextured(
-                CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH,
+                WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH,
                 TextureStorage.FIRE_FLY, depthMode);
         if (mesh == null) return;
 
@@ -396,7 +396,7 @@ public class TargetESP extends Module {
         float intensity = Mth.clamp(0.78f + amplitude * 0.055f, 0.72f, 1.28f);
 
         Renderer3D.DepthMode depthMode = Renderer3D.DepthMode.ENTITY_ONLY;
-        MeshBuilder mesh = renderer.batch(CombatantRenderPipelines.WORLD_TARGET_GHOST_DEPTH, depthMode);
+        MeshBuilder mesh = renderer.batch(WorldRenderPipelines.WORLD_TARGET_GHOST_DEPTH, depthMode);
         if (mesh == null) return;
 
         int blades = Mth.clamp(3 + factor / 4, 4, 7);
@@ -524,7 +524,7 @@ public class TargetESP extends Module {
         float alphaGain = capturePulse.get() ? 0.90f + pulse * 0.10f : 1.0f;
 
         Renderer3D.DepthMode depthMode = Renderer3D.DepthMode.NONE;
-        var capturePipeline = CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE;
+        var capturePipeline = WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE;
 
         MeshBuilder markMesh = renderer.batchTextured(capturePipeline, CAPTURE_MARK_TEXTURE, depthMode);
         if (markMesh != null) {
@@ -1141,7 +1141,7 @@ public class TargetESP extends Module {
         Vec3 center = RenderMath.getLerpedPos(target, tickDelta).add(0.0, target.getBbHeight() * 0.52, 0.0);
 
         MeshBuilder disk = renderer.batch(
-                CombatantRenderPipelines.WORLD_TARGET_ORBIT_DEPTH,
+                WorldRenderPipelines.WORLD_TARGET_ORBIT_DEPTH,
                 Renderer3D.DepthMode.ENTITY_ONLY
         );
         if (disk == null) return;
@@ -1302,7 +1302,7 @@ public class TargetESP extends Module {
 
         Renderer3D.DepthMode depthMode = Renderer3D.DepthMode.ENTITY_ONLY;
         MeshBuilder crystalMesh = renderer.batch(
-                CombatantRenderPipelines.WORLD_TARGET_CRYSTAL_DEPTH,
+                WorldRenderPipelines.WORLD_TARGET_CRYSTAL_DEPTH,
                 depthMode
         );
         if (crystalMesh == null) return;

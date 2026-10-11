@@ -16,7 +16,7 @@ import combatant.client.render.engine.depth.EntityDepthLayer;
 import combatant.client.mixininterface.IMsaaTexture;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.core.RenderFrameContext;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.PostProcessRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessExecutionContext;
 import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.engine.postprocess.PostProcessPass;
@@ -135,7 +135,7 @@ public final class WorldOrbitGravity implements PostProcessPass {
         execution.rhi().drawFullscreen(
                 FullscreenDrawCommand.builder("Combatant orbit gravity")
                         .colorAttachment(execution.destination())
-                        .pipeline(CombatantRenderPipelines.POSTPROCESS_ORBIT_GRAVITY)
+                        .pipeline(PostProcessRenderPipelines.POSTPROCESS_ORBIT_GRAVITY)
                         .uniform("JumpShockwave", JumpShockwaveUniforms.get())
                         .sampler("u_Texture", execution.source(), linear)
                         .sampler("u_Depth", depth, nearest)

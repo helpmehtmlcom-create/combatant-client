@@ -81,13 +81,13 @@ public final class TargetHud extends DraggableHudElement {
     private long lastGlassHitTime;
     private int lastGlassHitEntityId = Integer.MIN_VALUE;
     private float glassHitLevel;
-    private static final float GLASS_HIT_DECAY_SECONDS = 0.72f;
+    private static final float GLASS_HIT_DECAY_SECONDS = 0.13f;
     private static final UiGlassOpticsSpec TARGET_GLASS = UiGlassOpticsSpec.LIQUID
-            .withRefraction(0.012f).withBevel(0.19f, 0.050f)
+            .withRefraction(0.022f).withBevel(0.22f, 0.130f)
             .withFluid(0.37f, 0.54f).withCleanReveal(0.72f)
-            .withInteractionStrength(0.92f).withChromaticAberration(0.42f)
-            .withMagnification(1.018f).withShapeDeformation(false)
-            .withChromaticMotion(UiGlassOpticsSpec.ChromaticMotion.STATIC);
+            .withInteractionStrength(0.92f).withChromaticAberration(0.75f)
+            .withMagnification(1.018f).withShapeDeformation(false).withSpecular(false)
+            .withChromaticMotion(UiGlassOpticsSpec.ChromaticMotion.IMPACT_EDGE);
 
     private static final float BASE_WIDTH = 112.0f;
     private static final float BASE_HEIGHT = 40.0f;
@@ -1543,10 +1543,15 @@ public final class TargetHud extends DraggableHudElement {
 
     private void drawGlass(float x, float y, float width, float height, float radius, float alphaFactor) {
         float glassScale = PANEL_RADIUS <= 0.0f ? 1.0f : radius / PANEL_RADIUS;
-        UiGlassOpticsSpec optics = glassHitLevel > 0.0f
-                ? TARGET_GLASS.withRefraction(TARGET_GLASS.refraction() * (1.0f + glassHitLevel))
-                        .withBevel(TARGET_GLASS.bevelWidth() * (1.0f + glassHitLevel),
-                                TARGET_GLASS.bevelDepth())
+        float hit = AnimationUtility.clamp01(glassHitLevel);
+        if (hit > 0.0f) {
+            mainGlassFluid.opticalActivity(hit);
+        }
+        UiGlassOpticsSpec optics = hit > 0.0f
+                ? TARGET_GLASS
+                        .withRefraction(AnimationUtility.lerp(TARGET_GLASS.refraction(), 0.080f, hit))
+                        .withBevel(AnimationUtility.lerp(TARGET_GLASS.bevelWidth(), 0.306f, hit),
+                                AnimationUtility.lerp(TARGET_GLASS.bevelDepth(), 0.150f, hit))
                 : TARGET_GLASS;
         HudRenderUtil.drawReactiveGlass(x, y, width, height, radius, glassScale, true,
                 alphaFactor, alphaFactor,

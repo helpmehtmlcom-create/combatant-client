@@ -23,7 +23,7 @@ import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.TextureStorage;
 import combatant.client.render.engine.animation.AnimatedRenderColors;
 import combatant.client.render.engine.color.RenderColor;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.effects.surface.CurrentSurfaceWaveRenderer;
 import combatant.client.render.effects.shockwave.WorldBlastShockwaves;
@@ -460,8 +460,8 @@ public class HitEffect extends Module {
     private void renderHitParticles(Renderer3D renderer, float tickDelta) {
         boolean useDepth = depthTest.get();
         RenderPipeline pipeline = useDepth
-                ? CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_LIQUID_IGNORE
-                : CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE;
+                ? WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE_LIQUID_IGNORE
+                : WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE;
         Renderer3D.DepthMode depthMode = useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.NONE;
         Quaternionf camRot = RenderState.cameraRotation;
 

@@ -22,7 +22,7 @@ import combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest;
 import combatant.client.render.engine.text.backend.TextPlacementMode;
 import org.lwjgl.system.MemoryUtil;
 import combatant.client.render.engine.color.RenderColor;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.UiRenderPipelines;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import combatant.client.render.helpers.ScissorFunction;
 
@@ -31,8 +31,8 @@ import java.nio.ByteBuffer;
 public class CustomTextRenderer implements TextRenderer {
     public static final RenderColor SHADOW_COLOR = new RenderColor(60, 60, 60, 180);
     public final FontFace fontFace;
-    private final MeshBuilder mesh = new MeshBuilder(CombatantRenderPipelines.UI_TEXT);
-    private final MeshBuilder liquidGlassMesh = new MeshBuilder(CombatantRenderPipelines.UI_TEXT_MSDF_GLASS_FAST);
+    private final MeshBuilder mesh = new MeshBuilder(UiRenderPipelines.UI_TEXT);
+    private final MeshBuilder liquidGlassMesh = new MeshBuilder(UiRenderPipelines.UI_TEXT_MSDF_GLASS_FAST);
     private GlyphFont[] fonts;
     private GlyphFont font;
     private int fontIndex;
@@ -328,7 +328,7 @@ public class CustomTextRenderer implements TextRenderer {
                     "Combatant UI Liquid Glass Text",
                     font,
                     liquidGlassMesh,
-                    pipelineOverride != null ? pipelineOverride : CombatantRenderPipelines.UI_TEXT_MSDF_GLASS_FAST,
+                    pipelineOverride != null ? pipelineOverride : UiRenderPipelines.UI_TEXT_MSDF_GLASS_FAST,
                     TextPlacementMode.UI,
                     boundsX,
                     boundsY,
@@ -502,8 +502,8 @@ public class CustomTextRenderer implements TextRenderer {
                         font,
                         mesh,
                         fastUiText
-                                ? (font.isMsdf() ? CombatantRenderPipelines.UI_TEXT_MSDF_FAST : CombatantRenderPipelines.UI_TEXT_FAST)
-                                : (font.isMsdf() ? CombatantRenderPipelines.UI_TEXT_MSDF : CombatantRenderPipelines.UI_TEXT),
+                                ? (font.isMsdf() ? UiRenderPipelines.UI_TEXT_MSDF_FAST : UiRenderPipelines.UI_TEXT_FAST)
+                                : (font.isMsdf() ? UiRenderPipelines.UI_TEXT_MSDF : UiRenderPipelines.UI_TEXT),
                         TextPlacementMode.UI
                 );
             }

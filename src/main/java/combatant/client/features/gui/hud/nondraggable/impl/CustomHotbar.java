@@ -39,7 +39,7 @@ public final class CustomHotbar extends AbstractHudElement {
     private static final float RADIUS = 6.0f;
     private static final UiGlassOpticsSpec HOTBAR_GLASS = UiGlassOpticsSpec.LIQUID
             .withRefraction(0.008f).withBevel(0.11f, 0.038f)
-            .withInteractionStrength(0f).withChromaticAberration(0.12f)
+            .withInteractionStrength(0f).withChromaticAberration(0f)
             .withCleanReveal(0.76f).withShapeDeformation(false);
     private static final float HOTBAR_SOFTNESS = 0.0f;
     private static final float BLUR_QUALITY = 16.0f;

@@ -7,7 +7,7 @@
 
 package combatant.client.render.effects.surface;
 
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import net.minecraft.core.BlockPos;
@@ -181,8 +181,8 @@ public final class CurrentSurfaceWaveRenderer {
                                     boolean spherical,
                                     float profile) {
         var pipeline = depthTest
-                ? CombatantRenderPipelines.WORLD_SURFACE_SHELL_DEPTH
-                : CombatantRenderPipelines.WORLD_SURFACE_SHELL;
+                ? WorldRenderPipelines.WORLD_SURFACE_SHELL_DEPTH
+                : WorldRenderPipelines.WORLD_SURFACE_SHELL;
         MeshBuilder mesh = renderer.batch(pipeline, depthTest ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.NONE);
         if (mesh == null) return;
 

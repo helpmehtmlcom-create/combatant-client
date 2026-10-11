@@ -10,7 +10,7 @@ package combatant.client.render.effects;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import net.minecraft.client.Minecraft;
 import net.minecraft.util.Mth;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.EffectRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.engine.postprocess.PostProcessExecutionContext;
 import combatant.client.render.engine.postprocess.PostProcessPass;
@@ -67,7 +67,7 @@ public final class SleepOverlayPass implements PostProcessPass {
         FullScreenRenderer.ensureInit();
         FullScreenRenderer.begin("Combatant Fullscreen Pass")
                 .attachment(dst)
-                .pipeline(CombatantRenderPipelines.SLEEP_OVERLAY)
+                .pipeline(EffectRenderPipelines.SLEEP_OVERLAY)
                 .uniform("PostProcess", PostProcessUniforms.get())
                 .sampler("u_Texture", src, PostProcessManager.getSampler())
                 .end();

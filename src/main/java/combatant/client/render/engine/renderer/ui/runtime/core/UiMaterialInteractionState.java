@@ -23,6 +23,7 @@ public final class UiMaterialInteractionState {
     // Event excitation is distinct from hover/press: target hits and player controls
     // can create local optical motion even when the pointer is elsewhere.
     private float eventX = 0.5f, eventY = 0.5f, eventEnergy;
+    private boolean eventMotionEnabled;
 
     public void opticalImpulse(float localX, float localY, float magnitude) {
         if (!Float.isFinite(localX) || !Float.isFinite(localY) || !Float.isFinite(magnitude)) return;
@@ -30,6 +31,15 @@ public final class UiMaterialInteractionState {
         eventX = Math.max(0f, Math.min(1f, localX));
         eventY = Math.max(0f, Math.min(1f, localY));
         eventEnergy = Math.max(eventEnergy, Math.min(1f, magnitude));
+        eventMotionEnabled = true;
+    }
+
+    public void opticalActivity(float magnitude) {
+        if (!Float.isFinite(magnitude) || magnitude <= 0f) return;
+        eventX = 0.5f;
+        eventY = 0.5f;
+        eventEnergy = Math.max(eventEnergy, Math.min(1f, magnitude));
+        eventMotionEnabled = false;
     }
 
     public UiGlassInteraction sample(float pointerX, float pointerY, boolean down,
@@ -123,6 +133,7 @@ public final class UiMaterialInteractionState {
     }
 
     private float eventMotion(boolean horizontal) {
+        if (!eventMotionEnabled) return 0f;
         float axisX = eventX - 0.5f;
         float axisY = eventY - 0.5f;
         float length = (float) Math.hypot(axisX, axisY);

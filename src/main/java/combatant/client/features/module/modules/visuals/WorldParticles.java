@@ -28,7 +28,7 @@ import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.animation.AnimatedRenderColors;
 import combatant.client.render.engine.color.ColorBlendMode;
 import combatant.client.render.engine.color.ColorEffects;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.profiler.RenderCostProfiler;
 import combatant.client.render.engine.profiler.ProfilerPhase;
 import combatant.client.render.engine.renderer.Renderer3D;
@@ -486,8 +486,8 @@ public class WorldParticles extends Module {
 
             boolean bubbleMode = isBubbleMode();
             MeshBuilder spriteMesh = bubbleMode ? null : renderer.batchTextured(
-                    useDepth ? CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_LIQUID_IGNORE
-                            : CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE,
+                    useDepth ? WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE_LIQUID_IGNORE
+                            : WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE,
                     TextureStorage.BLOOM,
                     depthMode
             );
@@ -498,8 +498,8 @@ public class WorldParticles extends Module {
                 try {
                     RenderState.lineWidth = Math.max(0.5f, lineWidth.get().floatValue());
                     lineMesh = renderer.batch(
-                            useDepth ? CombatantRenderPipelines.WORLD_COLORED_LINES_LIQUID_IGNORE
-                                    : CombatantRenderPipelines.WORLD_COLORED_LINES,
+                            useDepth ? WorldRenderPipelines.WORLD_COLORED_LINES_LIQUID_IGNORE
+                                    : WorldRenderPipelines.WORLD_COLORED_LINES,
                             depthMode
                     );
                 } finally {
@@ -510,8 +510,8 @@ public class WorldParticles extends Module {
             Quaternionf camRot = RenderState.cameraRotation;
             MeshBuilder bubbleShellMesh = bubbleMode
                     ? renderer.batch(
-                            useDepth ? CombatantRenderPipelines.WORLD_BUBBLE_SURFACE_DEPTH
-                                    : CombatantRenderPipelines.WORLD_BUBBLE_SURFACE,
+                            useDepth ? WorldRenderPipelines.WORLD_BUBBLE_SURFACE_DEPTH
+                                    : WorldRenderPipelines.WORLD_BUBBLE_SURFACE,
                             depthMode
                     )
                     : null;
@@ -778,8 +778,8 @@ public class WorldParticles extends Module {
                                             Identifier texture) {
         return renderer.batch(
                 useDepth
-                        ? CombatantRenderPipelines.WORLD_TEXTURED_TINT_ADDITIVE_LIQUID_IGNORE
-                        : CombatantRenderPipelines.WORLD_TEXTURED_TINT_ADDITIVE,
+                        ? WorldRenderPipelines.WORLD_TEXTURED_TINT_ADDITIVE_LIQUID_IGNORE
+                        : WorldRenderPipelines.WORLD_TEXTURED_TINT_ADDITIVE,
                 depthMode,
                 Renderer3D.BatchBindings.none()
                         .withSampler("u_Texture", texture)

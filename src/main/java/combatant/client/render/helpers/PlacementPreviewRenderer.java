@@ -7,7 +7,7 @@
 
 package combatant.client.render.helpers;
 
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import net.minecraft.client.Minecraft;
@@ -179,7 +179,7 @@ public final class PlacementPreviewRenderer {
                 for (BakedQuad quad : part.getQuads(side)) {
                     Identifier atlas = quad.materialInfo().sprite().atlasLocation();
                     MeshBuilder mesh = byAtlas.computeIfAbsent(atlas,
-                            id -> renderer.batchTextured(CombatantRenderPipelines.WORLD_TEXTURED_DEPTH, id, Renderer3D.DepthMode.MAIN));
+                            id -> renderer.batchTextured(WorldRenderPipelines.WORLD_TEXTURED_DEPTH, id, Renderer3D.DepthMode.MAIN));
                     if (mesh == null) continue;
                     mesh.ensureQuadCapacity();
                     int quadColor = tint;
@@ -208,7 +208,7 @@ public final class PlacementPreviewRenderer {
 
     private static void renderHoneycomb(Renderer3D renderer, BlockPos pos, double time, int argb) {
         double fade = Math.pow(Math.max(0.0, 1.0 - time), 1.6);
-        MeshBuilder mesh = renderer.batch(CombatantRenderPipelines.WORLD_COLORED_LINES, Renderer3D.DepthMode.MAIN);
+        MeshBuilder mesh = renderer.batch(WorldRenderPipelines.WORLD_COLORED_LINES, Renderer3D.DepthMode.MAIN);
         if (mesh == null) return;
         final int columns = 4;
         final double radius = 0.138;

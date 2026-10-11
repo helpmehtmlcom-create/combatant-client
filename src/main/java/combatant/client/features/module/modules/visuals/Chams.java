@@ -41,7 +41,7 @@ import combatant.client.features.module.Modules;
 import combatant.client.mixins.accessors.GameRendererAccessor;
 import combatant.client.mixins.iris.IrisHandRendererAccessor;
 import combatant.client.render.engine.animation.AnimatedRenderColors;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.EffectRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.engine.postprocess.PostProcessPass;
 import combatant.client.render.engine.postprocess.PostProcessExecutionContext;
@@ -922,7 +922,7 @@ public class Chams extends Module {
             try (TracyGpuProfiler.Scope ignoredGpu = TracyGpuProfiler.beginZone("3d:chams:hands_glass")) {
                 FullScreenRenderer.begin("Combatant Hand Glass")
                         .attachment(dst)
-                        .pipeline(CombatantRenderPipelines.HAND_GLASS)
+                        .pipeline(EffectRenderPipelines.HAND_GLASS)
                         .uniform("HandGlass", HandGlassUniforms.get())
                         .sampler("u_Src", src, PostProcessManager.getSampler())
                         .sampler("u_Mask", maskView, getHandMaskSampler())
@@ -968,12 +968,12 @@ public class Chams extends Module {
                         try (TracyGpuProfiler.Scope ignoredOccupancy = TracyGpuProfiler.beginZone("3d:chams:metallic_occupancy")) {
                             FullScreenRenderer.begin("Combatant Hand Metallic Occupancy")
                                     .attachment(metallicOccupancyRaw)
-                                    .pipeline(CombatantRenderPipelines.HAND_MASK_OCCUPANCY)
+                                    .pipeline(EffectRenderPipelines.HAND_MASK_OCCUPANCY)
                                     .sampler("u_Mask", maskView, getHandMaskSampler())
                                     .end();
                             FullScreenRenderer.begin("Combatant Hand Metallic Occupancy Dilate")
                                     .attachment(metallicOccupancyDilated)
-                                    .pipeline(CombatantRenderPipelines.HAND_MASK_OCCUPANCY_DILATE)
+                                    .pipeline(EffectRenderPipelines.HAND_MASK_OCCUPANCY_DILATE)
                                     .uniform("HandMetallic", HandMetallicUniforms.get())
                                     .sampler("u_Mask", metallicOccupancyRaw.getColorTextureView(), getHandMaskSampler())
                                     .end();
@@ -984,7 +984,7 @@ public class Chams extends Module {
                 try (TracyGpuProfiler.Scope ignoredMaterial = TracyGpuProfiler.beginZone("3d:chams:metallic_material")) {
                     FullScreenRenderer.begin("Combatant Hand Metallic")
                             .attachment(dst)
-                            .pipeline(CombatantRenderPipelines.HAND_METALLIC)
+                            .pipeline(EffectRenderPipelines.HAND_METALLIC)
                             .uniform("HandMetallic", HandMetallicUniforms.get())
                             .sampler("u_Src", src, PostProcessManager.getSampler())
                             .sampler("u_Mask", maskView, getHandMaskSampler())
@@ -1016,7 +1016,7 @@ public class Chams extends Module {
             try (TracyGpuProfiler.Scope ignoredGpu = TracyGpuProfiler.beginZone("3d:chams:hands_rift")) {
                 FullScreenRenderer.begin("Combatant Hand Rift")
                         .attachment(dst)
-                        .pipeline(CombatantRenderPipelines.HAND_RIFT)
+                        .pipeline(EffectRenderPipelines.HAND_RIFT)
                         .uniform("HandRift", HandRiftUniforms.get())
                         .sampler("u_Src", src, PostProcessManager.getSampler())
                         .sampler("u_Mask", maskView, getHandMaskSampler())
@@ -1047,7 +1047,7 @@ public class Chams extends Module {
             try (TracyGpuProfiler.Scope ignoredGpu = TracyGpuProfiler.beginZone("3d:chams:hands_smoke")) {
                 FullScreenRenderer.begin("Combatant Hand Smoke")
                         .attachment(dst)
-                        .pipeline(CombatantRenderPipelines.HAND_SMOKE)
+                        .pipeline(EffectRenderPipelines.HAND_SMOKE)
                         .uniform("HandSmoke", HandSmokeUniforms.get())
                         .sampler("u_Src", src, PostProcessManager.getSampler())
                         .sampler("u_Mask", maskView, getHandMaskSampler())
@@ -1181,7 +1181,7 @@ public class Chams extends Module {
         try (TracyGpuProfiler.Scope ignoredGpu = TracyGpuProfiler.beginZone("3d:chams:ghost_history")) {
             FullScreenRenderer.begin("Combatant Hand Ghost History")
                     .attachment(nextHistoryView)
-                    .pipeline(CombatantRenderPipelines.HAND_GHOSTING_HISTORY)
+                    .pipeline(EffectRenderPipelines.HAND_GHOSTING_HISTORY)
                     .uniform("HandGhosting", HandGhostingUniforms.get())
                     .sampler("u_History", historyView, PostProcessManager.getSampler())
                     .sampler("u_Mask", maskView, PostProcessManager.getSampler())
@@ -1191,7 +1191,7 @@ public class Chams extends Module {
         try (TracyGpuProfiler.Scope ignoredGpu = TracyGpuProfiler.beginZone("3d:chams:ghost_composite")) {
             FullScreenRenderer.begin("Combatant Hand Ghost Composite")
                     .attachment(dst)
-                    .pipeline(CombatantRenderPipelines.HAND_GHOSTING)
+                    .pipeline(EffectRenderPipelines.HAND_GHOSTING)
                     .uniform("HandGhosting", HandGhostingUniforms.get())
                     .sampler("u_Src", src, PostProcessManager.getSampler())
                     .sampler("u_History", nextHistoryView, PostProcessManager.getSampler())

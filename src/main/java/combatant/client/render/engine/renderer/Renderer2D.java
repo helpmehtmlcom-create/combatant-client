@@ -21,7 +21,7 @@ import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.core.ViewportContext;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.UiRenderPipelines;
 import combatant.client.render.engine.renderer.ui.BlurSource;
 import combatant.client.render.engine.renderer.ui.DrawBatch;
 import combatant.client.render.engine.renderer.ui.ItemBatchRenderer;
@@ -137,7 +137,7 @@ public final class Renderer2D {
 
     public Renderer2D(boolean textured) {
         this.textured = textured;
-        this.texturedTriangles = textured ? new MeshBuilder(CombatantRenderPipelines.UI_TEXTURED) : null;
+        this.texturedTriangles = textured ? new MeshBuilder(UiRenderPipelines.UI_TEXTURED) : null;
     }
 
     public static void init() {

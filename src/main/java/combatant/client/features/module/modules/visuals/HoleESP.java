@@ -16,7 +16,7 @@ import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.render.engine.RenderState;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
@@ -409,7 +409,7 @@ public final class HoleESP extends Module {
     }
 
     private static void addVerticalFadeBox(Renderer3D renderer, AABB box, int bottomArgb, int topArgb) {
-        MeshBuilder mesh = renderer.batch(CombatantRenderPipelines.WORLD_COLORED, Renderer3D.DepthMode.MAIN);
+        MeshBuilder mesh = renderer.batch(WorldRenderPipelines.WORLD_COLORED, Renderer3D.DepthMode.MAIN);
         if (mesh == null) {
             return;
         }

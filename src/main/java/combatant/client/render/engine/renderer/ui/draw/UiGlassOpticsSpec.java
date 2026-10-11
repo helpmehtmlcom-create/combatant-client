@@ -186,7 +186,7 @@ public record UiGlassOpticsSpec(Mode mode,
     public enum ChromaticMotion {
         STATIC(0),
         FLOW(1),
-        IMPACT_WAVE(2);
+        IMPACT_EDGE(2);
 
         private final int shaderId;
 

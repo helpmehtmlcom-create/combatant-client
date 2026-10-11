@@ -12,7 +12,7 @@ import combatant.client.features.theme.Theme;
 import combatant.client.features.theme.Themes;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.animation.AnimationUtility;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.PostProcessRenderPipelines;
 import combatant.client.render.engine.renderer.FullScreenRenderer;
 import combatant.client.render.engine.renderer.MeshRenderer;
 import combatant.client.render.engine.renderer.Renderer2D;
@@ -99,8 +99,8 @@ public enum MenuBackgroundRenderer {
     public static void renderConfigured(Minecraft mc) {
         if (!RuntimeGate.canRunRender() || mc == null) return;
         switch (configuredMode()) {
-            case AURORA -> renderShader(mc, CombatantRenderPipelines.MAIN_MENU_AURORA_BACKGROUND);
-            case WAVES -> renderShader(mc, CombatantRenderPipelines.MAIN_MENU_WAVES_BACKGROUND);
+            case AURORA -> renderShader(mc, PostProcessRenderPipelines.MAIN_MENU_AURORA_BACKGROUND);
+            case WAVES -> renderShader(mc, PostProcessRenderPipelines.MAIN_MENU_WAVES_BACKGROUND);
             case PNG -> renderDefaultTexture(mc);
         }
     }
@@ -271,7 +271,7 @@ public enum MenuBackgroundRenderer {
 
             FullScreenRenderer.begin("Combatant Main Menu PNG Background")
                     .attachment(framebuffer)
-                    .pipeline(CombatantRenderPipelines.MAIN_MENU_TEXTURE_BACKGROUND)
+                    .pipeline(PostProcessRenderPipelines.MAIN_MENU_TEXTURE_BACKGROUND)
                     .uniform("UIBatch", UIBatchUniforms.get())
                     .uniform("MenuTextureTransition", MenuTextureTransitionUniforms.get())
                     .sampler("u_PreviousTexture", previousTexture.getTextureView(), previousTexture.getSampler())

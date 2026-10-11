@@ -22,7 +22,8 @@ import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.TextureStorage;
 import combatant.client.render.engine.animation.AnimatedRenderColors;
 import combatant.client.render.engine.color.RenderColor;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
+import combatant.client.render.engine.pipeline.RigRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.math.RenderMath;
 import combatant.client.render.engine.rig.core.RigDefinition;
@@ -347,8 +348,8 @@ public class Trails extends Module {
         }
 
         RenderPipeline pipeline = useDepth
-                ? CombatantRenderPipelines.RIG_TRAIL_CLASSIC_DEPTH
-                : CombatantRenderPipelines.RIG_TRAIL_CLASSIC;
+                ? RigRenderPipelines.RIG_TRAIL_CLASSIC_DEPTH
+                : RigRenderPipelines.RIG_TRAIL_CLASSIC;
         Renderer3D.DepthMode depthMode = useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.NONE;
         int phaseBase = currentColorPhase(tickDelta);
         float time = (mc.player.tickCount - 1 + tickDelta) * 0.05f * fxSpeed.get();
@@ -367,8 +368,8 @@ public class Trails extends Module {
 
     private void renderClassicFireflyTail(Renderer3D renderer, float tickDelta, boolean useDepth) {
         RenderPipeline pipeline = useDepth
-                ? CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH
-                : CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE;
+                ? WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH
+                : WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE;
         Renderer3D.DepthMode depthMode = useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.NONE;
         MeshBuilder mesh = renderer.batchTextured(pipeline, TextureStorage.FIRE_FLY, depthMode);
         if (mesh == null) return;
@@ -743,8 +744,8 @@ public class Trails extends Module {
     private void renderExtraParticles(Renderer3D renderer, float tickDelta) {
         boolean useDepth = depthTest.get();
         RenderPipeline pipeline = useDepth
-                ? CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_LIQUID_IGNORE
-                : CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE;
+                ? WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE_LIQUID_IGNORE
+                : WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE;
         Renderer3D.DepthMode depthMode = useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.NONE;
         Quaternionf camRot = RenderState.cameraRotation;
 

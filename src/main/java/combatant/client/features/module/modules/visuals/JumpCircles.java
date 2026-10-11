@@ -32,7 +32,7 @@ import combatant.client.render.engine.TextureStorage;
 import combatant.client.render.engine.animation.AnimatedRenderColors;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.math.ColorMath;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import combatant.client.render.effects.shockwave.WorldJumpShockwaves;
@@ -223,8 +223,8 @@ public class JumpCircles extends Module {
 
         boolean useDepth = depthTest.get();
         RenderPipeline pipeline = useDepth
-                ? CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_LIQUID_IGNORE
-                : CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE;
+                ? WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE_LIQUID_IGNORE
+                : WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE;
         Renderer3D.DepthMode depthMode = useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.NONE;
         MeshBuilder mesh = renderer.batchTextured(pipeline, resolveTexture(), depthMode);
         if (mesh == null) return;

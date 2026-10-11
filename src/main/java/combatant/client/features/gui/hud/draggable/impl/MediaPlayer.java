@@ -80,10 +80,10 @@ public final class MediaPlayer extends DraggableHudElement {
 
     private final UiMaterialInteractionState glassFluid = new UiMaterialInteractionState();
     private static final UiGlassOpticsSpec MEDIA_GLASS = UiGlassOpticsSpec.LIQUID
-            .withRefraction(0.008f).withBevel(0.17f, 0.036f)
+            .withRefraction(0.022f).withBevel(0.22f, 0.130f)
             .withFluid(0.68f, 0.78f).withCleanReveal(0.76f)
-            .withInteractionStrength(0.52f).withChromaticAberration(0.38f)
-            .withMagnification(1.012f).withShapeDeformation(false)
+            .withInteractionStrength(0.52f).withChromaticAberration(0.75f)
+            .withMagnification(1.012f).withShapeDeformation(false).withSpecular(false)
             .withChromaticMotion(UiGlassOpticsSpec.ChromaticMotion.FLOW);
     private static final UiGlassOpticsSpec MEDIA_TIME_GLASS = MEDIA_GLASS
             .withRefraction(0.006f).withBevel(0.24f, 0.030f)
@@ -163,22 +163,18 @@ public final class MediaPlayer extends DraggableHudElement {
         String track = snapshot.owner() + "\u0000" + snapshot.title() + "\u0000" + snapshot.artist();
         long position = snapshot.predictedPositionSeconds();
         if (playing) {
-            double phase = Util.getMillis() * 0.00034;
-            float flowX = 0.5f + (float) Math.sin(phase) * 0.24f;
-            float flowY = 0.5f + (float) Math.cos(phase * 0.73 + 0.8) * 0.18f;
-            glassFluid.opticalImpulse(flowX, flowY, 0.34f);
-            timeLensFluid.opticalImpulse(0.5f + (flowX - 0.5f) * 0.45f,
-                    0.5f + (flowY - 0.5f) * 0.45f, 0.18f);
+            glassFluid.opticalActivity(0.34f);
+            timeLensFluid.opticalActivity(0.18f);
         }
         if (transportInitialized) {
             if (!track.equals(lastTransportTrack)) {
-                glassFluid.opticalImpulse(0.46f, 0.46f, 0.95f);
+                glassFluid.opticalActivity(0.95f);
                 playLensFluid.opticalImpulse(0.5f, 0.5f, 0.75f);
             } else if (playing != lastTransportPlaying) {
-                glassFluid.opticalImpulse(0.54f, 0.53f, playing ? 0.82f : 0.52f);
+                glassFluid.opticalActivity(playing ? 0.82f : 0.52f);
                 playLensFluid.opticalImpulse(0.5f, 0.5f, 0.78f);
             } else if (Math.abs(position - lastTransportPosition) > 3) {
-                glassFluid.opticalImpulse(0.72f, 0.48f, 0.55f);
+                glassFluid.opticalActivity(0.55f);
             }
         }
         transportInitialized = true;

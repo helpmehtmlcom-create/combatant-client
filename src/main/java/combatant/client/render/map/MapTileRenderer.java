@@ -8,7 +8,7 @@
 package combatant.client.render.map;
 
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.UiRenderPipelines;
 import combatant.client.render.engine.renderer.ui.UiDirectTexturedRenderer;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import combatant.client.render.helpers.ClipFunction;
@@ -24,8 +24,8 @@ public final class MapTileRenderer implements AutoCloseable {
     private final MapTileAtlas atlas;
     private final MapTileResidencyCache residency;
     private final MapTileUploadQueue uploads;
-    private final MeshBuilder litMesh = new MeshBuilder(CombatantRenderPipelines.UI_MAP_TILE_LIGHT);
-    private final MeshBuilder opaqueMesh = new MeshBuilder(CombatantRenderPipelines.UI_MAP_TILE_OPAQUE);
+    private final MeshBuilder litMesh = new MeshBuilder(UiRenderPipelines.UI_MAP_TILE_LIGHT);
+    private final MeshBuilder opaqueMesh = new MeshBuilder(UiRenderPipelines.UI_MAP_TILE_OPAQUE);
 
     public MapTileRenderer(int tileResolution,
                            int atlasPages,
@@ -129,8 +129,8 @@ public final class MapTileRenderer implements AutoCloseable {
     private void renderEncoded(MapViewport viewport, MapTileDrawBatch batch, MapTileAtlas.PageView page) {
         boolean lit = batch.material() == MapTileMaterial.LIGHT_IN_ALPHA;
         var pipeline = lit
-                ? CombatantRenderPipelines.UI_MAP_TILE_LIGHT
-                : CombatantRenderPipelines.UI_MAP_TILE_OPAQUE;
+                ? UiRenderPipelines.UI_MAP_TILE_LIGHT
+                : UiRenderPipelines.UI_MAP_TILE_OPAQUE;
         MeshBuilder mesh = lit ? litMesh : opaqueMesh;
         mesh.beginScreen();
         for (MapTileDrawBatch.Entry entry : batch.entries()) {

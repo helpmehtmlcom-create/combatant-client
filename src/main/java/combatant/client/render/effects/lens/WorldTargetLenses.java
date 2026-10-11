@@ -16,7 +16,7 @@ import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.core.RenderFrameContext;
 import combatant.client.render.engine.depth.EntityDepthLayer;
 import combatant.client.mixininterface.IMsaaTexture;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.PostProcessRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessExecutionContext;
 import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.engine.postprocess.PostProcessPass;
@@ -204,7 +204,7 @@ public final class WorldTargetLenses implements PostProcessPass {
         execution.rhi().drawFullscreen(
                 FullscreenDrawCommand.builder("Combatant target lenses")
                         .colorAttachment(execution.destination())
-                        .pipeline(CombatantRenderPipelines.POSTPROCESS_TARGET_LENS)
+                        .pipeline(PostProcessRenderPipelines.POSTPROCESS_TARGET_LENS)
                         .uniform("TargetLens", TargetLensUniforms.get())
                         .sampler("u_Texture", execution.source(), linear)
                         .sampler("u_Depth", depthUsable ? depth : execution.source(), nearest)

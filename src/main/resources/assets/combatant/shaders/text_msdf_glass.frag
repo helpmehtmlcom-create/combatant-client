@@ -39,6 +39,12 @@ vec2 safeNormalize(vec2 v, vec2 fallback) {
     return len2 > 1e-7 ? v * inversesqrt(len2) : fallback;
 }
 
+float glyphCoverage(vec2 atlasUv, float screenPxRange) {
+    vec3 atlas = texture(u_Texture, atlasUv).rgb;
+    float signedPx = screenPxRange * (median(atlas.r, atlas.g, atlas.b) - 0.5);
+    return smoothstep(-0.68, 0.58, signedPx);
+}
+
 void main() {
     vec3 atlas = texture(u_Texture, v_TexCoord).rgb;
     float sd = median(atlas.r, atlas.g, atlas.b);
@@ -49,11 +55,9 @@ void main() {
     float screenPxRange = max(0.5 * dot(unitRange, screenTexSize), 1.0);
     float signedPx = screenPxRange * (sd - 0.5);
     float glyphAlpha = smoothstep(-0.68, 0.58, signedPx);
-    if (glyphAlpha * v_Color.a <= 0.001) discard;
 
     vec2 normal = safeNormalize(vec2(dFdx(signedPx), dFdy(signedPx)), vec2(0.0, 1.0));
-    float insidePx = max(signedPx, 0.0);
-    float edge = 1.0 - smoothstep(0.0, 3.6, insidePx);
+    float edge = 1.0 - smoothstep(0.0, 3.6, abs(signedPx));
 
     vec2 fbSize = max(uScreen.xy, vec2(1.0));
     vec2 uv = clamp(gl_FragCoord.xy / fbSize, vec2(0.001), vec2(0.999));
@@ -62,6 +66,18 @@ void main() {
     float wave = sin(time * 1.24 + gl_FragCoord.x * 0.026 - gl_FragCoord.y * 0.017);
     float crossWave = sin(time * 0.77 - gl_FragCoord.x * 0.012 - gl_FragCoord.y * 0.023);
     vec2 refractionDirection = safeNormalize(normal + tangent * (wave * 0.52 + crossWave * 0.20), normal);
+    vec2 chromaDirection = safeNormalize(normal + tangent * (wave * 0.28), normal);
+    float spreadPx = 1.55 + 0.30 * sin(time * 0.85 + gl_FragCoord.x * 0.016);
+    vec2 atlasChromaStep = dFdx(v_TexCoord) * (chromaDirection.x * spreadPx)
+            + dFdy(v_TexCoord) * (chromaDirection.y * spreadPx);
+    vec3 glyphCoverageRgb = vec3(
+            glyphCoverage(v_TexCoord - atlasChromaStep, screenPxRange),
+            glyphAlpha,
+            glyphCoverage(v_TexCoord + atlasChromaStep, screenPxRange));
+    glyphCoverageRgb = vec3(1.0) - pow(max(vec3(1.0) - glyphCoverageRgb, vec3(0.0)), vec3(1.16));
+    float compositeAlpha = max(glyphCoverageRgb.r, max(glyphCoverageRgb.g, glyphCoverageRgb.b));
+    if (compositeAlpha * v_Color.a <= 0.001) discard;
+
     float offsetAmount = edge * 2.15 + pow(edge, 10.0) * 3.65;
     vec2 offset = refractionDirection * offsetAmount / fbSize;
     vec2 refractedUv = clamp(uv + offset,
@@ -85,6 +101,8 @@ void main() {
     float reflection = edge * (0.16 + keyLight * 0.25 + fillLight * 0.13);
     glass = mix(glass, tint, clamp(reflection, 0.0, 0.48));
 
-    float denseAlpha = 1.0 - pow(max(1.0 - glyphAlpha, 0.0), 1.16);
-    color = vec4(clamp(glass, 0.0, 1.0), denseAlpha * v_Color.a);
+    vec3 undistortedBackdrop = texture(u_BlurTexture, uv).rgb;
+    vec3 channelCoverage = glyphCoverageRgb / max(compositeAlpha, 0.0001);
+    vec3 resolvedGlass = mix(undistortedBackdrop, glass, channelCoverage);
+    color = vec4(clamp(resolvedGlass, 0.0, 1.0), compositeAlpha * v_Color.a);
 }

@@ -26,7 +26,9 @@ import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 import combatant.client.render.engine.core.RenderPhase;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.UiRenderPipelines;
+import combatant.client.render.engine.pipeline.UiBatchRenderPipelines;
+import combatant.client.render.engine.pipeline.PostProcessRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.engine.profiler.ProfilerPhase;
 import combatant.client.render.engine.profiler.TracyGpuProfiler;
@@ -150,7 +152,7 @@ public final class OrderedUiBatcher {
 
         while (textPool.size() < PREWARM_TEXT_BATCHES) {
             TextBatch batch = new TextBatch();
-            batch.mesh = new MeshBuilder(CombatantRenderPipelines.UI_TEXT_MSDF_FAST);
+            batch.mesh = new MeshBuilder(UiRenderPipelines.UI_TEXT_MSDF_FAST);
             batch.mesh.reserve(512, 768);
             textPool.add(batch);
             warmed++;
@@ -663,7 +665,7 @@ public final class OrderedUiBatcher {
                                     textBatch.label,
                                     textBatch.font,
                                     textBatch.mesh,
-                                    CombatantRenderPipelines.UI_TEXT_MSDF_FAST,
+                                    UiRenderPipelines.UI_TEXT_MSDF_FAST,
                                     textBatch.placement,
                                     textBatch.clipSnapshot
                             );
@@ -940,7 +942,7 @@ public final class OrderedUiBatcher {
 
                         MeshRenderer.begin()
                                 .attachments(mainColorView, null)
-                                .pipeline(CombatantRenderPipelines.UI_TEXTURED)
+                                .pipeline(UiRenderPipelines.UI_TEXTURED)
                                 .mesh(fxCompositeMesh)
                                 .sampler("u_Texture", fxView, fxSampler)
                                 .end();
@@ -1318,9 +1320,9 @@ public final class OrderedUiBatcher {
     private static RenderPipeline pipelineForGlass(DrawBatch batch, boolean uiUnderlay) {
         if (!uiUnderlay) return pipelineFor(batch);
         if (batch.clipSnapshot.usesAnalyticPipeline()) {
-            return CombatantRenderPipelines.UI_LIQUID_GLASS_BATCH_UI_UNDERLAY_ANALYTIC_CLIP;
+            return UiBatchRenderPipelines.UI_LIQUID_GLASS_BATCH_UI_UNDERLAY_ANALYTIC_CLIP;
         }
-        return CombatantRenderPipelines.UI_LIQUID_GLASS_BATCH_UI_UNDERLAY;
+        return UiBatchRenderPipelines.UI_LIQUID_GLASS_BATCH_UI_UNDERLAY;
     }
 
     private static Renderer2D.BlurQuality rendererQuality(UiBlurQuality quality) {
@@ -1723,7 +1725,7 @@ public final class OrderedUiBatcher {
             MeshRenderer.begin()
                     .attachments(target)
                     .clearColor(0x00000000)
-                    .pipeline(CombatantRenderPipelines.UI_BLUR)
+                    .pipeline(PostProcessRenderPipelines.UI_BLUR)
                     .mesh(compositeMesh)
                     .uniform(UI_BLUR_BLOCK.name(), blurUniform)
                     .sampler("u_Texture", sourceView, sourceSampler)

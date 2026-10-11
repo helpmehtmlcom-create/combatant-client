@@ -37,6 +37,8 @@ import combatant.client.render.engine.RenderState;
 import combatant.client.mixins.accessors.GameRendererAccessor;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.UiRenderPipelines;
+import combatant.client.render.engine.pipeline.UiBatchRenderPipelines;
 import combatant.client.render.engine.profiler.RenderCostProfiler;
 import combatant.client.render.engine.renderer.MeshRenderer;
 import combatant.client.render.engine.text.TextRenderer;
@@ -409,10 +411,10 @@ public final class ItemBatchRenderer {
     }
 
     public static void init() {
-        itemBlitMesh = createItemOverlayMesh(CombatantRenderPipelines.UI_TEXTURED_PREMULTIPLIED_ALPHA, 1);
-        itemDurabilityGlowMesh = createItemOverlayMesh(CombatantRenderPipelines.UI_ROUNDED_GLOW_BATCH, 1);
-        itemDurabilityRoundedMesh = createItemOverlayMesh(CombatantRenderPipelines.UI_ROUNDED_BATCH, 3);
-        itemCooldownMesh = createItemOverlayMesh(CombatantRenderPipelines.UI_COLORED, 1);
+        itemBlitMesh = createItemOverlayMesh(UiRenderPipelines.UI_TEXTURED_PREMULTIPLIED_ALPHA, 1);
+        itemDurabilityGlowMesh = createItemOverlayMesh(UiBatchRenderPipelines.UI_ROUNDED_GLOW_BATCH, 1);
+        itemDurabilityRoundedMesh = createItemOverlayMesh(UiBatchRenderPipelines.UI_ROUNDED_BATCH, 3);
+        itemCooldownMesh = createItemOverlayMesh(UiRenderPipelines.UI_COLORED, 1);
     }
 
     private static MeshBuilder createItemOverlayMesh(RenderPipeline pipeline, int quadsPerItem) {
@@ -433,28 +435,28 @@ public final class ItemBatchRenderer {
 
     private static MeshBuilder beginItemBlitMesh(int commandCount) {
         if (itemBlitMesh == null) {
-            itemBlitMesh = createItemOverlayMesh(CombatantRenderPipelines.UI_TEXTURED_PREMULTIPLIED_ALPHA, 1);
+            itemBlitMesh = createItemOverlayMesh(UiRenderPipelines.UI_TEXTURED_PREMULTIPLIED_ALPHA, 1);
         }
         return beginItemOverlayMesh(itemBlitMesh, commandCount, 1);
     }
 
     private static MeshBuilder beginItemDurabilityGlowMesh(int commandCount) {
         if (itemDurabilityGlowMesh == null) {
-            itemDurabilityGlowMesh = createItemOverlayMesh(CombatantRenderPipelines.UI_ROUNDED_GLOW_BATCH, 1);
+            itemDurabilityGlowMesh = createItemOverlayMesh(UiBatchRenderPipelines.UI_ROUNDED_GLOW_BATCH, 1);
         }
         return beginItemOverlayMesh(itemDurabilityGlowMesh, commandCount, 1);
     }
 
     private static MeshBuilder beginItemDurabilityRoundedMesh(int commandCount) {
         if (itemDurabilityRoundedMesh == null) {
-            itemDurabilityRoundedMesh = createItemOverlayMesh(CombatantRenderPipelines.UI_ROUNDED_BATCH, 3);
+            itemDurabilityRoundedMesh = createItemOverlayMesh(UiBatchRenderPipelines.UI_ROUNDED_BATCH, 3);
         }
         return beginItemOverlayMesh(itemDurabilityRoundedMesh, commandCount, 3);
     }
 
     private static MeshBuilder beginItemCooldownMesh(int commandCount) {
         if (itemCooldownMesh == null) {
-            itemCooldownMesh = createItemOverlayMesh(CombatantRenderPipelines.UI_COLORED, 1);
+            itemCooldownMesh = createItemOverlayMesh(UiRenderPipelines.UI_COLORED, 1);
         }
         return beginItemOverlayMesh(itemCooldownMesh, commandCount, 1);
     }
@@ -613,15 +615,15 @@ public final class ItemBatchRenderer {
                 }
             }
 
-            if (submitItemOverlayMesh(mc, CombatantRenderPipelines.UI_ROUNDED_GLOW_BATCH,
+            if (submitItemOverlayMesh(mc, UiBatchRenderPipelines.UI_ROUNDED_GLOW_BATCH,
                     durabilityGlowMesh, true, uiUnderlayView)) {
                 drawCalls++;
             }
-            if (submitItemOverlayMesh(mc, CombatantRenderPipelines.UI_ROUNDED_BATCH,
+            if (submitItemOverlayMesh(mc, UiBatchRenderPipelines.UI_ROUNDED_BATCH,
                     durabilityRoundedMesh, true, uiUnderlayView)) {
                 drawCalls++;
             }
-            if (submitItemOverlayMesh(mc, CombatantRenderPipelines.UI_COLORED,
+            if (submitItemOverlayMesh(mc, UiRenderPipelines.UI_COLORED,
                     cooldownMesh, false, uiUnderlayView)) {
                 drawCalls++;
             }
@@ -981,7 +983,7 @@ public final class ItemBatchRenderer {
         }
 
         UiClipSnapshot clip = clipSnapshot != null ? clipSnapshot : UiClipSnapshot.NONE;
-        RenderPipeline pipeline = CombatantRenderPipelines.UI_TEXTURED_PREMULTIPLIED_ALPHA;
+        RenderPipeline pipeline = UiRenderPipelines.UI_TEXTURED_PREMULTIPLIED_ALPHA;
         if (clip.usesAnalyticPipeline()) {
             pipeline = CombatantRenderPipelines.analyticClipTexturedPipeline(pipeline);
         }

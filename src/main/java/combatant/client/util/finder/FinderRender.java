@@ -13,7 +13,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3fc;
 import combatant.client.render.engine.RenderState;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.uniform.MeshBuilder;
 
@@ -39,11 +39,11 @@ public final class FinderRender {
     }
 
     public static FinderRender begin(Renderer3D renderer, float lineWidth) {
-        MeshBuilder tris = renderer.batch(CombatantRenderPipelines.WORLD_COLORED, Renderer3D.DepthMode.NONE);
+        MeshBuilder tris = renderer.batch(WorldRenderPipelines.WORLD_COLORED, Renderer3D.DepthMode.NONE);
         float previous = RenderState.lineWidth;
         try {
             RenderState.lineWidth = Math.max(0.5f, lineWidth);
-            MeshBuilder lines = renderer.batch(CombatantRenderPipelines.WORLD_COLORED_LINES, Renderer3D.DepthMode.NONE);
+            MeshBuilder lines = renderer.batch(WorldRenderPipelines.WORLD_COLORED_LINES, Renderer3D.DepthMode.NONE);
             return new FinderRender(tris, lines);
         } finally {
             RenderState.lineWidth = previous;

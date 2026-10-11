@@ -55,7 +55,7 @@ import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.TextureStorage;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.color.RenderColor;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.text.TextRenderer;
@@ -1233,8 +1233,8 @@ public class Predictions extends Module {
 
         boolean walls = glowWallsValue.get();
         RenderPipeline pipeline = walls
-                ? CombatantRenderPipelines.WORLD_COLORED_LINES_LIQUID_BLEND
-                : CombatantRenderPipelines.WORLD_COLORED_LINES_LIQUID_IGNORE;
+                ? WorldRenderPipelines.WORLD_COLORED_LINES_LIQUID_BLEND
+                : WorldRenderPipelines.WORLD_COLORED_LINES_LIQUID_IGNORE;
         Renderer3D.DepthMode depthMode = walls ? Renderer3D.DepthMode.MAIN : Renderer3D.DepthMode.PRE_DEPTH;
 
         float prevWidth = RenderState.lineWidth;
@@ -1313,8 +1313,8 @@ public class Predictions extends Module {
 
         boolean walls = glowWallsValue.get();
         RenderPipeline pipeline = walls
-                ? CombatantRenderPipelines.WORLD_AIM_DECAL
-                : CombatantRenderPipelines.WORLD_AIM_DECAL_DEPTH;
+                ? WorldRenderPipelines.WORLD_AIM_DECAL
+                : WorldRenderPipelines.WORLD_AIM_DECAL_DEPTH;
         Renderer3D.DepthMode depthMode = walls ? Renderer3D.DepthMode.NONE : Renderer3D.DepthMode.PRE_DEPTH;
         MeshBuilder mesh = renderer.batch(pipeline, depthMode);
         if (mesh == null) return;
@@ -1351,8 +1351,8 @@ public class Predictions extends Module {
     private void renderGlowTrajectories(Renderer3D renderer, List<TrajectoryResult> results, int baseColor) {
         boolean walls = glowWallsValue.get();
         RenderPipeline pipeline = walls
-                ? CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE
-                : CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_LIQUID_IGNORE;
+                ? WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE
+                : WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE_LIQUID_IGNORE;
         Renderer3D.DepthMode depthMode = walls ? Renderer3D.DepthMode.MAIN : Renderer3D.DepthMode.PRE_DEPTH;
         MeshBuilder mesh = renderer.batchTextured(pipeline, TextureStorage.BLOOM, depthMode);
         if (mesh == null) return;
@@ -1398,8 +1398,8 @@ public class Predictions extends Module {
     private void renderLineTrajectories(Renderer3D renderer, List<TrajectoryResult> results, int baseColor) {
         boolean walls = glowWallsValue.get();
         RenderPipeline pipeline = walls
-                ? CombatantRenderPipelines.WORLD_COLORED_LINES_LIQUID_BLEND
-                : CombatantRenderPipelines.WORLD_COLORED_LINES_LIQUID_IGNORE;
+                ? WorldRenderPipelines.WORLD_COLORED_LINES_LIQUID_BLEND
+                : WorldRenderPipelines.WORLD_COLORED_LINES_LIQUID_IGNORE;
         Renderer3D.DepthMode depthMode = walls ? Renderer3D.DepthMode.MAIN : Renderer3D.DepthMode.PRE_DEPTH;
 
         float prevWidth = RenderState.lineWidth;
@@ -1434,8 +1434,8 @@ public class Predictions extends Module {
     private void renderImpactEffects(Renderer3D renderer, List<TrajectoryResult> results, int baseColor, float tickDelta) {
         boolean walls = glowWallsValue.get();
         RenderPipeline decalPipeline = walls
-                ? CombatantRenderPipelines.WORLD_DECAL_SDF
-                : CombatantRenderPipelines.WORLD_DECAL_SDF_DEPTH;
+                ? WorldRenderPipelines.WORLD_DECAL_SDF
+                : WorldRenderPipelines.WORLD_DECAL_SDF_DEPTH;
         Renderer3D.DepthMode decalDepthMode = walls ? Renderer3D.DepthMode.NONE : Renderer3D.DepthMode.PRE_DEPTH;
         float prevWidth = RenderState.lineWidth;
         RenderState.lineWidth = ENTITY_HIT_OUTLINE_WIDTH;

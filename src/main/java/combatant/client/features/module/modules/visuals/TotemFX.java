@@ -17,7 +17,7 @@ import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.render.engine.RenderState;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import combatant.client.render.effects.CurrentTransientEffectBackend;
@@ -197,8 +197,8 @@ public class TotemFX extends Module {
         if (live == 0) return;
 
         var pipeline = useDepth
-                ? CombatantRenderPipelines.WORLD_TOTEM_BURST_DEPTH
-                : CombatantRenderPipelines.WORLD_TOTEM_BURST;
+                ? WorldRenderPipelines.WORLD_TOTEM_BURST_DEPTH
+                : WorldRenderPipelines.WORLD_TOTEM_BURST;
         MeshBuilder mesh = renderer.batch(
                 pipeline,
                 useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.NONE

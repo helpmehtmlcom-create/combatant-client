@@ -58,7 +58,8 @@ import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.animation.AnimatedRenderColors;
 import combatant.client.render.engine.core.CombatantWorldMatrices;
 import combatant.client.render.engine.core.CombatantRenderSystem;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
+import combatant.client.render.engine.pipeline.EffectRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.engine.postprocess.PostProcessExecutionContext;
 import combatant.client.render.engine.postprocess.PostProcessPass;
@@ -623,8 +624,8 @@ public class ESP extends Module {
         MeshBuilder tris;
         try {
             RenderState.lineWidth = box3dLineWidth.get();
-            lines = renderer.batch(CombatantRenderPipelines.WORLD_COLORED_LINES, Renderer3D.DepthMode.NONE);
-            tris = renderer.batch(CombatantRenderPipelines.WORLD_COLORED, Renderer3D.DepthMode.NONE);
+            lines = renderer.batch(WorldRenderPipelines.WORLD_COLORED_LINES, Renderer3D.DepthMode.NONE);
+            tris = renderer.batch(WorldRenderPipelines.WORLD_COLORED, Renderer3D.DepthMode.NONE);
         } finally {
             RenderState.lineWidth = previousLineWidth;
         }
@@ -890,7 +891,7 @@ public class ESP extends Module {
         ShaderEspBlurUniforms.update(width, height, Math.min(radius, 63.0f), 1.0f, 0.0f);
         FullScreenRenderer.begin("Combatant Fullscreen Pass")
                 .attachment(shaderBlurBuffer.getColorTextureView())
-                .pipeline(CombatantRenderPipelines.SHADER_ESP_SHADOW)
+                .pipeline(EffectRenderPipelines.SHADER_ESP_SHADOW)
                 .uniform("ShaderEspBlur", ShaderEspBlurUniforms.get())
                 .sampler("u_Texture", inputView, getShaderEspSampler())
                 .sampler("u_Mask", inputView, getShaderEspSampler())
@@ -900,7 +901,7 @@ public class ESP extends Module {
         ShaderEspBlurUniforms.update(width, height, Math.min(radius, 63.0f), 0.0f, 1.0f);
         FullScreenRenderer.begin("Combatant Fullscreen Pass")
                 .attachment(output.getColorTextureView())
-                .pipeline(CombatantRenderPipelines.SHADER_ESP_SHADOW)
+                .pipeline(EffectRenderPipelines.SHADER_ESP_SHADOW)
                 .uniform("ShaderEspBlur", ShaderEspBlurUniforms.get())
                 .sampler("u_Texture", shaderBlurBuffer.getColorTextureView(), getShaderEspSampler())
                 .sampler("u_Mask", inputView, getShaderEspSampler())
@@ -930,7 +931,7 @@ public class ESP extends Module {
         );
         FullScreenRenderer.begin("Combatant Fullscreen Pass")
                 .attachment(dst)
-                .pipeline(CombatantRenderPipelines.SHADER_ESP_GRADIENT)
+                .pipeline(EffectRenderPipelines.SHADER_ESP_GRADIENT)
                 .uniform("ShaderEspGradient", ShaderEspGradientUniforms.get())
                 .sampler("u_Texture", input, getShaderEspSampler())
                 .end();
@@ -960,7 +961,7 @@ public class ESP extends Module {
         );
         FullScreenRenderer.begin("Combatant Fullscreen Pass")
                 .attachment(dst)
-                .pipeline(CombatantRenderPipelines.SHADER_ESP_SMOKE)
+                .pipeline(EffectRenderPipelines.SHADER_ESP_SMOKE)
                 .uniform("ShaderEspSmoke", ShaderEspSmokeUniforms.get())
                 .sampler("u_Texture", input.getColorTextureView(), getShaderEspSampler())
                 .end();

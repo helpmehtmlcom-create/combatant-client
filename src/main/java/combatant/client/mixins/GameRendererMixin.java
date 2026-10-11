@@ -70,7 +70,7 @@ import combatant.client.render.engine.depth.WorldSceneDepth;
 import combatant.client.render.engine.debug.UiClipDebugScene;
 import combatant.client.render.engine.msaa.MsaaWorldTarget;
 import combatant.client.config.MainConfig;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.engine.postprocess.MenuBackgroundRenderer;
 import combatant.client.render.engine.profiler.ProfilerPhase;
@@ -293,8 +293,8 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
 
                 if (combatant$renderer == null) {
                     combatant$renderer = new Renderer3D(
-                            CombatantRenderPipelines.WORLD_COLORED_LINES,
-                            CombatantRenderPipelines.WORLD_COLORED
+                            WorldRenderPipelines.WORLD_COLORED_LINES,
+                            WorldRenderPipelines.WORLD_COLORED
                     );
                 }
 
@@ -317,15 +317,15 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
 
             if (combatant$renderer == null) {
                 combatant$renderer = new Renderer3D(
-                        CombatantRenderPipelines.WORLD_COLORED_LINES,
-                        CombatantRenderPipelines.WORLD_COLORED
+                        WorldRenderPipelines.WORLD_COLORED_LINES,
+                        WorldRenderPipelines.WORLD_COLORED
                 );
             }
 
             if (combatant$depthRenderer == null) {
                 combatant$depthRenderer = new Renderer3D(
-                        CombatantRenderPipelines.WORLD_COLORED_LINES_DEPTH,
-                        CombatantRenderPipelines.WORLD_COLORED_DEPTH
+                        WorldRenderPipelines.WORLD_COLORED_LINES_DEPTH,
+                        WorldRenderPipelines.WORLD_COLORED_DEPTH
                 );
             }
 
@@ -687,15 +687,15 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
 
             if (combatant$postRenderer == null) {
                 combatant$postRenderer = new Renderer3D(
-                        CombatantRenderPipelines.WORLD_COLORED_LINES,
-                        CombatantRenderPipelines.WORLD_COLORED
+                        WorldRenderPipelines.WORLD_COLORED_LINES,
+                        WorldRenderPipelines.WORLD_COLORED
                 );
             }
 
             if (combatant$postDepthRenderer == null) {
                 combatant$postDepthRenderer = new Renderer3D(
-                        CombatantRenderPipelines.WORLD_COLORED_LINES_DEPTH,
-                        CombatantRenderPipelines.WORLD_COLORED_DEPTH
+                        WorldRenderPipelines.WORLD_COLORED_LINES_DEPTH,
+                        WorldRenderPipelines.WORLD_COLORED_DEPTH
                 );
             }
 
