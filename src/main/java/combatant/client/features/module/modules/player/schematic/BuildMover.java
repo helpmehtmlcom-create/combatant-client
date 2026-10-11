@@ -85,6 +85,9 @@ final class BuildMover {
 
         Set<String> helperIds();
 
+        /** More of this block in the inventory than the unfinished build still needs: pillaring with it is free. */
+        boolean canSpare(Block block);
+
         /** Ends the builder's silent hotbar lease so a tool switch is what the server sees. */
         void releaseHotbar();
     }
@@ -502,7 +505,7 @@ final class BuildMover {
         mode = Mode.IDLE;
     }
 
-    /** Hotbar slot of the support block: a listed helper (softest first), else any plain full block. */
+    /** Hotbar slot of the support block: a listed helper (softest first), else any plain full block the build can spare. */
     int helperSlot(LocalPlayer player) {
         Inventory inventory = player.getInventory();
         Set<String> ids = host.helperIds();
@@ -510,7 +513,8 @@ final class BuildMover {
         float bestHardness = Float.MAX_VALUE;
         for (int i = 0; i < 9; i++) {
             ItemStack stack = inventory.getItem(i);
-            if (!(stack.getItem() instanceof BlockItem blockItem) || !ids.contains(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString())) continue;
+            if (!(stack.getItem() instanceof BlockItem blockItem) || !ids.contains(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString())
+                    || !host.canSpare(blockItem.getBlock())) continue;
             float hardness = blockItem.getBlock().defaultDestroyTime();
             if (isPlainFullBlock(blockItem.getBlock()) && hardness < bestHardness) {
                 bestHardness = hardness;
@@ -520,7 +524,8 @@ final class BuildMover {
         if (best >= 0) return best;
         for (int i = 0; i < 9; i++) {
             ItemStack stack = inventory.getItem(i);
-            if (stack.getItem() instanceof BlockItem blockItem && isPlainFullBlock(blockItem.getBlock())) return i;
+            if (stack.getItem() instanceof BlockItem blockItem && isPlainFullBlock(blockItem.getBlock())
+                    && host.canSpare(blockItem.getBlock())) return i;
         }
         return -1;
     }

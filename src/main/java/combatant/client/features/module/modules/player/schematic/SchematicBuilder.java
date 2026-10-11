@@ -44,6 +44,7 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
@@ -103,6 +104,9 @@ public final class SchematicBuilder extends Module {
         DONE
     }
 
+    private static final Set<String> DEFAULT_HELPER_BLOCKS =
+            new LinkedHashSet<>(List.of("minecraft:cobblestone", "minecraft:dirt"));
+
     private final NumberValue<Float> range = num("range", 4.0f, 2.0f, 4.5f);
     private final NumberValue<Integer> delay = num("delay", 3, 0, 20);
     private final NumberValue<Integer> blocksPerTick = num("blocks_per_tick", 1, 1, 4);
@@ -124,7 +128,7 @@ public final class SchematicBuilder extends Module {
     private final NumberValue<Integer> stuckTimeout = visibleWhen(num("stuck_timeout", 100, 40, 400), autoWalk::get);
     private final BooleanValue autoJumpPillar = visibleWhen(bool("auto_jump_pillar", true), autoWalk::get);
     private final ItemIdSetValue helperBlocks =
-            visibleWhen(itemList("helper_blocks"), () -> autoWalk.get() && autoJumpPillar.get());
+            visibleWhen(itemList("helper_blocks", DEFAULT_HELPER_BLOCKS), () -> autoWalk.get() && autoJumpPillar.get());
     private final BooleanValue removeHelpers =
             visibleWhen(bool("remove_helpers", true), () -> autoWalk.get() && autoJumpPillar.get());
     private final BooleanValue donutSmpSafe = bool("donutsmp_safe", true);
@@ -144,9 +148,6 @@ public final class SchematicBuilder extends Module {
     private int[] footprint;
     private boolean aimedThisTick;
 
-    {
-        helperBlocks.set(new LinkedHashSet<>(List.of("minecraft:cobblestone", "minecraft:dirt")));
-    }
 
     private Pending pending;
     private int pendingAge;
@@ -724,6 +725,20 @@ public final class SchematicBuilder extends Module {
         @Override
         public Set<String> helperIds() {
             return helperBlocks.get();
+        }
+
+        @Override
+        public boolean canSpare(Block block) {
+            Item item = block.asItem();
+            SchematicDiff diff = state.currentDiff();
+            if (diff == null || mc.player == null) return true;
+            int needed = 0;
+            for (int cell = 0, count = diff.cellCount(); cell < count; cell++) {
+                if (diff.status(cell) == SchematicDiff.CORRECT) continue;
+                BlockState expected = diff.expectedState(cell);
+                if (SchematicMaterials.itemFor(expected) == item) needed += SchematicMaterials.itemsPerCell(expected);
+            }
+            return SchematicMaterials.countInInventory(mc.player, item) > needed;
         }
 
         @Override
