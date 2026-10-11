@@ -12,18 +12,27 @@ import java.util.function.LongPredicate;
 /**
  * Picks the feet cell to walk to so that as many of the wanted cells as possible can be clicked from it.
  *
- * <p>The spot that reaches the most targets wins in principle, but a spot reaching nearly as many for a much
- * shorter walk is preferred: every spot covering at least {@link #COVERAGE_SHARE} of the best coverage
- * competes on walk cost alone. The previous goal is kept while it still covers about as much as the new best,
- * so two near-equal spots do not make the player walk back and forth.</p>
+ * <p>Spots compete on placement rate: targets reached divided by the ticks spent walking there and placing them,
+ * so a nearby spot reaching most of the layer beats a far one reaching slightly more. The previous goal is kept
+ * while its rate stays close to the best one, so two near-equal spots do not make the player walk back and forth.</p>
  */
 public final class StandingSpotChooser {
 
-    /** Spots covering at least this share of the best coverage compete on walk cost. */
+    /** Pillar columns covering at least this share of the best coverage compete on cost. */
     static final double COVERAGE_SHARE = 0.75;
-    /** The previous goal survives while it covers no fewer than the best minus this share of it. */
-    static final double HYSTERESIS_SHARE = 0.25;
-    static final int HYSTERESIS_MIN = 2;
+    /** Ticks to walk one unit of route cost (walking speed is about 0.22 blocks a tick). */
+    static final double WALK_TICKS = 4.6;
+    /** Ticks a placement takes once the player stands (turn, click, delay). */
+    static final double PLACE_TICKS = 3.0;
+    /** Fixed price of a stop: planning, settling, the first turn. */
+    static final double STOP_TICKS = 25.0;
+    /** The previous goal survives while its rate is at least this share of the best one. */
+    static final double HYSTERESIS_SHARE = 0.85;
+    /**
+     * Rate bonus for standing level with the lowest target, i.e. on top of the layer below it. Stepping down off
+     * a solid build to finish its edge from the ground strands the player under the next layer.
+     */
+    static final double HIGH_GROUND = 1.5;
 
     public enum Mode {
         PLACE,
@@ -65,24 +74,34 @@ public final class StandingSpotChooser {
         }
         if (bestCoverage == 0) return null;
 
-        int needed = Math.max(1, (int) Math.ceil(bestCoverage * COVERAGE_SHARE));
+        // Blocks placed per tick spent getting there and placing them: a spot two steps away that reaches half
+        // the layer beats one ten steps away that reaches a few more.
+        int lowestTarget = bounds[1] + (int) Math.ceil(reach) + 1 + (int) Math.ceil(ReachModel.EYE_HEIGHT);
+        double bestRate = 0.0;
         for (int i = 0; i < cells; i++) {
-            if (coverage[i] < needed) continue;
+            if (coverage[i] == 0) continue;
             long cell = flood.cells().get(i);
             double cost = flood.cost(cell);
-            if (best == null || cost < best.cost() || cost == best.cost() && coverage[i] > best.coverage()) {
+            double rate = rate(coverage[i], cost) * (WalkTerrain.unpackY(cell) >= lowestTarget ? HIGH_GROUND : 1.0);
+            if (best == null || rate > bestRate) {
+                bestRate = rate;
                 best = new Spot(WalkTerrain.unpackX(cell), WalkTerrain.unpackY(cell), WalkTerrain.unpackZ(cell),
                         coverage[i], cost);
             }
         }
         if (current != null && flood.reached(current.key()) && (reject == null || !reject.test(current.key()))) {
             int kept = coverage(terrain, current.x(), current.y(), current.z(), targets, targetCount, mode, reach);
-            int slack = Math.max(HYSTERESIS_MIN, (int) Math.ceil(bestCoverage * HYSTERESIS_SHARE));
-            if (kept > 0 && kept + slack >= bestCoverage) {
-                return new Spot(current.x(), current.y(), current.z(), kept, flood.cost(current.key()));
+            double cost = flood.cost(current.key());
+            double keptRate = rate(kept, cost) * (current.y() >= lowestTarget ? HIGH_GROUND : 1.0);
+            if (kept > 0 && keptRate >= bestRate * HYSTERESIS_SHARE) {
+                return new Spot(current.x(), current.y(), current.z(), kept, cost);
             }
         }
         return best;
+    }
+
+    static double rate(int coverage, double cost) {
+        return coverage / (cost * WALK_TICKS + coverage * PLACE_TICKS + STOP_TICKS);
     }
 
     /** How many targets a player standing centred in {@code (fx, fy, fz)} can click. */

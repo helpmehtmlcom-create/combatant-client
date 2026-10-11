@@ -108,6 +108,10 @@ final class BuildMover {
     private static final double PLAN_MARGIN = 0.35;
     private static final double ARRIVE_DISTANCE = 0.3;
     private static final double PASS_DISTANCE = 0.45;
+    /** How many route cells ahead the walker may aim at directly when the straight line there is walkable. */
+    private static final int LOOKAHEAD = 5;
+    /** Half the player's width plus a margin: the straight line is checked this far to both sides. */
+    private static final double BODY_HALF_WIDTH = 0.32;
     private static final double CENTER_DISTANCE = 0.2;
     private static final int STALL_REPLAN_TICKS = 20;
     private static final int REPLAN_WAIT_TICKS = 40;
@@ -126,6 +130,7 @@ final class BuildMover {
     private Mode mode = Mode.IDLE;
     private List<Long> route;
     private int routeIndex;
+    private int steerIndex;
     private long goal;
     private boolean hasGoal;
     private StandingSpotChooser.Spot spot;
@@ -355,6 +360,7 @@ final class BuildMover {
         route = path;
         // The first cell is where the player already stands.
         routeIndex = path.size() > 1 ? 1 : 0;
+        steerIndex = routeIndex;
         goal = target;
         hasGoal = true;
         mode = next;
@@ -371,20 +377,23 @@ final class BuildMover {
     private boolean followRoute(LocalPlayer player) {
         if (route == null) return false;
         Vec3 pos = player.position();
-        while (routeIndex < route.size()) {
-            long cell = route.get(routeIndex);
-            boolean last = routeIndex == route.size() - 1;
+        // Passing any of the next few cells counts: cutting a corner skips the cells before it.
+        for (int k = Math.min(route.size() - 1, routeIndex + LOOKAHEAD); k >= routeIndex; k--) {
+            long cell = route.get(k);
+            boolean last = k == route.size() - 1;
             double distance = horizontalDistance(pos, cell);
             boolean level = Math.abs(pos.y - WalkTerrain.unpackY(cell)) < 0.6;
-            if (!level || distance > (last ? ARRIVE_DISTANCE : PASS_DISTANCE) || last && !player.onGround()) break;
-            routeIndex++;
+            if (!level || distance > (last ? ARRIVE_DISTANCE : PASS_DISTANCE) || last && !player.onGround()) continue;
+            routeIndex = k + 1;
             bestWaypointDistance = Double.MAX_VALUE;
             noProgressTicks = 0;
+            break;
         }
         if (routeIndex >= route.size()) {
             route = null;
             return false;
         }
+        steerIndex = furthestStraight(pos);
         if (blockedAhead()) {
             replan(player);
             return route != null;
@@ -402,6 +411,39 @@ final class BuildMover {
             return false;
         }
         return route != null;
+    }
+
+    /**
+     * The furthest route cell within {@link #LOOKAHEAD} on the current level that a straight walk reaches over
+     * walkable cells only, body width included: aiming there instead of at every cell centre smooths the path.
+     */
+    private int furthestStraight(Vec3 pos) {
+        int y = WalkTerrain.unpackY(route.get(routeIndex));
+        if (Math.abs(pos.y - y) > 0.01) return routeIndex;
+        WalkTerrain terrain = terrain();
+        int best = routeIndex;
+        for (int k = routeIndex + 1; k < Math.min(route.size(), routeIndex + LOOKAHEAD + 1); k++) {
+            long cell = route.get(k);
+            if (WalkTerrain.unpackY(cell) != y || !straightWalkable(terrain, pos, cell, y)) break;
+            best = k;
+        }
+        return best;
+    }
+
+    private static boolean straightWalkable(WalkTerrain terrain, Vec3 pos, long cell, int y) {
+        double tx = WalkTerrain.unpackX(cell) + 0.5, tz = WalkTerrain.unpackZ(cell) + 0.5;
+        double dx = tx - pos.x, dz = tz - pos.z;
+        double length = Math.hypot(dx, dz);
+        if (length < 1.0e-3) return true;
+        double px = -dz / length * BODY_HALF_WIDTH, pz = dx / length * BODY_HALF_WIDTH;
+        int steps = (int) Math.ceil(length / 0.2);
+        for (int i = 0; i <= steps; i++) {
+            double t = (double) i / steps;
+            double x = pos.x + dx * t, z = pos.z + dz * t;
+            if (!terrain.standable((int) Math.floor(x + px), y, (int) Math.floor(z + pz))
+                    || !terrain.standable((int) Math.floor(x - px), y, (int) Math.floor(z - pz))) return false;
+        }
+        return true;
     }
 
     private boolean blockedAhead() {
@@ -426,6 +468,7 @@ final class BuildMover {
         }
         route = path;
         routeIndex = path.size() > 1 ? 1 : 0;
+        steerIndex = routeIndex;
         bestWaypointDistance = Double.MAX_VALUE;
         routeCells += path.size() - 1;
     }
@@ -702,12 +745,14 @@ final class BuildMover {
         boolean descending = false;
         if (!holdStill && route != null && routeIndex < route.size()) {
             long cell = route.get(routeIndex);
+            long aim = route.get(Math.max(routeIndex, Math.min(steerIndex, route.size() - 1)));
             Vec3 pos = player.position();
-            double dx = WalkTerrain.unpackX(cell) + 0.5 - pos.x;
-            double dz = WalkTerrain.unpackZ(cell) + 0.5 - pos.z;
-            keys = Steering.keysToward(RotationManager.INSTANCE.getMovementRotation().yaw(), dx, dz);
+            double dx = WalkTerrain.unpackX(aim) + 0.5 - pos.x;
+            double dz = WalkTerrain.unpackZ(aim) + 0.5 - pos.z;
+            keys = keysToward(RotationManager.INSTANCE.getMovementRotation().yaw(), dx, dz);
             int y = WalkTerrain.unpackY(cell);
-            jump = y > pos.y + 0.5 && player.onGround() && Math.hypot(dx, dz) < 1.4;
+            double toCell = Math.hypot(WalkTerrain.unpackX(cell) + 0.5 - pos.x, WalkTerrain.unpackZ(cell) + 0.5 - pos.z);
+            jump = y > pos.y + 0.5 && player.onGround() && toCell < 1.4;
             descending = y < pos.y - 0.5;
         } else if (mode == Mode.PILLARING && pillar != null && route == null && player.onGround()) {
             // Centre on the column before the jump; the pillar is one block wide.
@@ -728,6 +773,25 @@ final class BuildMover {
         event.setSprint(false);
         event.setSneak(!descending && player.onGround() && atEdge(player));
         jumpThisTick = false;
+    }
+
+    /**
+     * Movement keys toward an offset. Far away only a clear sideways offset adds a strafe key; close to the target
+     * a small one does too, so the body lines up with a one-wide gap instead of rubbing along its corner.
+     */
+    static int keysToward(float yawDegrees, double dx, double dz) {
+        double length = Math.hypot(dx, dz);
+        if (length < 1.0e-6) return 0;
+        double yaw = Math.toRadians(yawDegrees);
+        double forward = -Math.sin(yaw) * dx + Math.cos(yaw) * dz;
+        double left = Math.cos(yaw) * dx + Math.sin(yaw) * dz;
+        double threshold = Math.min(0.1 + 0.15 * length, 0.38 * length);
+        int keys = 0;
+        if (forward > threshold) keys |= Steering.FORWARD;
+        else if (forward < -threshold) keys |= Steering.BACKWARD;
+        if (left > threshold) keys |= Steering.LEFT;
+        else if (left < -threshold) keys |= Steering.RIGHT;
+        return keys;
     }
 
     /** Any corner of the feet hangs over a cell with nothing to stand on: a step further would fall. */

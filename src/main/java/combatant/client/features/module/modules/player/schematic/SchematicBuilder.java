@@ -77,6 +77,8 @@ public final class SchematicBuilder extends Module {
     private static final int PLAN_TIMEOUT_TICKS = 20;
     private static final int RETRY_AFTER_TICKS = 40;
     private static final int RECENT_PLACE_TICKS = 10;
+    /** A stair or slab clicked before the rotation settled lands in the wrong half; this is how long to wait for it. */
+    private static final int EXACT_WAIT_TICKS = 4;
     private static final int MAX_PLAN_ATTEMPTS = 12;
     private static final int MAX_CANDIDATES = 96;
     private static final int SHORTFALL_INTERVAL = 20;
@@ -108,13 +110,13 @@ public final class SchematicBuilder extends Module {
             new LinkedHashSet<>(List.of("minecraft:cobblestone", "minecraft:dirt"));
 
     private final NumberValue<Float> range = num("range", 4.0f, 2.0f, 4.5f);
-    private final NumberValue<Integer> delay = num("delay", 3, 0, 20);
+    private final NumberValue<Integer> delay = num("delay", 1, 0, 20);
     private final NumberValue<Integer> blocksPerTick = num("blocks_per_tick", 1, 1, 4);
     private final BooleanValue rotate = bool("rotate", true);
     private final NumberValue<Float> rotationSpeedMin =
-            visibleWhen(num("rotation_speed_min", 30.0f, 5.0f, 180.0f), rotate::get);
+            visibleWhen(num("rotation_speed_min", 60.0f, 5.0f, 180.0f), rotate::get);
     private final NumberValue<Float> rotationSpeedMax =
-            visibleWhen(num("rotation_speed_max", 60.0f, 5.0f, 180.0f), rotate::get);
+            visibleWhen(num("rotation_speed_max", 120.0f, 5.0f, 180.0f), rotate::get);
     private final BooleanValue silentSwap = bool("silent_swap", true);
     private final BooleanValue restock = bool("restock", true);
     private final NumberValue<Integer> restockSlot = visibleWhen(num("restock_slot", 9, 1, 9), restock::get);
@@ -393,11 +395,18 @@ public final class SchematicBuilder extends Module {
             Rotation server = RotationManager.INSTANCE.getServerRotation();
             double reach = effectiveRange() + 0.5;
             hit = BuildPlanner.trace(player, current, reach);
-            if (!BuildPlanner.matches(hit, plan) || !BuildPlanner.matches(BuildPlanner.trace(player, server, reach), plan)) {
+            if (!BuildPlanner.matches(hit, plan)) {
                 rotationWaitTicks++;
                 return false;
             }
             facingRotation = server;
+            // The server picks the block's facing from the rotation it already has; that only has to look at
+            // the face too when the facing matters. A stone block comes out the same whatever the old rotation.
+            if (!BuildPlanner.matches(BuildPlanner.trace(player, server, reach), plan)
+                    && !facingIndependent(player, work, plan, hit, server, current)) {
+                rotationWaitTicks++;
+                return false;
+            }
         } else {
             hit = new BlockHitResult(plan.hit(), plan.face(), plan.support(), false);
             facingRotation = null;
@@ -415,7 +424,7 @@ public final class SchematicBuilder extends Module {
         boolean exact = predicted == work.expected;
         // The ray reaches the planned face before the rotation settles on the planned point; clicking then puts
         // a stair or slab in the wrong half. Wait for the exact click, but not past half the plan timeout.
-        if (!exact && plan.exact() && pendingAge < PLAN_TIMEOUT_TICKS / 2) {
+        if (!exact && plan.exact() && pendingAge < EXACT_WAIT_TICKS) {
             exactWaitTicks++;
             return false;
         }
@@ -437,6 +446,16 @@ public final class SchematicBuilder extends Module {
         retryAfter.put(plan.target().asLong(), ticks + RECENT_PLACE_TICKS);
         cooldown = nextDelay();
         return true;
+    }
+
+    private boolean facingIndependent(LocalPlayer player, Pending work, BuildPlanner.Plan plan, BlockHitResult hit,
+                                      Rotation server, Rotation current) {
+        ItemStack stack = player.getInventory().getItem(work.hotbarSlot);
+        BlockState withServer = BuildPlanner.simulate(player, mc.level, stack, plan.target(), plan.support(),
+                plan.face(), hit.getLocation(), server);
+        BlockState withCurrent = BuildPlanner.simulate(player, mc.level, stack, plan.target(), plan.support(),
+                plan.face(), hit.getLocation(), current);
+        return withServer != null && withServer == withCurrent;
     }
 
     /** A support block under the feet mid-jump: no exactness rules, but it is remembered for clean-up. */
@@ -552,6 +571,8 @@ public final class SchematicBuilder extends Module {
     private int collectCandidates(LocalPlayer player, SchematicDiff diff, int low, int high) {
         missingThisTick = false;
         Vec3 eyes = player.getEyePosition();
+        Rotation facing = RotationManager.INSTANCE.getCurrentRotation();
+        if (facing == null) facing = new Rotation(player.getYRot(), player.getXRot());
         // Cell centres up to half a block diagonal beyond reach can still expose a reachable face.
         double reach = effectiveRange() + 0.87;
         double reachSq = reach * reach;
@@ -576,8 +597,13 @@ public final class SchematicBuilder extends Module {
                     candidateCells[count] = cell;
                     // Lower layers first so blocks can lean on what is below them, then farthest first: a block
                     // can only hide the faces of cells behind it, so placing near cells first walls off the far
-                    // ones (the corners of a ring around the player become unclickable).
-                    candidateDistance[count] = (y - low) * 1000.0 + (reachSq - distSq);
+                    // ones (the corners of a ring around the player become unclickable). Within one block of
+                    // distance the cell closest to the current aim goes first, so the view sweeps instead of
+                    // jumping back and forth.
+                    double distance = Math.sqrt(distSq);
+                    double turn = facing.angleTo(Rotation.lookingAt(Vec3.atCenterOf(scratch), eyes));
+                    candidateDistance[count] = (y - low) * 1000.0 + Math.floor(reach - distance) * 10.0
+                            + Math.min(turn, 180.0) / 18.01;
                     count++;
                 }
             }

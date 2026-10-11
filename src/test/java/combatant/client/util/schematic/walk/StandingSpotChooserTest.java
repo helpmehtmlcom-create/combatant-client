@@ -71,19 +71,21 @@ class StandingSpotChooserTest {
     }
 
     @Test
-    void prefersTheNearSpotWhenCoverageIsClose() {
+    void picksTheSpotWithTheBestPlacementRate() {
         GridWorld world = new GridWorld();
         long[] targets = row(4, 10, 0, 0);
         WalkPathfinder.Flood flood = WalkPathfinder.flood(world, pack(0, 0, 3), 1, 40.0, 20_000);
         StandingSpotChooser.Spot spot = StandingSpotChooser.choose(world, flood, targets, targets.length,
                 StandingSpotChooser.Mode.PLACE, REACH, null, null);
         assertNotNull(spot);
-        int best = 0;
+        double chosen = StandingSpotChooser.rate(spot.coverage(), spot.cost());
         for (long cell : flood.cells()) {
-            best = Math.max(best, StandingSpotChooser.coverage(world, WalkTerrain.unpackX(cell), WalkTerrain.unpackY(cell),
-                    WalkTerrain.unpackZ(cell), targets, targets.length, StandingSpotChooser.Mode.PLACE, REACH));
+            int coverage = StandingSpotChooser.coverage(world, WalkTerrain.unpackX(cell), WalkTerrain.unpackY(cell),
+                    WalkTerrain.unpackZ(cell), targets, targets.length, StandingSpotChooser.Mode.PLACE, REACH);
+            assertTrue(StandingSpotChooser.rate(coverage, flood.cost(cell)) <= chosen + 1e-12, "better spot " + cell);
         }
-        assertTrue(spot.coverage() >= Math.ceil(best * StandingSpotChooser.COVERAGE_SHARE));
+        // A nearer spot that reaches nearly as much beats walking to the one that reaches everything.
+        assertTrue(spot.cost() < 8.0, "spot " + spot);
     }
 
     @Test
