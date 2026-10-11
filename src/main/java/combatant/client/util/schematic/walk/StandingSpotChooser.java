@@ -34,6 +34,15 @@ public final class StandingSpotChooser {
         BREAK
     }
 
+    /**
+     * Extra condition on a target seen from given eyes: a piston or observer only comes out facing right when the
+     * look from there runs along the right axis, so only spots with that look count for it.
+     */
+    @FunctionalInterface
+    public interface LookFilter {
+        boolean accepts(long target, double eyeX, double eyeY, double eyeZ);
+    }
+
     /** A feet cell, how many targets it reaches and what walking there costs. */
     public record Spot(int x, int y, int z, int coverage, double cost) {
         public long key() {
@@ -54,6 +63,12 @@ public final class StandingSpotChooser {
      */
     public static Spot choose(WalkTerrain terrain, WalkPathfinder.Flood flood, long[] targets, int targetCount,
                               Mode mode, double reach, Spot current, LongPredicate reject) {
+        return choose(terrain, flood, targets, targetCount, mode, reach, current, reject, null);
+    }
+
+    /** As above; {@code look} (may be null) drops targets the spot's look cannot place right. */
+    public static Spot choose(WalkTerrain terrain, WalkPathfinder.Flood flood, long[] targets, int targetCount,
+                              Mode mode, double reach, Spot current, LongPredicate reject, LookFilter look) {
         if (targetCount == 0) return null;
         int[] bounds = bounds(targets, targetCount, reach);
         Spot best = null;
@@ -64,7 +79,7 @@ public final class StandingSpotChooser {
             long cell = flood.cells().get(i);
             int x = WalkTerrain.unpackX(cell), y = WalkTerrain.unpackY(cell), z = WalkTerrain.unpackZ(cell);
             if (!inside(bounds, x, y, z) || reject != null && reject.test(cell)) continue;
-            coverage[i] = coverage(terrain, x, y, z, targets, targetCount, mode, reach);
+            coverage[i] = coverage(terrain, x, y, z, targets, targetCount, mode, reach, look);
             bestCoverage = Math.max(bestCoverage, coverage[i]);
         }
         if (bestCoverage == 0) return null;
@@ -97,7 +112,7 @@ public final class StandingSpotChooser {
         }
         if (current != null && current.y() >= floor && flood.reached(current.key())
                 && (reject == null || !reject.test(current.key()))) {
-            int kept = coverage(terrain, current.x(), current.y(), current.z(), targets, targetCount, mode, reach);
+            int kept = coverage(terrain, current.x(), current.y(), current.z(), targets, targetCount, mode, reach, look);
             double cost = flood.cost(current.key());
             double keptRate = rate(kept, cost);
             if (kept > 0 && keptRate >= bestRate * HYSTERESIS_SHARE) {
@@ -114,6 +129,11 @@ public final class StandingSpotChooser {
     /** How many targets a player standing centred in {@code (fx, fy, fz)} can click. */
     public static int coverage(WalkTerrain terrain, int fx, int fy, int fz, long[] targets, int targetCount,
                                Mode mode, double reach) {
+        return coverage(terrain, fx, fy, fz, targets, targetCount, mode, reach, null);
+    }
+
+    static int coverage(WalkTerrain terrain, int fx, int fy, int fz, long[] targets, int targetCount,
+                        Mode mode, double reach, LookFilter look) {
         double ex = fx + 0.5, ey = ReachModel.eyeY(fy), ez = fz + 0.5;
         double prefilter = (reach + 1.0) * (reach + 1.0);
         int count = 0;
@@ -124,6 +144,7 @@ public final class StandingSpotChooser {
             if (mode == Mode.PLACE && tx == fx && tz == fz && (ty == fy || ty == fy + 1)) continue;
             double dx = tx + 0.5 - ex, dy = ty + 0.5 - ey, dz = tz + 0.5 - ez;
             if (dx * dx + dy * dy + dz * dz > prefilter) continue;
+            if (look != null && !look.accepts(target, ex, ey, ez)) continue;
             boolean ok = mode == Mode.PLACE
                     ? ReachModel.placeable(terrain, ex, ey, ez, tx, ty, tz, reach)
                     : ReachModel.breakable(terrain, ex, ey, ez, tx, ty, tz, reach);

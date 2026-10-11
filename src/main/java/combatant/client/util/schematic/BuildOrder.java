@@ -15,7 +15,8 @@ import java.util.function.IntPredicate;
 
 /**
  * Placement order of the cells of one schematic: a phase per cell (see {@link RedstoneRules}) and at most one
- * cell that has to be in the world first (the block a torch hangs on, the sand's floor, what an observer watches).
+ * cell that has to be in the world first (the block a torch hangs on, the sand's floor, what an observer watches,
+ * the block a sideways hopper feeds, whose face is the only click that gives that facing).
  *
  * <p>Phases fall into bands. Inside the lowest band the order is a preference: the builder still goes layer by
  * layer and only sorts by phase within a layer. The power band and the late band are hard gates over the whole
@@ -63,6 +64,8 @@ public final class BuildOrder {
         if (observed != null) return observed;
         Direction support = RedstoneRules.supportDirection(state);
         if (support != null) return support;
+        Direction feeds = RedstoneRules.feedsInto(state);
+        if (feeds != null) return feeds;
         return RedstoneRules.needsBlockBelow(state) ? Direction.DOWN : null;
     }
 
