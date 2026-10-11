@@ -108,6 +108,17 @@ public record UiBackdropRequest(SceneSource sceneSource,
     }
 
     /**
+     * Stacked optics keep captured-world blur distinct from the already-composited UI.
+     * A current-target snapshot is only taken by the batcher when glass regions overlap.
+     */
+    public static UiBackdropRequest stackedGlass(@Nullable UiRect bounds,
+                                                 UiBlurQuality quality,
+                                                 float offsetPx) {
+        return new UiBackdropRequest(SceneSource.STACKED_LENSES, UiUnderlayMode.NONE,
+                BlurParameters.of(quality, offsetPx), BlurParameters.NONE, 1.0f, 0.0f, bounds);
+    }
+
+    /**
      * Liquid-glass semantics for UI-native surfaces: the already accumulated UI underlay is the
      * optical scene itself. Both the sharp refraction/rim source and the prepared blur therefore
      * come from UI content instead of the pre-HUD world capture.
@@ -160,7 +171,7 @@ public record UiBackdropRequest(SceneSource sceneSource,
     }
 
     public boolean requiresCapturedScene() {
-        return sceneSource == SceneSource.CAPTURED_SCENE;
+        return sceneSource == SceneSource.CAPTURED_SCENE || sceneSource == SceneSource.STACKED_LENSES;
     }
 
     public boolean requiresUiUnderlayCapture() {
@@ -181,6 +192,8 @@ public record UiBackdropRequest(SceneSource sceneSource,
     }
 
     public enum SceneSource {
+        /** Base scene plus the bounded composited snapshot of earlier glass surfaces. */
+        STACKED_LENSES,
         NONE,
         /** Scene/target captured before HUD/UI accumulation. */
         CAPTURED_SCENE,

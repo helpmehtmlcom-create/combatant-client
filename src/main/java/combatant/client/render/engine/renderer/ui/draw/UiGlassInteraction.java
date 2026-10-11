@@ -20,7 +20,8 @@ public record UiGlassInteraction(float x, float y, float dx, float dy,
         dy = clamp(finite(dy, 0f), -0.20f, 0.20f);
         activity = clamp(finite(activity, 0f), 0f, 1f);
         press = clamp(finite(press, 0f), 0f, 1f);
-        open = clamp(finite(open, 0f), 0f, 1f);
+        // Signed lifecycle envelope: positive=reveal, negative=dismiss.
+        open = clamp(finite(open, 0f), -1f, 1f);
     }
 
     private static float finite(float value, float fallback) {

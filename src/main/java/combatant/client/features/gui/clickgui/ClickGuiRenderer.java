@@ -1670,23 +1670,21 @@ public enum ClickGuiRenderer {
         float gw = w + pad * 2f;
         float gh = h + pad * 2f;
         float gr = Math.max(0f, radius + pad);
-        float blurAlpha = AnimationUtility.clamp(alpha * clickGuiGlassBlurScale(), 0.0f, 1.0f);
         float scale = Math.max(0.75f, gr / 10.0f);
+        float glassOpacity = alpha;
 
-        Renderer2D.COLOR.blurRect(gx, gy, gw, gh, gr, clickGuiBlurQuality(), 1.0f, blurAlpha, 0xFFFFFF);
-
-        renderer.liquidGlassRect(
-                gx, gy, gw, gh, gr,
-                15.0f * scale,
-                0xFFFFFFFF,
-                alpha,
-                blurAlpha,
-                -18.0f,
-                1.0f,
-                0.78f,
-                0.52f,
-                0.190f * alpha,
-                0.0f
+        renderer.withLiquidGlassBlurProfile(
+                Renderer2D.BlurQuality.LIQUID_GLASS,
+                1.38f,
+                () -> renderer.liquidGlassRect(
+                        gx, gy, gw, gh, gr,
+                        0xFFFFFFFF,
+                        glassOpacity,
+                        1.0f,
+                        Renderer2D.LiquidGlassPreset.HUD_LARGE,
+                        scale,
+                        0.0f
+                )
         );
     }
 

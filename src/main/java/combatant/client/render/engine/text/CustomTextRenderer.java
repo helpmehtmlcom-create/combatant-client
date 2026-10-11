@@ -296,6 +296,21 @@ public class CustomTextRenderer implements TextRenderer {
                                                  double boundsWidth,
                                                  double boundsHeight,
                                                  RenderPipeline pipelineOverride) {
+        return renderLiquidGlassQuadGradient(text, x, y, gradient, boundsX, boundsY,
+                boundsWidth, boundsHeight, pipelineOverride, null);
+    }
+
+    @Override
+    public double renderLiquidGlassQuadGradient(String text,
+                                                 double x,
+                                                 double y,
+                                                 Font.GlyphQuadGradient gradient,
+                                                 double boundsX,
+                                                 double boundsY,
+                                                 double boundsWidth,
+                                                 double boundsHeight,
+                                                 RenderPipeline pipelineOverride,
+                                                 UiBackdropRequest backdrop) {
         if (text == null || text.isEmpty() || gradient == null) return x;
         boolean wasBuilding = building;
         if (!wasBuilding) begin();
@@ -318,7 +333,8 @@ public class CustomTextRenderer implements TextRenderer {
                     boundsX,
                     boundsY,
                     boundsWidth,
-                    boundsHeight
+                    boundsHeight,
+                    backdrop
             );
             return width;
         } finally {

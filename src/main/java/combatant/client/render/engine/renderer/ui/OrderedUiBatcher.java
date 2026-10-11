@@ -38,6 +38,8 @@ import combatant.client.render.engine.text.backend.TextPlacementMode;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import combatant.client.render.engine.uniform.ShaderUniformBindings;
 import combatant.client.render.engine.uniform.impl.UiGlassFrameUniforms;
+import combatant.client.render.engine.uniform.impl.UiGlassStackUniforms;
+import combatant.client.render.engine.renderer.ui.draw.UiGlassStackRegions;
 import combatant.client.render.engine.uniform.impl.MsdfTextUniforms;
 import combatant.client.render.engine.uniform.impl.UIBatchUniforms;
 import combatant.client.render.engine.uniform.impl.UiClipUniforms;
@@ -52,6 +54,9 @@ import combatant.client.render.engine.renderer.ui.draw.UiRect;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 
 
 /** Records UI drawing operations in submission order. */
@@ -216,7 +221,7 @@ public final class OrderedUiBatcher {
         UiBackdropBlendSpec normalizedBlend = backdropBlend != null
                 ? backdropBlend
                 : UiBackdropBlendSpec.NORMAL;
-        if ((type == UiBatchType.LIQUID_GLASS || type == UiBatchType.LIQUID_GLASS_LIGHT)
+        if (type == UiBatchType.LIQUID_GLASS
                 && normalizedBackdrop.requiresUiUnderlayCapture()) {
             UiBlurResources.requestUiUnderlay(UiDeferredScheduler.layerForCurrentPhase(false));
         }
@@ -443,6 +448,30 @@ public final class OrderedUiBatcher {
                 }
                 return;
             }
+            UiGlassStackRegions drawnGlassRegions = new UiGlassStackRegions();
+            // Only lower lenses that actually precede and intersect an opted-in stacked
+            // lens need a second draw. This avoids an extra fullscreen glass overlay for
+            // a lone MediaPlayer/TargetHUD, even when its Stacked switch is enabled.
+            Set<DrawBatch> overlayContributors = Collections.newSetFromMap(new IdentityHashMap<>());
+            for (int upperIndex = 0; upperIndex < order.size(); upperIndex++) {
+                Object upperEntry = order.get(upperIndex);
+                if (!(upperEntry instanceof DrawBatch upper)
+                        || !isGlassLens(upper)
+                        || upper.backdropRequest.sceneSource() != UiBackdropRequest.SceneSource.STACKED_LENSES)
+                    continue;
+                for (int lowerIndex = 0; lowerIndex < upperIndex; lowerIndex++) {
+                    Object lowerEntry = order.get(lowerIndex);
+                    if (lowerEntry instanceof DrawBatch lower
+                            && isGlassLens(lower)
+                            && UiGlassStackRegions.overlaps(lower.glassBounds, upper.glassBounds)) {
+                        overlayContributors.add(lower);
+                    }
+                }
+            }
+            TextureTarget glassOverlay = !overlayContributors.isEmpty()
+                    ? UiBlurResources.ensureGlassOverlay(mc) : null;
+            GpuTextureView glassOverlayView = glassOverlay != null ? glassOverlay.getColorTextureView() : null;
+            boolean glassOverlayDrawn = false;
             GpuTextureView uiUnderlayView = resolveUiUnderlayView(mc);
             GpuTextureView secondaryReplayView = hudBackdropContribution
                     ? resolveHudBackdropView(mc)
@@ -710,14 +739,22 @@ public final class OrderedUiBatcher {
                     boolean uiUnderlayScene = batch.backdropRequest.usesUiUnderlayAsScene();
                     boolean currentTargetScene =
                             batch.backdropRequest.sceneSource() == UiBackdropRequest.SceneSource.CURRENT_TARGET;
+                    boolean wantsStack =
+                            batch.backdropRequest.sceneSource() == UiBackdropRequest.SceneSource.STACKED_LENSES;
+                    List<UiRect> stackBounds = wantsStack && glassOverlayDrawn
+                            ? drawnGlassRegions.overlapping(batch.glassBounds)
+                            : List.of();
+                    boolean stackActive = glassOverlayView != null && !stackBounds.isEmpty();
                     GpuSampler backdropSampler = PostProcessManager.getSampler();
 
                     // CURRENT_TARGET cannot be sampled while the glass draw writes back into that
                     // same attachment. Snapshot exactly at this ordered boundary, after all earlier
                     // map/UI draws have been submitted, and refract the immutable copy instead.
+                    // CURRENT_TARGET must be captured before blur preparation because it IS the
+                    // blur source. STACKED_LENSES instead blurs the original scene and captures
+                    // its overlay independently after preparing that blur (preserving the cache).
                     GpuTextureView currentTargetView = currentTargetScene
-                            ? UiBlurResources.captureCurrentTarget(mc, mainColorView)
-                            : null;
+                            ? UiBlurResources.captureCurrentTarget(mc, mainColorView) : null;
                     if (currentTargetScene) resetSharedBlur();
 
                     GpuTextureView sourceView = uiUnderlayScene
@@ -749,6 +786,17 @@ public final class OrderedUiBatcher {
                     if (liquidBlurView == null || liquidBlurSampler == null) {
                         liquidBlurView = sourceView;
                         liquidBlurSampler = sourceSampler;
+                    }
+
+                    if (stackActive) {
+                        // Unlike the former mainColorView snapshot, this contains only earlier
+                        // glass material draws on transparent black. Its alpha is the precise
+                        // union of their SDF/analytic clip masks, not a bounding rectangle.
+                        currentTargetView = UiBlurResources.captureCurrentTarget(mc, glassOverlayView, false);
+                        if (currentTargetView == null) {
+                            stackBounds = List.of();
+                            stackActive = false;
+                        }
                     }
 
                     GpuTextureView glassUiUnderlayView = uiUnderlayView;
@@ -787,30 +835,62 @@ public final class OrderedUiBatcher {
                         continue;
                     }
 
-                    MeshRenderer directBuilder = MeshRenderer.begin()
-                            .attachments(mainColorView, null)
-                            .pipeline(pipelineForGlass(batch, useUiUnderlay))
-                            .mesh(batch.mesh);
-
                     if (uiBatch == null) {
                         UIBatchUniforms.update(screenW, screenH);
                         uiBatch = UIBatchUniforms.get();
                     }
-                    directBuilder.uniform("UIBatch", uiBatch);
-                    if (batch.type == UiBatchType.LIQUID_GLASS || batch.type == UiBatchType.LIQUID_GLASS_LIGHT) {
-                        directBuilder.uniform(UI_BLEND_BLOCK.name(), uploadUiBlend(batch.backdropBlend));
-                        directBuilder.uniform(UiGlassFrameUniforms.BLOCK_NAME,
-                                UiGlassFrameUniforms.update(mc, screenW, screenH));
+                    boolean actualGlassLens = isGlassLens(batch);
+                    GpuBufferSlice blendData = actualGlassLens ? uploadUiBlend(batch.backdropBlend) : null;
+                    GpuBufferSlice frameData = actualGlassLens
+                            ? UiGlassFrameUniforms.update(mc, screenW, screenH) : null;
+                    GpuBufferSlice stackData = actualGlassLens
+                            ? UiGlassStackUniforms.update(stackBounds) : null;
+                    GpuBufferSlice backdropData = useUiUnderlay
+                            ? uploadUiBackdrop(batch.backdropRequest.uiMix()) : null;
+                    // Submit main draw and, only for opt-in stacking streams, a glass-only
+                    // transparent draw. Both share the exact same mesh, SDF and clip pipeline.
+                    // No extra blur/copy is performed for non-stacked surfaces.
+                    int targets = overlayContributors.contains(batch)
+                            && glassOverlayView != null && !batch.clipSnapshot.usesMsaaStencil() ? 2 : 1;
+                    for (int targetIndex = 0; targetIndex < targets; ++targetIndex) {
+                        boolean overlayDraw = targetIndex == 1;
+                        MeshRenderer glassBuilder = MeshRenderer.begin()
+                                .attachments(overlayDraw ? glassOverlayView : mainColorView, null)
+                                .pipeline(pipelineForGlass(batch, useUiUnderlay))
+                                .mesh(batch.mesh);
+                        if (overlayDraw && !glassOverlayDrawn) {
+                            glassBuilder.clearColor(0x00000000);
+                        }
+                        glassBuilder.uniform("UIBatch", uiBatch);
+                        if (actualGlassLens) {
+                            glassBuilder.uniform(UI_BLEND_BLOCK.name(), blendData);
+                            glassBuilder.uniform(UiGlassFrameUniforms.BLOCK_NAME, frameData);
+                            glassBuilder.uniform(UiGlassStackUniforms.BLOCK_NAME, stackData);
+                            glassBuilder.sampler("u_StackTexture",
+                                    stackActive ? currentTargetView : sourceView,
+                                    stackActive ? backdropSampler : sourceSampler);
+                        }
+                        bindAnalyticClip(glassBuilder, batch);
+                        glassBuilder.sampler("u_Texture", sourceView, sourceSampler);
+                        glassBuilder.sampler("u_BlurTexture", liquidBlurView, liquidBlurSampler);
+                        if (useUiUnderlay) {
+                            glassBuilder.uniform(UI_BACKDROP_BLOCK.name(), backdropData);
+                            glassBuilder.sampler("u_UiUnderlayTexture",
+                                    glassUiUnderlayView, glassUiUnderlaySampler);
+                        }
+                        glassBuilder.endTo(pendingDraws);
+                        if (overlayDraw) glassOverlayDrawn = true;
                     }
-                    bindAnalyticClip(directBuilder, batch);
-                    directBuilder.sampler("u_Texture", sourceView, sourceSampler);
-                    directBuilder.sampler("u_BlurTexture", liquidBlurView, liquidBlurSampler);
-                    if (useUiUnderlay) {
-                        directBuilder.uniform(UI_BACKDROP_BLOCK.name(), uploadUiBackdrop(batch.backdropRequest.uiMix()));
-                        directBuilder.sampler("u_UiUnderlayTexture",
-                                glassUiUnderlayView, glassUiUnderlaySampler);
+                    // Register only submitted glass. Upper lenses must never see themselves,
+                    // and unrelated generic blur/text/HUD geometry is not a lower lens.
+                    if (batch.type == UiBatchType.LIQUID_GLASS) {
+                        if (overlayContributors.contains(batch) && glassOverlayView != null
+                                && !batch.clipSnapshot.usesMsaaStencil()) {
+                            for (UiRect bound : batch.glassRegions) {
+                                drawnGlassRegions.add(bound);
+                            }
+                        }
                     }
-                    directBuilder.endTo(pendingDraws);
                     continue;
                 }
 
@@ -978,6 +1058,7 @@ public final class OrderedUiBatcher {
                 Renderer2D.BATCH_STATS.noteFailure("mixed item pass: framebuffer color view null");
                 return;
             }
+
             GpuTextureView uiUnderlayView = resolveUiUnderlayView(mc);
             GpuTextureView secondaryReplayView = hudBackdropContribution
                     ? resolveHudBackdropView(mc)
@@ -1230,17 +1311,16 @@ public final class OrderedUiBatcher {
         return batch.type.pipelineFor(batch.clipSnapshot);
     }
 
+    private static boolean isGlassLens(DrawBatch batch) {
+        return batch != null && batch.type == UiBatchType.LIQUID_GLASS;
+    }
+
     private static RenderPipeline pipelineForGlass(DrawBatch batch, boolean uiUnderlay) {
         if (!uiUnderlay) return pipelineFor(batch);
-        boolean light = batch.type == UiBatchType.LIQUID_GLASS_LIGHT;
         if (batch.clipSnapshot.usesAnalyticPipeline()) {
-            return light
-                    ? CombatantRenderPipelines.UI_LIQUID_GLASS_LIGHT_BATCH_UI_UNDERLAY_ANALYTIC_CLIP
-                    : CombatantRenderPipelines.UI_LIQUID_GLASS_BATCH_UI_UNDERLAY_ANALYTIC_CLIP;
+            return CombatantRenderPipelines.UI_LIQUID_GLASS_BATCH_UI_UNDERLAY_ANALYTIC_CLIP;
         }
-        return light
-                ? CombatantRenderPipelines.UI_LIQUID_GLASS_LIGHT_BATCH_UI_UNDERLAY
-                : CombatantRenderPipelines.UI_LIQUID_GLASS_BATCH_UI_UNDERLAY;
+        return CombatantRenderPipelines.UI_LIQUID_GLASS_BATCH_UI_UNDERLAY;
     }
 
     private static Renderer2D.BlurQuality rendererQuality(UiBlurQuality quality) {

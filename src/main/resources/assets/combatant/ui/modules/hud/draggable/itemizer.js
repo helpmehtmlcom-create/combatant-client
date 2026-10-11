@@ -29,14 +29,13 @@ function card(row, index, pal, isChat, hovered, blur) {
   const h = num(row.h, 16 * scale);
   const a = clamp(num(row.alpha, 1));
   const available = row.available !== false;
-  const enabled = row.enabled !== false;
   const visible = row.visible !== false;
   const active = row.active === true;
   const aware = row.aware === true;
   const inProgress = row.inProgress === true;
   const hot = clamp(num(row.heat, aware || inProgress ? 1 : 0));
   const selected = isChat && hovered === index;
-  const dim = available && enabled ? 1 : 0.57;
+  const dim = available ? 1 : 0.57;
   const panelA = a * (visible ? 1 : 0.38);
   const bgTop = value(pal, "bgTop", "#96121314");
   const bgBottom = value(pal, "bgBottom", "#96000205");
@@ -61,7 +60,7 @@ function card(row, index, pal, isChat, hovered, blur) {
     startColor: rgba(bgTop, panelA),
     endColor: rgba(bgBottom, panelA), angle: 90,
   }));
-  if (!available || !enabled) {
+  if (!available) {
     nodes.push(ui.roundedGradient({
       key: `${index}:unavailable`, x, y, w, h, radius: 3 * scale,
       startColor: rgba("#FFFF2D29", 0.11 * panelA),

@@ -27,7 +27,6 @@ import combatant.client.events.impl.PacketEvent;
 import combatant.client.events.impl.SprintControlEvent;
 import combatant.client.mixins.accessors.MultiPlayerGameModeAccessor;
 import combatant.client.mixins.accessors.PlayerInventoryAccessor;
-import combatant.client.mixins.accessors.SlotAccessor;
 
 import java.util.ArrayDeque;
 import java.util.Iterator;
@@ -41,7 +40,6 @@ import java.util.function.Predicate;
 public final class InventorySwap {
     public static final InventorySwap INSTANCE = new InventorySwap();
 
-    private static final int OFFHAND_SCREEN_SLOT = 45;
     private static final int OFFHAND_SWAP_BUTTON = 40;
 
     private final Minecraft mc = Minecraft.getInstance();
@@ -90,15 +88,7 @@ public final class InventorySwap {
 
     public static int mapInventoryToScreenSlot(AbstractContainerMenu handler, Container playerInventory, int inventorySlot) {
         if (inventorySlot < 0 || inventorySlot >= 41) return -1;
-        if (handler != null && playerInventory != null) {
-            for (Slot slot : handler.slots) {
-                if (slot == null || slot.container != playerInventory) continue;
-                if (((SlotAccessor) slot).combatant$getIndex() == inventorySlot) {
-                    return slot.index;
-                }
-            }
-        }
-        return legacyPlayerScreenSlot(inventorySlot);
+        return InventoryComponentMap.menuSlotFor(handler, playerInventory, inventorySlot);
     }
 
     public static int mapHotbarToScreenSlot(int hotbarSlot) {
@@ -109,42 +99,25 @@ public final class InventorySwap {
     public static int playerInventoryStart(AbstractContainerMenu handler) {
         if (handler == null) return -1;
         LocalPlayer player = INSTANCE.mc.player;
-        Container inventory = player != null ? player.getInventory() : null;
-        if (handler != null && inventory != null) {
-            int min = Integer.MAX_VALUE;
-            for (Slot slot : handler.slots) {
-                if (slot == null || slot.container != inventory) continue;
-                int index = ((SlotAccessor) slot).combatant$getIndex();
-                if (index >= 9 && index < 36) {
-                    min = Math.min(min, slot.index);
-                }
-            }
-            if (min != Integer.MAX_VALUE) return min;
+        if (player == null) return -1;
+        int min = Integer.MAX_VALUE;
+        for (int id = 0; id < handler.slots.size(); id++) {
+            int inventoryIndex = InventoryComponentMap.playerInventoryIndex(handler, id, player);
+            if (inventoryIndex >= 9 && inventoryIndex < 36) min = Math.min(min, id);
         }
-        return handler.slots.size() - 36;
+        return min == Integer.MAX_VALUE ? -1 : min;
     }
 
     public static int hotbarStart(AbstractContainerMenu handler) {
         if (handler == null) return -1;
         LocalPlayer player = INSTANCE.mc.player;
-        Container inventory = player != null ? player.getInventory() : null;
-        if (handler != null && inventory != null) {
-            int min = Integer.MAX_VALUE;
-            for (Slot slot : handler.slots) {
-                if (slot == null || slot.container != inventory) continue;
-                int index = ((SlotAccessor) slot).combatant$getIndex();
-                if (index >= 0 && index < 9) {
-                    min = Math.min(min, slot.index);
-                }
-            }
-            if (min != Integer.MAX_VALUE) return min;
+        if (player == null) return -1;
+        int min = Integer.MAX_VALUE;
+        for (int id = 0; id < handler.slots.size(); id++) {
+            int inventoryIndex = InventoryComponentMap.playerInventoryIndex(handler, id, player);
+            if (inventoryIndex >= 0 && inventoryIndex < 9) min = Math.min(min, id);
         }
-        return playerInventoryStart(handler) + 27;
-    }
-
-    private static int legacyPlayerScreenSlot(int inventorySlot) {
-        if (inventorySlot == 40) return OFFHAND_SCREEN_SLOT;
-        return inventorySlot < 9 ? inventorySlot + 36 : inventorySlot;
+        return min == Integer.MAX_VALUE ? -1 : min;
     }
 
     private static boolean isHotbarSlot(int slot) {
@@ -667,6 +640,7 @@ public final class InventorySwap {
 
         int sourceScreenSlot = mapInventoryToScreenSlot(inventorySlot);
         int targetScreenSlot = mapHotbarToScreenSlot(hotbarSlot);
+        if (sourceScreenSlot < 0 || targetScreenSlot < 0) return false;
         return command(InventoryActionKind.INVENTORY_CLICK, () -> {
             pickupSwap(sourceScreenSlot, targetScreenSlot);
             selectHotbar(hotbarSlot);
@@ -689,6 +663,7 @@ public final class InventorySwap {
         if (inventorySlot < 0 || inventorySlot >= 36 ||
                 InventorySlotLocks.blocks(InventorySlotLocks.OFFHAND, owner)) return false;
         int sourceScreenSlot = mapInventoryToScreenSlot(inventorySlot);
+        if (sourceScreenSlot < 0) return false;
         return command(owner, InventoryActionKind.INVENTORY_CLICK, policy, () -> {
             if (!clickSwap(sourceScreenSlot, OFFHAND_SWAP_BUTTON)) return;
             if (afterSwap != null) afterSwap.run();
@@ -721,6 +696,7 @@ public final class InventorySwap {
 
         int moved = 0;
         int playerStart = playerInventoryStart(handler);
+        if (playerStart < 0) return 0;
         for (int slotId = 0; slotId < playerStart; slotId++) {
             Slot slot = handler.slots.get(slotId);
             if (slot == null || !slot.hasItem()) continue;

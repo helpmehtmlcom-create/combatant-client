@@ -71,8 +71,7 @@ final class UiBackdropRuntime {
         );
         UiLiquidGlassMaterial material = new UiLiquidGlassMaterial(
                 optics, frostedJitter, innerGlow, innerGlowSize, innerGlowColor);
-        if (node != null && bounds != null && optics.interactionStrength() > 0.0f
-                && optics.mode() != UiGlassOpticsSpec.Mode.FRESNEL_GLASS) {
+        if (node != null && bounds != null && optics.interactionStrength() > 0.0f) {
             Minecraft mc = Minecraft.getInstance();
             if (mc != null && mc.getWindow() != null && mc.mouseHandler != null) {
                 ViewportContext viewport = ViewportContext.current();
@@ -90,7 +89,8 @@ final class UiBackdropRuntime {
                         pointerX, pointerY, pressed,
                         (float) bounds.x(), (float) bounds.y(),
                         (float) bounds.width(), (float) bounds.height(),
-                        optics.interactionViscosity(), optics.interactionStrength(), System.nanoTime());
+                        optics.interactionViscosity(), optics.interactionStrength(), System.nanoTime(),
+                        props != null && props.bool("glassDismiss", false));
                 material = material.withInteraction(interaction);
             }
         }
@@ -105,7 +105,7 @@ final class UiBackdropRuntime {
             // Ordered CURRENT_TARGET snapshot: lower UI/glass layers are refracted, no feedback.
             Runnable sourceDraw = glassDraw;
             glassDraw = () -> renderer.withLiquidGlassSceneSource(
-                    UiBackdropRequest.SceneSource.CURRENT_TARGET, sourceDraw);
+                    UiBackdropRequest.SceneSource.STACKED_LENSES, sourceDraw);
         }
         if (modeName.isEmpty() || "auto".equals(modeName)) {
             glassDraw.run();

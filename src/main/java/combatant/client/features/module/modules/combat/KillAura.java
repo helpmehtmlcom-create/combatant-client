@@ -72,7 +72,7 @@ public class KillAura extends Module {
     private final Minecraft mc = Minecraft.getInstance();
     // custom = the settings below as set; grim = attack reach at most 3.0 and a legit sprint reset;
     // vanilla = full 6.0 reach, for servers with no anticheat.
-    private final EnumValue<AntiCheatPreset> anticheat = enumMode("anticheat_mode", AntiCheatPreset.CUSTOM);
+    private final EnumValue<AntiCheatPreset> anticheat = enumCommon("anticheat_mode", CommonSettingSchemas.ANTICHEAT_MODE, AntiCheatPreset.CUSTOM);
     private final NumberValue<Double> range =
             numCommon(
                     "killauraRange",

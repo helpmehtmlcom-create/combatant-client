@@ -9,17 +9,22 @@
 
 out vec4 color;
 
-uniform sampler2D u_Texture;      // MSDF glyph atlas
-uniform sampler2D u_SceneTexture; // aptured scene
-uniform sampler2D u_BlurTexture;  // prepared backdrop blur
+uniform sampler2D u_Texture;
+uniform sampler2D u_BlurTexture;
 
 layout (std140) uniform MsdfText {
-    vec4 u_Msdf; // x = pxRange, y = atlasWidth, z = atlasHeight
+    vec4 u_Msdf;
 };
 
 layout (std140) uniform UIBatch {
-    vec4 uScreen; // xy = framebuffer size, zw = logical size
+    vec4 uScreen;
     vec4 uLayer;
+};
+
+layout (std140) uniform UIGlassFrame {
+    vec4 uGlassPointer;
+    vec4 uGlassMotion;
+    vec4 uGlassClock;
 };
 
 in vec2 v_TexCoord;
@@ -29,13 +34,9 @@ float median(float r, float g, float b) {
     return max(min(r, g), min(max(r, g), b));
 }
 
-float luminance(vec3 c) {
-    return dot(c, vec3(0.2126, 0.7152, 0.0722));
-}
-
-vec2 safeNormalize(vec2 v) {
+vec2 safeNormalize(vec2 v, vec2 fallback) {
     float len2 = dot(v, v);
-    return len2 > 1e-7 ? v * inversesqrt(len2) : vec2(0.0, 1.0);
+    return len2 > 1e-7 ? v * inversesqrt(len2) : fallback;
 }
 
 void main() {
@@ -46,51 +47,44 @@ void main() {
     vec2 unitRange = vec2(max(u_Msdf.x, 0.5)) / atlasSize;
     vec2 screenTexSize = vec2(1.0) / max(fwidth(v_TexCoord), vec2(1e-6));
     float screenPxRange = max(0.5 * dot(unitRange, screenTexSize), 1.0);
-
-    // Positive inside the glyph, measured in approximately screen pixels.
     float signedPx = screenPxRange * (sd - 0.5);
-    float glyphAlpha = smoothstep(-0.62, 0.54, signedPx);
+    float glyphAlpha = smoothstep(-0.68, 0.58, signedPx);
     if (glyphAlpha * v_Color.a <= 0.001) discard;
 
-    // The SDF itself is the glass boundary. Derivatives give a stable screen-space edge normal,
-    // so refraction/rim stay attached to the actual glyph instead of a surrounding rectangle.
-    vec2 sdfGradient = vec2(dFdx(signedPx), dFdy(signedPx));
-    vec2 normal = safeNormalize(sdfGradient);
-    float edgeDistance = abs(signedPx);
-    float rim = 1.0 - smoothstep(0.18, 2.20, edgeDistance);
-    float hairline = 1.0 - smoothstep(0.00, 0.72, edgeDistance);
-    float body = smoothstep(0.25, 3.25, signedPx);
+    vec2 normal = safeNormalize(vec2(dFdx(signedPx), dFdy(signedPx)), vec2(0.0, 1.0));
+    float insidePx = max(signedPx, 0.0);
+    float edge = 1.0 - smoothstep(0.0, 3.6, insidePx);
 
     vec2 fbSize = max(uScreen.xy, vec2(1.0));
     vec2 uv = clamp(gl_FragCoord.xy / fbSize, vec2(0.001), vec2(0.999));
+    float time = uGlassClock.x;
+    vec2 tangent = vec2(-normal.y, normal.x);
+    float wave = sin(time * 1.24 + gl_FragCoord.x * 0.026 - gl_FragCoord.y * 0.017);
+    float crossWave = sin(time * 0.77 - gl_FragCoord.x * 0.012 - gl_FragCoord.y * 0.023);
+    vec2 refractionDirection = safeNormalize(normal + tangent * (wave * 0.52 + crossWave * 0.20), normal);
+    float offsetAmount = edge * 2.15 + pow(edge, 10.0) * 3.65;
+    vec2 offset = refractionDirection * offsetAmount / fbSize;
+    vec2 refractedUv = clamp(uv + offset,
+            vec2(0.001), vec2(0.999));
 
-    // Keep the body optically calm; most displacement belongs to the rim, as with a thin glass
-    // surface. This avoids fuzzy letter interiors while retaining visible refraction at the edge.
-    float refractPx = 0.20 + rim * 1.35 + hairline * 0.35;
-    vec2 refractedUv = clamp(uv + normal * (refractPx / fbSize), vec2(0.001), vec2(0.999));
+    vec3 refracted = texture(u_BlurTexture, refractedUv).rgb;
+    float aberration = 1.55 + 0.90 * (0.5 + 0.5 * sin(time * 1.08 + gl_FragCoord.x * 0.019));
+    vec2 chroma = offset * aberration;
+    vec3 glass = vec3(
+            texture(u_BlurTexture, clamp(refractedUv - chroma, vec2(0.001), vec2(0.999))).r,
+            refracted.g,
+            texture(u_BlurTexture, clamp(refractedUv + chroma, vec2(0.001), vec2(0.999))).b
+    );
 
-    vec3 cleanScene = texture(u_SceneTexture, refractedUv).rgb;
-    vec3 blurredScene = texture(u_BlurTexture, refractedUv).rgb;
-    float clarity = 0.20 + body * 0.14;
-    vec3 glass = mix(blurredScene, cleanScene, clarity);
-
-    // Retain source chroma after blur and add only a restrained theme tint. v_Color is animated by
-    // the caller, so the color flow moves through the material without changing glyph geometry.
-    float glassLuma = max(luminance(glass), 1e-4);
-    glass *= mix(1.0, 0.72 / glassLuma, smoothstep(0.72, 1.0, glassLuma) * 0.12);
     vec3 tint = clamp(v_Color.rgb, 0.0, 1.0);
-    glass = mix(glass, tint, 0.13 + rim * 0.10);
+    glass = mix(glass, glass * tint, 0.12);
+    vec2 lightDirection = safeNormalize(vec2(sin(time * 0.20), cos(time * 0.30)), vec2(0.6, -0.8));
+    vec2 fillDirection = safeNormalize(vec2(cos(time * 0.17 + 2.1), sin(time * 0.23 - 0.6)), vec2(-0.8, 0.6));
+    float keyLight = pow(max(dot(normal, lightDirection), 0.0), 3.0);
+    float fillLight = pow(max(dot(normal, fillDirection), 0.0), 4.0);
+    float reflection = edge * (0.16 + keyLight * 0.25 + fillLight * 0.13);
+    glass = mix(glass, tint, clamp(reflection, 0.0, 0.48));
 
-    float directional = clamp(dot(normal, safeNormalize(vec2(-0.42, 0.91))) * 0.5 + 0.5, 0.0, 1.0);
-    float rimLight = rim * (0.12 + 0.25 * directional);
-    float specular = hairline * (0.10 + 0.20 * directional);
-    glass += mix(vec3(1.0), tint, 0.28) * rimLight;
-    glass += vec3(1.0) * specular;
-
-    // Slight interior haze is sampled from the prepared blur, but alpha remains SDF-sharp.
-    glass = mix(glass, blurredScene, (1.0 - body) * 0.06);
-    glass = clamp(glass, 0.0, 1.0);
-
-    float materialAlpha = glyphAlpha * v_Color.a * (0.76 + rim * 0.18 + hairline * 0.06);
-    color = vec4(glass, clamp(materialAlpha, 0.0, 1.0));
+    float denseAlpha = 1.0 - pow(max(1.0 - glyphAlpha, 0.0), 1.16);
+    color = vec4(clamp(glass, 0.0, 1.0), denseAlpha * v_Color.a);
 }

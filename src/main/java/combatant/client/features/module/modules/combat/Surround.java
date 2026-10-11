@@ -57,28 +57,32 @@ public final class Surround extends Module {
     private final Minecraft mc = Minecraft.getInstance();
     private final EnumValue<Mode> mode = enumSetting("surroundMode", "mode", Mode.FEET, Mode.values());
     private final EnumValue<CenterMode> center = enumSetting("surroundCenter", "center", CenterMode.NONE, CenterMode.values());
-    private final EnumValue<BlockPriority> blockPriority = enumSetting(
-            "surroundBlockPriority", "block_priority", BlockPriority.ANY, BlockPriority.values());
-    private final NumberValue<Integer> blocksPerTick = num(
-            "surroundBlocksPerTick", "blocks_per_tick", 4, 1, 8);
-    private final BooleanValue dynamicHitbox = bool(
-            "surroundDynamicHitbox", "dynamic_hitbox", true);
-    private final BooleanValue support = bool(
-            "surroundSupport", "support", true);
-    private final BooleanValue attackCrystals = bool(
-            "surroundAttackCrystals", "attack_crystals", true);
+    private final EnumValue<BlockPriority> blockPriority = enumCommon(
+            "surroundBlockPriority", "block_priority",
+            CommonSettingSchemas.SHELL_BLOCK_PRIORITY, BlockPriority.ANY, BlockPriority.values());
+    private final NumberValue<Integer> blocksPerTick = numCommon(
+            "surroundBlocksPerTick", "blocks_per_tick", CommonSettingSchemas.SHELL_BLOCKS_PER_TICK, 4, 1, 8);
+    private final BooleanValue dynamicHitbox = boolCommon(
+            "surroundDynamicHitbox", "dynamic_hitbox", CommonSettingSchemas.SHELL_DYNAMIC_HITBOX, true);
+    private final BooleanValue support = boolCommon("surroundSupport", "support", CommonSettingSchemas.SHELL_SUPPORT, true);
+    private final BooleanValue attackCrystals = boolCommon(
+            "surroundAttackCrystals", "attack_crystals", CommonSettingSchemas.SHELL_ATTACK_CRYSTALS, true);
     private final NumberValue<Integer> crystalDelay = visibleWhen(
-            num("surroundCrystalDelay", "crystal_delay", 0, 0, 10), attackCrystals::get);
-    private final BooleanValue placeWhileUsing = bool(
-            "surroundPlaceWhileUsing", "place_while_using", false);
-    private final NumberValue<Integer> swapBackDelay = num(
-            "surroundSwapBackDelay", "swap_back_delay", 0, 0, 10);
+            numCommon("surroundCrystalDelay", "crystal_delay",
+                    CommonSettingSchemas.SHELL_CRYSTAL_DELAY, 0, 0, 10),
+            attackCrystals::get);
+    private final BooleanValue placeWhileUsing = boolCommon(
+            "surroundPlaceWhileUsing", "place_while_using", CommonSettingSchemas.SHELL_PLACE_WHILE_USING, false);
+    private final NumberValue<Integer> swapBackDelay = numCommon(
+            "surroundSwapBackDelay", "swap_back_delay", CommonSettingSchemas.SHELL_SWAP_BACK_DELAY, 0, 0, 10);
     private final BooleanValue disableOnJump = boolCommon(
             "surroundDisableOnJump", "disable_on_jump", CommonSettingSchemas.PLAYER_FALL_CHECK, true);
-    private final BooleanValue disableInAir = bool("surroundDisableInAir", "disable_in_air", false);
+    private final BooleanValue disableInAir = boolCommon(
+            "surroundDisableInAir", "disable_in_air", CommonSettingSchemas.SHELL_DISABLE_IN_AIR, false);
     private final BooleanValue disableOnMove = bool("surroundDisableOnMove", "disable_on_move", false);
     private final BooleanValue autoDisable = bool("surroundAutoDisable", "auto_disable", false);
-    private final BooleanValue warnNoBlocks = bool("surroundWarnNoBlocks", "warn_no_blocks", true);
+    private final BooleanValue warnNoBlocks = boolCommon(
+            "surroundWarnNoBlocks", "warn_no_blocks", CommonSettingSchemas.SHELL_WARN_NO_BLOCKS, true);
     private final EnumValue<BlockPlacer.RotationMode> rotation = enumSetting(
             "surroundRotation", "rotation", BlockPlacer.RotationMode.NORMAL, BlockPlacer.RotationMode.values());
     private final EnumValue<MovementCorrection> movementCorrection = enumSetting(

@@ -111,8 +111,9 @@ public enum UiGlassFrameUniforms {
         DATA.vec4("uGlassPointer", rawX * logicalW, rawY * logicalH,
                         easedX * logicalW, easedY * logicalH)
                 .vec4("uGlassMotion", velocityX * logicalW, velocityY * logicalH,
-                        envelope, pressImpulse);
-        current = DATA.upload(8);
+                        envelope, pressImpulse)
+                .vec4("uGlassClock", (float) ((now * 1.0e-9) % 4096.0), 0f, 0f, 0f);
+        current = DATA.upload(12);
         lastFrameId = frameId;
         lastLogicalW = logicalW;
         lastLogicalH = logicalH;

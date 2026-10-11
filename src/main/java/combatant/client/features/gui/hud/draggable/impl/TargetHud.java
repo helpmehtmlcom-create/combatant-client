@@ -78,11 +78,16 @@ public final class TargetHud extends DraggableHudElement {
 
 
     private final UiMaterialInteractionState mainGlassFluid = new UiMaterialInteractionState();
-    // TargetHUD uses stronger refractive edge; other cards remain passive to avoid
-    // multiplying capture passes for every effect/buff/armor chip.
+    private long lastGlassHitTime;
+    private int lastGlassHitEntityId = Integer.MIN_VALUE;
+    private float glassHitLevel;
+    private static final float GLASS_HIT_DECAY_SECONDS = 0.72f;
     private static final UiGlassOpticsSpec TARGET_GLASS = UiGlassOpticsSpec.LIQUID
-            .withInteractionStrength(0.85f).withChromaticAberration(0.38f)
-            .withMagnification(1.035f).withShapeDeformation(false);
+            .withRefraction(0.012f).withBevel(0.19f, 0.050f)
+            .withFluid(0.37f, 0.54f).withCleanReveal(0.72f)
+            .withInteractionStrength(0.92f).withChromaticAberration(0.42f)
+            .withMagnification(1.018f).withShapeDeformation(false)
+            .withChromaticMotion(UiGlassOpticsSpec.ChromaticMotion.STATIC);
 
     private static final float BASE_WIDTH = 112.0f;
     private static final float BASE_HEIGHT = 40.0f;
@@ -234,14 +239,6 @@ public final class TargetHud extends DraggableHudElement {
             new RGBAColorValue("target_bg_secondary", "#F7161616");
     private final RGBColorValue stroke =
             new RGBColorValue("target_stroke", "#5A5A5A");
-    // Glass optics are deliberately owned by this element, not global UI theme switches.
-    private final BooleanValue glassReactivity = new BooleanValue("target_glass_reactivity", true);
-    // UI value is percent of the 0.25 maximum physical refraction coefficient.
-    private final NumberValue<Integer> glassRefraction = new NumberValue<>("target_glass_refraction", 14, 0, 100);
-    private final NumberValue<Integer> glassAberration = new NumberValue<>("target_glass_aberration", 38, 0, 95);
-    private final NumberValue<Integer> glassMagnification = new NumberValue<>("target_glass_magnification", 102, 65, 180);
-    private final BooleanValue glassDeformShape = new BooleanValue("target_glass_deform_shape", false);
-    private final BooleanValue glassStacked = new BooleanValue("target_glass_stacked", false);
     private final NumberValue<Integer> blurAlpha =
             new NumberValue<>("target_blur_alpha", 255, 0, 255);
     private final NumberValue<Integer> bgAlpha =
@@ -491,15 +488,9 @@ public final class TargetHud extends DraggableHudElement {
         defs.add(SettingDef.colorNoAlpha(hitOuter).visibleWhen(this::isCustomMode));
         defs.add(SettingDef.colorNoAlpha(hitInner).visibleWhen(this::isCustomMode));
         defs.add(SettingDef.mode(bgEffect));
-        defs.add(SettingDef.number(blurAlpha).visibleWhen(this::hasEffect));
-        defs.add(SettingDef.bool(glassReactivity).visibleWhen(this::isGlassEffect));
-        defs.add(SettingDef.number(glassRefraction).visibleWhen(this::isGlassEffect));
-        defs.add(SettingDef.number(glassAberration).visibleWhen(this::isGlassEffect));
-        defs.add(SettingDef.number(glassMagnification).visibleWhen(this::isGlassEffect));
-        defs.add(SettingDef.bool(glassDeformShape).visibleWhen(() -> isGlassEffect() && glassReactivity.get()));
-        defs.add(SettingDef.bool(glassStacked).visibleWhen(this::isGlassEffect));
+        defs.add(SettingDef.number(blurAlpha).visibleWhen(this::isBlurEffect));
         defs.add(SettingDef.bool(hitAnim));
-        defs.add(SettingDef.number(hitPulse).visibleWhen(hitAnim::get));
+        defs.add(SettingDef.number(hitPulse).visibleWhen(() -> hitAnim.get() && !isGlassEffect()));
     }
 
     @Override
@@ -536,11 +527,14 @@ public final class TargetHud extends DraggableHudElement {
 
             if (!shouldShow && visibilityAnimation <= 0.001f) {
                 displayTarget = null;
+                glassHitLevel = 0f;
+                lastGlassHitEntityId = Integer.MIN_VALUE;
                 width = 0f;
                 height = 0f;
                 return;
             }
             if (displayTarget == null) return;
+            updateGlassHitReaction(displayTarget, now, dt);
 
             updatePalette();
 
@@ -557,7 +551,7 @@ public final class TargetHud extends DraggableHudElement {
             float equipmentTarget = hasEquipment ? 1.0f : 0.0f;
             equipmentAnimation = AnimationUtility.approach(equipmentAnimation, equipmentTarget, dt, EQUIPMENT_SPEED);
             equipmentAnimation = AnimationUtility.snap(equipmentAnimation, equipmentTarget, 0.001f);
-            float scalePulse = hitAnim.get()
+            float scalePulse = hitAnim.get() && !isGlassEffect()
                     ? 1.0f + hitPulseFactor * 0.018f * hitPulse.get().floatValue()
                     : 1.0f;
             float widgetScale = HudRenderUtil.visibilityScale(visibilityAnimation);
@@ -618,7 +612,9 @@ public final class TargetHud extends DraggableHudElement {
                         isThemeMode() && strokeGradient.get(), strokeAlpha.get(), alphaFactor
                 );
             }
-            drawHitPulse(renderer, panelX, panelY, panelW, panelH, panelRadius, alphaFactor, hitPulseFactor);
+            if (!glassEnabled) {
+                drawHitPulse(renderer, panelX, panelY, panelW, panelH, panelRadius, alphaFactor, hitPulseFactor);
+            }
             drawFace(renderer, textRenderer, ctx, displayTarget, panelX, panelY, scaleFactor, alphaFactor, totemPopSnapshot);
             drawContent(renderer, textRenderer, displayTarget, panelX, panelY, panelDrawW, scaleFactor, alphaFactor, now, dt);
             if (effectsAnimation > 0.01f) {
@@ -737,10 +733,7 @@ public final class TargetHud extends DraggableHudElement {
                                 float radius,
                                 float alphaFactor,
                                 boolean glassEnabled) {
-        if (glassEnabled) {
-            renderer.roundedRect(x, y, width, height, radius, 1.0f, HudRenderUtil.glassPanelBackground(alphaFactor));
-            return;
-        }
+        if (glassEnabled) return;
 
         int primary = HudRenderUtil.scaleAlpha(uiBgPrimary, alphaFactor);
         int secondary = HudRenderUtil.scaleAlpha(uiBgSecondary, alphaFactor);
@@ -1524,17 +1517,40 @@ public final class TargetHud extends DraggableHudElement {
         Renderer2D.COLOR.blurRect(x, y, width, height, radius, quality, brightness, alpha, 0xFFFFFF);
     }
 
+    private void updateGlassHitReaction(LivingEntity target, long now, float deltaSeconds) {
+        if (!isGlassEffect()) {
+            glassHitLevel = 0f;
+            lastGlassHitEntityId = Integer.MIN_VALUE;
+            return;
+        }
+        int entityId = target.getId();
+        if (lastGlassHitEntityId != entityId) {
+            lastGlassHitEntityId = entityId;
+            lastGlassHitTime = 0L;
+            glassHitLevel = 0f;
+        }
+        Long hitTime = HIT_FLASH_MS_BY_ID.get(entityId);
+        if (hitTime != null && hitTime > lastGlassHitTime
+                && hitTime <= now && now - hitTime <= 300L) {
+            lastGlassHitTime = hitTime;
+            glassHitLevel = 1.0f;
+        } else if (glassHitLevel > 0f) {
+            float dt = Float.isFinite(deltaSeconds) ? Math.max(0f, Math.min(0.10f, deltaSeconds)) : 0f;
+            glassHitLevel *= (float) Math.exp(-dt / GLASS_HIT_DECAY_SECONDS);
+            if (glassHitLevel < 0.003f) glassHitLevel = 0f;
+        }
+    }
+
     private void drawGlass(float x, float y, float width, float height, float radius, float alphaFactor) {
-        float blurStrength = (blurAlpha.get() / 255.0f) * alphaFactor;
         float glassScale = PANEL_RADIUS <= 0.0f ? 1.0f : radius / PANEL_RADIUS;
-        UiGlassOpticsSpec optics = TARGET_GLASS
-                .withRefraction(glassRefraction.get() / 400f)
-                .withInteractionStrength(glassReactivity.get() ? 0.85f : 0f)
-                .withChromaticAberration(glassAberration.get() / 100f)
-                .withMagnification(glassMagnification.get() / 100f)
-                .withShapeDeformation(glassDeformShape.get());
+        UiGlassOpticsSpec optics = glassHitLevel > 0.0f
+                ? TARGET_GLASS.withRefraction(TARGET_GLASS.refraction() * (1.0f + glassHitLevel))
+                        .withBevel(TARGET_GLASS.bevelWidth() * (1.0f + glassHitLevel),
+                                TARGET_GLASS.bevelDepth())
+                : TARGET_GLASS;
         HudRenderUtil.drawReactiveGlass(x, y, width, height, radius, glassScale, true,
-                blurStrength, alphaFactor, mainGlassFluid, optics, glassStacked.get());
+                alphaFactor, alphaFactor,
+                mainGlassFluid, optics, false, 0f, 0.65f);
         if (isGradientPanelStyle()) {
             float strength = themeGradientStrength.get() / 100.0f;
             HudRenderUtil.ThemeGradient panelGradient = HudRenderUtil.themePanelGradient(
@@ -1562,8 +1578,12 @@ public final class TargetHud extends DraggableHudElement {
                                float radius,
                                float scaleFactor,
                                float alphaFactor) {
-        float blurStrength = (blurAlpha.get() / 255.0f) * alphaFactor;
-        HudRenderUtil.drawLiquidGlass(x, y, width, height, radius, scaleFactor, true, blurStrength, alphaFactor);
+        UiGlassOpticsSpec chipOptics = TARGET_GLASS
+                .withRefraction(0.016f).withBevel(0.22f, 0.060f)
+                .withInteractionStrength(0f).withChromaticAberration(0.38f);
+        HudRenderUtil.drawReactiveGlass(x, y, width, height, radius, scaleFactor, true,
+                alphaFactor, alphaFactor,
+                null, chipOptics, true, 0f, 0f);
     }
 
     private void drawItem(Renderer2D renderer,

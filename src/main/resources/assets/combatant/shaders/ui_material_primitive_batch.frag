@@ -31,6 +31,7 @@ layout (std140) uniform UIBatch {
 layout (std140) uniform UIGlassFrame {
     vec4 uGlassPointer;
     vec4 uGlassMotion;
+    vec4 uGlassClock;
 };
 
 vec2 primitivePoint(int index) {

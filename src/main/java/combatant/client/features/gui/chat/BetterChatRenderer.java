@@ -635,12 +635,11 @@ lastHoverWasOutsideSuggest = false;
         float configuredAlpha = settings != null ? settings.liquidGlassAlphaFactor() : (230f / 255f);
         float blurStrength = configuredAlpha * drawAlpha;
         float glassScale = MESSAGE_RADIUS <= 0.0f ? 1.0f : radius / MESSAGE_RADIUS;
-        // Use the input-field tint family with weaker message material.
         HudRenderUtil.drawLiquidGlassCorners(
                 x, y, w, h,
                 radius, radius, radius, radius,
                 glassScale, false,
-                blurStrength, drawAlpha * 0.74f,
+                blurStrength, drawAlpha * 0.94f,
                 theme().accent()
         );
         drawRoundedRect(x, y, w, h, radius,
@@ -1983,15 +1982,10 @@ lastHoverWasOutsideSuggest = false;
         renderer.liquidGlassRect(
                 x, y, w, h,
                 Math.max(1.0f, radius),
-                10.5f,
-                theme().accentSoft(),
+                withAlpha(theme().accentSoft(), 0x24),
                 Mth.clamp(alpha, 0.0f, 1.0f),
-                0.08f,
-                -18.0f,
-                0.82f,
-                0.72f,
-                0.34f,
-                0.095f,
+                1.0f,
+                Renderer2D.LiquidGlassPreset.HUD_SMALL,
                 1.2f
         );
         drawRoundedRect(x, y, w, h, radius, withAlpha(theme().surfaceHover(), 0x32));
@@ -2033,35 +2027,24 @@ lastHoverWasOutsideSuggest = false;
     private static void drawGlassPill(float x, float y, float w, float h, float radius, float alpha, boolean softPanel) {
         if (renderer == null || w <= 0f || h <= 0f) return;
 
-        // BetterChat uses liquid glass as a background material only. Text is rendered later
-        // and is not touched here. Blur strength is separate from the glass veil opacity.
         BetterChat settings = BetterChat.get();
         float drawAlpha = Mth.clamp(alpha, 0.0f, 1.0f);
         if (drawAlpha <= 0.001f) return;
         float configuredAlpha = settings != null ? settings.liquidGlassAlphaFactor() : (230f / 255f);
-        float blurStrength = configuredAlpha * drawAlpha;
-        float materialAlpha = Mth.clamp(0.72f + configuredAlpha * 0.28f, 0.0f, 1.0f) * drawAlpha;
+        float materialAlpha = drawAlpha;
         float glassRadius = Math.max(2f, radius);
-        float thickness = softPanel ? 15.5f : 12.5f;
-        float fresnelPower = softPanel ? -26.0f : -20.0f;
-        float fresnelAlpha = Mth.clamp(0.72f + configuredAlpha * 0.28f, 0.0f, 1.0f) * drawAlpha;
-        float baseAlpha = Mth.clamp((softPanel ? 0.66f : 0.68f) + configuredAlpha * (softPanel ? 0.34f : 0.32f), 0.0f, 1.0f);
-        float fresnelMix = softPanel ? 0.46f : 0.44f;
-        float distortPx = (softPanel ? 0.172f : 0.145f) * drawAlpha;
+        Renderer2D.LiquidGlassPreset preset = softPanel
+                ? Renderer2D.LiquidGlassPreset.HUD_LARGE
+                : Renderer2D.LiquidGlassPreset.HUD_SMALL;
 
         flushRenderer();
         renderer.liquidGlassRect(
                 x, y, w, h,
                 glassRadius,
-                thickness,
-                theme().accent(),
+                withAlpha(theme().accent(), Math.round(configuredAlpha * (softPanel ? 32f : 22f))),
                 materialAlpha,
-                blurStrength,
-                fresnelPower,
-                fresnelAlpha,
-                baseAlpha,
-                fresnelMix,
-                distortPx,
+                1.0f,
+                preset,
                 softPanel ? 2.65f : 2.25f
         );
 

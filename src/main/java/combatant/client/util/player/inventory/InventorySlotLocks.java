@@ -12,8 +12,8 @@ import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
-import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.IdentityHashMap;
 import java.util.Map;
@@ -76,18 +76,17 @@ public final class InventorySlotLocks {
     }
 
     public static int playerSlotIndex(Slot slot, Player player) {
-        if (slot == null || player == null || slot.container != player.getInventory()) return -1;
-        int index = slot.getContainerSlot();
-        return index >= 0 && index <= OFFHAND ? index : -1;
+        return InventoryComponentMap.playerInventoryIndex(slot, player);
     }
 
-    /** Slot ids in a menu are NOT indices in Player.getInventory().
-     * In the vanilla inventory menu slot 40 is hotbar index 4; offhand is menu slot 45.
-     */
     public static int playerSlotIndex(AbstractContainerMenu menu, int menuSlot, Player player) {
-        if (menu == null || player == null || menuSlot < 0 || menuSlot >= menu.slots.size()) return -1;
-        if (menu == player.inventoryMenu && menuSlot == InventoryMenu.SHIELD_SLOT) return OFFHAND;
-        return playerSlotIndex(menu.slots.get(menuSlot), player);
+        return InventoryComponentMap.playerInventoryIndex(menu, menuSlot, player);
+    }
+
+    public static boolean hasLockedPlayerSlot() {
+        validateSession();
+        if (activePlayer == null) return false;
+        return !RESERVATIONS.isEmpty();
     }
 
     /** Check both the clicked slot and the other endpoint of a number-key/F swap. */
@@ -100,9 +99,22 @@ public final class InventorySlotLocks {
             if (button == OFFHAND) return blocks(OFFHAND, actor);
             if (button >= 0 && button < 9) return blocks(button, actor);
         }
-        if (input == ContainerInput.QUICK_CRAFT || input == ContainerInput.PICKUP_ALL) {
-            // Quick-craft and collect-all can move items from a locked slot that was not clicked.
-            for (int slot = 0; slot <= OFFHAND; slot++) if (blocks(slot, actor)) return true;
+        // QUICK_CRAFT should be rejected only if it actually touches a locked slot.
+        // Blocking every drag operation whenever offhand is reserved effectively locks
+        // unrelated hotbar slots, including the fifth one.
+        if (input == ContainerInput.PICKUP_ALL) {
+            // Collect-all scans other slots. Block it only if a reserved slot contains
+            // a stack compatible with the carried stack and could be emptied by it.
+            ItemStack carried = menu.getCarried();
+            if (!carried.isEmpty() && carried.getCount() < carried.getMaxStackSize()) {
+                for (Slot slot : menu.slots) {
+                    int index = playerSlotIndex(slot, player);
+                    if (index >= 0 && blocks(index, actor) && slot.hasItem()
+                            && ItemStack.isSameItemSameComponents(carried, slot.getItem())) {
+                        return true;
+                    }
+                }
+            }
         }
         return false;
     }

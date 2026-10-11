@@ -26,8 +26,6 @@ public final class UiMaterialCatalog {
 
     public static UiGlassOpticsSpec glass(String name) {
         return switch (normalize(name)) {
-            case "mirror-frosted", "fresnel", "fresnel-glass", "fresnel-frosted", "legacy-glass" ->
-                    UiGlassOpticsSpec.FRESNEL_GLASS;
             case "reactive-smoked", "smoked-glass" -> UiGlassOpticsSpec.LIQUID
                     .withMode(UiGlassOpticsSpec.Mode.REACTIVE_SMOKED).withCleanReveal(0.42f)
                     .withChromaticAberration(0.075f);

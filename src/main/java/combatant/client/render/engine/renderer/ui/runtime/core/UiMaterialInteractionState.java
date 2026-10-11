@@ -19,11 +19,31 @@ public final class UiMaterialInteractionState {
     private long previousNanos;
     private float x = 0.5f, y = 0.5f, dx, dy, energy, pressed, opening;
     private float previousX, previousY, previousWidth, previousHeight;
-    private boolean insideLast, pressedLast;
+    private boolean insideLast, pressedLast, dismissingLast;
+    // Event excitation is distinct from hover/press: target hits and player controls
+    // can create local optical motion even when the pointer is elsewhere.
+    private float eventX = 0.5f, eventY = 0.5f, eventEnergy;
+
+    public void opticalImpulse(float localX, float localY, float magnitude) {
+        if (!Float.isFinite(localX) || !Float.isFinite(localY) || !Float.isFinite(magnitude)) return;
+        if (magnitude <= 0f) return;
+        eventX = Math.max(0f, Math.min(1f, localX));
+        eventY = Math.max(0f, Math.min(1f, localY));
+        eventEnergy = Math.max(eventEnergy, Math.min(1f, magnitude));
+    }
 
     public UiGlassInteraction sample(float pointerX, float pointerY, boolean down,
                                      float left, float top, float width, float height,
                                      float viscosity, float strength, long nowNanos) {
+        return sample(pointerX, pointerY, down, left, top, width, height,
+                viscosity, strength, nowNanos, false);
+    }
+
+    /** Explicit reveal/dismiss lifecycle; the caller must keep the node alive while dismissing. */
+    public UiGlassInteraction sample(float pointerX, float pointerY, boolean down,
+                                     float left, float top, float width, float height,
+                                     float viscosity, float strength, long nowNanos,
+                                     boolean dismissing) {
         if (!(width > 0f && height > 0f) || strength <= 0f)
             return new UiGlassInteraction(x, y, 0f, 0f, 0f, 0f, 0f, true);
         float nx = (pointerX - left) / width;
@@ -32,12 +52,19 @@ public final class UiMaterialInteractionState {
         boolean inside = nx >= 0f && nx <= 1f && ny >= 0f && ny <= 1f;
         if (previousNanos == 0L) {
             previousNanos = nowNanos;
-            x = nx; y = ny;
+            x = inside ? nx : 0.5f;
+            y = inside ? ny : 0.5f;
             previousX = nx; previousY = ny;
             previousWidth = width; previousHeight = height;
             insideLast = inside;
             pressedLast = down;
-            return new UiGlassInteraction(x, y, 0f, 0f, 0f, 0f, 0f, true);
+            dismissingLast = dismissing;
+            opening = dismissing ? -0.85f : 0.85f;
+            if (eventEnergy > 0.001f) {
+                x = eventX; y = eventY;
+            }
+            return new UiGlassInteraction(x, y, eventMotion(true), eventMotion(false),
+                    eventEnergy, eventEnergy, opening, true);
         }
         float elapsed = (nowNanos - previousNanos) * 1.0e-6f;
         previousNanos = nowNanos;
@@ -70,16 +97,41 @@ public final class UiMaterialInteractionState {
         float targetEnergy = inside ? Math.min(1f, Math.max(speed * 5.0f, (down ? 0.30f : 0f))) : 0f;
         energy += (targetEnergy - energy) * (targetEnergy > energy ? follow : settle);
         pressed *= (float) Math.exp(-dt / 210f);
+        eventEnergy *= (float) Math.exp(-dt / 280f);
         if (inside && down && !pressedLast) pressed = 1f;
-        opening *= (float) Math.exp(-dt / 310f);
-        if (Math.abs(width - previousWidth) + Math.abs(height - previousHeight) > 2f) {
+        opening *= (float) Math.exp(-dt / 340f);
+        if (dismissing != dismissingLast) {
+            opening = dismissing ? -1.0f : 0.85f;
+        } else if (!dismissing && Math.abs(width - previousWidth)
+                + Math.abs(height - previousHeight) > 2f) {
             opening = Math.max(opening, 0.45f);
         }
-        if (!insideLast && inside) opening = Math.max(opening, 0.25f);
+        // Hover/leave is a pointer event, not a panel reveal. Do not restart the
+        // whole glass lifecycle whenever the mouse crosses the element.
+        dismissingLast = dismissing;
         previousWidth = width; previousHeight = height;
         previousX = nx; previousY = ny;
         insideLast = inside;
         pressedLast = down;
-        return new UiGlassInteraction(x, y, dx, dy, energy, pressed, opening, true);
+        // The same local impulse field drives curvature and a temporary clarity
+        // crest. Shape deformation remains controlled solely by the optics spec.
+        float sourceX = eventEnergy > 0.02f ? eventX : x;
+        float sourceY = eventEnergy > 0.02f ? eventY : y;
+        return new UiGlassInteraction(sourceX, sourceY,
+                dx + eventMotion(true), dy + eventMotion(false),
+                Math.max(energy, eventEnergy), Math.max(pressed, eventEnergy), opening, true);
+    }
+
+    private float eventMotion(boolean horizontal) {
+        float axisX = eventX - 0.5f;
+        float axisY = eventY - 0.5f;
+        float length = (float) Math.hypot(axisX, axisY);
+        if (length < 0.05f) {
+            axisX = 0f;
+            axisY = -1f;
+            length = 1f;
+        }
+        float amount = eventEnergy * 0.06f / length;
+        return (horizontal ? axisX : axisY) * amount;
     }
 }

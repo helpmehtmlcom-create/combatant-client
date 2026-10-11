@@ -38,7 +38,7 @@ out vec4 v_Params2;
 out vec4 v_Params3;
 out vec4 v_Params4;
 out vec4 v_Params5;
-out vec4 v_Params6;
+flat out vec4 v_Params6;
 out vec4 v_Params7;
 out vec4 v_Params8;
 out vec4 v_Params9;

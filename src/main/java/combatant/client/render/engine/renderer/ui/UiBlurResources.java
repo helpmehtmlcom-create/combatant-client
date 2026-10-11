@@ -44,6 +44,7 @@ public final class UiBlurResources {
     private static TextureTarget glassSource;
     private static TextureTarget uiUnderlay;
     private static TextureTarget currentTargetSnapshot;
+    private static TextureTarget glassOverlay;
     private static Renderer2D.Deferred2DLayer activeUiUnderlayLayer;
     private static long activeUiUnderlayFrame = Long.MIN_VALUE;
     private static MeshBuilder compositeMesh;
@@ -74,6 +75,7 @@ public final class UiBlurResources {
         glassSource = null;
         uiUnderlay = null;
         currentTargetSnapshot = null;
+        glassOverlay = null;
         worldSourceReady = false;
         SURFACE_FRAME_CACHE.clear();
         CAPTURED_WORLD_FRAME_CACHE.clear();
@@ -173,6 +175,24 @@ public final class UiBlurResources {
     }
 
     /**
+     * Transparent accumulation of *only* the glass draw calls of the current ordered batch.
+     * Normal scene/HUD/text draws never enter this target. The target is cleared on the first
+     * glass command of a batch with STACKED_LENSES enabled, not on every lens.
+     */
+    public static @Nullable TextureTarget ensureGlassOverlay(Minecraft minecraft) {
+        if (minecraft == null) return null;
+        int width = minecraft.getWindow().getWidth();
+        int height = minecraft.getWindow().getHeight();
+        if (width <= 0 || height <= 0) return null;
+        glassOverlay = CombatantRenderSystem.resources().frameTransient(
+                TransientTargetDescriptor.frame(
+                        "combatant-ui-glass-overlay", width, height, false, "Renderer2D.glassOverlay"
+                )
+        );
+        return glassOverlay;
+    }
+
+    /**
      * Frame-local scratch snapshot of the color accumulated in the active UI target.
      *
      * <p>Unlike {@link #glassSource}, this is captured at the ordered glass boundary. It is used
@@ -208,6 +228,13 @@ public final class UiBlurResources {
     public static @Nullable GpuTextureView captureCurrentTarget(
             Minecraft minecraft,
             @Nullable GpuTextureView sourceView) {
+        return captureCurrentTarget(minecraft, sourceView, true);
+    }
+
+    /** A stack-only snapshot is never a blur input; it need not flush the scene-blur cache. */
+    public static @Nullable GpuTextureView captureCurrentTarget(
+            Minecraft minecraft,
+            @Nullable GpuTextureView sourceView, boolean invalidatesSurfaceBlur) {
         if (minecraft == null || sourceView == null) return null;
         TextureTarget target = ensureCurrentTargetSnapshot(minecraft);
         if (target == null || target.getColorTextureView() == null) return null;
@@ -222,7 +249,7 @@ public final class UiBlurResources {
 
         // The snapshot handle is reused inside one frame while its contents are intentionally
         // replaced at each ordered capture point. Never let a previous blur of this handle survive.
-        SURFACE_FRAME_CACHE.clear();
+        if (invalidatesSurfaceBlur) SURFACE_FRAME_CACHE.clear();
         return target.getColorTextureView();
     }
 
@@ -590,6 +617,7 @@ public final class UiBlurResources {
         glassSource = null;
         uiUnderlay = null;
         currentTargetSnapshot = null;
+        glassOverlay = null;
         activeUiUnderlayLayer = null;
         activeUiUnderlayFrame = Long.MIN_VALUE;
         worldSourceReady = false;

@@ -32,6 +32,7 @@ import combatant.client.render.engine.uniform.ShaderUniformBindings;
 import combatant.client.render.engine.uniform.impl.MsdfTextUniforms;
 import combatant.client.render.engine.uniform.impl.UIBatchUniforms;
 import combatant.client.render.engine.uniform.impl.UiClipUniforms;
+import combatant.client.render.engine.uniform.impl.UiGlassFrameUniforms;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -95,6 +96,20 @@ public enum TextRenderSystem {
                                                    double boundsY,
                                                    double boundsWidth,
                                                    double boundsHeight) {
+        submitLiquidGlassGlyphMesh(label, font, mesh, pipeline, placement,
+                boundsX, boundsY, boundsWidth, boundsHeight, null);
+    }
+
+    public static void submitLiquidGlassGlyphMesh(String label,
+                                                   GlyphFont font,
+                                                   MeshBuilder mesh,
+                                                   RenderPipeline pipeline,
+                                                   TextPlacementMode placement,
+                                                   double boundsX,
+                                                   double boundsY,
+                                                   double boundsWidth,
+                                                   double boundsHeight,
+                                                   UiBackdropRequest backdrop) {
         if (font == null || mesh == null || pipeline == null) return;
         if (mesh.isBuilding()) mesh.end();
         if (mesh.getIndicesCount() <= 0) return;
@@ -102,13 +117,15 @@ public enum TextRenderSystem {
         UiRect bounds = UiRect.of(boundsX, boundsY, boundsWidth, boundsHeight);
         TextPlacementMode uiPlacement = placement != null ? placement : TextPlacementMode.UI;
         if (uiPlacement == TextPlacementMode.UI || uiPlacement == TextPlacementMode.SCREEN_SPACE) {
-            if (Renderer2D.enqueueLiquidGlassTextMesh(label, font, mesh, pipeline, uiPlacement, bounds)) {
+            if (Renderer2D.enqueueLiquidGlassTextMesh(
+                    label, font, mesh, pipeline, uiPlacement, bounds, null, backdrop)) {
                 return;
             }
             boolean auto = UiRenderDispatcher.beginAutoBatch();
             if (auto) {
                 try {
-                    if (Renderer2D.enqueueLiquidGlassTextMesh(label, font, mesh, pipeline, uiPlacement, bounds)) {
+                    if (Renderer2D.enqueueLiquidGlassTextMesh(
+                            label, font, mesh, pipeline, uiPlacement, bounds, null, backdrop)) {
                         return;
                     }
                 } finally {
@@ -332,10 +349,15 @@ public enum TextRenderSystem {
                             mc.gameRenderer.mainRenderTarget().getColorTextureView()))
                     .mesh(handle)
                     .sampler("u_Texture", texture.getTextureView(), texture.getSampler())
-                    .sampler("u_SceneTexture", sceneView, sceneSampler)
                     .sampler("u_BlurTexture", blurView, blurSampler)
                     .uniform("UIBatch", UIBatchUniforms.get())
                     .uniform("MsdfText", MsdfTextUniforms.get());
+            if (pipeline == CombatantRenderPipelines.UI_TEXT_MSDF_GLASS_FAST) {
+                command.uniform(UiGlassFrameUniforms.BLOCK_NAME,
+                        UiGlassFrameUniforms.update(mc, framebufferWidth, framebufferHeight));
+            } else {
+                command.sampler("u_SceneTexture", sceneView, sceneSampler);
+            }
 
             commands.add(command.build());
             handle = null;

@@ -9,6 +9,8 @@ package combatant.client.features.gui.hud.actions;
 import combatant.client.features.gui.clickgui.settings.FunctionBindSetting;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleManager;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
 import java.lang.reflect.Method;
@@ -24,6 +26,16 @@ public final class HudActionRegistry {
     private static final Map<Class<?>, List<AnnotatedAction>> CACHE = new ConcurrentHashMap<>();
 
     private HudActionRegistry() {}
+
+    /** Inventory-backed eligibility for item actions; offhand is not part of the 0..35 loop. */
+    public static boolean hasItem(LocalPlayer player, Item item) {
+        if (player == null || item == null) return false;
+        if (player.getOffhandItem().is(item)) return true;
+        for (int slot = 0; slot < 36; slot++) {
+            if (player.getInventory().getItem(slot).is(item)) return true;
+        }
+        return false;
+    }
 
     public record State(ItemStack stack, boolean available, boolean active, boolean aware, float cooldown,
                         boolean inProgress, float progress) {
@@ -51,12 +63,15 @@ public final class HudActionRegistry {
 
     private record AnnotatedAction(HudAction annotation, Method method) {}
 
+    /** Itemizer actions must be explicitly annotated and backed by a real function bind. */
     public static List<String> actionIds() {
         LinkedHashSet<String> ids = new LinkedHashSet<>();
         for (Module module : ModuleManager.getModules()) {
-            String prefix = module.name() + ":";
-            for (AnnotatedAction action : CACHE.computeIfAbsent(module.getClass(), HudActionRegistry::discover)) {
-                ids.add(prefix + action.annotation().id());
+            Map<String, AnnotatedAction> registered = describedActions(module);
+            for (FunctionBindSetting bind : module.getActionSettings()) {
+                if (registered.containsKey(bind.getActionId())) {
+                    ids.add(module.name() + ":" + bind.getActionId());
+                }
             }
         }
         return List.copyOf(ids);
@@ -65,39 +80,15 @@ public final class HudActionRegistry {
     public static List<Snapshot> snapshots() {
         ArrayList<Snapshot> results = new ArrayList<>();
         for (Module module : ModuleManager.getModules()) {
-            Map<String, FunctionBindSetting> bindings = new LinkedHashMap<>();
+            Map<String, AnnotatedAction> registered = describedActions(module);
             for (FunctionBindSetting bind : module.getActionSettings()) {
-                if (isAnnotated(module, bind.getActionId())) bindings.put(bind.getActionId(), bind);
-            }
-            Map<String, AnnotatedAction> descriptions = new LinkedHashMap<>();
-            for (AnnotatedAction action : CACHE.computeIfAbsent(module.getClass(), HudActionRegistry::discover)) {
-                descriptions.put(action.annotation().id(), action);
-            }
-            for (Map.Entry<String, FunctionBindSetting> entry : bindings.entrySet()) {
-                String actionId = entry.getKey();
-                FunctionBindSetting bind = entry.getValue();
-                AnnotatedAction described = descriptions.remove(actionId);
-                State state = state(module, described);
-                if (state == null && described != null) continue;
-                if (state == null) state = new State(ItemStack.EMPTY, true,
-                        bind.isHeldForHud() || bind.isHudToggleActive(), false, 0.0f);
-                HudAction info = described == null ? null : described.annotation();
-                String label = info != null ? info.label()
-                        : bind.getHudLabel() != null ? bind.getHudLabel() : actionId.replace('_', ' ');
-                String icon = info != null && !info.icon().isBlank() ? info.icon()
-                        : bind.getHudIcon() != null ? bind.getHudIcon() : "";
-                results.add(new Snapshot(module.name() + ":" + actionId, label,
-                        info != null ? info.description() : module.getDisplayName(),
-                        bind.get(), icon, state.stack(), module.isEnabled(),
-                        state.available(), state.active(), state.aware(), state.cooldown(),
-                        state.inProgress(), state.progress()));
-            }
-            for (AnnotatedAction annotated : descriptions.values()) {
-                State state = state(module, annotated);
+                AnnotatedAction action = registered.get(bind.getActionId());
+                if (action == null) continue;
+                State state = state(module, action);
                 if (state == null) continue;
-                HudAction info = annotated.annotation();
+                HudAction info = action.annotation();
                 results.add(new Snapshot(module.name() + ":" + info.id(), info.label(),
-                        info.description(), "", info.icon(), state.stack(), module.isEnabled(),
+                        info.description(), bind.get(), info.icon(), state.stack(), module.isEnabled(),
                         state.available(), state.active(), state.aware(), state.cooldown(),
                         state.inProgress(), state.progress()));
             }
@@ -106,11 +97,12 @@ public final class HudActionRegistry {
         return List.copyOf(results);
     }
 
-    private static boolean isAnnotated(Module module, String id) {
+    private static Map<String, AnnotatedAction> describedActions(Module module) {
+        Map<String, AnnotatedAction> registered = new LinkedHashMap<>();
         for (AnnotatedAction action : CACHE.computeIfAbsent(module.getClass(), HudActionRegistry::discover)) {
-            if (action.annotation().id().equals(id)) return true;
+            registered.put(action.annotation().id(), action);
         }
-        return false;
+        return registered;
     }
 
     private static List<AnnotatedAction> discover(Class<?> type) {

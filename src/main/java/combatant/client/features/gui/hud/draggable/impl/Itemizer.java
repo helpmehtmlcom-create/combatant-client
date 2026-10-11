@@ -77,12 +77,10 @@ public final class Itemizer extends DraggableHudElement {
     private final NumberValue<Double> scale = num("itemizer_scale", "scale", 1.0, 0.5, 2.5);
     private final NumberValue<Integer> columns = num("itemizer_columns", "columns", 5, 1, 6);
     private final NumberValue<Integer> maxEntries = num("itemizer_max_entries", "max_entries", 10, 1, 12);
-    private final BooleanValue showUnavailable = bool("itemizer_show_unavailable", "show_unavailable", false);
     private final BooleanValue blur = bool("itemizer_blur", "blur", true);
     private final NumberValue<Integer> bgAlpha = num("itemizer_bg_alpha", "bg_alpha", 168, 0, 255);
     private final NumberValue<Integer> themeMix = num("itemizer_theme_mix", "theme_mix", 72, 0, 100);
     private final ActionToggles visibleActions = declareActions("itemizer_visible_actions", "visible_actions");
-    private final ActionToggles enabledActions = declareActions("itemizer_enabled_actions", "enabled_actions");
 
     private float drawnX;
     private float drawnY;
@@ -106,17 +104,8 @@ public final class Itemizer extends DraggableHudElement {
         return value;
     }
 
-    public static boolean isActionEnabled(String module, String action) {
-        Itemizer instance = INSTANCE;
-        return instance == null || instance.enabledActions.get(module + ":" + action);
-    }
-
     public static void showAutoEat(ItemStack stack) {
         burst("offhand:consume", stack);
-    }
-
-    public static void showAutoTotem(ItemStack stack) {
-        burst("offhand:totem_priority", stack);
     }
 
     public static void showElytraSwap(ItemStack stack) {
@@ -136,7 +125,6 @@ public final class Itemizer extends DraggableHudElement {
     private void syncActions() {
         Set<String> validIds = new LinkedHashSet<>(HudActionRegistry.actionIds());
         visibleActions.sync(validIds);
-        enabledActions.sync(validIds);
     }
 
     @Override
@@ -181,8 +169,8 @@ public final class Itemizer extends DraggableHudElement {
             if (count >= maxEntries.get()) break;
             if (!visibleActions.get(state.id()) && !chat && !preview) continue;
             if (!state.moduleEnabled() && !chat && !preview) continue;
-            if (!state.available() && !state.aware() && !state.active() && !state.inProgress()
-                    && !showUnavailable.get() && !chat && !preview) continue;
+            if (!state.available() && !state.active() && !state.inProgress()
+                    && !chat && !preview) continue;
             if (unbound(state.bind()) && !state.aware() && !state.inProgress() && !chat && !preview) continue;
             Entry entry = entries.computeIfAbsent(state.id(), Entry::new);
             entry.snapshot = state;
@@ -329,18 +317,14 @@ public final class Itemizer extends DraggableHudElement {
 
     @Override
     public boolean onMouseClicked(float mx, float my, int button) {
-        if (!(ClientScreen.current() instanceof ChatScreen) || (button != 0 && button != 1)) return false;
+        if (!(ClientScreen.current() instanceof ChatScreen) || button != 0) return false;
         int index = hoveredCard(mx, my);
         if (index < 0) return false;
         Entry entry = drawn.get(index);
         if (entry.id.startsWith("preview:")) return false;
-        if (button == 0) {
-            if (!hit(mx, my, drawnX + entry.x * drawnScale,
-                    drawnY + entry.y * drawnScale, ICON_AREA * drawnScale, CARD_HEIGHT * drawnScale)) return false;
-            visibleActions.set(entry.id, !visibleActions.get(entry.id));
-        } else if (!"offhand:totem_priority".equals(entry.id)) {
-            enabledActions.set(entry.id, !enabledActions.get(entry.id));
-        }
+        if (!hit(mx, my, drawnX + entry.x * drawnScale,
+                drawnY + entry.y * drawnScale, ICON_AREA * drawnScale, CARD_HEIGHT * drawnScale)) return false;
+        visibleActions.set(entry.id, !visibleActions.get(entry.id));
         combatant.client.config.ConfigSerializer.requestSave(this);
         return true;
     }
@@ -405,7 +389,6 @@ public final class Itemizer extends DraggableHudElement {
             card.put("inProgress", state.inProgress());
             card.put("progress", state.progress());
             card.put("cooldown", state.cooldown());
-            card.put("enabled", enabledActions.get(entry.id));
             card.put("visible", visibleActions.get(entry.id));
             cards.add(card);
         }
@@ -442,7 +425,6 @@ public final class Itemizer extends DraggableHudElement {
             hash = CachedUiScriptRuntime.mix(hash, state.active() ? 1 : 0);
             hash = CachedUiScriptRuntime.mix(hash, state.inProgress() ? 1 : 0);
             hash = CachedUiScriptRuntime.mix(hash, visibleActions.get(entry.id) ? 1 : 0);
-            hash = CachedUiScriptRuntime.mix(hash, enabledActions.get(entry.id) ? 1 : 0);
         }
         return hash;
     }
@@ -452,27 +434,13 @@ public final class Itemizer extends DraggableHudElement {
     private static String hex(int rgba) { return UiScriptColor.hex(rgba); }
 
     private static final class ActionToggles extends BooleanMapValue {
-        private final boolean protectTotem;
-
         ActionToggles(String name) {
             super(name, Map.of());
-            protectTotem = name.endsWith("enabled_actions");
         }
 
         void sync(Set<String> ids) {
             getAll().keySet().retainAll(ids);
             for (String id : ids) getAll().putIfAbsent(id, true);
-            if (protectTotem && ids.contains("offhand:totem_priority")) getAll().put("offhand:totem_priority", true);
-        }
-
-        @Override public boolean get(String key) {
-            return protectTotem && "offhand:totem_priority".equals(key)
-                    || getAll().getOrDefault(key, true);
-        }
-
-        @Override public void set(String key, boolean value) {
-            if (protectTotem && "offhand:totem_priority".equals(key)) value = true;
-            super.set(key, value);
         }
 
         @Override public void fromJson(Object json) {

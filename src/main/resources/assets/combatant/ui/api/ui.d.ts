@@ -166,7 +166,7 @@ export type UiInlineStyle = {
   materialRoughness?: number;
   materialBevelStrength?: number;
   materialResponse?: number;
-  glassOptics?: "reactive-refraction" | "reactive-smoked" | "etched-glass" | "soft-lens" | "mirror-frosted" | "fresnel-glass" | string;
+  glassOptics?: "reactive-refraction" | "reactive-smoked" | "etched-glass" | "soft-lens" | string;
   glassRefraction?: number;
   glassBevelWidth?: number;
   glassBevelDepth?: number;
@@ -630,7 +630,7 @@ export type UiShapeNode = UiNode & {
   glassTint?: string | number;
   glassAlpha?: number;
   blurAlpha?: number;
-  glassOptics?: "reactive-refraction" | "reactive-smoked" | "etched-glass" | "soft-lens" | "mirror-frosted" | "fresnel-glass" | string;
+  glassOptics?: "reactive-refraction" | "reactive-smoked" | "etched-glass" | "soft-lens" | string;
   glassRefraction?: number;
   glassBevelWidth?: number;
   glassBevelDepth?: number;

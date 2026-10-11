@@ -14,7 +14,6 @@ import net.minecraft.client.Minecraft;
 import org.lwjgl.glfw.GLFW;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.gui.clickgui.ClickGuiSearch;
-import combatant.client.features.gui.clickgui.material.PrismaticGlassTransition;
 import combatant.client.features.gui.clickgui.layout.screen.settings.implement.module.ModuleComponent;
 import combatant.client.features.gui.clickgui.layout.screen.settings.render.LayoutRender2D;
 import combatant.client.features.gui.clickgui.settings.Setting;
@@ -29,7 +28,6 @@ import combatant.client.features.gui.clickgui.util.ClickGuiHintOverlay;
 import combatant.client.features.gui.clickgui.util.ClickGuiI18n;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.renderer.Renderer2D;
-import combatant.client.render.engine.renderer.ui.blend.UiBackdropBlendSpec;
 import combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest;
 import combatant.client.render.engine.renderer.ui.draw.UiBoxShape;
 import combatant.client.render.engine.renderer.ui.draw.UiCompoundSdf;
@@ -83,7 +81,6 @@ public final class ModulesMenuScreen {
     private float areaH;
     private float scale = 1.0f;
     private float screenAnim = 0.0f;
-    private float prismProgress = 1.0f;
     private boolean openTarget = false;
 
     private float searchAnim = 0.0f;
@@ -181,7 +178,6 @@ public final class ModulesMenuScreen {
     }
 
     public void open() {
-        if (!openTarget) prismProgress = 0.0f;
         openTarget = true;
     }
 
@@ -260,9 +256,6 @@ public final class ModulesMenuScreen {
         float dt = AnimationUtility.deltaTime();
         float target = openTarget ? 1.0f : 0.0f;
 
-        if (openTarget && prismProgress < 1.0f) {
-            prismProgress = Math.min(1.0f, prismProgress + dt / 0.85f);
-        }
 
         screenAnim = AnimationUtility.approach(screenAnim, target, dt, openTarget ? 4.8f : 7.5f);
         screenAnim = AnimationUtility.snap(screenAnim, target, 0.01f);
@@ -1201,23 +1194,22 @@ public final class ModulesMenuScreen {
                 + (1.0f - motionProgress) * 5.5f * scale;
         y = Math.max(areaY + 2.0f * scale, y);
 
-        int negativeGlassColor = withAlpha(0xFFFFFFFF, Math.min(1.0f, alpha * 0.84f));
-        float blendBoundsX = x - 3.0f * scale;
-        float blendBoundsY = y - 3.0f * scale;
-        float blendBoundsW = viewW + 6.0f * scale;
-        float blendBoundsH = textH + 6.0f * scale;
-        UiRect blendBounds = UiRect.of(blendBoundsX, blendBoundsY, blendBoundsW, blendBoundsH);
-        UiBackdropBlendSpec blend = UiBackdropBlendSpec.negative(1.0f);
+        int glassColor = withAlpha(0xFFFFFFFF, Math.min(1.0f, alpha * 0.94f));
+        float glassBoundsX = x - 3.0f * scale;
+        float glassBoundsY = y - 3.0f * scale;
+        float glassBoundsW = viewW + 6.0f * scale;
+        float glassBoundsH = textH + 6.0f * scale;
+        UiRect glassBounds = UiRect.of(glassBoundsX, glassBoundsY, glassBoundsW, glassBoundsH);
         UiBackdropRequest backdrop = UiBackdropRequest.currentTargetGlass(
-                blendBounds,
+                glassBounds,
                 UiBlurQuality.LIQUID_GLASS,
                 Renderer2D.LIQUID_GLASS_KAWASE_OFFSET_PX
         );
 
         if (!marquee) {
             renderHoverDescriptionGlassText(
-                    text, x, y, fontSize, negativeGlassColor,
-                    blendBoundsX, blendBoundsY, blendBoundsW, blendBoundsH, blend, backdrop,
+                    text, x, y, fontSize, glassColor,
+                    glassBoundsX, glassBoundsY, glassBoundsW, glassBoundsH, backdrop,
                     Float.NEGATIVE_INFINITY, Float.POSITIVE_INFINITY, 0.0f
             );
             return;
@@ -1243,14 +1235,14 @@ public final class ModulesMenuScreen {
         boolean clipped = ScissorFunction.pushRaw(clipLeft, y, viewW, textH);
         try {
             renderHoverDescriptionGlassText(
-                    text, x + offset, y, fontSize, negativeGlassColor,
-                    blendBoundsX, blendBoundsY, blendBoundsW, blendBoundsH, blend, backdrop,
+                    text, x + offset, y, fontSize, glassColor,
+                    glassBoundsX, glassBoundsY, glassBoundsW, glassBoundsH, backdrop,
                     clipLeft, clipRight, fade
             );
             if (cycleDistance > viewW * 0.5f) {
                 renderHoverDescriptionGlassText(
-                        text, x + offset + cycleDistance, y, fontSize, negativeGlassColor,
-                        blendBoundsX, blendBoundsY, blendBoundsW, blendBoundsH, blend, backdrop,
+                        text, x + offset + cycleDistance, y, fontSize, glassColor,
+                        glassBoundsX, glassBoundsY, glassBoundsW, glassBoundsH, backdrop,
                         clipLeft, clipRight, fade
                 );
             }
@@ -1265,11 +1257,10 @@ public final class ModulesMenuScreen {
             float y,
             float fontSize,
             int color,
-            float blendBoundsX,
-            float blendBoundsY,
-            float blendBoundsW,
-            float blendBoundsH,
-            UiBackdropBlendSpec blend,
+            float glassBoundsX,
+            float glassBoundsY,
+            float glassBoundsW,
+            float glassBoundsH,
             UiBackdropRequest backdrop,
             float clipLeft,
             float clipRight,
@@ -1277,7 +1268,7 @@ public final class ModulesMenuScreen {
     ) {
         comfortaa.beginSize(fontSize, false, false);
         try {
-            comfortaa.renderLiquidGlassBlendQuadGradient(
+            comfortaa.renderLiquidGlassQuadGradient(
                     text,
                     x,
                     y,
@@ -1297,11 +1288,11 @@ public final class ModulesMenuScreen {
                         out[2] = rightColor;
                         out[3] = rightColor;
                     },
-                    blendBoundsX,
-                    blendBoundsY,
-                    blendBoundsW,
-                    blendBoundsH,
-                    blend,
+                    glassBoundsX,
+                    glassBoundsY,
+                    glassBoundsW,
+                    glassBoundsH,
+                    null,
                     backdrop
             );
         } finally {
@@ -1513,41 +1504,20 @@ public final class ModulesMenuScreen {
         if (alpha <= 0.001f) return;
 
         float materialAlpha = AnimationUtility.clamp(alpha, 0.0f, 1.0f);
-        float blurAlpha = AnimationUtility.clamp(materialAlpha * (panel ? 1.20f : 1.04f), 0.0f, 1.0f);
-        float thickness = (panel ? 15.5f : 12.5f) * scale;
-        float fresnelPower = panel ? -18.0f : -16.0f;
-        float fresnelAlpha = 1.0f;
-        float baseAlpha = panel ? 0.78f : 0.84f;
-        float fresnelMix = panel ? 0.52f : 0.48f;
-        PrismaticGlassTransition prism = panel
-                ? PrismaticGlassTransition.fromProgress(prismProgress)
-                : PrismaticGlassTransition.CALM;
-        float distortion = (panel ? 0.190f : 0.155f) * materialAlpha * (1f + prism.strength() * 0.55f);
+        Renderer2D.LiquidGlassPreset preset = panel
+                ? Renderer2D.LiquidGlassPreset.HUD_LARGE
+                : Renderer2D.LiquidGlassPreset.HUD_SMALL;
 
-        // liquidGlassRect already composites its prepared blur as an independent alpha layer.
-        // A blurRect immediately before it prepares and draws a second blur chain for every panel,
-        // while also evicting the reusable captured-world blur from the single-frame cache.
         Renderer2D.COLOR.withLiquidGlassBlurProfile(
                 Renderer2D.BlurQuality.LIQUID_GLASS,
                 1.38f,
                 () -> Renderer2D.COLOR.liquidGlassRect(
-                        x,
-                        y,
-                        w,
-                        h,
+                        x, y, w, h,
                         radius,
-                        thickness,
                         0xFFFFFFFF,
                         materialAlpha,
-                        blurAlpha,
-                        fresnelPower,
-                        fresnelAlpha,
-                        baseAlpha,
-                        fresnelMix,
-                        distortion,
-                        0.0f,
-                        prism.strength(),
-                        prism.phase()
+                        1.0f,
+                        preset
                 )
         );
     }

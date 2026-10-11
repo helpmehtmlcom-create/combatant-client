@@ -37,10 +37,8 @@ public enum CombatantShaderSources {
     public static final String GEOMETRY_EXTENSION = ".geom";
     public static final String ANALYTIC_CLIP_SUFFIX = "__analytic_clip";
     public static final String UI_UNDERLAY_SUFFIX = "__ui_underlay";
-    public static final String LIGHT_GLASS_SUFFIX = "__light_glass";
     private static final String ANALYTIC_CLIP_DEFINE = "#define COMBATANT_ANALYTIC_CLIP 1\n";
     private static final String UI_UNDERLAY_DEFINE = "#define COMBATANT_UI_UNDERLAY 1\n";
-    private static final String LIGHT_GLASS_DEFINE = "#define COMBATANT_LIGHT_GLASS 1\n";
 
     public static boolean isCombatantExtendedSource(Identifier id) {
         return COMBATANT_NAMESPACE.equals(id.getNamespace()) && isExtendedSourcePath(id.getPath());
@@ -117,24 +115,6 @@ public enum CombatantShaderSources {
         return variantId.withPath(variantId.getPath().replace(UI_UNDERLAY_SUFFIX, ""));
     }
 
-    /** Shader axis for ordinary glass that compiles out prism/chromatic caustics. */
-    public static Identifier lightGlassVariantId(Identifier baseId) {
-        String path = baseId.getPath();
-        int extension = shaderExtensionStart(path);
-        return baseId.withPath(extension >= 0
-                ? path.substring(0, extension) + LIGHT_GLASS_SUFFIX + path.substring(extension)
-                : path + LIGHT_GLASS_SUFFIX);
-    }
-
-    public static boolean isLightGlassVariant(Identifier id) {
-        return id != null && id.getPath().contains(LIGHT_GLASS_SUFFIX);
-    }
-
-    public static Identifier lightGlassBaseId(Identifier variantId) {
-        if (!isLightGlassVariant(variantId)) return variantId;
-        return variantId.withPath(variantId.getPath().replace(LIGHT_GLASS_SUFFIX, ""));
-    }
-
     public static Identifier extendedResourceId(Identifier id, ShaderType type) {
         String path = id.getPath();
         if (!path.startsWith(SHADER_PREFIX)) {
@@ -207,40 +187,38 @@ public enum CombatantShaderSources {
     public static String load(ResourceManager resourceManager, Identifier id, ShaderType type) {
         boolean analyticClip = isAnalyticClipVariant(id);
         boolean uiUnderlay = isUiUnderlayVariant(id);
-        boolean lightGlass = isLightGlassVariant(id);
-        Identifier sourceId = lightGlassBaseId(uiUnderlayBaseId(analyticClipBaseId(id)));
+        Identifier sourceId = uiUnderlayBaseId(analyticClipBaseId(id));
         Optional<Resource> direct = resourceManager.getResource(sourceId);
         if (direct.isPresent()) {
-            return load(resourceManager, id, sourceId, direct.get(), analyticClip, uiUnderlay, lightGlass);
+            return load(resourceManager, id, sourceId, direct.get(), analyticClip, uiUnderlay);
         }
 
         Identifier extendedId = extendedResourceId(sourceId, type);
         Optional<Resource> extended = resourceManager.getResource(extendedId);
         if (extended.isPresent()) {
-            return load(resourceManager, id, extendedId, extended.get(), analyticClip, uiUnderlay, lightGlass);
+            return load(resourceManager, id, extendedId, extended.get(), analyticClip, uiUnderlay);
         }
 
         Identifier vanillaId = vanillaResourceId(sourceId, type);
         Optional<Resource> vanilla = resourceManager.getResource(vanillaId);
         if (vanilla.isPresent()) {
-            return load(resourceManager, id, vanillaId, vanilla.get(), analyticClip, uiUnderlay, lightGlass);
+            return load(resourceManager, id, vanillaId, vanilla.get(), analyticClip, uiUnderlay);
         }
 
         throw new IllegalStateException("Missing shader resource: " + id + " (also tried " + extendedId + " and " + vanillaId + ")");
     }
 
     public static String load(ResourceManager resourceManager, Identifier id, Resource resource) {
-        return load(resourceManager, id, id, resource, false, false, false);
+        return load(resourceManager, id, id, resource, false, false);
     }
 
     private static String load(ResourceManager resourceManager, Identifier requestedId, Identifier sourceId,
-                               Resource resource, boolean analyticClip, boolean uiUnderlay, boolean lightGlass) {
+                               Resource resource, boolean analyticClip, boolean uiUnderlay) {
         GlslPreprocessor processor = createImportProcessor(resourceManager, sourceId);
         try (Reader reader = resource.openAsReader()) {
             String raw = IOUtils.toString(reader);
             if (analyticClip) raw = injectDefineAfterVersion(raw, ANALYTIC_CLIP_DEFINE);
             if (uiUnderlay) raw = injectDefineAfterVersion(raw, UI_UNDERLAY_DEFINE);
-            if (lightGlass) raw = injectDefineAfterVersion(raw, LIGHT_GLASS_DEFINE);
             return String.join("", processor.process(raw));
         } catch (Exception e) {
             DebugLog.error("[ShaderSource] failed to read shader source: " + requestedId + " (base " + sourceId + ")", e);

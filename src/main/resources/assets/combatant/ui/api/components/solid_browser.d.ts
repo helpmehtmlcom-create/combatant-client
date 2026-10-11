@@ -245,7 +245,7 @@ export type SolidBrowserProps = SolidStyled & {
   glassTint?: string;
   glassAlpha?: number;
   glassPreset?: string;
-  glassOptics?: "reactive-refraction" | "reactive-smoked" | "etched-glass" | "soft-lens" | "mirror-frosted" | "fresnel-glass" | string;
+  glassOptics?: "reactive-refraction" | "reactive-smoked" | "etched-glass" | "soft-lens" | string;
   glassRefraction?: number;
   glassBevelWidth?: number;
   glassBevelDepth?: number;

@@ -7,6 +7,8 @@
 
 package combatant.client.features.module.modules.visuals.finder;
 
+import combatant.client.config.common.CommonSettingSchemas;
+
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.NumberValue;
 import combatant.client.config.values.RGBAColorValue;
@@ -46,11 +48,11 @@ public final class ExplosionMarker extends Module {
     private static final long MERGE_WINDOW_MS = 1100L;
     private static final long APPEAR_MS = 260L;
 
-    private final NumberValue<Integer> rememberSeconds = num("remember_seconds", 30, 1, 120);
-    private final NumberValue<Integer> alertCooldownSeconds = num("alert_cooldown", 30, 0, 600);
+    private final NumberValue<Integer> rememberSeconds = numCommon("remember_seconds", CommonSettingSchemas.FINDER_REMEMBER_SECONDS, 30, 1, 120);
+    private final NumberValue<Integer> alertCooldownSeconds = numCommon("alert_cooldown", CommonSettingSchemas.FINDER_ALERT_COOLDOWN, 30, 0, 600);
     private final NumberValue<Integer> minExplosions = num("min_explosions", 1, 1, 50);
-    private final BooleanValue tracers = bool("tracers", true);
-    private final BooleanValue chatAlerts = bool("chat_alerts", true);
+    private final BooleanValue tracers = boolCommon("tracers", CommonSettingSchemas.FINDER_TRACERS, true);
+    private final BooleanValue chatAlerts = boolCommon("chat_alerts", CommonSettingSchemas.FINDER_CHAT_ALERTS, true);
     private final RGBAColorValue fillColor = color("fill_color", "#50FF3C3C");
     private final RGBAColorValue lineColor = color("line_color", "#FFFF3C3C");
 

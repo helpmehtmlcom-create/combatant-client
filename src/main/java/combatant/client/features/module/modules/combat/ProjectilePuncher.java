@@ -87,7 +87,7 @@ public final class ProjectilePuncher extends Module {
                             "projectiles",
                             projectileDefaults()
                     ),
-                    CommonSettingSchemas.ITEMS_PROJECTILES.commonI18nKey()
+                    CommonSettingSchemas.ITEMS_PROJECTILES
             );
     private final BooleanValue ignoreOpenInventory =
             boolCommon(

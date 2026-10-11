@@ -79,10 +79,20 @@ public final class MediaPlayer extends DraggableHudElement {
     private static final int ICON_SHUFFLE = 0xEA06;
 
     private final UiMaterialInteractionState glassFluid = new UiMaterialInteractionState();
-    // MediaPlayer: optical inertia/chroma without SDF dents or extra stacked capture.
     private static final UiGlassOpticsSpec MEDIA_GLASS = UiGlassOpticsSpec.LIQUID
-            .withInteractionStrength(0.75f).withChromaticAberration(0.28f)
-            .withMagnification(1.02f).withShapeDeformation(false);
+            .withRefraction(0.008f).withBevel(0.17f, 0.036f)
+            .withFluid(0.68f, 0.78f).withCleanReveal(0.76f)
+            .withInteractionStrength(0.52f).withChromaticAberration(0.38f)
+            .withMagnification(1.012f).withShapeDeformation(false)
+            .withChromaticMotion(UiGlassOpticsSpec.ChromaticMotion.FLOW);
+    private static final UiGlassOpticsSpec MEDIA_TIME_GLASS = MEDIA_GLASS
+            .withRefraction(0.006f).withBevel(0.24f, 0.030f)
+            .withFluid(0.55f, 0.82f).withInteractionStrength(0.30f)
+            .withChromaticAberration(0.24f).withMagnification(1.008f);
+    private static final UiGlassOpticsSpec MEDIA_HOVER_GLASS = MEDIA_GLASS
+            .withRefraction(0.007f).withBevel(0.28f, 0.034f)
+            .withFluid(0.72f, 0.72f).withInteractionStrength(0.42f)
+            .withChromaticAberration(0.28f).withMagnification(1.010f);
 
     private final Minecraft mc = Minecraft.getInstance();
     private final HudGlobalConfig hud = HudGlobalConfig.get();
@@ -126,14 +136,6 @@ public final class MediaPlayer extends DraggableHudElement {
             new RGBColorValue("media_player_text", "#FFFFFF");
     private final ModeValue bgEffect =
             new ModeValue("media_player_bg_effect", "None", EFFECT_NONE, EFFECT_BLUR, EFFECT_GLASS);
-    // Glass optics are deliberately owned by this element, not global UI theme switches.
-    private final BooleanValue glassReactivity = new BooleanValue("media_player_glass_reactivity", true);
-    // UI value is percent of the 0.25 maximum physical refraction coefficient.
-    private final NumberValue<Integer> glassRefraction = new NumberValue<>("media_player_glass_refraction", 11, 0, 100);
-    private final NumberValue<Integer> glassAberration = new NumberValue<>("media_player_glass_aberration", 28, 0, 95);
-    private final NumberValue<Integer> glassMagnification = new NumberValue<>("media_player_glass_magnification", 102, 65, 180);
-    private final BooleanValue glassDeformShape = new BooleanValue("media_player_glass_deform_shape", false);
-    private final BooleanValue glassStacked = new BooleanValue("media_player_glass_stacked", false);
     private final NumberValue<Integer> blurAlpha =
             new NumberValue<>("media_player_blur_alpha", 255, 0, 255);
     private final BooleanValue gradient =
@@ -141,6 +143,49 @@ public final class MediaPlayer extends DraggableHudElement {
     private float anim = 0f;
     private MediaSessionService.Snapshot currentSnapshot = MediaSessionService.Snapshot.empty(MediaSessionService.isMediaAvailable());
 
+    private final UiMaterialInteractionState timeLensFluid = new UiMaterialInteractionState();
+    private final UiMaterialInteractionState playLensFluid = new UiMaterialInteractionState();
+    private final UiMaterialInteractionState shuffleLensFluid = new UiMaterialInteractionState();
+    private final UiMaterialInteractionState prevLensFluid = new UiMaterialInteractionState();
+    private final UiMaterialInteractionState nextLensFluid = new UiMaterialInteractionState();
+    private final UiMaterialInteractionState repeatLensFluid = new UiMaterialInteractionState();
+    private boolean transportInitialized;
+    private boolean lastTransportPlaying;
+    private String lastTransportTrack = "";
+    private long lastTransportPosition;
+
+    private void updateGlassTransport(MediaSessionService.Snapshot snapshot) {
+        if (snapshot == null || !snapshot.hasSession()) {
+            transportInitialized = false;
+            return;
+        }
+        boolean playing = snapshot.isPlaying();
+        String track = snapshot.owner() + "\u0000" + snapshot.title() + "\u0000" + snapshot.artist();
+        long position = snapshot.predictedPositionSeconds();
+        if (playing) {
+            double phase = Util.getMillis() * 0.00034;
+            float flowX = 0.5f + (float) Math.sin(phase) * 0.24f;
+            float flowY = 0.5f + (float) Math.cos(phase * 0.73 + 0.8) * 0.18f;
+            glassFluid.opticalImpulse(flowX, flowY, 0.34f);
+            timeLensFluid.opticalImpulse(0.5f + (flowX - 0.5f) * 0.45f,
+                    0.5f + (flowY - 0.5f) * 0.45f, 0.18f);
+        }
+        if (transportInitialized) {
+            if (!track.equals(lastTransportTrack)) {
+                glassFluid.opticalImpulse(0.46f, 0.46f, 0.95f);
+                playLensFluid.opticalImpulse(0.5f, 0.5f, 0.75f);
+            } else if (playing != lastTransportPlaying) {
+                glassFluid.opticalImpulse(0.54f, 0.53f, playing ? 0.82f : 0.52f);
+                playLensFluid.opticalImpulse(0.5f, 0.5f, 0.78f);
+            } else if (Math.abs(position - lastTransportPosition) > 3) {
+                glassFluid.opticalImpulse(0.72f, 0.48f, 0.55f);
+            }
+        }
+        transportInitialized = true;
+        lastTransportPlaying = playing;
+        lastTransportTrack = track;
+        lastTransportPosition = position;
+    }
     private float playHover;
     private float shuffleHover;
     private float prevHover;
@@ -184,6 +229,7 @@ public final class MediaPlayer extends DraggableHudElement {
     public void onResourceReload() {
         mediaService.onResourceReload();
         currentSnapshot = MediaSessionService.Snapshot.empty(MediaSessionService.isMediaAvailable());
+        transportInitialized = false;
     }
 
     @Override
@@ -198,13 +244,7 @@ public final class MediaPlayer extends DraggableHudElement {
         defs.add(SettingDef.colorNoAlpha(accent).visibleWhen(() -> !syncTheme.get()));
         defs.add(SettingDef.colorNoAlpha(text).visibleWhen(() -> !syncTheme.get()));
         defs.add(SettingDef.mode(bgEffect));
-        defs.add(SettingDef.number(blurAlpha).visibleWhen(this::hasEffect));
-        defs.add(SettingDef.bool(glassReactivity).visibleWhen(this::isGlassEffect));
-        defs.add(SettingDef.number(glassRefraction).visibleWhen(this::isGlassEffect));
-        defs.add(SettingDef.number(glassAberration).visibleWhen(this::isGlassEffect));
-        defs.add(SettingDef.number(glassMagnification).visibleWhen(this::isGlassEffect));
-        defs.add(SettingDef.bool(glassDeformShape).visibleWhen(() -> isGlassEffect() && glassReactivity.get()));
-        defs.add(SettingDef.bool(glassStacked).visibleWhen(this::isGlassEffect));
+        defs.add(SettingDef.number(blurAlpha).visibleWhen(this::isBlurEffect));
         defs.add(SettingDef.bool(gradient).visibleWhen(() -> syncTheme.get() && !isGlassEffect()));
         defs.add(SettingDef.bool(strokeEnabled));
         defs.add(SettingDef.colorNoAlpha(stroke).visibleWhen(() -> strokeEnabled.get() && !syncTheme.get()));
@@ -297,6 +337,7 @@ public final class MediaPlayer extends DraggableHudElement {
 
         MediaSessionService.Snapshot snapshot = mediaService.snapshot();
         currentSnapshot = snapshot;
+        if (isGlassEffect()) updateGlassTransport(snapshot);
         MediaInfo media = snapshot.media();
         boolean hasSession = snapshot.hasSession();
         boolean mediaAvailable = snapshot.mediaAvailable();
@@ -451,7 +492,7 @@ public final class MediaPlayer extends DraggableHudElement {
                     ), scale
             );
             renderer.roundedRectGradient(drawX, drawY, boxW * scale, boxH * scale, radius * scale, 1.0f, top, bottom, 90.0f);
-        } else {
+        } else if (!glassEnabled) {
             HudRenderUtil.drawHudBackground(renderer, drawX, drawY, boxW * scale, boxH * scale, radius * scale, 1.0f, bgScaled, useGradient);
         }
         if (strokeEnabled.get()) {
@@ -606,8 +647,26 @@ public final class MediaPlayer extends DraggableHudElement {
             );
         }
 
+        float timeX = drawX + textX * scale;
+        float timeY = drawY + bottomY * scale;
         metaRenderer.begin(metaScale * scale, false, false);
-        metaRenderer.render(timeText, drawX + textX * scale, drawY + bottomY * scale,
+        float timeW = (float) metaRenderer.getWidth(timeText, false);
+        float timeH = (float) metaRenderer.getHeight(false);
+        metaRenderer.end();
+        if (glassEnabled && timeW > 0f) {
+            float timePadX = 3.2f * baseScale * scale;
+            float timePadY = 1.8f * baseScale * scale;
+            float lensX = timeX - timePadX;
+            float lensY = timeY - timePadY;
+            float lensW = timeW + timePadX * 2f;
+            float lensH = timeH + timePadY * 2f;
+            HudRenderUtil.drawReactiveGlass(lensX, lensY, lensW, lensH, lensH * 0.5f,
+                    Math.max(0.12f, baseScale * scale), false,
+                    1f, scale, timeLensFluid, MEDIA_TIME_GLASS, true, 0f, 0.4f);
+        }
+
+        metaRenderer.begin(metaScale * scale, false, false);
+        metaRenderer.render(timeText, timeX, timeY,
                 new RenderColor(HudRenderUtil.scaleAlpha(uiTextMuted, scale)), false);
         metaRenderer.end();
 
@@ -630,21 +689,26 @@ public final class MediaPlayer extends DraggableHudElement {
 
         if (showShuffle) {
             drawControl(renderer, iconRenderer, iconString(ICON_SHUFFLE),
-                    shuffleX, shuffleY, buttonSize, shuffleHover, scale, controlIconScale, shuffleColor(snapshot, scale));
+                    shuffleX, shuffleY, buttonSize, shuffleHover, scale, controlIconScale,
+                    shuffleColor(snapshot, scale), glassEnabled, shuffleLensFluid);
         }
 
         drawControl(renderer, iconRenderer, iconString(ICON_PREV),
-                prevX, prevY, buttonSize, prevHover, scale, controlIconScale, HudRenderUtil.scaleAlpha(uiText, scale));
+                prevX, prevY, buttonSize, prevHover, scale, controlIconScale,
+                HudRenderUtil.scaleAlpha(uiText, scale), glassEnabled, prevLensFluid);
 
         drawControl(renderer, iconRenderer,
                 iconString(snapshot.isPlaying() ? ICON_PAUSE : ICON_PLAY),
-                playX, playY, buttonSize, playHover, scale, controlIconScale, HudRenderUtil.scaleAlpha(uiText, scale));
+                playX, playY, buttonSize, playHover, scale, controlIconScale,
+                HudRenderUtil.scaleAlpha(uiText, scale), glassEnabled, playLensFluid);
 
         drawControl(renderer, iconRenderer, iconString(ICON_NEXT),
-                nextX, nextY, buttonSize, nextHover, scale, controlIconScale, HudRenderUtil.scaleAlpha(uiText, scale));
+                nextX, nextY, buttonSize, nextHover, scale, controlIconScale,
+                HudRenderUtil.scaleAlpha(uiText, scale), glassEnabled, nextLensFluid);
 
         if (showRepeat) {
-            drawRepeatControl(renderer, snapshot, repeatX, repeatY, buttonSize, repeatHover, scale);
+            drawRepeatControl(renderer, snapshot, repeatX, repeatY, buttonSize, repeatHover, scale,
+                    glassEnabled, repeatLensFluid);
         }
     }
 
@@ -657,13 +721,19 @@ public final class MediaPlayer extends DraggableHudElement {
                              float hover,
                              float alpha,
                              float iconScale,
-                             int iconColor) {
+                             int iconColor,
+                             boolean glassEnabled,
+                             UiMaterialInteractionState lensFluid) {
         if (size <= 0f) return;
         float radius = size * 0.5f;
         float hoverEase = clamp01(hover);
-        int bg = HudRenderUtil.scaleAlpha(uiAccentSoft, hoverEase * 0.45f * alpha);
         if (hoverEase > 0.01f) {
-            renderer.roundedRect(x, y, size, size, radius, 1.0f, bg);
+            if (glassEnabled) {
+                drawHoverLens(x, y, size, hoverEase, alpha, lensFluid);
+            } else {
+                int bg = HudRenderUtil.scaleAlpha(uiAccentSoft, hoverEase * 0.45f * alpha);
+                renderer.roundedRect(x, y, size, size, radius, 1.0f, bg);
+            }
         }
 
         iconRenderer.begin(iconScale * alpha, false, false);
@@ -681,13 +751,19 @@ public final class MediaPlayer extends DraggableHudElement {
                                    float y,
                                    float size,
                                    float hover,
-                                   float alpha) {
+                                   float alpha,
+                                   boolean glassEnabled,
+                                   UiMaterialInteractionState lensFluid) {
         if (size <= 0f) return;
         float radius = size * 0.5f;
         float hoverEase = clamp01(hover);
-        int bg = HudRenderUtil.scaleAlpha(uiAccentSoft, hoverEase * 0.45f * alpha);
         if (hoverEase > 0.01f) {
-            renderer.roundedRect(x, y, size, size, radius, 1.0f, bg);
+            if (glassEnabled) {
+                drawHoverLens(x, y, size, hoverEase, alpha, lensFluid);
+            } else {
+                int bg = HudRenderUtil.scaleAlpha(uiAccentSoft, hoverEase * 0.45f * alpha);
+                renderer.roundedRect(x, y, size, size, radius, 1.0f, bg);
+            }
         }
 
         String icon = repeatSvg(snapshot);
@@ -696,6 +772,17 @@ public final class MediaPlayer extends DraggableHudElement {
         float ix = x + (size - iconSize) * 0.5f;
         float iy = y + (size - iconSize) * 0.5f;
         renderer.svg(icon, ix, iy, iconSize, iconSize, SvgRenderOptions.overrideColor(color));
+    }
+
+    private void drawHoverLens(float x, float y, float size, float hover, float alpha,
+                               UiMaterialInteractionState lensFluid) {
+        float eased = hover * hover * (3f - 2f * hover);
+        float lensSize = size * (0.72f + 0.28f * eased);
+        float lensX = x + (size - lensSize) * 0.5f;
+        float lensY = y + (size - lensSize) * 0.5f;
+        HudRenderUtil.drawReactiveGlass(lensX, lensY, lensSize, lensSize, lensSize * 0.5f,
+                Math.max(0.12f, lensSize / BASE_BUTTON_SIZE), false,
+                1f, eased * alpha, lensFluid, MEDIA_HOVER_GLASS, true, 0f, 0.65f);
     }
 
     private void updateHover(boolean chatOpen, boolean showShuffle, boolean showRepeat) {
@@ -871,25 +958,18 @@ public final class MediaPlayer extends DraggableHudElement {
     }
 
     private void drawGlass(float x, float y, float w, float h, float radius, float scale, int accentSoft) {
-        float alpha = blurAlpha.get() / 255f;
-        UiGlassOpticsSpec optics = MEDIA_GLASS
-                .withRefraction(glassRefraction.get() / 400f)
-                .withInteractionStrength(glassReactivity.get() ? 0.75f : 0f)
-                .withChromaticAberration(glassAberration.get() / 100f)
-                .withMagnification(glassMagnification.get() / 100f)
-                .withShapeDeformation(glassDeformShape.get());
         HudRenderUtil.drawReactiveGlass(x, y, w, h, radius, scale, true,
-                alpha, alpha, glassFluid, optics, glassStacked.get());
+                1f, anim, glassFluid, MEDIA_GLASS, false, 0f, 0.55f);
         if (isGradientPanelStyle()) {
             float strength = (themeGradientStrength.get() / 100.0f) * (themeMix.get() / 100.0f);
-            HudRenderUtil.ThemeGradient panelGradient = HudRenderUtil.themePanelGradient(Math.round(72.0f * strength));
+            HudRenderUtil.ThemeGradient panelGradient = HudRenderUtil.themePanelGradient(Math.round(34.0f * strength * anim));
             Renderer2D.COLOR.roundedRectGradient(
                     x, y, w, h, radius, 1.0f,
                     panelGradient.start(), panelGradient.end(), panelGradient.angleDeg()
             );
         } else if (syncTheme.get() && HudRenderUtil.PANEL_STYLE_ACCENT.equals(panelStyle.get())) {
             HudRenderUtil.ThemeGradient accentGradient = HudRenderUtil.themeAccentGradient(
-                    Math.round(42.0f * (themeMix.get() / 100.0f)));
+                    Math.round(24.0f * (themeMix.get() / 100.0f) * anim));
             Renderer2D.COLOR.roundedRectGradient(
                     x, y, w, h, radius, 1.0f,
                     accentGradient.start(), accentGradient.end(), accentGradient.angleDeg()

@@ -216,6 +216,21 @@ public final class LanguageFallbackTextRenderer implements TextRenderer {
                                                  double boundsWidth,
                                                  double boundsHeight,
                                                  RenderPipeline pipelineOverride) {
+        return renderLiquidGlassQuadGradient(text, x, y, gradient, boundsX, boundsY,
+                boundsWidth, boundsHeight, pipelineOverride, null);
+    }
+
+    @Override
+    public double renderLiquidGlassQuadGradient(String text,
+                                                 double x,
+                                                 double y,
+                                                 Font.GlyphQuadGradient gradient,
+                                                 double boundsX,
+                                                 double boundsY,
+                                                 double boundsWidth,
+                                                 double boundsHeight,
+                                                 RenderPipeline pipelineOverride,
+                                                 UiBackdropRequest backdrop) {
         String displayText = NameProtect.applyDisplay(text);
         if (displayText == null || displayText.isEmpty() || gradient == null) return x;
         boolean implicitBegin = !building;
@@ -237,7 +252,8 @@ public final class LanguageFallbackTextRenderer implements TextRenderer {
                             boundsY,
                             boundsWidth,
                             boundsHeight,
-                            pipelineOverride
+                            pipelineOverride,
+                            backdrop
                     );
                     return 0.0;
                 });

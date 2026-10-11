@@ -37,8 +37,9 @@
   ],
   "client": [
     "AbstractClientPlayerMixin",
-    "AbstractContainerMenuSlotLockMixin",
     "AbstractContainerScreenMixin",
+    "CreativeModeInventorySlotLockMixin",
+    "accessors.CreativeSlotWrapperAccessor",
     "MultiPlayerGameModeSlotLockMixin",
     "StringDecomposerMixin",
     "accessors.AbstractContainerScreenAccessor",

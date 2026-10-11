@@ -206,14 +206,17 @@ public abstract class GuiMixin {
         ci.cancel();
     }
 
-    // Vanilla calls extractSlot with seed 1..9 for hotbar and 10 for offhand.
-    // Use this real slot index, not an ItemStack identity (the latter can tint unrelated icons).
-    @Inject(method = "extractSlot", at = @At("TAIL"))
-    private void combatant$offhandSlotLockOverlay(GuiGraphicsExtractor ctx, int x, int y,
-            DeltaTracker delta, Player player, ItemStack stack, int seed, CallbackInfo ci) {
-        if (seed == 10 && InventorySlotLocks.isLocked(InventorySlotLocks.OFFHAND)) {
-            InventorySlotLocks.renderLockOverlay(ctx, x, y);
-        }
+    // Render the lock in the actual offhand location, never based on an item seed.
+    @Inject(method = "extractItemHotbar", at = @At("TAIL"))
+    private void combatant$offhandSlotLockOverlay(GuiGraphicsExtractor ctx, DeltaTracker delta, CallbackInfo ci) {
+        Player player = minecraft.player;
+        if (player == null || player.getOffhandItem().isEmpty()
+                || !InventorySlotLocks.isLocked(InventorySlotLocks.OFFHAND)) return;
+
+        int center = ctx.guiWidth() / 2;
+        int x = player.getMainArm().getOpposite() == net.minecraft.world.entity.HumanoidArm.LEFT
+                ? center - 117 : center + 101;
+        InventorySlotLocks.renderLockOverlay(ctx, x, ctx.guiHeight() - 19);
     }
 
     @Inject(

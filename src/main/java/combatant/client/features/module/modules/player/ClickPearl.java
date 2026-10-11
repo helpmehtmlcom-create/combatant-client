@@ -49,9 +49,12 @@ public class ClickPearl extends Module {
             label = "Pearl", description = "Throw an ender pearl", icon = "circle-dot")
     public combatant.client.features.gui.hud.actions.HudActionRegistry.State hudPearl() {
         var player = client.player;
-        boolean ready = player != null && !player.getCooldowns().isOnCooldown(new ItemStack(Items.ENDER_PEARL));
+        boolean hasPearl = player != null && (useOffhand.get() && isPearl(player.getOffhandItem())
+                || findPearlInHotbar(player) >= 0
+                || searchInventory.get() && findPearlInInventory(player) >= 0);
+        boolean cooling = player != null && player.getCooldowns().isOnCooldown(new ItemStack(Items.ENDER_PEARL));
         return new combatant.client.features.gui.hud.actions.HudActionRegistry.State(
-                new ItemStack(Items.ENDER_PEARL), ready, false, false, ready ? 0.0f : 1.0f);
+                new ItemStack(Items.ENDER_PEARL), hasPearl, false, false, cooling ? 1.0f : 0.0f);
     }
 
     @Override

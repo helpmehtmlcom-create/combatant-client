@@ -94,20 +94,36 @@ public class WindJump extends Module {
             label = "Wind Jump", description = "Jump using a wind charge", icon = "wind")
     public combatant.client.features.gui.hud.actions.HudActionRegistry.State hudWindJump() {
         var player = Minecraft.getInstance().player;
-        boolean ready = player != null && player.tickCount >= nextAllowedUseTick;
+        boolean hasCharge = player != null && (getWindChargeHand(player) != null
+                || findWindChargeHotbarSlot(player) >= 0);
+        boolean context = player != null && !player.isFallFlying()
+                && !player.isSwimming() && !player.isInWater() && !player.isInLava()
+                && (player.onGround() || player.fallDistance > 0.5f);
+        boolean cooling = player != null && (player.tickCount < nextAllowedUseTick
+                || player.getCooldowns().isOnCooldown(net.minecraft.world.item.Items.WIND_CHARGE.getDefaultInstance()));
+        boolean queued = pendingUse != null;
         return new combatant.client.features.gui.hud.actions.HudActionRegistry.State(
                 new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.WIND_CHARGE),
-                ready, pendingUse != null, ready && player.fallDistance > 1.0f, ready ? 0.0f : 1.0f);
+                hasCharge && context || queued, queued,
+                hasCharge && context && !cooling && player.fallDistance > 1.0f,
+                cooling ? 1.0f : 0.0f);
     }
 
     @combatant.client.features.gui.hud.actions.HudAction(id = ACTION_WINDTHROW,
             label = "Wind Throw", description = "Directional wind charge throw", icon = "wind")
     public combatant.client.features.gui.hud.actions.HudActionRegistry.State hudWindThrow() {
         var player = Minecraft.getInstance().player;
-        boolean ready = player != null && player.tickCount >= nextAllowedUseTick;
+        boolean hasCharge = player != null && (player.onGround() ? hasWindCharge(player)
+                : getWindChargeHand(player) != null || findWindChargeHotbarSlot(player) >= 0);
+        boolean context = player != null && (player.onGround()
+                || !player.isFallFlying() && !player.isSwimming() && !player.isInWater()
+                && !player.isInLava() && player.getDeltaMovement().y <= WINDTHROW_TRIGGER_VERTICAL_SPEED);
+        boolean cooling = player != null && (player.tickCount < nextAllowedUseTick
+                || player.getCooldowns().isOnCooldown(net.minecraft.world.item.Items.WIND_CHARGE.getDefaultInstance()));
+        boolean queued = pendingUse != null;
         return new combatant.client.features.gui.hud.actions.HudActionRegistry.State(
                 new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.WIND_CHARGE),
-                ready, pendingUse != null, false, ready ? 0.0f : 1.0f);
+                hasCharge && context || queued, queued, false, cooling ? 1.0f : 0.0f);
     }
 
     @Override

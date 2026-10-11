@@ -213,15 +213,6 @@ public final class Offhand extends Module {
     private boolean useActionQueued;
     private boolean restoreActionQueued;
 
-    @HudAction(id = "totem_priority", label = "Totem", description = "Offhand survival priority", icon = "shield")
-    public HudActionRegistry.State hudTotem() {
-        LocalPlayer player = mc.player;
-        boolean danger = player != null && shouldHoldTotem(player, effectiveHealth(player));
-        return new HudActionRegistry.State(new ItemStack(Items.TOTEM_OF_UNDYING),
-                player != null && findTotemSlot(player) != -1 || player != null && isTotemInOffhand(player),
-                player != null && isTotemInOffhand(player), danger, 0.0f);
-    }
-
     @HudAction(id = "consume", label = "Consume", description = "Eat suitable food or an apple when offered", icon = "apple")
     public HudActionRegistry.State hudConsume() {
         LocalPlayer player = mc.player;
@@ -338,7 +329,6 @@ public final class Offhand extends Module {
         updateSuggestion(player, danger);
 
         boolean consumptionEnabled = autoConsume.get()
-                && Itemizer.isActionEnabled(name(), ACTION_CONSUME)
                 && consumeControl.get() != ConsumeControl.DISABLED;
         if (consumptionEnabled && consumeControl.get() == ConsumeControl.SEMI) {
             if (isActionPressedOnce(ACTION_CONSUME) && canOfferConsumption(player, danger)) {
@@ -402,7 +392,7 @@ public final class Offhand extends Module {
         if (isTotemInOffhand(player)) return true;
         int slot = findTotemSlot(player);
         return slot != -1 && requestOffhandSwap(slot,
-                () -> Itemizer.showAutoTotem(player.getOffhandItem().copy()), true);
+                null, true);
     }
 
     public boolean isTotemSwapPending() {
@@ -438,8 +428,7 @@ public final class Offhand extends Module {
         if (isItemUsable(player, Items.TOTEM_OF_UNDYING.getDefaultInstance())
                 && (isTotemInOffhand(player) || totemSlot != -1)) {
             if (!isTotemInOffhand(player) && totemSlot != -1) {
-                ItemStack display = player.getInventory().getItem(totemSlot).copy();
-                requestOffhandSwap(totemSlot, () -> Itemizer.showAutoTotem(display), true);
+                requestOffhandSwap(totemSlot, null, true);
             }
             return;
         }
@@ -522,7 +511,6 @@ public final class Offhand extends Module {
 
     private void updateSuggestion(LocalPlayer player, boolean danger) {
         suggestedReady = autoConsume.get() && consumeControl.get() != ConsumeControl.DISABLED
-                && Itemizer.isActionEnabled(name(), ACTION_CONSUME)
                 && canOfferConsumption(player, danger);
         ItemChoice choice = suggestedReady ? selectConsumable(player, danger) : null;
         if (choice != null) suggestedStack = choice.stack();
@@ -780,7 +768,7 @@ public final class Offhand extends Module {
                     LocalPlayer player = mc.player;
                     return isEnabled() && player != null && !player.isUsingItem()
                             && player.tickCount >= consumeLockedUntilTick
-                            && autoConsume.get() && Itemizer.isActionEnabled(name(), ACTION_CONSUME)
+                            && autoConsume.get()
                             && consumeControl.get() != ConsumeControl.DISABLED
                             && (consumeControl.get() == ConsumeControl.AUTO || semiConsumeArmed)
                             && !offhandSwapPending && !restoreInventoryPending

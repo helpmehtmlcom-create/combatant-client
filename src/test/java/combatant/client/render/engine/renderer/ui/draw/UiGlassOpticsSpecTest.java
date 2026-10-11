@@ -6,11 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 final class UiGlassOpticsSpecTest {
     @Test
-    void liquidIsTheDefaultAndFresnelRemainsExplicit() {
+    void liquidIsTheOnlyDefaultOpticalModel() {
         assertEquals(UiGlassOpticsSpec.Mode.LIQUID_REFRACTION,
                 UiLiquidGlassMaterial.DEFAULT.optics().mode());
-        assertEquals(UiGlassOpticsSpec.Mode.FRESNEL_GLASS,
-                UiLiquidGlassMaterial.FRESNEL_GLASS.optics().mode());
+        assertEquals(0.12f, UiLiquidGlassMaterial.DEFAULT.tintStrength());
+        assertEquals(1.0f, UiLiquidGlassMaterial.DEFAULT.withTintStrength(4.0f).tintStrength());
     }
 
     @Test
@@ -27,9 +27,9 @@ final class UiGlassOpticsSpecTest {
         );
 
         assertEquals(UiGlassOpticsSpec.Mode.LIQUID_REFRACTION, spec.mode());
-        assertEquals(-0.25f, spec.refraction());
+        assertEquals(-0.08f, spec.refraction());
         assertEquals(0.001f, spec.bevelWidth());
-        assertEquals(0.5f, spec.bevelDepth());
+        assertEquals(0.15f, spec.bevelDepth());
         assertEquals(5.0f, spec.interactionStrength());
         assertEquals(0.0f, spec.interactionRadius());
         assertEquals(1.0f, spec.interactionViscosity());
