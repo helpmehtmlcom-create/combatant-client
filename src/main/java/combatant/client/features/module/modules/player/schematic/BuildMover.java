@@ -152,6 +152,7 @@ final class BuildMover {
     private int pillarBlocks;
     private int helpersRemoved;
     private int aborts;
+    private int pillarJumps;
 
     BuildMover(Minecraft mc, Host host) {
         this.mc = mc;
@@ -190,6 +191,18 @@ final class BuildMover {
         return aborts;
     }
 
+    int pillarJumps() {
+        return pillarJumps;
+    }
+
+    /**
+     * A pillar jump is in the air: its support click is due within a few ticks and nothing else may take the
+     * click or the rotation, or the block is missed and the jump wasted.
+     */
+    boolean midPillarJump() {
+        return mode == Mode.PILLARING && pillar != null && pillarBaseY != Integer.MIN_VALUE;
+    }
+
     /** Forget the route and stop driving the keys; support blocks already placed stay tracked. */
     void reset() {
         stopMining();
@@ -218,6 +231,7 @@ final class BuildMover {
         pillarBlocks = 0;
         helpersRemoved = 0;
         aborts = 0;
+        pillarJumps = 0;
         lastPosition = null;
     }
 
@@ -476,6 +490,7 @@ final class BuildMover {
         }
         if (Math.abs(player.getDeltaMovement().x) + Math.abs(player.getDeltaMovement().z) > 0.03) return null;
         jumpThisTick = true;
+        pillarJumps++;
         pillarBaseY = feetY;
         return null;
     }

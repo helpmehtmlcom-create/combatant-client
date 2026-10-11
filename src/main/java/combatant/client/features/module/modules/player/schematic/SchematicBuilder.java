@@ -147,6 +147,8 @@ public final class SchematicBuilder extends Module {
     private final BuildMover mover = new BuildMover(mc, new MoverHost());
     private int[] footprint;
     private boolean aimedThisTick;
+    private int rotationWaitTicks;
+    private int exactWaitTicks;
 
 
     private Pending pending;
@@ -192,6 +194,8 @@ public final class SchematicBuilder extends Module {
         lastShortfallTick = Integer.MIN_VALUE;
         mover.clearAll();
         footprint = null;
+        rotationWaitTicks = 0;
+        exactWaitTicks = 0;
     }
 
     public Status status() {
@@ -208,9 +212,10 @@ public final class SchematicBuilder extends Module {
 
     /** Walk statistics for diagnostics: routes planned, route cells, blocks walked, pillar blocks, helpers broken, aborts. */
     public String moverSummary() {
-        return String.format(java.util.Locale.ROOT, "routes=%d routeCells=%d walked=%.1f pillar=%d helpersRemoved=%d aborts=%d %s",
-                mover.routes(), mover.routeCells(), mover.walked(), mover.pillarBlocks(), mover.helpersRemoved(),
-                mover.aborts(), mover);
+        return String.format(java.util.Locale.ROOT,
+                "routes=%d routeCells=%d walked=%.1f pillar=%d pillarJumps=%d helpersRemoved=%d aborts=%d rotWait=%d exactWait=%d %s",
+                mover.routes(), mover.routeCells(), mover.walked(), mover.pillarBlocks(), mover.pillarJumps(),
+                mover.helpersRemoved(), mover.aborts(), rotationWaitTicks, exactWaitTicks, mover);
     }
 
     private boolean donutRules() {
@@ -309,10 +314,13 @@ public final class SchematicBuilder extends Module {
             pending = null;
         }
         // Planning during the cooldown lets the rotation travel to the next block while the delay runs out.
-        if (pending == null) {
+        // Mid pillar jump the support click owns the click and the rotation: a build block planned now would turn
+        // the view away from the block under the feet and the jump would land without its support.
+        if (pending == null && !(autoWalk.get() && mover.midPillarJump())) {
             pending = choose(player);
             pendingAge = 0;
         }
+        if (pending == null && autoWalk.get() && mover.midPillarJump()) status = Status.OUT_OF_REACH;
         if (pending == null && autoWalk.get()) {
             pending = move(player);
             pendingAge = 0;
@@ -386,6 +394,7 @@ public final class SchematicBuilder extends Module {
             double reach = effectiveRange() + 0.5;
             hit = BuildPlanner.trace(player, current, reach);
             if (!BuildPlanner.matches(hit, plan) || !BuildPlanner.matches(BuildPlanner.trace(player, server, reach), plan)) {
+                rotationWaitTicks++;
                 return false;
             }
             facingRotation = server;
@@ -406,7 +415,10 @@ public final class SchematicBuilder extends Module {
         boolean exact = predicted == work.expected;
         // The ray reaches the planned face before the rotation settles on the planned point; clicking then puts
         // a stair or slab in the wrong half. Wait for the exact click, but not past half the plan timeout.
-        if (!exact && plan.exact() && pendingAge < PLAN_TIMEOUT_TICKS / 2) return false;
+        if (!exact && plan.exact() && pendingAge < PLAN_TIMEOUT_TICKS / 2) {
+            exactWaitTicks++;
+            return false;
+        }
         if (!exact && approximate.get() == ApproximateMode.SKIP) {
             retryAfter.put(plan.target().asLong(), ticks + RETRY_AFTER_TICKS);
             pending = null;
