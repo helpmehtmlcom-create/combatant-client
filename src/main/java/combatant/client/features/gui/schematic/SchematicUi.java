@@ -25,6 +25,8 @@ final class SchematicUi {
     static final int GOOD = 0xFF66BB6A;
     static final int BAD = 0xFFEF5350;
     static final int WARN = 0xFFFF9800;
+    /** Redstone components in the materials list and the layer view. */
+    static final int REDSTONE = 0xFFD8342B;
 
     // Re-read from the active theme every frame by syncTheme(); the values here are the dark default.
     static int TEXT = 0xFFEEF2F8;
