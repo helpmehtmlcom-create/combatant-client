@@ -11,6 +11,7 @@ import net.minecraft.SharedConstants;
 import net.minecraft.core.Direction;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.HopperBlock;
 import net.minecraft.world.level.block.LeverBlock;
 import net.minecraft.world.level.block.ObserverBlock;
 import net.minecraft.world.level.block.RedStoneWireBlock;
@@ -225,6 +226,19 @@ class BuildOrderTest {
         boolean one = order.dependency(0) == BuildOrder.NO_DEPENDENCY;
         boolean two = order.dependency(1) == BuildOrder.NO_DEPENDENCY;
         assertTrue(one ^ two, "exactly one edge of the loop is dropped");
+    }
+
+    @Test
+    void sidewaysHoppersWaitForTheBlockTheyFeed() {
+        BlockState east = Blocks.HOPPER.defaultBlockState().setValue(HopperBlock.FACING, Direction.EAST);
+        BlockState down = Blocks.HOPPER.defaultBlockState();
+        Builder b = new Builder(3, 1, 1);
+        b.set(0, 0, 0, east).set(1, 0, 0, east).set(2, 0, 0, down);
+        Schematic s = b.build();
+        BuildOrder order = BuildOrder.compute(s, cells(s));
+        assertEquals(1, order.dependency(0));
+        assertEquals(2, order.dependency(1));
+        assertEquals(BuildOrder.NO_DEPENDENCY, order.dependency(2));
     }
 
     @Test
