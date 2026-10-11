@@ -15,7 +15,7 @@ import com.mojang.blaze3d.textures.GpuTextureView;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.core.RenderFrameContext;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.PostProcessRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessExecutionContext;
 import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.engine.postprocess.PostProcessPass;
@@ -156,7 +156,7 @@ public final class WorldBlastShockwaves implements PostProcessPass {
             execution.rhi().drawFullscreen(
                     FullscreenDrawCommand.builder("Combatant blast shockwave")
                             .colorAttachment(destination)
-                            .pipeline(CombatantRenderPipelines.POSTPROCESS_BLAST_SHOCKWAVE)
+                            .pipeline(PostProcessRenderPipelines.POSTPROCESS_BLAST_SHOCKWAVE)
                             .uniform("JumpShockwave", JumpShockwaveUniforms.get())
                             .sampler("u_Texture", source, linear)
                             .sampler("u_Depth", request.depthTest() ? depth : source, nearest)

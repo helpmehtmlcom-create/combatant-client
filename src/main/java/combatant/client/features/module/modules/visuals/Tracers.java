@@ -31,7 +31,7 @@ import combatant.client.mixininterface.IEntity;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.core.ViewportContext;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.UiRenderPipelines;
 import combatant.client.render.engine.renderer.MeshRenderer;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.Renderer3D;
@@ -68,7 +68,7 @@ public class Tracers extends Module {
     private static final float ARROW_RADIUS_MIN_FACTOR = 0.55f;
     private static final float ARROW_RADIUS_MAX_FACTOR = 1.0f;
     private static final MeshBuilder ARROW_MESH =
-            new MeshBuilder(CombatantRenderPipelines.UI_TEXTURED_ADDITIVE_TRANSFORMED);
+            new MeshBuilder(UiRenderPipelines.UI_TEXTURED_ADDITIVE_TRANSFORMED);
     private final Minecraft mc = Minecraft.getInstance();
     private final BooleanValue traceFriendsValue = bool("tracersTraceFriends", SETTING_TRACE_FRIENDS, false);
     private final ModeValue tracersMode =
@@ -161,7 +161,7 @@ public class Tracers extends Module {
 
         MeshRenderer.begin()
                 .attachments(mc.gameRenderer.mainRenderTarget())
-                .pipeline(CombatantRenderPipelines.UI_TEXTURED_ADDITIVE_TRANSFORMED)
+                .pipeline(UiRenderPipelines.UI_TEXTURED_ADDITIVE_TRANSFORMED)
                 .mesh(ARROW_MESH)
                 .transform(transform)
                 .sampler("u_Texture", view, sampler)

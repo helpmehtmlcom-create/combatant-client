@@ -25,7 +25,7 @@ import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.core.CombatantWorldMatrices;
 import combatant.client.render.engine.depth.WorldSceneDepth;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.PostProcessRenderPipelines;
 import combatant.client.render.engine.renderer.FullScreenRenderer;
 import combatant.client.render.engine.profiler.TracyGpuProfiler;
 import combatant.client.render.engine.uniform.impl.DepthOfFieldUniforms;
@@ -387,7 +387,7 @@ public class ReimaginedVisual extends Module implements PostProcessPass, PostPro
                 try (TracyGpuProfiler.Scope ignoredGpu = TracyGpuProfiler.beginZone("3d:dof:focus")) {
                     FullScreenRenderer.begin("Combatant DepthOfField Focus")
                             .attachment(dofFocusTarget)
-                            .pipeline(CombatantRenderPipelines.DEPTH_OF_FIELD_FOCUS)
+                            .pipeline(PostProcessRenderPipelines.DEPTH_OF_FIELD_FOCUS)
                             .uniform("DepthOfField", DepthOfFieldUniforms.get())
                             .sampler("u_MainDepth", depth.mainOr(src), PostProcessManager.getSampler())
                             .sampler("u_TranslucentDepth", depth.translucentOr(src), PostProcessManager.getSampler())
@@ -401,7 +401,7 @@ public class ReimaginedVisual extends Module implements PostProcessPass, PostPro
             try (TracyGpuProfiler.Scope ignoredGpu = TracyGpuProfiler.beginZone("3d:dof:blur")) {
                 FullScreenRenderer.begin("Combatant DepthOfField Pass")
                         .attachment(dst)
-                        .pipeline(CombatantRenderPipelines.DEPTH_OF_FIELD)
+                        .pipeline(PostProcessRenderPipelines.DEPTH_OF_FIELD)
                         .uniform("DepthOfField", DepthOfFieldUniforms.get())
                         .sampler("u_Texture", src, PostProcessManager.getSampler())
                         .sampler("u_FocusTexture", focusTextureReady ? dofFocusTarget.getColorTextureView() : src,

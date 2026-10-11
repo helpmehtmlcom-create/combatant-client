@@ -29,12 +29,12 @@ public enum CombatantIndex {
     private static final String[] INDEX_NAMES = {"main", "dev", "vulkanDebug"};
     private static volatile Map<Kind, List<String>> entries;
 
-    public static List<String> classNames(Kind kind) {
+    public static List<String> entries(Kind kind) {
         return load().getOrDefault(kind, List.of());
     }
 
-    public static List<String> classNames(Kind kind, String basePackage) {
-        List<String> names = classNames(kind);
+    public static List<String> entries(Kind kind, String basePackage) {
+        List<String> names = entries(kind);
         if (basePackage == null || basePackage.isBlank()) return names;
         String prefix = basePackage.endsWith(".") ? basePackage : basePackage + ".";
         ArrayList<String> filtered = new ArrayList<>();
@@ -42,6 +42,14 @@ public enum CombatantIndex {
             if (name.equals(basePackage) || name.startsWith(prefix)) filtered.add(name);
         }
         return List.copyOf(filtered);
+    }
+
+    public static List<String> classNames(Kind kind) {
+        return entries(kind);
+    }
+
+    public static List<String> classNames(Kind kind, String basePackage) {
+        return entries(kind, basePackage);
     }
 
     private static Map<Kind, List<String>> load() {
@@ -105,6 +113,7 @@ public enum CombatantIndex {
         SCRIPT_CATALOG,
         RESOURCE_CATALOG,
         UI_SCRIPT,
+        PIPELINE,
         CONFIG
     }
 }

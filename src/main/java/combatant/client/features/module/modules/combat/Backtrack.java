@@ -27,7 +27,7 @@ import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.WorldPhase;
 import combatant.client.render.engine.RenderState;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import combatant.client.util.network.BacktrackController;
@@ -360,12 +360,12 @@ public final class Backtrack extends Module {
             return;
         }
 
-        MeshBuilder tris = renderer.batch(CombatantRenderPipelines.WORLD_COLORED, Renderer3D.DepthMode.NONE);
+        MeshBuilder tris = renderer.batch(WorldRenderPipelines.WORLD_COLORED, Renderer3D.DepthMode.NONE);
         float previousLineWidth = RenderState.lineWidth;
         MeshBuilder lines;
         try {
             RenderState.lineWidth = Math.max(0.5f, lineWidth.get());
-            lines = renderer.batch(CombatantRenderPipelines.WORLD_COLORED_LINES, Renderer3D.DepthMode.NONE);
+            lines = renderer.batch(WorldRenderPipelines.WORLD_COLORED_LINES, Renderer3D.DepthMode.NONE);
         } finally {
             RenderState.lineWidth = previousLineWidth;
         }

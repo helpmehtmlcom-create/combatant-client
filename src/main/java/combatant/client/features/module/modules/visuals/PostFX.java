@@ -17,7 +17,7 @@ import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.Modules;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.PostProcessRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.engine.postprocess.PostProcessExecutionContext;
 import combatant.client.render.engine.postprocess.PostProcessPass;
@@ -165,7 +165,7 @@ public class PostFX extends Module implements PostProcessPass {
 
         FullScreenRenderer.begin("Combatant Fullscreen Pass")
                 .attachment(dst)
-                .pipeline(CombatantRenderPipelines.POST_FX)
+                .pipeline(PostProcessRenderPipelines.POST_FX)
                 .uniform("PostFX", PostFXUniforms.get())
                 .sampler("u_Texture", src, PostProcessManager.getSampler())
                 .sampler("u_Lut", lutView, PostProcessManager.getSampler())

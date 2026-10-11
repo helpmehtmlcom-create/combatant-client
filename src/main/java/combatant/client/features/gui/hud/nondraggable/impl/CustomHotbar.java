@@ -19,7 +19,9 @@ import combatant.client.config.SettingDef;
 import combatant.client.features.gui.hud.AbstractHudElement;
 import combatant.client.features.gui.hud.HudElementRegister;
 import combatant.client.features.gui.hud.HudRenderUtil;
+import combatant.client.render.engine.renderer.ui.draw.UiGlassOpticsSpec;
 import combatant.client.mixins.accessors.PlayerInventoryAccessor;
+import combatant.client.util.player.inventory.InventorySlotLocks;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.math.ColorMath;
 import combatant.client.render.engine.renderer.Renderer2D;
@@ -35,6 +37,10 @@ public final class CustomHotbar extends AbstractHudElement {
     public static final CustomHotbar INSTANCE = new CustomHotbar();
     private static final int BG_ALPHA = 0xAA;
     private static final float RADIUS = 6.0f;
+    private static final UiGlassOpticsSpec HOTBAR_GLASS = UiGlassOpticsSpec.LIQUID
+            .withRefraction(0.008f).withBevel(0.11f, 0.038f)
+            .withInteractionStrength(0f).withChromaticAberration(0f)
+            .withCleanReveal(0.76f).withShapeDeformation(false);
     private static final float HOTBAR_SOFTNESS = 0.0f;
     private static final float BLUR_QUALITY = 16.0f;
     private static final float DIVIDER_WIDTH_PX = 1.05f;
@@ -110,7 +116,7 @@ public final class CustomHotbar extends AbstractHudElement {
         boolean glass = shouldGlass(bm);
         int bgRgb = glass ? HudRenderUtil.glassBackgroundRgb() : bm.getHotbarBgRgb();
         int bgAlpha = bm != null ? bm.getHotbarBgAlpha() : BG_ALPHA;
-        int bg = glass ? premultiply(HudRenderUtil.glassPanelBackground(1.0f)) : ColorMath.premultiplyAlpha(bgRgb, bgAlpha);
+        int bg = glass ? 0 : ColorMath.premultiplyAlpha(bgRgb, bgAlpha);
         int bgColor = bg;
         int accentAlpha = bm.getHotbarAccentAlpha();
         int dividerColor = ColorMath.premultiplyAlpha(bm.getHotbarDividerRgb(), accentAlpha);
@@ -136,9 +142,6 @@ public final class CustomHotbar extends AbstractHudElement {
             }
         }
 
-        if (glass) {
-            bgColor = premultiply(HudRenderUtil.glassPanelBackground(1.0f));
-        }
 
         if (!hasOffhand) {
             drawBase(r2d, (i - 90f) * s, baseY * s, 180f * s, 20f * s, bgColor, s);
@@ -171,6 +174,7 @@ public final class CustomHotbar extends AbstractHudElement {
     }
 
     private static void drawBase(Renderer2D r2d, float x, float y, float w, float h, int argb, float scale) {
+        if ((argb >>> 24) == 0) return;
         if (RADIUS <= 0.0f) {
             r2d.quad(x, y, w, h, argb);
             return;
@@ -231,6 +235,9 @@ public final class CustomHotbar extends AbstractHudElement {
         if (!offhand.isEmpty()) {
             int x = (getOffHandMode() == OffHandMode.MERGED) ? (i - 109) : (i - 111);
             renderHotbarItem(ctx, tickCounter, player, offhand, x, baseY + ITEM_Y_OFFSET, seed++);
+            if (InventorySlotLocks.isLocked(InventorySlotLocks.OFFHAND)) {
+                InventorySlotLocks.renderLockOverlay(ctx, x, baseY + ITEM_Y_OFFSET);
+            }
         }
 
         // 9 slots
@@ -350,10 +357,9 @@ public final class CustomHotbar extends AbstractHudElement {
     }
 
     private static void drawGlass(float x, float y, float w, float h, float radius) {
-        CustomHotbar bm = CustomHotbar.get();
-        float blurStrength = bm != null ? bm.getHotbarBlurAlpha() / 255f : 0.5f;
         float glassScale = RADIUS <= 0.0f ? 1.0f : radius / RADIUS;
-        HudRenderUtil.drawLiquidGlass(x, y, w, h, radius, glassScale, true, blurStrength, 1.0f);
+        HudRenderUtil.drawReactiveGlass(x, y, w, h, radius, glassScale, false,
+                1f, 1f, null, HOTBAR_GLASS, false);
     }
 
     private static int withSelectorAlpha(int argb, int alpha) {
@@ -384,7 +390,7 @@ public final class CustomHotbar extends AbstractHudElement {
         defs.add(SettingDef.colorNoAlpha(dividerColor).visibleWhen(customDividerColor::get));
         defs.add(SettingDef.number(accentAlpha));
         defs.add(SettingDef.mode(bgEffect));
-        defs.add(SettingDef.number(blurAlpha).visibleWhen(this::hasEffect));
+        defs.add(SettingDef.number(blurAlpha).visibleWhen(this::isBlurEffect));
     }
 
     public boolean isHudHotbarEnabled() {

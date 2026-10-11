@@ -16,7 +16,7 @@ import combatant.client.features.theme.Theme;
 import combatant.client.features.theme.Themes;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.core.CombatantRenderSystem;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.PostProcessRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.engine.renderer.FullScreenRenderer;
 import combatant.client.render.engine.renderer.MeshRenderer;
@@ -100,7 +100,7 @@ public enum VisualPreviewBackgroundRenderer {
             if (updateVolume) {
                 FullScreenRenderer.begin("Combatant Visual Preview Cloud Panorama")
                         .attachment(volumeTarget)
-                        .pipeline(CombatantRenderPipelines.VISUAL_PREVIEW_CLOUDS)
+                        .pipeline(PostProcessRenderPipelines.VISUAL_PREVIEW_CLOUDS)
                         .uniform("VisualPreviewBackground", VisualPreviewBackgroundUniforms.get())
                         .end();
                 lastVolumeFrame = frame;
@@ -109,7 +109,7 @@ public enum VisualPreviewBackgroundRenderer {
             }
             FullScreenRenderer.begin("Combatant Visual Preview Cloud Upscale")
                     .attachment(mc.gameRenderer.mainRenderTarget())
-                    .pipeline(CombatantRenderPipelines.POSTPROCESS_COPY)
+                    .pipeline(PostProcessRenderPipelines.POSTPROCESS_COPY)
                     .sampler("u_Texture", volumeTarget.getColorTextureView(), PostProcessManager.getSampler())
                     .end();
         } finally {

@@ -19,7 +19,8 @@ import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.core.RenderFrameContext;
 import combatant.client.render.engine.msaa.MsaaFramebuffer;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
+import combatant.client.render.engine.pipeline.PostProcessRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessExecutionContext;
 import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.engine.postprocess.PostProcessPass;
@@ -288,7 +289,7 @@ public final class WorldPostProcessMasks implements PostProcessPass {
         execution.rhi().drawFullscreen(
                 FullscreenDrawCommand.builder("Combatant world masked distortion")
                         .colorAttachment(execution.destination())
-                        .pipeline(CombatantRenderPipelines.POSTPROCESS_WORLD_MASK_DISTORTION)
+                        .pipeline(PostProcessRenderPipelines.POSTPROCESS_WORLD_MASK_DISTORTION)
                         .uniform("WorldMaskedPost", WorldMaskedPostUniforms.get())
                         .sampler("u_Texture", execution.source(), PostProcessManager.getSampler())
                         .sampler("u_Mask", mask, PostProcessManager.getSampler())
@@ -339,9 +340,9 @@ public final class WorldPostProcessMasks implements PostProcessPass {
 
                 var pipeline = key.depthTest()
                         ? sampleDepth
-                        ? CombatantRenderPipelines.WORLD_POST_DISTORTION_MASK_SAMPLED_DEPTH
-                        : CombatantRenderPipelines.WORLD_POST_DISTORTION_MASK_DEPTH
-                        : CombatantRenderPipelines.WORLD_POST_DISTORTION_MASK;
+                        ? WorldRenderPipelines.WORLD_POST_DISTORTION_MASK_SAMPLED_DEPTH
+                        : WorldRenderPipelines.WORLD_POST_DISTORTION_MASK_DEPTH
+                        : WorldRenderPipelines.WORLD_POST_DISTORTION_MASK;
                 MeshBuilder mesh = new MeshBuilder(pipeline);
                 try {
                     mesh.beginWorld(RenderState.cameraPos);
@@ -377,9 +378,9 @@ public final class WorldPostProcessMasks implements PostProcessPass {
 
                 var pipeline = depthTest
                         ? sampleDepth
-                        ? CombatantRenderPipelines.WORLD_SPHERE_DISTORTION_MASK_SAMPLED_DEPTH
-                        : CombatantRenderPipelines.WORLD_SPHERE_DISTORTION_MASK_DEPTH
-                        : CombatantRenderPipelines.WORLD_SPHERE_DISTORTION_MASK;
+                        ? WorldRenderPipelines.WORLD_SPHERE_DISTORTION_MASK_SAMPLED_DEPTH
+                        : WorldRenderPipelines.WORLD_SPHERE_DISTORTION_MASK_DEPTH
+                        : WorldRenderPipelines.WORLD_SPHERE_DISTORTION_MASK;
                 MeshBuilder mesh = new MeshBuilder(pipeline);
                 try {
                     mesh.beginWorld(RenderState.cameraPos);

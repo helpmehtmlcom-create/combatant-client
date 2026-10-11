@@ -413,7 +413,8 @@ public final class UiPassCompiler {
             needsEffectsTarget |= batch.type == UiBatchType.BLUR || batch.type == UiBatchType.BLUR_CORNERS;
             needsCapturedScene |= batch.backdropRequest.requiresCapturedScene();
             needsCurrentTargetSnapshot |=
-                    batch.backdropRequest.sceneSource() == combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest.SceneSource.CURRENT_TARGET
+                    (batch.backdropRequest.sceneSource() == combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest.SceneSource.CURRENT_TARGET
+                            || batch.backdropRequest.sceneSource() == combatant.client.render.engine.renderer.ui.draw.UiBackdropRequest.SceneSource.STACKED_LENSES)
                             && batch.type.usesPreparedGlass();
             needsUiUnderlay |= batch.backdropRequest.requiresUiUnderlayCapture();
             if (batch.type == UiBatchType.BLUR || batch.type == UiBatchType.BLUR_CORNERS

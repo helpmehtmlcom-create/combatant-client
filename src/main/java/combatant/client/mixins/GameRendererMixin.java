@@ -70,7 +70,7 @@ import combatant.client.render.engine.depth.WorldSceneDepth;
 import combatant.client.render.engine.debug.UiClipDebugScene;
 import combatant.client.render.engine.msaa.MsaaWorldTarget;
 import combatant.client.config.MainConfig;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.engine.postprocess.MenuBackgroundRenderer;
 import combatant.client.render.engine.profiler.ProfilerPhase;
@@ -293,8 +293,8 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
 
                 if (combatant$renderer == null) {
                     combatant$renderer = new Renderer3D(
-                            CombatantRenderPipelines.WORLD_COLORED_LINES,
-                            CombatantRenderPipelines.WORLD_COLORED
+                            WorldRenderPipelines.WORLD_COLORED_LINES,
+                            WorldRenderPipelines.WORLD_COLORED
                     );
                 }
 
@@ -317,15 +317,15 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
 
             if (combatant$renderer == null) {
                 combatant$renderer = new Renderer3D(
-                        CombatantRenderPipelines.WORLD_COLORED_LINES,
-                        CombatantRenderPipelines.WORLD_COLORED
+                        WorldRenderPipelines.WORLD_COLORED_LINES,
+                        WorldRenderPipelines.WORLD_COLORED
                 );
             }
 
             if (combatant$depthRenderer == null) {
                 combatant$depthRenderer = new Renderer3D(
-                        CombatantRenderPipelines.WORLD_COLORED_LINES_DEPTH,
-                        CombatantRenderPipelines.WORLD_COLORED_DEPTH
+                        WorldRenderPipelines.WORLD_COLORED_LINES_DEPTH,
+                        WorldRenderPipelines.WORLD_COLORED_DEPTH
                 );
             }
 
@@ -623,7 +623,11 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
 
         try (ProfilerPhase.Scope ignored = ProfilerPhase.scope("3d:world_engine_target");
              TracyGpuProfiler.Scope ignoredGpu = TracyGpuProfiler.beginZone("3d:world_engine_target")) {
-            MsaaWorldTarget.begin(minecraft, MainConfig.get().getMsaa3dSamples(), false, true);
+            int samples = MainConfig.get().getMsaa3dSamples();
+            if (ModuleManager.needsEntityOnlyDepth()) {
+                samples = 1;
+            }
+            MsaaWorldTarget.begin(minecraft, samples, false, true);
             try {
                 combatant$renderWorldEngine(tickCounter);
                 combatant$renderPostProcessWorld(tickCounter);
@@ -683,15 +687,15 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
 
             if (combatant$postRenderer == null) {
                 combatant$postRenderer = new Renderer3D(
-                        CombatantRenderPipelines.WORLD_COLORED_LINES,
-                        CombatantRenderPipelines.WORLD_COLORED
+                        WorldRenderPipelines.WORLD_COLORED_LINES,
+                        WorldRenderPipelines.WORLD_COLORED
                 );
             }
 
             if (combatant$postDepthRenderer == null) {
                 combatant$postDepthRenderer = new Renderer3D(
-                        CombatantRenderPipelines.WORLD_COLORED_LINES_DEPTH,
-                        CombatantRenderPipelines.WORLD_COLORED_DEPTH
+                        WorldRenderPipelines.WORLD_COLORED_LINES_DEPTH,
+                        WorldRenderPipelines.WORLD_COLORED_DEPTH
                 );
             }
 

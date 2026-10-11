@@ -15,6 +15,8 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.Holder;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.world.item.ItemStack;
+import combatant.client.util.player.inventory.InventorySlotLocks;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -202,6 +204,19 @@ public abstract class GuiMixin {
         if (RuntimeGate.isPanic()) return;
         // Completely remove vanilla vignette post-processing
         ci.cancel();
+    }
+
+    // Render the lock in the actual offhand location, never based on an item seed.
+    @Inject(method = "extractItemHotbar", at = @At("TAIL"))
+    private void combatant$offhandSlotLockOverlay(GuiGraphicsExtractor ctx, DeltaTracker delta, CallbackInfo ci) {
+        Player player = minecraft.player;
+        if (player == null || player.getOffhandItem().isEmpty()
+                || !InventorySlotLocks.isLocked(InventorySlotLocks.OFFHAND)) return;
+
+        int center = ctx.guiWidth() / 2;
+        int x = player.getMainArm().getOpposite() == net.minecraft.world.entity.HumanoidArm.LEFT
+                ? center - 117 : center + 101;
+        InventorySlotLocks.renderLockOverlay(ctx, x, ctx.guiHeight() - 19);
     }
 
     @Inject(

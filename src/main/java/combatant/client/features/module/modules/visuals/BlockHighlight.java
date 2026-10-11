@@ -32,7 +32,7 @@ import combatant.client.features.module.WorldPhase;
 import combatant.client.mixins.accessors.MultiPlayerGameModeAccessor;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.animation.AnimatedRenderColors;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.uniform.MeshBuilder;
 
@@ -281,8 +281,8 @@ public class BlockHighlight extends Module {
     private void renderShapeLines(Renderer3D renderer, VoxelShape worldShape) {
         MeshBuilder mesh = renderer.batch(
                 outlineDepthTest.get()
-                        ? CombatantRenderPipelines.WORLD_COLORED_COPLANAR_DEPTH
-                        : CombatantRenderPipelines.WORLD_COLORED,
+                        ? WorldRenderPipelines.WORLD_COLORED_COPLANAR_DEPTH
+                        : WorldRenderPipelines.WORLD_COLORED,
                 outlineDepthTest.get()
                         ? Renderer3D.DepthMode.PRE_DEPTH
                         : Renderer3D.DepthMode.NONE
@@ -376,8 +376,8 @@ public class BlockHighlight extends Module {
     private void renderShapeBoxes(Renderer3D renderer, VoxelShape worldShape) {
         MeshBuilder mesh = renderer.batch(
                 outlineDepthTest.get()
-                        ? CombatantRenderPipelines.WORLD_COLORED_COPLANAR_DEPTH
-                        : CombatantRenderPipelines.WORLD_COLORED,
+                        ? WorldRenderPipelines.WORLD_COLORED_COPLANAR_DEPTH
+                        : WorldRenderPipelines.WORLD_COLORED,
                 outlineDepthTest.get()
                         ? Renderer3D.DepthMode.PRE_DEPTH
                         : Renderer3D.DepthMode.NONE

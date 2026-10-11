@@ -20,6 +20,7 @@ import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import combatant.client.events.EventHandler;
 import combatant.client.events.impl.GameTickEvent;
+import combatant.client.config.common.CommonSettingSchemas;
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.NumberValue;
 import combatant.client.features.module.Module;
@@ -52,7 +53,7 @@ public final class AutoClicker extends Module {
     private final NumberValue<Integer> minCps = num("autoClickerMinCps", "min_cps", 8, 1, 20);
     private final NumberValue<Integer> maxCps = num("autoClickerMaxCps", "max_cps", 12, 1, 20);
     private final BooleanValue holdToClick = bool("autoClickerHoldToClick", "hold_to_click", true);
-    private final BooleanValue respectCooldown = bool("autoClickerRespectCooldown", "respect_cooldown", true);
+    private final BooleanValue respectCooldown = boolCommon("autoClickerRespectCooldown", "respect_cooldown", CommonSettingSchemas.COMBAT_RESPECT_COOLDOWN, true);
     private final BooleanValue entitiesOnly = bool("autoClickerEntitiesOnly", "entities_only", false);
     private final BooleanValue weaponOnly = bool("autoClickerWeaponOnly", "weapon_only", false);
     private final BooleanValue ignoreFriends = bool("autoClickerIgnoreFriends", "ignore_friends", true);

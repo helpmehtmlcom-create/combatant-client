@@ -35,12 +35,6 @@ public final class SwapTooltip extends AbstractHudElement {
     private static final float EXTRA_OFFSET_NO_BARS = 14.0f;
     private static final int GLASS_TINT = 0xFFFFFFFF;
     private static final int GLASS_VEIL = 0x2A141414;
-    private static final float GLASS_THICKNESS = 11.0f;
-    private static final float GLASS_FRESNEL_POWER = -18.0f;
-    private static final float GLASS_FRESNEL_ALPHA = 1.0f;
-    private static final float GLASS_BASE_ALPHA = 0.82f;
-    private static final float GLASS_FRESNEL_MIX = 0.38f;
-    private static final float GLASS_DISTORT = 0.135f;
 
     private static String text;
     private static int color;
@@ -219,15 +213,10 @@ public final class SwapTooltip extends AbstractHudElement {
                 w,
                 h,
                 radius,
-                GLASS_THICKNESS,
                 GLASS_TINT,
                 alpha,
-                GLASS_FRESNEL_POWER,
-                GLASS_FRESNEL_ALPHA,
-                GLASS_BASE_ALPHA,
-                GLASS_FRESNEL_MIX,
-                GLASS_DISTORT,
-                0.0f
+                1.0f,
+                Renderer2D.LiquidGlassPreset.HUD_SMALL
         );
     }
 

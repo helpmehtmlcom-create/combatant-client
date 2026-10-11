@@ -8,7 +8,7 @@
 package combatant.client.render.engine.world;
 
 import com.mojang.blaze3d.pipeline.RenderPipeline;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.uniform.MeshBuilder;
 
 import java.nio.ByteBuffer;
@@ -42,17 +42,17 @@ public enum WorldWideLineMeshCompiler {
     }
 
     public static RenderPipeline widePipeline(RenderPipeline source) {
-        if (source == CombatantRenderPipelines.WORLD_COLORED_LINES) {
-            return CombatantRenderPipelines.WORLD_WIDE_COLORED_LINES;
+        if (source == WorldRenderPipelines.WORLD_COLORED_LINES) {
+            return WorldRenderPipelines.WORLD_WIDE_COLORED_LINES;
         }
-        if (source == CombatantRenderPipelines.WORLD_COLORED_LINES_DEPTH) {
-            return CombatantRenderPipelines.WORLD_WIDE_COLORED_LINES_DEPTH;
+        if (source == WorldRenderPipelines.WORLD_COLORED_LINES_DEPTH) {
+            return WorldRenderPipelines.WORLD_WIDE_COLORED_LINES_DEPTH;
         }
-        if (source == CombatantRenderPipelines.WORLD_COLORED_LINES_LIQUID_BLEND) {
-            return CombatantRenderPipelines.WORLD_WIDE_COLORED_LINES_LIQUID_BLEND;
+        if (source == WorldRenderPipelines.WORLD_COLORED_LINES_LIQUID_BLEND) {
+            return WorldRenderPipelines.WORLD_WIDE_COLORED_LINES_LIQUID_BLEND;
         }
-        if (source == CombatantRenderPipelines.WORLD_COLORED_LINES_LIQUID_IGNORE) {
-            return CombatantRenderPipelines.WORLD_WIDE_COLORED_LINES_LIQUID_IGNORE;
+        if (source == WorldRenderPipelines.WORLD_COLORED_LINES_LIQUID_IGNORE) {
+            return WorldRenderPipelines.WORLD_WIDE_COLORED_LINES_LIQUID_IGNORE;
         }
         return null;
     }

@@ -34,7 +34,7 @@ import combatant.client.mixins.accessors.LocalPlayerAccessor;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.core.CombatantWorldMatrices;
 import combatant.client.render.engine.animation.AnimationUtility;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.EffectRenderPipelines;
 import combatant.client.render.engine.renderer.FullScreenRenderer;
 import combatant.client.render.engine.renderer.MeshRenderer;
 import combatant.client.render.engine.uniform.impl.SkyboxShaderUniforms;
@@ -151,7 +151,7 @@ public enum CustomSkyboxRenderer {
         try {
             FullScreenRenderer.begin("Combatant Reimagined Shader Sky")
                     .attachment(framebuffer)
-                    .pipeline(CombatantRenderPipelines.WORLD_REIMAGINED_SKYBOX_SHADER)
+                    .pipeline(EffectRenderPipelines.WORLD_REIMAGINED_SKYBOX_SHADER)
                     .uniform("Fog", fog)
                     .uniform("SkyboxShader", SkyboxShaderUniforms.get())
                     .end();

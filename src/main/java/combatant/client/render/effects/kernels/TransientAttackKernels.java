@@ -14,7 +14,7 @@ import combatant.client.render.effects.EffectParameters;
 import combatant.client.render.effects.TransientEffectDescriptor;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.TextureStorage;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import net.minecraft.util.Mth;
@@ -158,8 +158,8 @@ public final class TransientAttackKernels {
 
         boolean useDepth = effect.material().depthPolicy() != EffectMaterial.DepthPolicy.NONE;
         MeshBuilder mesh = renderer.batchTextured(
-                useDepth ? CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH
-                        : CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE,
+                useDepth ? WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH
+                        : WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE,
                 TextureStorage.FIRE_FLY,
                 useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.NONE
         );
@@ -204,8 +204,8 @@ public final class TransientAttackKernels {
 
         boolean useDepth = effect.material().depthPolicy() != EffectMaterial.DepthPolicy.NONE;
         MeshBuilder mesh = renderer.batchTextured(
-                useDepth ? CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH
-                        : CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE,
+                useDepth ? WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH
+                        : WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE,
                 TextureStorage.FIRE_FLY,
                 useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.NONE
         );
@@ -250,8 +250,8 @@ public final class TransientAttackKernels {
 
         boolean useDepth = effect.material().depthPolicy() != EffectMaterial.DepthPolicy.NONE;
         MeshBuilder mesh = renderer.batchTextured(
-                useDepth ? CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH
-                        : CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE,
+                useDepth ? WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH
+                        : WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE,
                 TextureStorage.FIRE_FLY,
                 useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.NONE
         );
@@ -304,8 +304,8 @@ public final class TransientAttackKernels {
 
         boolean useDepth = effect.material().depthPolicy() != EffectMaterial.DepthPolicy.NONE;
         MeshBuilder mesh = renderer.batchTextured(
-                useDepth ? CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH
-                        : CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE,
+                useDepth ? WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE_DEPTH
+                        : WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE,
                 TextureStorage.FIRE_FLY,
                 useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.NONE
         );

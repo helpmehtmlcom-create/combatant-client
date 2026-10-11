@@ -13,6 +13,7 @@ import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.textures.GpuSampler;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.UiRenderPipelines;
 import combatant.client.render.engine.renderer.MeshRenderer;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.rhi.CombatantRhi;
@@ -38,7 +39,7 @@ public final class UiDirectTexturedRenderer {
             String samplerName,
             GpuTextureView samplerView,
             GpuSampler sampler) {
-        submit(mesh, CombatantRenderPipelines.UI_TEXTURED, samplerName, samplerView, sampler);
+        submit(mesh, UiRenderPipelines.UI_TEXTURED, samplerName, samplerView, sampler);
     }
 
     public static void submit(
@@ -113,8 +114,8 @@ public final class UiDirectTexturedRenderer {
         UiClipSnapshot resolvedClip = clip != null ? clip : UiClipSnapshot.NONE;
         RenderPipeline pipeline = requestedPipeline != null
                 ? requestedPipeline
-                : CombatantRenderPipelines.UI_TEXTURED;
-        boolean analyticClip = pipeline == CombatantRenderPipelines.UI_TEXTURED
+                : UiRenderPipelines.UI_TEXTURED;
+        boolean analyticClip = pipeline == UiRenderPipelines.UI_TEXTURED
                 && resolvedClip.usesAnalyticPipeline();
         if (analyticClip) {
             pipeline = CombatantRenderPipelines.analyticClipTexturedPipeline(pipeline);

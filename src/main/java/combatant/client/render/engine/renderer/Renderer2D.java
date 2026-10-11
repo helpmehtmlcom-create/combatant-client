@@ -21,7 +21,7 @@ import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.core.ViewportContext;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.UiRenderPipelines;
 import combatant.client.render.engine.renderer.ui.BlurSource;
 import combatant.client.render.engine.renderer.ui.DrawBatch;
 import combatant.client.render.engine.renderer.ui.ItemBatchRenderer;
@@ -137,7 +137,7 @@ public final class Renderer2D {
 
     public Renderer2D(boolean textured) {
         this.textured = textured;
-        this.texturedTriangles = textured ? new MeshBuilder(CombatantRenderPipelines.UI_TEXTURED) : null;
+        this.texturedTriangles = textured ? new MeshBuilder(UiRenderPipelines.UI_TEXTURED) : null;
     }
 
     public static void init() {
@@ -304,6 +304,21 @@ public final class Renderer2D {
 
     public void primitiveStroke(UiPrimitive primitive, UiPaint paint, UiStroke stroke) {
         primitive(primitive, paint, stroke, false);
+    }
+
+    public void materialPrimitive(UiPrimitive primitive, UiPaint paint, UiSurfaceMaterialSpec material) {
+        if (primitive == null || paint == null || material == null || primitive.pointCount() < 3) return;
+        recordUi(new UiShapeCommand(
+                UiShape.polyline(primitive.points(), primitive.pointCount(), true),
+                paint,
+                UiStroke.NONE,
+                true
+        ));
+        if (primitive.shaderEligible()) {
+            renderMaterialPrimitiveSdf(primitive, paint, material);
+        } else {
+            renderPrimitiveFallback(primitive, paint, UiStroke.NONE, true);
+        }
     }
 
     /**
@@ -1873,7 +1888,7 @@ public final class Renderer2D {
                                      int highlightArgb) {
         mainMenuHoneycombGlass(x, y, w, h, cellRadius, gap, lineWidth, opacity,
                 mouseX, mouseY, lightRadius, originX, originY, baseArgb, highlightArgb,
-                0f, 0f, 0f, 0f, 0f, 0f);
+                0f, 0f, 0f, 0f, 0f, 0f, UiHoneycombMaterialSpec.SMOKED_MACHINED);
     }
 
     /**
@@ -1895,10 +1910,38 @@ public final class Renderer2D {
                                      float cutoutX,
                                      float cutoutY,
                                      float cutoutW,
-                                     float cutoutH,
-                                     float cutoutCut,
-                                     float cutoutEnabled) {
+                                      float cutoutH,
+                                      float cutoutCut,
+                                      float cutoutEnabled) {
+        mainMenuHoneycombGlass(x, y, w, h, cellRadius, gap, lineWidth, opacity,
+                mouseX, mouseY, lightRadius, originX, originY, baseArgb, highlightArgb,
+                cutoutX, cutoutY, cutoutW, cutoutH, cutoutCut, cutoutEnabled,
+                UiHoneycombMaterialSpec.SMOKED_MACHINED);
+    }
+
+    public void mainMenuHoneycombGlass(double x, double y, double w, double h,
+                                      float cellRadius,
+                                      float gap,
+                                      float lineWidth,
+                                      float opacity,
+                                      float mouseX,
+                                      float mouseY,
+                                      float lightRadius,
+                                      float originX,
+                                      float originY,
+                                      int baseArgb,
+                                      int highlightArgb,
+                                      float cutoutX,
+                                      float cutoutY,
+                                      float cutoutW,
+                                      float cutoutH,
+                                      float cutoutCut,
+                                      float cutoutEnabled,
+                                      UiHoneycombMaterialSpec material) {
         if (w <= 0.0 || h <= 0.0 || cellRadius <= 0.0f || opacity <= 0.001f) return;
+        UiHoneycombMaterialSpec safeMaterial = material != null
+                ? material
+                : UiHoneycombMaterialSpec.SMOKED_MACHINED;
 
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft == null) return;
@@ -1939,20 +1982,20 @@ public final class Renderer2D {
 
         int i1 = appendMainMenuHoneycombVertex(mesh, x, y, br, bg, bb, ba, x, y, w, h,
                 cellRadius, gap, lineWidth, opacity, mouseX, mouseY, lightRadius,
-                hr, hg, hb, ha, originX, originY,
-                cutoutX, cutoutY, cutoutW, cutoutH, cutoutCut, cutoutEnabled);
+                 hr, hg, hb, ha, originX, originY,
+                 cutoutX, cutoutY, cutoutW, cutoutH, cutoutCut, cutoutEnabled, safeMaterial);
         int i2 = appendMainMenuHoneycombVertex(mesh, x, y + h, br, bg, bb, ba, x, y, w, h,
                 cellRadius, gap, lineWidth, opacity, mouseX, mouseY, lightRadius,
-                hr, hg, hb, ha, originX, originY,
-                cutoutX, cutoutY, cutoutW, cutoutH, cutoutCut, cutoutEnabled);
+                 hr, hg, hb, ha, originX, originY,
+                 cutoutX, cutoutY, cutoutW, cutoutH, cutoutCut, cutoutEnabled, safeMaterial);
         int i3 = appendMainMenuHoneycombVertex(mesh, x + w, y + h, br, bg, bb, ba, x, y, w, h,
                 cellRadius, gap, lineWidth, opacity, mouseX, mouseY, lightRadius,
-                hr, hg, hb, ha, originX, originY,
-                cutoutX, cutoutY, cutoutW, cutoutH, cutoutCut, cutoutEnabled);
+                 hr, hg, hb, ha, originX, originY,
+                 cutoutX, cutoutY, cutoutW, cutoutH, cutoutCut, cutoutEnabled, safeMaterial);
         int i4 = appendMainMenuHoneycombVertex(mesh, x + w, y, br, bg, bb, ba, x, y, w, h,
                 cellRadius, gap, lineWidth, opacity, mouseX, mouseY, lightRadius,
-                hr, hg, hb, ha, originX, originY,
-                cutoutX, cutoutY, cutoutW, cutoutH, cutoutCut, cutoutEnabled);
+                 hr, hg, hb, ha, originX, originY,
+                 cutoutX, cutoutY, cutoutW, cutoutH, cutoutCut, cutoutEnabled, safeMaterial);
         mesh.quad(i1, i2, i3, i4);
         endAutoBatch(auto);
     }
@@ -1965,15 +2008,18 @@ public final class Renderer2D {
                                                       float mouseX, float mouseY, float lightRadius,
                                                       float highlightR, float highlightG, float highlightB, float highlightA,
                                                       float originX, float originY,
-                                                      float cutoutX, float cutoutY, float cutoutW, float cutoutH,
-                                                      float cutoutCut, float cutoutEnabled) {
+                                                       float cutoutX, float cutoutY, float cutoutW, float cutoutH,
+                                                       float cutoutCut, float cutoutEnabled,
+                                                       UiHoneycombMaterialSpec material) {
         return mesh.vec2(px, py).local2(px, py).color(r, g, b, a)
                 .vec4(x, y, w, h)
                 .vec4(cellRadius, gap, lineWidth, opacity)
-                .vec4(mouseX, mouseY, lightRadius, 0.0f)
+                .vec4(mouseX, mouseY, lightRadius, material.highlightCompression())
                 .vec4(highlightR, highlightG, highlightB, highlightA)
                 .vec4(originX, originY, cutoutCut, cutoutEnabled)
                 .vec4(cutoutX, cutoutY, cutoutW, cutoutH)
+                .vec4(material.mode().shaderId(), material.cellBlurMix(), material.sceneDetail(),
+                        material.tintAbsorption())
                 .next();
     }
 
@@ -3241,9 +3287,10 @@ public final class Renderer2D {
         }
 
         boolean auto = beginAutoBatch();
-        DrawBatch batch = UI_BATCHER.getOrCreateBlur(UiBatchType.LIQUID_GLASS_LIGHT, src, sampler,
+        DrawBatch batch = UI_BATCHER.getOrCreateBlur(UiBatchType.LIQUID_GLASS, src, sampler,
                 DEFAULT_LIQUID_GLASS_BLUR_QUALITY, LIQUID_GLASS_KAWASE_OFFSET_PX, backdrop,
                 backdropBlend);
+        if (batch != null) batch.includeGlassBounds(bounds);
         if (batch == null) {
             endAutoBatch(auto);
             return;
@@ -3256,18 +3303,20 @@ public final class Renderer2D {
         int r = (tintArgb >>> 16) & 0xFF;
         int g = (tintArgb >>> 8) & 0xFF;
         int b = tintArgb & 0xFF;
-        int finalA = (int) (a * clamp01(glassAlpha));
-        float mix = packLiquidGlassFresnel(safe.fresnelMix, 0.0f, 0.0f);
+        UiGlassOpticsSpec optics = materialOptics(liquidGlassMaterial);
+        int finalA = Math.round(255.0f * clamp01(glassAlpha));
+        float alphaPayload = materialTintStrength(liquidGlassMaterial);
+        float mix = 0.0f;
         float packedDistort = packLiquidGlassPayload(effectiveDistort, 2.0f, clamp01(blurAlpha), false);
 
         int i1 = appendLiquidGlassCompoundVertex(mesh, x, y, mix, packedDistort, r, g, b, finalA, bounds,
-                payload, sourceCount, compound.smoothing(), shapeMode, safe, liquidGlassMaterial);
+                payload, sourceCount, compound.smoothing(), shapeMode, safe, alphaPayload, liquidGlassMaterial);
         int i2 = appendLiquidGlassCompoundVertex(mesh, x, y + h, mix, packedDistort, r, g, b, finalA, bounds,
-                payload, sourceCount, compound.smoothing(), shapeMode, safe, liquidGlassMaterial);
+                payload, sourceCount, compound.smoothing(), shapeMode, safe, alphaPayload, liquidGlassMaterial);
         int i3 = appendLiquidGlassCompoundVertex(mesh, x + w, y + h, mix, packedDistort, r, g, b, finalA, bounds,
-                payload, sourceCount, compound.smoothing(), shapeMode, safe, liquidGlassMaterial);
+                payload, sourceCount, compound.smoothing(), shapeMode, safe, alphaPayload, liquidGlassMaterial);
         int i4 = appendLiquidGlassCompoundVertex(mesh, x + w, y, mix, packedDistort, r, g, b, finalA, bounds,
-                payload, sourceCount, compound.smoothing(), shapeMode, safe, liquidGlassMaterial);
+                payload, sourceCount, compound.smoothing(), shapeMode, safe, alphaPayload, liquidGlassMaterial);
         mesh.quad(i1, i2, i3, i4);
         endAutoBatch(auto);
     }
@@ -3287,7 +3336,9 @@ public final class Renderer2D {
                                                        float smoothing,
                                                        int shapeMode,
                                                        LiquidGlassPreset preset,
+                                                       float alphaPayload,
                                                        UiLiquidGlassMaterial material) {
+        UiGlassOpticsSpec optics = materialOptics(material);
         float p0x = payload[0], p0y = payload[1], p0z = payload[2], p0w = payload[3];
         float p3x, p3y, p3z, p3w;
         float p4x, p4y, p4z, p4w;
@@ -3304,13 +3355,20 @@ public final class Renderer2D {
         return mesh.vec2(x, y).raw2(fresnelMix, packedDistort).local2(x, y).color(r, g, b, a)
                 .vec4(bounds.x(), bounds.y(), bounds.width(), bounds.height())
                 .vec4(p0x, p0y, p0z, p0w)
-                .vec4(preset.thicknessPx, preset.fresnelPower, clamp01(preset.fresnelAlpha), clamp01(preset.baseAlpha))
+                .vec4(preset.thicknessPx, preset.fresnelPower, clamp01(preset.fresnelAlpha), alphaPayload)
                 .vec4(p3x, p3y, p3z, p3w)
                 .vec4(p4x, p4y, p4z, p4w)
                 .vec4(p5x, p5y, p5z, p5w)
-                .vec4(sourceCount, smoothing, 0.0f, shapeMode)
-                .vec4(materialFrostedJitter(material), materialInnerGlowStrength(material),
+                .vec4(sourceCount, smoothing, packGlassOpticalFlags(optics), shapeMode)
+                .vec4(optics.chromaticAberration(), materialInnerGlowStrength(material),
                         materialInnerGlowSize(material), packLiquidGlassRgb(materialInnerGlowArgb(material)))
+                .vec4(optics.mode().shaderId(), optics.refraction(), optics.bevelWidth(), optics.bevelDepth())
+                .vec4(optics.interactionStrength(), optics.interactionRadius(),
+                        optics.interactionViscosity(), optics.cleanReveal())
+                .vec4(materialInteraction(material).x(), materialInteraction(material).y(),
+                        materialInteraction(material).dx(), materialInteraction(material).dy())
+                .vec4(materialInteraction(material).activity(), materialInteraction(material).press(),
+                        materialInteraction(material).open(), glassMagnificationFlag(optics, materialInteraction(material)))
                 .next();
     }
 
@@ -3344,7 +3402,7 @@ public final class Renderer2D {
                                                    float thickness,
                                                    float distortStrength,
                                                    float prismStrength) {
-        UiRect blurBounds = liquidGlassBlurBounds(bounds, thickness, distortStrength, prismStrength);
+        UiRect blurBounds = liquidGlassBlurBounds(bounds);
         UiBackdropRequest.SceneSource sceneSource = liquidGlassSceneSourceOverride;
         UiBackdropRequest request = switch (sceneSource != null
                 ? sceneSource
@@ -3352,6 +3410,8 @@ public final class Renderer2D {
             case UI_UNDERLAY -> UiBackdropRequest.uiUnderlayGlass(
                     blurBounds, sceneQuality, sceneOffsetPx);
             case CURRENT_TARGET -> UiBackdropRequest.currentTargetGlass(
+                    blurBounds, sceneQuality, sceneOffsetPx);
+            case STACKED_LENSES -> UiBackdropRequest.stackedGlass(
                     blurBounds, sceneQuality, sceneOffsetPx);
             case CAPTURED_SCENE, NONE -> UiBackdropRequest.capturedSceneGlass(
                     blurBounds, sceneQuality, sceneOffsetPx);
@@ -3368,16 +3428,7 @@ public final class Renderer2D {
         return request.withUiUnderlay(mode, uiBlur, liquidGlassUiMix);
     }
 
-    /**
-     * Expand only the blur workload bounds enough to cover the displaced blur samples used by the
-     * glass shader. The sharp scene stays full-frame; this margin exists solely so regional Kawase
-     * textures never expose untouched texels when refraction/mirror sampling walks outside the
-     * geometric panel bounds.
-     */
-    private UiRect liquidGlassBlurBounds(UiRect bounds,
-                                         float thickness,
-                                         float distortStrength,
-                                         float prismStrength) {
+    private UiRect liquidGlassBlurBounds(UiRect bounds) {
         if (bounds == null) return null;
 
         ViewportContext viewport = ViewportContext.current();
@@ -3388,31 +3439,31 @@ public final class Renderer2D {
         float logicalWidth = Math.max(1.0f, viewport.width());
         float logicalHeight = Math.max(1.0f, viewport.height());
 
-        float distortion = Mth.clamp(Float.isFinite(distortStrength) ? distortStrength : 0.0f,
-                0.0f, 0.35f);
-        float adjustedPrism = prismStrength > 0.01f
-                ? Math.min(1.0f, clamp01(prismStrength) * 1.18f)
-                : 0.0f;
-        // prismBand is capped by 0.72 * adjusted prism strength in the fragment shader.
-        float maxPrismBand = 0.72f * adjustedPrism;
-        float centerDistortFramebufferPx = distortion
-                * Math.min(framebufferWidth, framebufferHeight)
-                * 0.42f
-                * (1.0f + maxPrismBand * 1.10f);
-
-        float shaderThickness = Math.max(Float.isFinite(thickness) ? thickness : 0.0f, 1.0f);
-        float mirrorReachFramebufferPx = shaderThickness * 4.40f
-                + centerDistortFramebufferPx * 0.55f;
-        if (adjustedPrism > 0.0f) {
-            // Full glass takes four additional blurred rim taps around mirrorUv.
-            mirrorReachFramebufferPx += 6.0f + shaderThickness * 0.11f;
-        }
-
         float frostedJitterFramebufferPx = Math.min(4.0f,
                 Math.max(0.0f, materialFrostedJitter(liquidGlassMaterial)));
+        UiGlassOpticsSpec optics = materialOptics(liquidGlassMaterial);
+        float bevelReach = (Math.abs(optics.refraction()) + Math.abs(optics.bevelDepth()))
+                * (1.0f + optics.chromaticAberration())
+                * Math.max(logicalWidth, logicalHeight);
+        float lensRadius = 0.5f * (float) Math.hypot(bounds.width(), bounds.height());
+        float zoomReach = lensRadius * Math.abs(1.0f / optics.magnification() - 1.0f);
+        float tiltReach = 0.05f * (float) Math.hypot(
+                Math.tan(Math.toRadians(optics.tiltYDegrees())) * logicalWidth,
+                Math.tan(Math.toRadians(optics.tiltXDegrees())) * logicalHeight);
+        UiGlassInteraction interaction = materialInteraction(liquidGlassMaterial);
+        float motionReach = interaction.local() && optics.interactionStrength() > 0.0f
+                ? (float) Math.hypot(interaction.dx() * bounds.width(),
+                interaction.dy() * bounds.height()) + 6.0f * optics.chromaticAberration()
+                : 0.0f;
+        float liquidReachLogicalPx = bevelReach + zoomReach + tiltReach + motionReach;
+        float liquidReachFramebufferPx = liquidReachLogicalPx
+                / Math.max(Math.max(logicalWidth / framebufferWidth, logicalHeight / framebufferHeight), 0.0001f);
+        float chromaticReachFramebufferPx = optics.chromaticAberration() > 0.001f
+                ? Math.min(24.0f, 10.0f + optics.chromaticAberration() * 42.0f)
+                : 0.0f;
         float blurSampleReachFramebufferPx = Math.max(
-                centerDistortFramebufferPx + frostedJitterFramebufferPx,
-                mirrorReachFramebufferPx) + 2.0f;
+                Math.max(frostedJitterFramebufferPx, liquidReachFramebufferPx),
+                chromaticReachFramebufferPx) + 2.0f;
 
         float logicalPerFramebufferX = logicalWidth / framebufferWidth;
         float logicalPerFramebufferY = logicalHeight / framebufferHeight;
@@ -3519,11 +3570,9 @@ public final class Renderer2D {
         }
 
         boolean auto = beginAutoBatch();
-        UiBatchType glassBatchType = prismStrength > 0.01f
-                ? UiBatchType.LIQUID_GLASS
-                : UiBatchType.LIQUID_GLASS_LIGHT;
-        DrawBatch batch = UI_BATCHER.getOrCreateBlur(glassBatchType, src, sampler,
+        DrawBatch batch = UI_BATCHER.getOrCreateBlur(UiBatchType.LIQUID_GLASS, src, sampler,
                 preparedBlurQuality, preparedBlurOffset, backdrop, backdropBlend);
+        if (batch != null) batch.includeGlassBounds(new UiRect((float)x, (float)y, (float)w, (float)h));
         if (batch == null) {
             endAutoBatch(auto);
             return;
@@ -3536,11 +3585,12 @@ public final class Renderer2D {
         int r = (tintArgb >>> 16) & 0xFF;
         int g = (tintArgb >>> 8) & 0xFF;
         int b = tintArgb & 0xFF;
-        int finalA = (int) (a * clamp01(glassAlpha));
-        float mix = packLiquidGlassFresnel(fresnelMix, prismStrength, prismPhase);
+        UiGlassOpticsSpec optics = materialOptics(liquidGlassMaterial);
+        int finalA = Math.round(255.0f * clamp01(glassAlpha));
+        float mix = 0.0f;
         float packedDistort = packLiquidGlassPayload(distortPx, 2.0f, clamp01(blurAlpha), false);
         float fa = clamp01(fresnelAlpha);
-        float ba = clamp01(baseAlpha);
+        float ba = materialTintStrength(liquidGlassMaterial);
         float rounding = Math.min(primitive.rounding(), (float) Math.min(w, h) * 0.45f);
 
         int i1 = appendLiquidGlassPrimitiveVertex(mesh, x, y, mix, packedDistort, r, g, b, finalA,
@@ -3573,6 +3623,7 @@ public final class Renderer2D {
                                                         float fresnelAlpha,
                                                         float baseAlpha,
                                                         UiLiquidGlassMaterial material) {
+        UiGlassOpticsSpec optics = materialOptics(material);
         return mesh.vec2(x, y).raw2(fresnelMix, packedDistort).local2(x, y).color(r, g, b, a)
                 .vec4(bounds.x(), bounds.y(), bounds.width(), bounds.height())
                 .vec4(points[0], points[1], points[2], points[3])
@@ -3580,9 +3631,16 @@ public final class Renderer2D {
                 .vec4(points[4], points[5], points[6], points[7])
                 .vec4(points[8], points[9], points[10], points[11])
                 .vec4(points[12], points[13], points[14], points[15])
-                .vec4(pointCount, rounding, 0.0f, 1.0f)
-                .vec4(materialFrostedJitter(material), materialInnerGlowStrength(material),
+                .vec4(pointCount, rounding, packGlassOpticalFlags(optics), 1.0f)
+                .vec4(optics.chromaticAberration(), materialInnerGlowStrength(material),
                         materialInnerGlowSize(material), packLiquidGlassRgb(materialInnerGlowArgb(material)))
+                .vec4(optics.mode().shaderId(), optics.refraction(), optics.bevelWidth(), optics.bevelDepth())
+                .vec4(optics.interactionStrength(), optics.interactionRadius(),
+                        optics.interactionViscosity(), optics.cleanReveal())
+                .vec4(materialInteraction(material).x(), materialInteraction(material).y(),
+                        materialInteraction(material).dx(), materialInteraction(material).dy())
+                .vec4(materialInteraction(material).activity(), materialInteraction(material).press(),
+                        materialInteraction(material).open(), glassMagnificationFlag(optics, materialInteraction(material)))
                 .next();
     }
 
@@ -4021,11 +4079,9 @@ public final class Renderer2D {
         if (sampler == null) return;
 
         boolean auto = beginAutoBatch();
-        UiBatchType glassBatchType = prismStrength > 0.01f
-                ? UiBatchType.LIQUID_GLASS
-                : UiBatchType.LIQUID_GLASS_LIGHT;
-        DrawBatch batch = UI_BATCHER.getOrCreateBlur(glassBatchType, src, sampler,
+        DrawBatch batch = UI_BATCHER.getOrCreateBlur(UiBatchType.LIQUID_GLASS, src, sampler,
                 preparedBlurQuality, preparedBlurOffset, backdrop, backdropBlend);
+        if (batch != null) batch.includeGlassBounds(new UiRect((float)x, (float)y, (float)w, (float)h));
         if (batch == null) {
             endAutoBatch(auto);
             return;
@@ -4042,14 +4098,15 @@ public final class Renderer2D {
 
         float clampedGlassAlpha = clamp01(glassAlpha);
         float clampedBlurAlpha = clamp01(blurAlpha);
-        int finalA = (int) (a * clampedGlassAlpha);
+        UiGlassOpticsSpec optics = materialOptics(liquidGlassMaterial);
+        int finalA = Math.round(255.0f * clampedGlassAlpha);
 
         normalizeCornerRadii(w, h, radiusTL, radiusTR, radiusBR, radiusBL, cornerRadiiTmp);
 
         float thickness = Math.max(0.0f, softness);
-        float mix = packLiquidGlassFresnel(fresnelMix, prismStrength, prismPhase);
+        float mix = 0.0f;
         float fa = clamp01(fresnelAlpha);
-        float ba = clamp01(baseAlpha);
+        float ba = materialTintStrength(liquidGlassMaterial);
         float packedDistort = packLiquidGlassPayload(distortPx, shapePower, clampedBlurAlpha, wholeBoxSquircle);
 
         int i1 = mesh.vec2(x, y).raw2(mix, packedDistort).local2(x, y).color(r, g, b, finalA)
@@ -4057,36 +4114,64 @@ public final class Renderer2D {
                 .vec4(cornerRadiiTmp[0], cornerRadiiTmp[1], cornerRadiiTmp[2], cornerRadiiTmp[3])
                 .vec4(thickness, fresnelPower, fa, ba)
                 .vec4(0f, 0f, 0f, 0f).vec4(0f, 0f, 0f, 0f)
-                .vec4(0f, 0f, 0f, 0f).vec4(0f, 0f, 0f, 0f)
-                .vec4(materialFrostedJitter(liquidGlassMaterial), materialInnerGlowStrength(liquidGlassMaterial),
+                .vec4(0f, 0f, 0f, 0f).vec4(0f, 0f, packGlassOpticalFlags(optics), 0f)
+                .vec4(optics.chromaticAberration(), materialInnerGlowStrength(liquidGlassMaterial),
                         materialInnerGlowSize(liquidGlassMaterial), packLiquidGlassRgb(materialInnerGlowArgb(liquidGlassMaterial)))
+                .vec4(optics.mode().shaderId(), optics.refraction(), optics.bevelWidth(), optics.bevelDepth())
+                .vec4(optics.interactionStrength(), optics.interactionRadius(),
+                        optics.interactionViscosity(), optics.cleanReveal())
+                .vec4(materialInteraction(liquidGlassMaterial).x(), materialInteraction(liquidGlassMaterial).y(),
+                        materialInteraction(liquidGlassMaterial).dx(), materialInteraction(liquidGlassMaterial).dy())
+                .vec4(materialInteraction(liquidGlassMaterial).activity(), materialInteraction(liquidGlassMaterial).press(),
+                        materialInteraction(liquidGlassMaterial).open(), glassMagnificationFlag(optics, materialInteraction(liquidGlassMaterial)))
                 .next();
         int i2 = mesh.vec2(x, y + h).raw2(mix, packedDistort).local2(x, y + h).color(r, g, b, finalA)
                 .vec4(x, y, w, h)
                 .vec4(cornerRadiiTmp[0], cornerRadiiTmp[1], cornerRadiiTmp[2], cornerRadiiTmp[3])
                 .vec4(thickness, fresnelPower, fa, ba)
                 .vec4(0f, 0f, 0f, 0f).vec4(0f, 0f, 0f, 0f)
-                .vec4(0f, 0f, 0f, 0f).vec4(0f, 0f, 0f, 0f)
-                .vec4(materialFrostedJitter(liquidGlassMaterial), materialInnerGlowStrength(liquidGlassMaterial),
+                .vec4(0f, 0f, 0f, 0f).vec4(0f, 0f, packGlassOpticalFlags(optics), 0f)
+                .vec4(optics.chromaticAberration(), materialInnerGlowStrength(liquidGlassMaterial),
                         materialInnerGlowSize(liquidGlassMaterial), packLiquidGlassRgb(materialInnerGlowArgb(liquidGlassMaterial)))
+                .vec4(optics.mode().shaderId(), optics.refraction(), optics.bevelWidth(), optics.bevelDepth())
+                .vec4(optics.interactionStrength(), optics.interactionRadius(),
+                        optics.interactionViscosity(), optics.cleanReveal())
+                .vec4(materialInteraction(liquidGlassMaterial).x(), materialInteraction(liquidGlassMaterial).y(),
+                        materialInteraction(liquidGlassMaterial).dx(), materialInteraction(liquidGlassMaterial).dy())
+                .vec4(materialInteraction(liquidGlassMaterial).activity(), materialInteraction(liquidGlassMaterial).press(),
+                        materialInteraction(liquidGlassMaterial).open(), glassMagnificationFlag(optics, materialInteraction(liquidGlassMaterial)))
                 .next();
         int i3 = mesh.vec2(x + w, y + h).raw2(mix, packedDistort).local2(x + w, y + h).color(r, g, b, finalA)
                 .vec4(x, y, w, h)
                 .vec4(cornerRadiiTmp[0], cornerRadiiTmp[1], cornerRadiiTmp[2], cornerRadiiTmp[3])
                 .vec4(thickness, fresnelPower, fa, ba)
                 .vec4(0f, 0f, 0f, 0f).vec4(0f, 0f, 0f, 0f)
-                .vec4(0f, 0f, 0f, 0f).vec4(0f, 0f, 0f, 0f)
-                .vec4(materialFrostedJitter(liquidGlassMaterial), materialInnerGlowStrength(liquidGlassMaterial),
+                .vec4(0f, 0f, 0f, 0f).vec4(0f, 0f, packGlassOpticalFlags(optics), 0f)
+                .vec4(optics.chromaticAberration(), materialInnerGlowStrength(liquidGlassMaterial),
                         materialInnerGlowSize(liquidGlassMaterial), packLiquidGlassRgb(materialInnerGlowArgb(liquidGlassMaterial)))
+                .vec4(optics.mode().shaderId(), optics.refraction(), optics.bevelWidth(), optics.bevelDepth())
+                .vec4(optics.interactionStrength(), optics.interactionRadius(),
+                        optics.interactionViscosity(), optics.cleanReveal())
+                .vec4(materialInteraction(liquidGlassMaterial).x(), materialInteraction(liquidGlassMaterial).y(),
+                        materialInteraction(liquidGlassMaterial).dx(), materialInteraction(liquidGlassMaterial).dy())
+                .vec4(materialInteraction(liquidGlassMaterial).activity(), materialInteraction(liquidGlassMaterial).press(),
+                        materialInteraction(liquidGlassMaterial).open(), glassMagnificationFlag(optics, materialInteraction(liquidGlassMaterial)))
                 .next();
         int i4 = mesh.vec2(x + w, y).raw2(mix, packedDistort).local2(x + w, y).color(r, g, b, finalA)
                 .vec4(x, y, w, h)
                 .vec4(cornerRadiiTmp[0], cornerRadiiTmp[1], cornerRadiiTmp[2], cornerRadiiTmp[3])
                 .vec4(thickness, fresnelPower, fa, ba)
                 .vec4(0f, 0f, 0f, 0f).vec4(0f, 0f, 0f, 0f)
-                .vec4(0f, 0f, 0f, 0f).vec4(0f, 0f, 0f, 0f)
-                .vec4(materialFrostedJitter(liquidGlassMaterial), materialInnerGlowStrength(liquidGlassMaterial),
+                .vec4(0f, 0f, 0f, 0f).vec4(0f, 0f, packGlassOpticalFlags(optics), 0f)
+                .vec4(optics.chromaticAberration(), materialInnerGlowStrength(liquidGlassMaterial),
                         materialInnerGlowSize(liquidGlassMaterial), packLiquidGlassRgb(materialInnerGlowArgb(liquidGlassMaterial)))
+                .vec4(optics.mode().shaderId(), optics.refraction(), optics.bevelWidth(), optics.bevelDepth())
+                .vec4(optics.interactionStrength(), optics.interactionRadius(),
+                        optics.interactionViscosity(), optics.cleanReveal())
+                .vec4(materialInteraction(liquidGlassMaterial).x(), materialInteraction(liquidGlassMaterial).y(),
+                        materialInteraction(liquidGlassMaterial).dx(), materialInteraction(liquidGlassMaterial).dy())
+                .vec4(materialInteraction(liquidGlassMaterial).activity(), materialInteraction(liquidGlassMaterial).press(),
+                        materialInteraction(liquidGlassMaterial).open(), glassMagnificationFlag(optics, materialInteraction(liquidGlassMaterial)))
                 .next();
 
         mesh.quad(i1, i2, i3, i4);
@@ -4094,8 +4179,38 @@ public final class Renderer2D {
         endAutoBatch(auto);
     }
 
+    // 24-bit integer is represented exactly by a 32-bit float vertex attribute.
+    // Params6.z is the unused channel for rect/primitive/compound geometries.
+    // bits [0..1] chromatic motion; [8..14] tilt X; [15..21] tilt Y;
+    // [22] shape deformation; [23] directional specular. Keep payload GL3.3/16 attributes.
+    private static float packGlassOpticalFlags(UiGlassOpticsSpec optics) {
+        int tiltX = Math.max(0, Math.min(127, Math.round(optics.tiltXDegrees() * 4f) + 64));
+        int tiltY = Math.max(0, Math.min(127, Math.round(optics.tiltYDegrees() * 4f) + 64));
+        int bits = optics.chromaticMotion().shaderId() | (tiltX << 8) | (tiltY << 15)
+                | (optics.shapeDeformation() ? (1 << 22) : 0)
+                | (optics.specular() ? (1 << 23) : 0);
+        return bits;
+    }
+
+    // Params11.w was a binary local flag. Sign now encodes ownership and magnitude encodes
+    // zoom, leaving all other 15 attribute locations and all geometry payloads unchanged.
+    private static float glassMagnificationFlag(UiGlassOpticsSpec optics, UiGlassInteraction state) {
+        return (state.local() ? -1.0f : 1.0f) * optics.magnification();
+    }
+
     private static float materialFrostedJitter(UiLiquidGlassMaterial material) {
         return material != null ? material.frostedJitterPx() : 0.0f;
+    }
+
+    private static UiGlassInteraction materialInteraction(UiLiquidGlassMaterial material) {
+        return material != null && material.interaction() != null
+                ? material.interaction() : UiGlassInteraction.FRAME_POINTER;
+    }
+
+    private static UiGlassOpticsSpec materialOptics(UiLiquidGlassMaterial material) {
+        return material != null && material.optics() != null
+                ? material.optics()
+                : UiGlassOpticsSpec.LIQUID;
     }
 
     private static float materialInnerGlowStrength(UiLiquidGlassMaterial material) {
@@ -4112,21 +4227,14 @@ public final class Renderer2D {
         return material != null ? material.innerGlowArgb() : 0x00FFFFFF;
     }
 
+    private static float materialTintStrength(UiLiquidGlassMaterial material) {
+        return material != null ? material.tintStrength() : 0.12f;
+    }
+
     private static float packLiquidGlassRgb(int argb) {
         int rgb = argb & 0x00FFFFFF;
         return (float) rgb;
     }
-
-    private static float packLiquidGlassFresnel(float fresnelMix, float prismStrength, float prismPhase) {
-        float mix = clamp01(fresnelMix);
-        float strength = clamp01(prismStrength);
-        if (strength <= 0.001f) return mix;
-
-        int strengthBucket = Math.max(0, Math.min(100, Math.round(strength * 100.0f)));
-        int phaseBucket = Math.max(0, Math.min(100, Math.round(clamp01(prismPhase) * 100.0f)));
-        return 2.0f + mix + strengthBucket * 2.0f + phaseBucket * 256.0f;
-    }
-
 
     private static BlurQuality legacyBlurQuality(float legacyQuality) {
         if (legacyQuality >= 32.0f) return BlurQuality.ULTRA;
@@ -4553,6 +4661,86 @@ public final class Renderer2D {
                 primitive.pointCount(), rounding, strokeWidth, flags);
         mesh.quad(i1, i2, i3, i4);
         endAutoBatch(auto);
+    }
+
+    private void renderMaterialPrimitiveSdf(UiPrimitive primitive, UiPaint paint,
+                                            UiSurfaceMaterialSpec material) {
+        if (textured || primitive == null || paint == null || material == null) return;
+        UiRect bounds = primitive.bounds();
+        double x = bounds.x();
+        double y = bounds.y();
+        double w = bounds.width();
+        double h = bounds.height();
+        if (w <= 0.0 || h <= 0.0) return;
+
+        int cTL = paint.topLeft();
+        int cTR = paint.topRight();
+        int cBR = paint.bottomRight();
+        int cBL = paint.bottomLeft();
+        if (paint.kind() == UiPaintKind.LINEAR_GRADIENT) {
+            computeLinearGradientColors((float) w, (float) h,
+                    paint.topLeft(), paint.topRight(), paint.angleDeg(), paint.offsetPx(), gradientTmp);
+            cTL = gradientTmp[0];
+            cTR = gradientTmp[1];
+            cBR = gradientTmp[2];
+            cBL = gradientTmp[3];
+        }
+
+        Arrays.fill(primitivePointsTmp, 0.0f);
+        for (int i = 0; i < primitive.pointCount(); i++) {
+            primitivePointsTmp[i * 2] = primitive.localX(i);
+            primitivePointsTmp[i * 2 + 1] = primitive.localY(i);
+        }
+        float rounding = Math.min(primitive.rounding(), (float) Math.min(w, h) * 0.45f);
+
+        boolean auto = beginAutoBatch();
+        DrawBatch batch = UI_BATCHER.getOrCreate(UiBatchType.MATERIAL_PRIMITIVE, null, null);
+        if (batch == null) {
+            endAutoBatch(auto);
+            return;
+        }
+        MeshBuilder mesh = batch.mesh;
+        mesh.alpha = alpha;
+        mesh.ensureQuadCapacity();
+        int i1 = appendMaterialPrimitiveVertex(mesh, x, y, cTL, bounds, primitivePointsTmp,
+                primitive.pointCount(), rounding, material);
+        int i2 = appendMaterialPrimitiveVertex(mesh, x, y + h, cBL, bounds, primitivePointsTmp,
+                primitive.pointCount(), rounding, material);
+        int i3 = appendMaterialPrimitiveVertex(mesh, x + w, y + h, cBR, bounds, primitivePointsTmp,
+                primitive.pointCount(), rounding, material);
+        int i4 = appendMaterialPrimitiveVertex(mesh, x + w, y, cTR, bounds, primitivePointsTmp,
+                primitive.pointCount(), rounding, material);
+        mesh.quad(i1, i2, i3, i4);
+        endAutoBatch(auto);
+    }
+
+    private static int appendMaterialPrimitiveVertex(MeshBuilder mesh,
+                                                     double x,
+                                                     double y,
+                                                     int argb,
+                                                     UiRect bounds,
+                                                     float[] points,
+                                                     int pointCount,
+                                                     float rounding,
+                                                     UiSurfaceMaterialSpec material) {
+        int a = (argb >>> 24) & 0xFF;
+        int r = (argb >>> 16) & 0xFF;
+        int g = (argb >>> 8) & 0xFF;
+        int b = argb & 0xFF;
+        int accent = material.accentArgb();
+        float accentR = ((accent >>> 16) & 0xFF) / 255.0f;
+        float accentG = ((accent >>> 8) & 0xFF) / 255.0f;
+        float accentB = (accent & 0xFF) / 255.0f;
+        return mesh.vec2(x, y).local2(x, y).color(r, g, b, a)
+                .vec4(bounds.x(), bounds.y(), bounds.width(), bounds.height())
+                .vec4(points[0], points[1], points[2], points[3])
+                .vec4(points[4], points[5], points[6], points[7])
+                .vec4(points[8], points[9], points[10], points[11])
+                .vec4(points[12], points[13], points[14], points[15])
+                .vec4(pointCount, rounding, 0.0f, 1.0f)
+                .vec4(material.mode().shaderId(), material.detailScale(), material.roughness(), material.response())
+                .vec4(accentR, accentG, accentB, material.bevelStrength())
+                .next();
     }
 
     private static int appendPrimitiveVertex(MeshBuilder mesh,

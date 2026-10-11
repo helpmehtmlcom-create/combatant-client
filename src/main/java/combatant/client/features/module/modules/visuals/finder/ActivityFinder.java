@@ -7,6 +7,8 @@
 
 package combatant.client.features.module.modules.visuals.finder;
 
+import combatant.client.config.common.CommonSettingSchemas;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
@@ -61,11 +63,11 @@ public final class ActivityFinder extends Module {
     private final NumberValue<Integer> maxY = num("max_y", 16, -64, 320);
     private final NumberValue<Integer> ignoreNearSelf = num("ignore_near_self", 8, 0, 32);
     private final BooleanMapValue sources = group("sources", defaultSources());
-    private final NumberValue<Integer> rememberSeconds = num("remember_seconds", 120, 10, 1800);
-    private final NumberValue<Integer> alertCooldownSeconds = num("alert_cooldown", 60, 0, 600);
-    private final BooleanValue tracers = bool("tracers", true);
-    private final BooleanValue chatAlerts = bool("chat_alerts", true);
-    private final BooleanValue soundAlerts = bool("sound_alerts", true);
+    private final NumberValue<Integer> rememberSeconds = numCommon("remember_seconds", CommonSettingSchemas.FINDER_REMEMBER_SECONDS, 120, 10, 1800);
+    private final NumberValue<Integer> alertCooldownSeconds = numCommon("alert_cooldown", CommonSettingSchemas.FINDER_ALERT_COOLDOWN, 60, 0, 600);
+    private final BooleanValue tracers = boolCommon("tracers", CommonSettingSchemas.FINDER_TRACERS, true);
+    private final BooleanValue chatAlerts = boolCommon("chat_alerts", CommonSettingSchemas.FINDER_CHAT_ALERTS, true);
+    private final BooleanValue soundAlerts = boolCommon("sound_alerts", CommonSettingSchemas.FINDER_SOUND_ALERTS, true);
     private final RGBAColorValue fillColor = color("fill_color", "#40FFDC00");
     private final RGBAColorValue lineColor = color("line_color", "#FFFFDC00");
 
