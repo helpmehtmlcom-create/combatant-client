@@ -28,7 +28,7 @@ import combatant.client.features.module.WorldPhase;
 import combatant.client.features.relations.CategoryService;
 import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.animation.AnimatedRenderColors;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import combatant.client.render.helpers.HeadAnchor;
@@ -345,8 +345,8 @@ public final class TazikHat extends Module {
 
         MeshBuilder tris = renderer.batch(
                 depthTest.get()
-                        ? CombatantRenderPipelines.WORLD_COLORED_DEPTH
-                        : CombatantRenderPipelines.WORLD_COLORED,
+                        ? WorldRenderPipelines.WORLD_COLORED_DEPTH
+                        : WorldRenderPipelines.WORLD_COLORED,
                 depthTest.get()
                         ? Renderer3D.DepthMode.PRE_DEPTH
                         : Renderer3D.DepthMode.NONE
@@ -354,8 +354,8 @@ public final class TazikHat extends Module {
 
         MeshBuilder lines = renderer.batch(
                 depthTest.get()
-                        ? CombatantRenderPipelines.WORLD_COLORED_LINES_DEPTH
-                        : CombatantRenderPipelines.WORLD_COLORED_LINES,
+                        ? WorldRenderPipelines.WORLD_COLORED_LINES_DEPTH
+                        : WorldRenderPipelines.WORLD_COLORED_LINES,
                 depthTest.get()
                         ? Renderer3D.DepthMode.PRE_DEPTH
                         : Renderer3D.DepthMode.NONE

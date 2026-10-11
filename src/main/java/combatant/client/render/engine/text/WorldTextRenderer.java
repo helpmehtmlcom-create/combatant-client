@@ -12,7 +12,7 @@ import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.color.RenderColor;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.uniform.MeshBuilder;
 import combatant.client.render.engine.uniform.impl.MsdfTextUniforms;
@@ -79,11 +79,11 @@ public enum WorldTextRenderer {
 
         var pipeline = font.isMsdf()
                 ? (effectiveDepth == Renderer3D.DepthMode.NONE
-                ? CombatantRenderPipelines.WORLD_TEXT_MSDF
-                : CombatantRenderPipelines.WORLD_TEXT_MSDF_DEPTH)
+                ? WorldRenderPipelines.WORLD_TEXT_MSDF
+                : WorldRenderPipelines.WORLD_TEXT_MSDF_DEPTH)
                 : (effectiveDepth == Renderer3D.DepthMode.NONE
-                ? CombatantRenderPipelines.WORLD_TEXT
-                : CombatantRenderPipelines.WORLD_TEXT_DEPTH);
+                ? WorldRenderPipelines.WORLD_TEXT
+                : WorldRenderPipelines.WORLD_TEXT_DEPTH);
 
         MeshBuilder mesh = renderer.batch(pipeline, effectiveDepth, bindings);
         if (mesh == null) return 0.0;

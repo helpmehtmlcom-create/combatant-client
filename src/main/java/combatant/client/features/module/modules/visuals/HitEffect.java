@@ -23,7 +23,7 @@ import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.TextureStorage;
 import combatant.client.render.engine.animation.AnimatedRenderColors;
 import combatant.client.render.engine.color.RenderColor;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.effects.surface.CurrentSurfaceWaveRenderer;
 import combatant.client.render.effects.shockwave.WorldBlastShockwaves;
@@ -73,11 +73,11 @@ public class HitEffect extends Module {
 
     private static final float CHARGED_THRESHOLD = 0.9f;
 
-    private static final float WAVE_WIDTH = 3.15f;
-    private static final float WAVE_FILL_TRAIL = 4.25f;
+    private static final float WAVE_WIDTH = 0.48f;
+    private static final float WAVE_FILL_TRAIL = 1.20f;
     private static final float WAVE_FILL_ALPHA = 0.18f;
     private static final float WAVE_TRAIL_ALPHA = 0.055f;
-    private static final int WAVE_MAX_PER_FRAME = 400;
+    private static final int WAVE_MAX_PER_FRAME = 1800;
     private static final float WAVE_MIN_ALPHA = 0.012f;
 
     private static final float HIT_PARTICLE_GRAVITY_MIN = 0.006f;
@@ -460,8 +460,8 @@ public class HitEffect extends Module {
     private void renderHitParticles(Renderer3D renderer, float tickDelta) {
         boolean useDepth = depthTest.get();
         RenderPipeline pipeline = useDepth
-                ? CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE_LIQUID_IGNORE
-                : CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE;
+                ? WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE_LIQUID_IGNORE
+                : WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE;
         Renderer3D.DepthMode depthMode = useDepth ? Renderer3D.DepthMode.PRE_DEPTH : Renderer3D.DepthMode.NONE;
         Quaternionf camRot = RenderState.cameraRotation;
 

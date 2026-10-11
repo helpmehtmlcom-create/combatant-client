@@ -28,6 +28,7 @@ import combatant.client.render.engine.profiler.RenderProfiler2D;
 import combatant.client.render.engine.profiler.RenderProfiler3D;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.Renderer3D;
+import combatant.client.render.helpers.PlacementPreviewRenderer;
 import combatant.client.render.engine.renderer.ui.ItemBatchRenderer;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.runtime.RuntimeGate;
@@ -374,6 +375,9 @@ public enum ModuleManager {
                     });
                 }
             }
+            if (phase == WorldPhase.END_MAIN) {
+                PlacementPreviewRenderer.renderConfirmed(renderer, net.minecraft.client.Minecraft.getInstance().level);
+            }
         } finally {
             ItemBatchRenderer.finishWorldItemFrame();
         }
@@ -393,6 +397,14 @@ public enum ModuleManager {
                 runModule(m, "world post prepare", () -> m.onPrepareWorldPostProcess(tickDelta));
             }
         }
+    }
+
+    public static boolean needsEntityOnlyDepth() {
+        Module[] snapshot = modulesSnapshot;
+        for (Module module : snapshot) {
+            if (module.isEnabled() && module.needsEntityOnlyDepth()) return true;
+        }
+        return false;
     }
 
     // ---------------------------

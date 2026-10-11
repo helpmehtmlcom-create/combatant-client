@@ -39,7 +39,7 @@ import combatant.client.render.engine.animation.AnimationUtility;
 import combatant.client.render.engine.color.RenderColor;
 import combatant.client.render.engine.core.ViewportContext;
 import combatant.client.render.engine.math.ColorMath;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.UiRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.helpers.MatteHudStyle;
@@ -224,11 +224,11 @@ public final class CustomBar extends AbstractHudElement {
         int x = Mth.floor((mc.getWindow().getGuiScaledWidth() - XP_BAR_WIDTH) * 0.5f);
         int y = Mth.floor(mc.getWindow().getGuiScaledHeight() - 22f - XP_BAR_OFFSET - XP_BAR_HEIGHT);
         BarColors colors = colors(bm);
-        ctx.blitSprite(CombatantRenderPipelines.GUI_TEXTURE_LOOKUP, XP_BACKGROUND, x, y, 182, 5,
+        ctx.blitSprite(UiRenderPipelines.GUI_TEXTURE_LOOKUP, XP_BACKGROUND, x, y, 182, 5,
                 applyBarAlpha(colors.trackTexture(), bm));
         int progress = (int) (Mth.clamp(mc.player.experienceProgress, 0.0f, 1.0f) * 183.0f);
         if (progress > 0) {
-            ctx.blitSprite(CombatantRenderPipelines.GUI_TEXTURE_LOOKUP, XP_PROGRESS, 182, 5, 0, 0, x, y, progress, 5,
+            ctx.blitSprite(UiRenderPipelines.GUI_TEXTURE_LOOKUP, XP_PROGRESS, 182, 5, 0, 0, x, y, progress, 5,
                     applyBarAlpha(colors.fillTexture(), bm));
         }
     }
@@ -256,16 +256,16 @@ public final class CustomBar extends AbstractHudElement {
         int x = Mth.floor((mc.getWindow().getGuiScaledWidth() - XP_BAR_WIDTH) * 0.5f);
         int y = Mth.floor(mc.getWindow().getGuiScaledHeight() - 22f - XP_BAR_OFFSET - XP_BAR_HEIGHT);
         BarColors colors = colors(bm);
-        ctx.blitSprite(CombatantRenderPipelines.GUI_TEXTURE_LOOKUP, JUMP_BACKGROUND, x, y, 182, 5,
+        ctx.blitSprite(UiRenderPipelines.GUI_TEXTURE_LOOKUP, JUMP_BACKGROUND, x, y, 182, 5,
                 applyBarAlpha(colors.trackTexture(), bm));
         if (mount.getJumpCooldown() > 0) {
-            ctx.blitSprite(CombatantRenderPipelines.GUI_TEXTURE_LOOKUP, JUMP_COOLDOWN, x, y, 182, 5,
+            ctx.blitSprite(UiRenderPipelines.GUI_TEXTURE_LOOKUP, JUMP_COOLDOWN, x, y, 182, 5,
                     applyBarAlpha(colors.fillTexture(), bm));
             return;
         }
         int progress = Mth.lerpDiscrete(mc.player.getJumpRidingScale(), 0, 182);
         if (progress > 0) {
-            ctx.blitSprite(CombatantRenderPipelines.GUI_TEXTURE_LOOKUP, JUMP_PROGRESS, 182, 5, 0, 0, x, y, progress, 5,
+            ctx.blitSprite(UiRenderPipelines.GUI_TEXTURE_LOOKUP, JUMP_PROGRESS, 182, 5, 0, 0, x, y, progress, 5,
                     applyBarAlpha(colors.fillTexture(), bm));
         }
     }
@@ -373,7 +373,7 @@ public final class CustomBar extends AbstractHudElement {
         if (bm == null || !bm.isHudBarEnabled() || !bm.isHotbarXpBarEnabled()) return;
         int x = Mth.floor((mc.getWindow().getGuiScaledWidth() - XP_BAR_WIDTH) * 0.5f);
         int y = Mth.floor(mc.getWindow().getGuiScaledHeight() - 22f - XP_BAR_OFFSET - LOCATOR_BAR_HEIGHT);
-        ctx.blitSprite(CombatantRenderPipelines.GUI_TEXTURE_LOOKUP, LOCATOR_BACKGROUND, x, y, 182, 5,
+        ctx.blitSprite(UiRenderPipelines.GUI_TEXTURE_LOOKUP, LOCATOR_BACKGROUND, x, y, 182, 5,
                 applyBarAlpha(colors(bm).locatorTexture(), bm));
     }
 
@@ -570,7 +570,7 @@ public final class CustomBar extends AbstractHudElement {
                         ? Mth.floor(headY + headSize + LOCATOR_ARROW_GAP)
                         : Mth.floor(headY - LOCATOR_ARROW_H - LOCATOR_ARROW_GAP);
                 ctx.blitSprite(
-                        CombatantRenderPipelines.GUI_TEXTURE_LOOKUP,
+                        UiRenderPipelines.GUI_TEXTURE_LOOKUP,
                         arrow,
                         xOffset,
                         yOffset,

@@ -35,12 +35,11 @@ import combatant.client.events.Events;
 import combatant.client.events.impl.MovementInputEvent;
 import combatant.client.events.impl.RotationUpdateEvent;
 import combatant.client.features.module.Module;
-import combatant.client.util.aiming.RestrictedSingleUseAction;
 import combatant.client.util.aiming.RotationManager;
-import combatant.client.util.aiming.RotationTarget;
 import combatant.client.util.aiming.data.Rotation;
 import combatant.client.util.aiming.features.MovementCorrection;
 import combatant.client.util.block.scaffold.ScaffoldPlacementTarget;
+import combatant.client.util.block.interaction.BlockInteractionPipeline;
 import combatant.client.util.block.scaffold.ScaffoldTargetFinder;
 import combatant.client.util.player.inventory.InventorySwap;
 
@@ -311,15 +310,21 @@ public final class BlockPlacer {
             return;
         }
 
-        RotationTarget rotationTarget = new RotationTarget(
-                currentPlacement.target().getRotation(),
-                player,
-                List.of(),
-                1,
-                4.0f,
-                false,
-                movementCorrectionSupplier.get(),
-                new RestrictedSingleUseAction(() -> {
+        PlacementPlan scheduledPlan = currentPlacement;
+        BlockInteractionPipeline.INSTANCE.rotateTo(
+                requester,
+                scheduledPlan.target().getRotation(),
+                scheduledPlan.target().getHitVec(),
+                new BlockInteractionPipeline.RotationPlan(
+                        true,
+                        List.of(),
+                        1,
+                        4.0f,
+                        false,
+                        movementCorrectionSupplier.get(),
+                        rotationPriority
+                ),
+                () -> {
                     PlacementPlan plan = currentPlacement;
                     LocalPlayer currentPlayer = mc.player;
                     if (plan == null || currentPlayer == null || ticksToWait > 0) {
@@ -341,9 +346,8 @@ public final class BlockPlacer {
                     }
 
                     doPlacement(currentPlayer, plan);
-                })
+                }
         );
-        RotationManager.INSTANCE.setRotationTarget(rotationTarget, rotationPriority, requester);
     }
 
     @EventHandler
@@ -487,21 +491,20 @@ public final class BlockPlacer {
         currentPlacement = null;
         blocks.remove(plan.pos());
 
-        if (slot.hotbarSlot() >= 0) {
-            InventorySwap.INSTANCE.leaseHotbar(
-                    requester,
-                    slot.hotbarSlot(),
-                    randomBetween(slotResetDelayMinSupplier.getAsInt(), slotResetDelayMaxSupplier.getAsInt())
-            );
-        }
-
         if (slot.stack().getItem() instanceof BlockItem && !player.level().getBlockState(plan.pos()).canBeReplaced()) {
             return;
         }
 
-        InteractionResult result = mc.gameMode.useItemOn(player, slot.hand(), hitResult);
+        InteractionResult result = BlockInteractionPipeline.INSTANCE.useOnBlock(
+                requester,
+                player,
+                slot.hand(),
+                slot.hotbarSlot(),
+                randomBetween(slotResetDelayMinSupplier.getAsInt(), slotResetDelayMaxSupplier.getAsInt()),
+                hitResult,
+                true
+        );
         if (result != null && result.consumesAction()) {
-            player.swing(slot.hand());
             ranAction = true;
         }
     }

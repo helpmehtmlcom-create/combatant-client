@@ -8,6 +8,9 @@
 package combatant.client.render.engine.text;
 
 import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.buffers.GpuBufferSlice;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.textures.FilterMode;
 import com.mojang.blaze3d.textures.GpuSampler;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import combatant.client.render.engine.text.backend.*;
@@ -15,6 +18,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.AbstractTexture;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.UiRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.ui.UiRenderDispatcher;
 import combatant.client.render.engine.renderer.ui.blend.UiBackdropBlendSpec;
@@ -27,10 +31,11 @@ import combatant.client.render.engine.rhi.GpuMeshHandle;
 import combatant.client.render.engine.rhi.RhiDrawCommand;
 import combatant.client.render.engine.rhi.resource.GlyphAtlasManager;
 import combatant.client.render.engine.uniform.MeshBuilder;
+import combatant.client.render.engine.uniform.ShaderUniformBindings;
 import combatant.client.render.engine.uniform.impl.MsdfTextUniforms;
 import combatant.client.render.engine.uniform.impl.UIBatchUniforms;
-import combatant.client.render.engine.uniform.impl.UIBlendUniforms;
 import combatant.client.render.engine.uniform.impl.UiClipUniforms;
+import combatant.client.render.engine.uniform.impl.UiGlassFrameUniforms;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -43,6 +48,8 @@ public enum TextRenderSystem {
     private static final TextCommandStats STATS = new TextCommandStats();
     private static final TextCommandBuffer COMMANDS = new TextCommandBuffer(STATS);
     private static final TextBackendRouter ROUTER = new TextBackendRouter(STATS);
+    private static final ShaderUniformBindings.Block UI_BLEND_BLOCK = ShaderUniformBindings.block("UIBlend");
+    private static final ShaderUniformBindings.Writer UI_BLEND = UI_BLEND_BLOCK.writer();
 
     static {
         ROUTER.add(new MsdfTextBackend(STATS));
@@ -92,6 +99,20 @@ public enum TextRenderSystem {
                                                    double boundsY,
                                                    double boundsWidth,
                                                    double boundsHeight) {
+        submitLiquidGlassGlyphMesh(label, font, mesh, pipeline, placement,
+                boundsX, boundsY, boundsWidth, boundsHeight, null);
+    }
+
+    public static void submitLiquidGlassGlyphMesh(String label,
+                                                   GlyphFont font,
+                                                   MeshBuilder mesh,
+                                                   RenderPipeline pipeline,
+                                                   TextPlacementMode placement,
+                                                   double boundsX,
+                                                   double boundsY,
+                                                   double boundsWidth,
+                                                   double boundsHeight,
+                                                   UiBackdropRequest backdrop) {
         if (font == null || mesh == null || pipeline == null) return;
         if (mesh.isBuilding()) mesh.end();
         if (mesh.getIndicesCount() <= 0) return;
@@ -99,13 +120,15 @@ public enum TextRenderSystem {
         UiRect bounds = UiRect.of(boundsX, boundsY, boundsWidth, boundsHeight);
         TextPlacementMode uiPlacement = placement != null ? placement : TextPlacementMode.UI;
         if (uiPlacement == TextPlacementMode.UI || uiPlacement == TextPlacementMode.SCREEN_SPACE) {
-            if (Renderer2D.enqueueLiquidGlassTextMesh(label, font, mesh, pipeline, uiPlacement, bounds)) {
+            if (Renderer2D.enqueueLiquidGlassTextMesh(
+                    label, font, mesh, pipeline, uiPlacement, bounds, null, backdrop)) {
                 return;
             }
             boolean auto = UiRenderDispatcher.beginAutoBatch();
             if (auto) {
                 try {
-                    if (Renderer2D.enqueueLiquidGlassTextMesh(label, font, mesh, pipeline, uiPlacement, bounds)) {
+                    if (Renderer2D.enqueueLiquidGlassTextMesh(
+                            label, font, mesh, pipeline, uiPlacement, bounds, null, backdrop)) {
                         return;
                     }
                 } finally {
@@ -117,7 +140,7 @@ public enum TextRenderSystem {
         // Glass text is a UI backdrop material. Outside an ordered UI batch, preserve readable
         // output rather than sampling the active color attachment recursively.
         submitGlyphMeshImmediate(label, font, mesh,
-                font.isMsdf() ? CombatantRenderPipelines.UI_TEXT_MSDF_FAST : CombatantRenderPipelines.UI_TEXT_FAST,
+                font.isMsdf() ? UiRenderPipelines.UI_TEXT_MSDF_FAST : UiRenderPipelines.UI_TEXT_FAST,
                 uiPlacement);
     }
 
@@ -142,7 +165,7 @@ public enum TextRenderSystem {
                 bounds, UiBlurQuality.LIQUID_GLASS, Renderer2D.LIQUID_GLASS_KAWASE_OFFSET_PX);
         UiBackdropBlendSpec material = blend != null ? blend : UiBackdropBlendSpec.NORMAL;
         TextPlacementMode uiPlacement = placement != null ? placement : TextPlacementMode.UI;
-        RenderPipeline pipeline = CombatantRenderPipelines.UI_TEXT_MSDF_GLASS_BLEND_FAST;
+        RenderPipeline pipeline = UiRenderPipelines.UI_TEXT_MSDF_GLASS_BLEND_FAST;
 
         if (uiPlacement == TextPlacementMode.UI || uiPlacement == TextPlacementMode.SCREEN_SPACE) {
             if (Renderer2D.enqueueLiquidGlassTextMesh(
@@ -165,7 +188,7 @@ public enum TextRenderSystem {
         // A backdrop operator needs a stable destination image. Outside ordered UI replay, fall
         // back to ordinary MSDF text rather than pretending that a recursive attachment sample is valid.
         submitGlyphMeshImmediate(label, font, mesh,
-                font.isMsdf() ? CombatantRenderPipelines.UI_TEXT_MSDF_FAST : CombatantRenderPipelines.UI_TEXT_FAST,
+                font.isMsdf() ? UiRenderPipelines.UI_TEXT_MSDF_FAST : UiRenderPipelines.UI_TEXT_FAST,
                 uiPlacement);
     }
 
@@ -307,6 +330,8 @@ public enum TextRenderSystem {
 
         AbstractTexture texture = font.getTexture();
         if (texture == null || texture.getTextureView() == null || texture.getSampler() == null) return;
+        GpuSampler glyphSampler = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
+        if (glyphSampler == null) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.gameRenderer.mainRenderTarget() == null) return;
 
@@ -328,11 +353,16 @@ public enum TextRenderSystem {
                     .colorAttachment(UiMsaaClipLayer.currentColorAttachment(
                             mc.gameRenderer.mainRenderTarget().getColorTextureView()))
                     .mesh(handle)
-                    .sampler("u_Texture", texture.getTextureView(), texture.getSampler())
-                    .sampler("u_SceneTexture", sceneView, sceneSampler)
+                    .sampler("u_Texture", texture.getTextureView(), glyphSampler)
                     .sampler("u_BlurTexture", blurView, blurSampler)
                     .uniform("UIBatch", UIBatchUniforms.get())
                     .uniform("MsdfText", MsdfTextUniforms.get());
+            if (pipeline == UiRenderPipelines.UI_TEXT_MSDF_GLASS_FAST) {
+                command.uniform(UiGlassFrameUniforms.BLOCK_NAME,
+                        UiGlassFrameUniforms.update(mc, framebufferWidth, framebufferHeight));
+            } else {
+                command.sampler("u_SceneTexture", sceneView, sceneSampler);
+            }
 
             commands.add(command.build());
             handle = null;
@@ -378,7 +408,7 @@ public enum TextRenderSystem {
 
             RhiDrawCommand.Builder command = RhiDrawCommand.builder(
                             label != null ? label : "Combatant Backdrop Blend Text")
-                    .pipeline(CombatantRenderPipelines.UI_TEXT_MSDF_GLASS_BLEND_FAST)
+                    .pipeline(UiRenderPipelines.UI_TEXT_MSDF_GLASS_BLEND_FAST)
                     .colorAttachment(UiMsaaClipLayer.currentColorAttachment(
                             mc.gameRenderer.mainRenderTarget().getColorTextureView()))
                     .mesh(handle)
@@ -386,8 +416,7 @@ public enum TextRenderSystem {
                     .sampler("u_SceneTexture", sceneView, sceneSampler)
                     .sampler("u_BlurTexture", blurView, blurSampler)
                     .uniform("UIBatch", UIBatchUniforms.get())
-                    .uniform("UIBlend", UIBlendUniforms.write(
-                            blend != null ? blend : UiBackdropBlendSpec.NORMAL))
+                    .uniform(UI_BLEND_BLOCK.name(), uploadUiBlend(blend))
                     .uniform("MsdfText", MsdfTextUniforms.get());
 
             commands.add(command.build());
@@ -397,7 +426,26 @@ public enum TextRenderSystem {
         }
     }
 
+    private static GpuBufferSlice uploadUiBlend(UiBackdropBlendSpec requested) {
+        UiBackdropBlendSpec spec = requested != null ? requested : UiBackdropBlendSpec.NORMAL;
+        int tone0 = spec.tone0Argb();
+        int tone1 = spec.tone1Argb();
+        return UI_BLEND
+                .vec4("uBlendParams", spec.mode().shaderId(), spec.strength(), spec.pivot(), spec.softness())
+                .vec4("uBlendTone0",
+                        ((tone0 >>> 16) & 0xFF) / 255.0f,
+                        ((tone0 >>> 8) & 0xFF) / 255.0f,
+                        (tone0 & 0xFF) / 255.0f,
+                        ((tone0 >>> 24) & 0xFF) / 255.0f)
+                .vec4("uBlendTone1",
+                        ((tone1 >>> 16) & 0xFF) / 255.0f,
+                        ((tone1 >>> 8) & 0xFF) / 255.0f,
+                        (tone1 & 0xFF) / 255.0f,
+                        ((tone1 >>> 24) & 0xFF) / 255.0f)
+                .upload(64);
+    }
+
     public static RenderPipeline uiPipelineFor(GlyphFont font) {
-        return font != null && font.isMsdf() ? CombatantRenderPipelines.UI_TEXT_MSDF : CombatantRenderPipelines.UI_TEXT;
+        return font != null && font.isMsdf() ? UiRenderPipelines.UI_TEXT_MSDF : UiRenderPipelines.UI_TEXT;
     }
 }

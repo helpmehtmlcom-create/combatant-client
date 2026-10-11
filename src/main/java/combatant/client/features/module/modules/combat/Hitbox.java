@@ -30,7 +30,7 @@ import combatant.client.features.relations.EntityFilters;
 import combatant.client.mixininterface.IEntity;
 import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.depth.PreTranslucentDepth;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.renderer.MeshRenderer;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.uniform.MeshBuilder;
@@ -50,8 +50,8 @@ public class Hitbox extends Module {
 
     private static final String ACTION_SUPPRESS_HITBOX = "suppress_hitbox";
     private static final long HIT_FLASH_DURATION_MS = 2000;
-    private static final MeshBuilder HITBOX_TRIS = new MeshBuilder(CombatantRenderPipelines.WORLD_COLORED_LIQUID_IGNORE);
-    private static final MeshBuilder HITBOX_LINES = new MeshBuilder(CombatantRenderPipelines.WORLD_COLORED_LINES_DEPTH);
+    private static final MeshBuilder HITBOX_TRIS = new MeshBuilder(WorldRenderPipelines.WORLD_COLORED_LIQUID_IGNORE);
+    private static final MeshBuilder HITBOX_LINES = new MeshBuilder(WorldRenderPipelines.WORLD_COLORED_LINES_DEPTH);
     private final Minecraft mc = Minecraft.getInstance();
     private final NumberValue<Float> padding =
             num(
@@ -319,7 +319,7 @@ public class Hitbox extends Module {
         if (tris.getIndicesCount() > 0) {
             MeshRenderer.begin()
                     .attachments(colorView, depthView)
-                    .pipeline(CombatantRenderPipelines.WORLD_COLORED_LIQUID_IGNORE)
+                    .pipeline(WorldRenderPipelines.WORLD_COLORED_LIQUID_IGNORE)
                     .mesh(tris, transform)
                     .end();
         }
@@ -327,7 +327,7 @@ public class Hitbox extends Module {
         if (lines.getIndicesCount() > 0) {
             MeshRenderer.begin()
                     .attachments(colorView, depthView)
-                    .pipeline(CombatantRenderPipelines.WORLD_COLORED_LINES_DEPTH)
+                    .pipeline(WorldRenderPipelines.WORLD_COLORED_LINES_DEPTH)
                     .mesh(lines, transform)
                     .end();
         }

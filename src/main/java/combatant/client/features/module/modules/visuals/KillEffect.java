@@ -36,7 +36,8 @@ import combatant.client.render.engine.RenderState;
 import combatant.client.render.engine.TextureStorage;
 import combatant.client.render.engine.color.ColorUtils;
 import combatant.client.render.engine.color.RenderColor;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
+import combatant.client.render.engine.pipeline.PostProcessRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.engine.postprocess.PostProcessExecutionContext;
 import combatant.client.render.engine.postprocess.PostProcessPass;
@@ -249,7 +250,7 @@ public class KillEffect extends Module implements PostProcessPass {
         PostProcessUniforms.update(strength, 0.0f, 0.0f, 0.0f);
         FullScreenRenderer.begin("Combatant Kill Blur")
                 .attachment(dst)
-                .pipeline(CombatantRenderPipelines.KILL_BLUR)
+                .pipeline(PostProcessRenderPipelines.KILL_BLUR)
                 .uniform("PostProcess", PostProcessUniforms.get())
                 .sampler("u_Texture", src, PostProcessManager.getSampler())
                 .end();
@@ -427,7 +428,7 @@ public class KillEffect extends Module implements PostProcessPass {
         if (emberFrames.isEmpty()) return;
 
         MeshBuilder mesh = renderer.batchTextured(
-                CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE,
+                WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE,
                 TextureStorage.FIRE_FLY,
                 Renderer3D.DepthMode.MAIN
         );
@@ -457,7 +458,7 @@ public class KillEffect extends Module implements PostProcessPass {
         if (flashFrames.isEmpty()) return;
 
         MeshBuilder mesh = renderer.batchTextured(
-                CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE,
+                WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE,
                 TextureStorage.DEFAULT_CIRCLE,
                 Renderer3D.DepthMode.MAIN
         );
@@ -483,7 +484,7 @@ public class KillEffect extends Module implements PostProcessPass {
         if (lightningFrames.isEmpty()) return;
 
         MeshBuilder mesh = renderer.batchTextured(
-                CombatantRenderPipelines.WORLD_TEXTURED_ADDITIVE,
+                WorldRenderPipelines.WORLD_TEXTURED_ADDITIVE,
                 TextureStorage.FIRE_FLY,
                 Renderer3D.DepthMode.MAIN
         );

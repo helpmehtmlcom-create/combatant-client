@@ -204,33 +204,50 @@ public final class IrisGraphicsGuiRenderer {
         }
 
         if (f.hideButton != null && f.hideButton.contains(mx, my)) {
-            if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT && toggleHidden != null) toggleHidden.run();
+            if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT && toggleHidden != null) {
+                pressed(ControlId.HIDE);
+                toggleHidden.run();
+            }
             return true;
         }
         if (f.gridButton != null && f.gridButton.contains(mx, my)) {
-            if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) state.gridView = true;
+            if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                state.gridView = true;
+                pressed(ControlId.GRID);
+            }
             return true;
         }
         if (f.listButton != null && f.listButton.contains(mx, my)) {
-            if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) state.gridView = false;
+            if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                state.gridView = false;
+                pressed(ControlId.LIST);
+            }
             return true;
         }
         if (openFolderButton != null && f.folderButton != null && f.folderButton.contains(mx, my)) {
-            if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) clickNativeButton(openFolderButton, event, doubleClick);
+            if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                pressed(ControlId.FOLDER);
+                clickNativeButton(openFolderButton, event, doubleClick);
+            }
             return true;
         }
         if (screenSwitchButton != null && f.switchButton != null && f.switchButton.contains(mx, my)) {
-            if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) clickNativeButton(screenSwitchButton, event, doubleClick);
+            if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                pressed(ControlId.OPTIONS);
+                clickNativeButton(screenSwitchButton, event, doubleClick);
+            }
             return true;
         }
         if (f.shaderToggle != null && f.shaderToggle.contains(mx, my)) {
             if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT && packList.getTopButtonRow() != null) {
+                pressed(packList.getTopButtonRow());
                 packList.getTopButtonRow().mouseClicked(event, doubleClick);
             }
             return true;
         }
         if (f.downloadButton != null && f.downloadButton.contains(mx, my)) {
             if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT && f.downloadAction != null) {
+                pressed(ControlId.DOWNLOAD);
                 f.downloadAction.mouseClicked(event, doubleClick);
             }
             return true;
@@ -248,6 +265,7 @@ public final class IrisGraphicsGuiRenderer {
             for (HeaderAction action : f.headerActions) {
                 if (!action.rect.contains(mx, my)) continue;
                 if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT && action.listener != null) {
+                    pressed(action.listener);
                     action.listener.mouseClicked(event, doubleClick);
                 }
                 return true;
@@ -255,6 +273,10 @@ public final class IrisGraphicsGuiRenderer {
             for (OptionSlot slot : f.optionSlots) {
                 if (!slot.rect.contains(mx, my)) continue;
                 if (slot.widget == null) return true;
+                if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                    pressed(slot.widget);
+                    state.focusedOption = slot.widget;
+                }
                 if (slot.widget instanceof SliderElementWidget slider && event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
                     slider.bounds = new ScreenRectangle(0, 0, 100, 22);
                     slider.mouseClicked(new MouseButtonEvent(50.0, 11.0, event.buttonInfo()), doubleClick);
@@ -282,6 +304,7 @@ public final class IrisGraphicsGuiRenderer {
             for (PackSlot slot : f.packSlots) {
                 if (!slot.rect.contains(mx, my)) continue;
                 if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                    pressed(slot.entry);
                     slot.entry.mouseClicked(event, doubleClick);
                     state.selectedPackName = slot.entry.getPackName();
                 }
@@ -290,15 +313,24 @@ public final class IrisGraphicsGuiRenderer {
         }
 
         if (f.cancelButton != null && f.cancelButton.contains(mx, my)) {
-            if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) clickCancel(screen, event, doubleClick);
+            if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                pressed(ControlId.CANCEL);
+                clickCancel(screen, event, doubleClick);
+            }
             return true;
         }
         if (f.applyButton != null && f.applyButton.contains(mx, my)) {
-            if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) screen.applyChanges();
+            if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                pressed(ControlId.APPLY);
+                screen.applyChanges();
+            }
             return true;
         }
         if (f.doneButton != null && f.doneButton.contains(mx, my)) {
-            if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) screen.onClose();
+            if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                pressed(ControlId.DONE);
+                screen.onClose();
+            }
             return true;
         }
 
@@ -333,6 +365,7 @@ public final class IrisGraphicsGuiRenderer {
         SelectPopup popup = state.selectPopup;
         if (!optionMode) {
             state.selectPopup = null;
+            state.focusedOption = null;
             return;
         }
         if (popup == null) return;
@@ -431,7 +464,10 @@ public final class IrisGraphicsGuiRenderer {
             Rect row = popup.rowRect(i, slide);
             if (!row.intersects(visible) || !row.contains(mx, my)) continue;
             SelectChoice choice = popup.choices.get(i);
-            if (!choice.selected) choice.action.run();
+            if (!choice.selected) {
+                pressed(popup.widget);
+                choice.action.run();
+            }
             GuiUtil.playButtonClickSound();
             popup.close();
             return true;
@@ -545,7 +581,29 @@ public final class IrisGraphicsGuiRenderer {
         if (option == null) return LegacyTextUtil.stripLegacy(raw);
         Component value = GuiUtil.translateOrDefault(Component.literal(raw),
                 "option." + option.getName() + ".value." + raw);
+        // OptiFine-style shader packs, including Photon, use value.<option>.<value>.
+        if (raw.equals(value.getString())) {
+            value = GuiUtil.translateOrDefault(Component.literal(raw),
+                    "value." + option.getName() + "." + raw);
+        }
         return LegacyTextUtil.stripLegacy(value.getString());
+    }
+
+    private static boolean isInformationalOption(AbstractElementWidget<?> widget) {
+        if (!(widget instanceof StringElementWidget string) || widget instanceof SliderElementWidget) return false;
+        StringOption option = stringOption(string);
+        if (option == null || !"INFO".equalsIgnoreCase(option.getName())) return false;
+        List<String> values = option.getAllowedValues();
+        if (values == null || values.size() < 2) return false;
+        String caption = null;
+        for (String raw : values) {
+            String display = displayStringValue(string, raw).trim();
+            // Only collapse it when all values mean the exact same thing, not for a real enum.
+            if (display.isEmpty() || display.equals(raw)) return false;
+            if (caption == null) caption = display;
+            else if (!caption.equalsIgnoreCase(display)) return false;
+        }
+        return true;
     }
 
     private static StringOption stringOption(StringElementWidget widget) {
@@ -645,15 +703,15 @@ public final class IrisGraphicsGuiRenderer {
         }
 
         if (!optionMode) {
-            drawIconButton(f.gridButton, "layout-grid", state.gridView, f, s);
-            drawIconButton(f.listButton, "rows-3", !state.gridView, f, s);
+            drawIconButton(f.gridButton, "layout-grid", state.gridView, ControlId.GRID, f, s);
+            drawIconButton(f.listButton, "rows-3", !state.gridView, ControlId.LIST, f, s);
         }
-        if (openFolderButton != null) drawIconButton(f.folderButton, "folder-open", false, f, s);
+        if (openFolderButton != null) drawIconButton(f.folderButton, "folder-open", false, ControlId.FOLDER, f, s);
         if (screenSwitchButton != null && f.switchButton != null) {
-            drawIconButton(f.switchButton, "settings-2", optionMode, f, s);
+            drawIconButton(f.switchButton, "settings-2", optionMode, ControlId.OPTIONS, f, s);
         }
         if (showHideButton != null && f.hideButton != null) {
-            drawIconButton(f.hideButton, "eye", false, f, s);
+            drawIconButton(f.hideButton, "eye", false, ControlId.HIDE, f, s);
         }
 
         if (!optionMode) {
@@ -665,15 +723,13 @@ public final class IrisGraphicsGuiRenderer {
                 Motion m = motion(top, hover, enabled);
                 float h = AnimationUtility.easeOutCubic(m.hover);
                 float a = AnimationUtility.easeOutCubic(m.active);
-                int bg = mix(s.control, s.controlHover, h * 0.58f + a * 0.17f);
+                int bg = mix(s.control, s.controlHover, h * 0.58f + a * 0.17f + m.press * 0.20f);
                 Renderer2D.COLOR.quad(f.shaderToggle.x, f.shaderToggle.y, f.shaderToggle.w, f.shaderToggle.h,
                         withAlpha(bg, 178), withAlpha(bg, 172), withAlpha(bg, 160), withAlpha(bg, 164));
-                Renderer2D.COLOR.quad(f.shaderToggle.x, f.shaderToggle.y + f.shaderToggle.h - 2f,
-                        f.shaderToggle.w, 2f, withAlpha(enabled ? s.accent : s.strokeBright, enabled ? 194 : 72));
-                Renderer2D.COLOR.svg(enabled ? "check" : "x", f.shaderToggle.x + 14f, f.shaderToggle.y + 14f, 18f, 18f,
-                        SvgRenderOptions.overrideColor(withAlpha(enabled ? s.accentBright : s.muted, 230)));
-                drawText(fontMedium(), enabled ? tr("gui.combatant.iris.enabled") : tr("gui.combatant.iris.disabled"),
-                        f.shaderToggle.x + 42f, f.shaderToggle.y + 14f, 14f, withAlpha(s.text, 222));
+                drawText(fontMedium(), tr("gui.combatant.iris.shader-toggle"),
+                        f.shaderToggle.x + 12f, f.shaderToggle.y + 14f, 14f, withAlpha(s.text, 236));
+                drawBooleanToggle(f.shaderToggle.x + f.shaderToggle.w - 53f,
+                        f.shaderToggle.y + 11f, 42f, 22f, m, s);
             }
         }
     }
@@ -699,7 +755,12 @@ public final class IrisGraphicsGuiRenderer {
             if (scissor) ScissorFunction.pop();
         }
         drawScrollbar(f, state.packScroll, s);
-        drawPackDetails(f, state, packList, s);
+        boolean detailsClip = ScissorFunction.pushRaw(f.details.x, f.details.y, f.details.w, f.details.h);
+        try {
+            drawPackDetails(f, state, packList, s);
+        } finally {
+            if (detailsClip) ScissorFunction.pop();
+        }
     }
 
     private static void drawPackToolbar(Frame f, UiState state, Style s) {
@@ -708,20 +769,24 @@ public final class IrisGraphicsGuiRenderer {
         drawText(fontRegular(), Integer.toString(f.packSlots.size()), f.main.x + 122f, f.main.y + 23f, 16f,
                 withAlpha(s.accentBright, 226));
         if (f.downloadButton != null) drawSmallToolbarButton(f.downloadButton, "download",
-                tr("gui.combatant.iris.getpacks"), f, s);
+                tr("gui.combatant.iris.getpacks"), ControlId.DOWNLOAD, f, s);
     }
 
     private static void drawPackCard(PackSlot slot, boolean hover, boolean grid, Style s) {
         Motion m = motion(slot.entry, hover, slot.entry.isSelected());
         float h = AnimationUtility.easeOutCubic(m.hover);
         float a = AnimationUtility.easeOutCubic(m.active);
+        float click = AnimationUtility.easeOutCubic(m.press);
         Rect r = slot.rect;
         int bgA = mix(s.cardTop, s.cardHover, h * 0.64f + a * 0.13f);
         int bgB = mix(s.cardBottom, s.cardHover, h * 0.44f + a * 0.10f);
         Renderer2D.COLOR.quad(r.x, r.y, r.w, r.h,
-                withAlpha(bgA, 154), withAlpha(bgA, 148), withAlpha(bgB, 165), withAlpha(bgB, 158));
+                withAlpha(bgA, Math.round(162f + click * 38f)), withAlpha(bgA, 158),
+                withAlpha(bgB, 173), withAlpha(bgB, Math.round(165f + click * 25f)));
         if (slot.entry.isSelected()) {
-            Renderer2D.COLOR.quad(r.x, r.y, 3f, r.h,
+            Renderer2D.COLOR.roundedRectStroke(r.x + 1f, r.y + 1f, r.w - 2f, r.h - 2f,
+                    4f, 1.5f, withAlpha(s.accentBright, Math.round(92f + a * 106f + click * 46f)));
+            Renderer2D.COLOR.quad(r.x, r.y, 4f, r.h,
                     withAlpha(s.accent, 212), withAlpha(s.accentBright, 224),
                     withAlpha(s.accentBright, 224), withAlpha(s.accent, 212));
         } else if (h > 0.001f) {
@@ -745,22 +810,26 @@ public final class IrisGraphicsGuiRenderer {
             String fit = ClickGuiRenderer.fitText(fontMedium(), name, nameSize, maxW);
             drawText(fontMedium(), fit, textX, r.y + 23f, nameSize, withAlpha(s.text, 238));
             drawStatusText(patch, textX, r.y + 58f, s);
+            if (slot.entry.isSelected()) {
+                Renderer2D.COLOR.svg("check", r.x + r.w - 43f, r.y + 19f, 19f, 19f,
+                        SvgRenderOptions.overrideColor(withAlpha(s.accentBright, 228)));
+            }
             if (slot.entry.isApplied()) {
-                drawText(fontRegular(), tr("gui.combatant.iris.applied"), textX,
+                drawText(fontMedium(), tr("gui.combatant.iris.applied"), textX,
                         r.y + r.h - 28f, 13f, withAlpha(s.accentBright, 206));
             } else if (slot.entry.isSelected()) {
-                drawText(fontRegular(), tr("gui.combatant.iris.selected"), textX,
+                drawText(fontMedium(), tr("gui.combatant.iris.selected.pending"), textX,
                         r.y + r.h - 28f, 13f, withAlpha(s.text, 184));
             }
             return;
         }
 
-        String stateLabel = slot.entry.isApplied()
-                ? tr("gui.combatant.iris.applied")
-                : slot.entry.isSelected() ? tr("gui.combatant.iris.selected") : "";
+        String stateLabel = slot.entry.isSelected() && !slot.entry.isApplied()
+                ? tr("gui.combatant.iris.selected.pending")
+                : slot.entry.isApplied() ? tr("gui.combatant.iris.applied") : "";
         float rightPad = 22f;
         float metaGap = 20f;
-        float stateBudget = stateLabel.isEmpty() ? 0f : 132f;
+        float stateBudget = stateLabel.isEmpty() ? 0f : 185f;
         float contentRight = r.x + r.w - rightPad;
         float stateCellX = contentRight - stateBudget;
         float leftBudget = Math.max(80f, (stateBudget > 0f ? stateCellX - metaGap : contentRight) - textX);
@@ -772,12 +841,14 @@ public final class IrisGraphicsGuiRenderer {
         drawStatusText(new PatchSummary(patch.kind, patchLabel, patch.profile, patch.state), textX, r.y + 47f, s);
 
         if (!stateLabel.isEmpty()) {
-            String fitState = ClickGuiRenderer.fitText(fontMedium(), stateLabel, 13f, stateBudget);
-            float stateW = ClickGuiRenderer.textWidth(fontMedium(), fitState, 13f);
+            String fitState = ClickGuiRenderer.fitText(fontMedium(), stateLabel, 14f, stateBudget - 24f);
+            float stateW = ClickGuiRenderer.textWidth(fontMedium(), fitState, 14f);
             float stateX = stateCellX + stateBudget - stateW;
             Renderer2D.COLOR.quad(stateCellX - metaGap * 0.5f, r.y + 16f, 1f, r.h - 32f, withAlpha(s.stroke, 54));
-            drawText(fontMedium(), fitState, stateX, r.y + 31f, 13f,
-                    withAlpha(slot.entry.isApplied() ? s.accentBright : s.text, slot.entry.isApplied() ? 206 : 184));
+            drawText(fontMedium(), fitState, stateX, r.y + 31f, 14f,
+                    withAlpha(s.accentBright, 238));
+            if (slot.entry.isSelected()) Renderer2D.COLOR.svg("check", stateCellX + 4f, r.y + 30f, 15f, 15f,
+                    SvgRenderOptions.overrideColor(withAlpha(s.accentBright, 226)));
         }
     }
 
@@ -793,9 +864,8 @@ public final class IrisGraphicsGuiRenderer {
     }
 
     private static void drawPackDetails(Frame f, UiState state, ShaderPackSelectionList packList, Style s) {
-        ShaderPackSelectionList.ShaderPackEntry entry = findPack(packList,
-                state.hoveredPackName != null ? state.hoveredPackName : state.selectedPackName);
-        if (entry == null) entry = selectedOrApplied(packList);
+        ShaderPackSelectionList.ShaderPackEntry entry = selectedOrApplied(packList);
+        if (entry == null) entry = findPack(packList, state.selectedPackName);
         float x = f.details.x + 28f;
         float y = f.details.y + 28f;
         float w = f.details.w - 56f;
@@ -807,24 +877,37 @@ public final class IrisGraphicsGuiRenderer {
         }
 
         String name = LegacyTextUtil.stripLegacy(entry.getPackName());
-        drawText(fontBold(), ClickGuiRenderer.fitText(fontBold(), name, 21f, w), x, y, 21f, withAlpha(s.text, 240));
-        y += 42f;
+        drawText(fontBold(), ClickGuiRenderer.fitText(fontBold(), name, 22f, w), x, y, 22f, withAlpha(s.text, 248));
+        y += 38f;
+        boolean pending = entry.isSelected() && !entry.isApplied();
+        boolean shadersEnabled = packList.getTopButtonRow() != null && packList.getTopButtonRow().shadersEnabled;
+        String selectedState = pending ? tr("gui.combatant.iris.selection.pending")
+                : entry.isApplied() && !shadersEnabled ? tr("gui.combatant.iris.selection.applied.disabled")
+                : entry.isApplied() ? tr("gui.combatant.iris.selection.applied")
+                : tr("gui.combatant.iris.selection.available");
+        int stateColor = pending ? s.warn : entry.isApplied() ? s.good : s.muted;
+        Renderer2D.COLOR.roundedRect(x, y, w, 45f, 5f, withAlpha(s.control, 196));
+        Renderer2D.COLOR.svg(pending ? "clock-3" : entry.isApplied() ? "check" : "circle-question-mark",
+                x + 14f, y + 13f, 19f, 19f,
+                SvgRenderOptions.overrideColor(withAlpha(stateColor, 240)));
+        drawText(fontMedium(), selectedState, x + 44f, y + 13f, 16f, withAlpha(s.text, 236));
+        y += 66f;
         PatchSummary patch = patchSummary(entry.getPackName());
-        drawStatusText(patch, x, y, s);
-        y += 34f;
+        drawText(fontMedium(), patch.shortLabel, x, y, 16f, withAlpha(s.text, 224));
+        y += 38f;
         Renderer2D.COLOR.quad(x, y, w, 1f, withAlpha(s.stroke, 62));
         y += 22f;
 
         if (!patch.profile.matched()) {
-            drawWrapped(tr("gui.combatant.iris.patch.none.body"), x, y, w, 14f, s.muted, 5);
+            drawWrapped(tr("gui.combatant.iris.patch.none.body"), x, y, w, 16f, s.muted, 6);
             return;
         }
 
         infoPair(x, y, w, tr("gui.combatant.iris.patch.profile"), patch.profile.family() + " / " + patch.profile.profileId(), s);
-        y += 36f;
+        y += 40f;
         infoPair(x, y, w, tr("gui.combatant.iris.patch.targets"),
                 patch.state.appliedTargets() + " / " + patch.state.expectedTargets(), s);
-        y += 36f;
+        y += 40f;
         ShaderPatchEngine.ShaderpackIntegration integration = patch.profile.integration();
         infoPair(x, y, w, "TAA", yesNo(integration.taaReplacement()), s);
         y += 32f;
@@ -854,10 +937,10 @@ public final class IrisGraphicsGuiRenderer {
         if (hooks.isEmpty()) hooks.add(tr("gui.combatant.iris.patch.hooks.none"));
         for (String hook : hooks) {
             Renderer2D.COLOR.quad(x, y + 7f, 5f, 5f, withAlpha(s.accentSoft, 178));
-            drawText(fontRegular(), ClickGuiRenderer.fitText(fontRegular(), hook, 13f, w - 18f),
-                    x + 16f, y, 13f, withAlpha(s.muted, 188));
-            y += 26f;
-            if (y > f.details.y + f.details.h - 50f) break;
+            drawText(fontRegular(), ClickGuiRenderer.fitText(fontRegular(), hook, 16f, w - 18f),
+                    x + 16f, y, 16f, withAlpha(s.muted, 220));
+            y += 31f;
+            if (y > f.details.y + f.details.h - 52f) break;
         }
     }
 
@@ -884,7 +967,17 @@ public final class IrisGraphicsGuiRenderer {
         if (hovered != null) SystemCursor.set(hovered instanceof SliderElementWidget
                 ? SystemCursor.CursorType.RESIZE_HORIZONTAL : SystemCursor.CursorType.HAND);
         drawScrollbar(f, state.optionScroll, s);
-        drawOptionDetails(f, popupOpen ? state.selectPopup.widget : hovered, state, s);
+        if (hovered != null) state.focusedOption = hovered;
+        if (!f.optionSlots.isEmpty() && (state.focusedOption == null
+                || f.optionSlots.stream().noneMatch(slot -> slot.widget == state.focusedOption))) {
+            state.focusedOption = f.optionSlots.get(0).widget;
+        }
+        boolean detailsClip = ScissorFunction.pushRaw(f.details.x, f.details.y, f.details.w, f.details.h);
+        try {
+            drawOptionDetails(f, popupOpen ? state.selectPopup.widget : state.focusedOption, state, s);
+        } finally {
+            if (detailsClip) ScissorFunction.pop();
+        }
     }
 
     private static void drawOptionHeader(HeaderSlot slot, Frame f, Style s, boolean interactive) {
@@ -904,7 +997,7 @@ public final class IrisGraphicsGuiRenderer {
         if (hover) SystemCursor.set(SystemCursor.CursorType.HAND);
         Motion m = motion(action.listener, hover, false);
         float h = AnimationUtility.easeOutCubic(m.hover);
-        int bg = mix(s.control, s.controlHover, h * 0.68f);
+        int bg = mix(s.control, s.controlHover, h * 0.68f + m.press * 0.28f);
         Renderer2D.COLOR.quad(action.rect.x, action.rect.y, action.rect.w, action.rect.h,
                 withAlpha(bg, 152), withAlpha(bg, 148), withAlpha(bg, 138), withAlpha(bg, 140));
         if (action.icon != null) {
@@ -919,21 +1012,33 @@ public final class IrisGraphicsGuiRenderer {
 
     private static void drawOptionCard(OptionSlot slot, boolean hover, UiState state, Style s) {
         boolean popupForSlot = state.selectPopup != null && state.selectPopup.widget == slot.widget;
-        Motion m = motion(slot.widget, hover, slot.modified || popupForSlot);
+        boolean booleanControl = slot.widget instanceof BooleanElementWidget;
+        boolean booleanOn = booleanControl && "true".equalsIgnoreCase(((BooleanElementWidget) slot.widget).getValue());
+        Motion m = motion(slot.widget, hover, (booleanControl && booleanOn) || popupForSlot);
         float h = AnimationUtility.easeOutCubic(m.hover);
-        float a = AnimationUtility.easeOutCubic(m.active);
+        float a = AnimationUtility.easeInOutCubic(m.active);
+        updateValueMotion(m, slot.value);
+        float pulse = AnimationUtility.easeOutCubic(Math.max(m.press, m.change * 0.55f));
         Rect r = slot.rect;
         int top = mix(s.cardTop, s.cardHover, h * 0.58f + a * 0.08f);
         int bottom = mix(s.cardBottom, s.cardHover, h * 0.42f + a * 0.06f);
         Renderer2D.COLOR.quad(r.x, r.y, r.w, r.h,
-                withAlpha(top, 148), withAlpha(top, 144), withAlpha(bottom, 158), withAlpha(bottom, 154));
+                withAlpha(top, Math.round(157f + pulse * 35f)), withAlpha(top, 151),
+                withAlpha(bottom, 170), withAlpha(bottom, Math.round(159f + pulse * 22f)));
         if (slot.modified) Renderer2D.COLOR.quad(r.x, r.y, 3f, r.h, withAlpha(s.accent, 182));
+        if (pulse > 0.005f) Renderer2D.COLOR.roundedRectStroke(r.x + 1f, r.y + 1f, r.w - 2f, r.h - 2f,
+                4f, 1f, withAlpha(s.accentBright, Math.round(pulse * 146f)));
 
         boolean discrete = (slot.widget instanceof StringElementWidget && !(slot.widget instanceof SliderElementWidget))
                 || slot.widget instanceof ProfileElementWidget;
         float labelBudget = discrete ? r.w * 0.50f : r.w * 0.55f;
         drawText(fontMedium(), ClickGuiRenderer.fitText(fontMedium(), slot.label, 15f, labelBudget),
                 r.x + 18f, r.y + 18f, 15f, withAlpha(s.text, 226));
+
+        if (booleanControl) {
+            drawBooleanToggle(r.x + r.w - 86f, r.y + (r.h - 30f) * 0.5f, 64f, 30f, m, s);
+            return;
+        }
 
         if (discrete) {
             float controlW = Math.min(238f, r.w * 0.42f);
@@ -950,7 +1055,7 @@ public final class IrisGraphicsGuiRenderer {
             }
             String fit = ClickGuiRenderer.fitText(fontMedium(), slot.value, 14f, control.w - 48f);
             drawText(fontMedium(), fit, control.x + 14f, control.y + 15f, 14f,
-                    withAlpha(slot.modified ? s.accentBright : s.text, 210));
+                    withAlpha(slot.modified ? s.accentBright : s.text, Math.round(224f + m.change * 30f)));
             Renderer2D.COLOR.svg("chevron-down", control.x + control.w - 30f, control.y + 14f, 17f, 17f,
                     SvgRenderOptions.overrideColor(withAlpha(popupForSlot ? s.accentBright : s.muted, 210)));
             return;
@@ -969,16 +1074,36 @@ public final class IrisGraphicsGuiRenderer {
             float trackW = r.w - 36f;
             int count = Math.max(1, slider.combatant$getValueCount());
             float ratio = count <= 1 ? 0f : slider.combatant$getValueIndex() / (float) (count - 1);
+            if (!m.progressInitialized) { m.progress = ratio; m.progressInitialized = true; }
+            m.progress = AnimationUtility.approach(m.progress, ratio, Math.max(0.001f, AnimationUtility.deltaTime()), 16f);
+            float easedRatio = clamp01(m.progress);
             Renderer2D.COLOR.quad(trackX, trackY, trackW, 3f, withAlpha(s.strokeBright, 62));
-            Renderer2D.COLOR.quad(trackX, trackY, trackW * clamp01(ratio), 3f,
+            Renderer2D.COLOR.quad(trackX, trackY, trackW * easedRatio, 3f,
                     withAlpha(s.accent, 194), withAlpha(s.accentBright, 205),
                     withAlpha(s.accentBright, 205), withAlpha(s.accent, 194));
-            Renderer2D.COLOR.quad(trackX + trackW * clamp01(ratio) - 3f, trackY - 4f, 6f, 11f,
+            Renderer2D.COLOR.quad(trackX + trackW * easedRatio - 3f, trackY - 4f, 6f, 11f,
                     withAlpha(s.accentBright, 224));
         } else if (slot.widget instanceof LinkElementWidget) {
             Renderer2D.COLOR.svg("chevron-right", r.x + r.w - 34f, r.y + 18f, 18f, 18f,
                     SvgRenderOptions.overrideColor(withAlpha(hover ? s.accentBright : s.muted, 206)));
         }
+    }
+
+    private static void drawBooleanToggle(float sx, float sy, float sw, float sh, Motion m, Style s) {
+        float h = AnimationUtility.easeOutCubic(m.hover);
+        float a = AnimationUtility.easeInOutCubic(m.active);
+        float pulse = AnimationUtility.easeOutCubic(m.press);
+        int off = mix(s.control, s.controlHover, h * 0.45f);
+        int track = mix(off, s.accent, a * 0.78f);
+        Renderer2D.COLOR.roundedRect(sx, sy, sw, sh, sh * 0.5f,
+                withAlpha(track, Math.round(196f + a * 46f)));
+        Renderer2D.COLOR.roundedRectStroke(sx, sy, sw, sh, sh * 0.5f, 1f,
+                withAlpha(mix(s.strokeBright, s.accentBright, a),
+                        Math.round(100f + h * 50f + pulse * 55f)));
+        float knob = sh - 8f;
+        float knobX = sx + 4f + (sw - knob - 8f) * a;
+        Renderer2D.COLOR.circle(knobX + knob * 0.5f, sy + sh * 0.5f,
+                (knob + pulse * 1.8f) * 0.5f, withAlpha(0xFFF2F4F8, 248));
     }
 
     private static void drawOptionDetails(Frame f, AbstractElementWidget<?> hovered, UiState state, Style s) {
@@ -988,14 +1113,14 @@ public final class IrisGraphicsGuiRenderer {
         drawText(fontBold(), tr("gui.combatant.iris.option.info"), x, y, 21f, withAlpha(s.text, 232));
         y += 48f;
         if (!(hovered instanceof CommentedElementWidget<?> commented)) {
-            drawWrapped(tr("gui.combatant.iris.option.info.empty"), x, y, w, 14f, s.muted, 7);
+            drawWrapped(tr("gui.combatant.iris.option.info.empty"), x, y, w, 16f, s.muted, 7);
             return;
         }
         Component title = commented.getCommentTitle().orElse(Component.empty());
         Component body = commented.getCommentBody().orElse(Component.empty());
         if (!title.getString().isBlank()) {
-            drawText(fontMedium(), ClickGuiRenderer.fitText(fontMedium(), LegacyTextUtil.stripLegacy(title.getString()), 16f, w),
-                    x, y, 16f, withAlpha(s.accentBright, 216));
+            drawText(fontMedium(), ClickGuiRenderer.fitText(fontMedium(), LegacyTextUtil.stripLegacy(title.getString()), 17f, w),
+                    x, y, 17f, withAlpha(s.accentBright, 232));
             y += 34f;
         }
         if (state.selectPopup != null && state.selectPopup.hoveredChoice != null) {
@@ -1006,41 +1131,45 @@ public final class IrisGraphicsGuiRenderer {
         }
         Renderer2D.COLOR.quad(x, y, w, 1f, withAlpha(s.stroke, 58));
         y += 20f;
-        drawWrapped(LegacyTextUtil.stripLegacy(body.getString()), x, y, w, 14f, s.muted, 18);
+        drawWrapped(LegacyTextUtil.stripLegacy(body.getString()), x, y, w, 16f, s.text, 16);
     }
 
     private static void drawFooter(Frame f, ShaderPackScreen screen, boolean optionMode, Style s) {
-        drawFooterButton(f.cancelButton, CommonComponents.GUI_CANCEL.getString(), false, f, s);
-        drawFooterButton(f.applyButton, Component.translatable("options.iris.apply").getString(), true, f, s);
-        drawFooterButton(f.doneButton, CommonComponents.GUI_DONE.getString(), false, f, s);
-        String hint = optionMode ? tr("gui.combatant.iris.option.hint") : Component.translatable("pack.iris.list.label").getString();
+        drawFooterButton(f.cancelButton, CommonComponents.GUI_CANCEL.getString(), false, ControlId.CANCEL, f, s);
+        drawFooterButton(f.applyButton, Component.translatable("options.iris.apply").getString(), true, ControlId.APPLY, f, s);
+        drawFooterButton(f.doneButton, CommonComponents.GUI_DONE.getString(), false, ControlId.DONE, f, s);
+        String hint = optionMode ? tr("gui.combatant.iris.option.hint")
+                : tr("gui.combatant.iris.selection.hint");
         drawText(fontRegular(), LegacyTextUtil.stripLegacy(hint), f.root.x + 26f,
                 f.root.y + f.root.h - 31f, 13f, withAlpha(s.muted, 150));
     }
 
-    private static void drawFooterButton(Rect r, String label, boolean accent, Frame f, Style s) {
+    private static void drawFooterButton(Rect r, String label, boolean accent, ControlId id, Frame f, Style s) {
         if (r == null) return;
         boolean hover = r.contains(f.canvas.mouseX, f.canvas.mouseY);
         if (hover) SystemCursor.set(SystemCursor.CursorType.HAND);
-        Motion m = motion(r, hover, accent);
+        Motion m = motion(id, hover, accent);
         float h = AnimationUtility.easeOutCubic(m.hover);
-        int bg = mix(s.control, accent ? s.accentSoft : s.controlHover, accent ? 0.12f + h * 0.18f : h * 0.66f);
+        int bg = mix(s.control, accent ? s.accentSoft : s.controlHover,
+                accent ? 0.18f + h * 0.25f + m.press * 0.20f : h * 0.66f + m.press * 0.28f);
         Renderer2D.COLOR.quad(r.x, r.y, r.w, r.h,
                 withAlpha(bg, 184), withAlpha(bg, 178), withAlpha(bg, 166), withAlpha(bg, 170));
-        if (accent) Renderer2D.COLOR.quad(r.x, r.y + r.h - 2f, r.w, 2f, withAlpha(s.accentBright, 184));
+        if (accent) Renderer2D.COLOR.quad(r.x, r.y + r.h - 3f, r.w, 3f, withAlpha(s.accentBright, 210));
+        if (m.press > 0.01f) Renderer2D.COLOR.roundedRectStroke(r.x, r.y, r.w, r.h, 3f,
+                1f, withAlpha(s.accentBright, Math.round(145f * m.press)));
         float tw = ClickGuiRenderer.textWidth(fontMedium(), label, 14f);
         drawText(fontMedium(), label, r.x + (r.w - tw) * 0.5f, r.y + 15f, 14f,
                 withAlpha(hover || accent ? s.text : s.muted, 224));
     }
 
-    private static void drawIconButton(Rect r, String icon, boolean active, Frame f, Style s) {
+    private static void drawIconButton(Rect r, String icon, boolean active, ControlId id, Frame f, Style s) {
         if (r == null) return;
         boolean hover = r.contains(f.canvas.mouseX, f.canvas.mouseY);
         if (hover) SystemCursor.set(SystemCursor.CursorType.HAND);
-        Motion m = motion(r, hover, active);
+        Motion m = motion(id, hover, active);
         float h = AnimationUtility.easeOutCubic(m.hover);
         float a = AnimationUtility.easeOutCubic(m.active);
-        int bg = mix(s.control, s.controlHover, h * 0.62f + a * 0.14f);
+        int bg = mix(s.control, s.controlHover, h * 0.62f + a * 0.14f + m.press * 0.35f);
         Renderer2D.COLOR.quad(r.x, r.y, r.w, r.h,
                 withAlpha(bg, 166), withAlpha(bg, 160), withAlpha(bg, 150), withAlpha(bg, 154));
         if (active) Renderer2D.COLOR.quad(r.x, r.y + r.h - 2f, r.w, 2f, withAlpha(s.accentBright, 190));
@@ -1048,12 +1177,12 @@ public final class IrisGraphicsGuiRenderer {
                 SvgRenderOptions.overrideColor(withAlpha(active ? s.accentBright : (hover ? s.text : s.muted), 222)));
     }
 
-    private static void drawSmallToolbarButton(Rect r, String icon, String label, Frame f, Style s) {
+    private static void drawSmallToolbarButton(Rect r, String icon, String label, ControlId id, Frame f, Style s) {
         boolean hover = r.contains(f.canvas.mouseX, f.canvas.mouseY);
         if (hover) SystemCursor.set(SystemCursor.CursorType.HAND);
-        Motion m = motion(r, hover, false);
+        Motion m = motion(id, hover, false);
         float h = AnimationUtility.easeOutCubic(m.hover);
-        int bg = mix(s.control, s.controlHover, h * 0.65f);
+        int bg = mix(s.control, s.controlHover, h * 0.65f + m.press * 0.28f);
         Renderer2D.COLOR.quad(r.x, r.y, r.w, r.h,
                 withAlpha(bg, 154), withAlpha(bg, 150), withAlpha(bg, 140), withAlpha(bg, 142));
         Renderer2D.COLOR.svg(icon, r.x + 12f, r.y + 9f, 18f, 18f,
@@ -1065,7 +1194,7 @@ public final class IrisGraphicsGuiRenderer {
         if (f.hideButton == null) return;
         boolean hover = f.hideButton.contains(f.canvas.mouseX, f.canvas.mouseY);
         if (hover) SystemCursor.set(SystemCursor.CursorType.HAND);
-        Motion m = motion(f.hideButton, hover, false);
+        Motion m = motion(ControlId.HIDE, hover, false);
         float h = AnimationUtility.easeOutCubic(m.hover);
         Renderer2D.COLOR.quad(f.hideButton.x, f.hideButton.y, f.hideButton.w, f.hideButton.h,
                 withAlpha(mix(s.control, s.controlHover, h * 0.70f), 176));
@@ -1203,7 +1332,8 @@ public final class IrisGraphicsGuiRenderer {
             if (!(child instanceof ShaderPackOptionList.ElementRowEntry row)) continue;
             ArrayList<AbstractElementWidget<?>> widgets = new ArrayList<>();
             for (GuiEventListener listener : row.children()) {
-                if (listener instanceof AbstractElementWidget<?> widget && widget != AbstractElementWidget.EMPTY) {
+                if (listener instanceof AbstractElementWidget<?> widget && widget != AbstractElementWidget.EMPTY
+                        && !isInformationalOption(widget)) {
                     widgets.add(widget);
                 }
             }
@@ -1409,17 +1539,17 @@ public final class IrisGraphicsGuiRenderer {
 
     private static void infoPair(float x, float y, float w, String key, String value, Style s) {
         float gap = 18f;
-        float valueMeasured = ClickGuiRenderer.textWidth(fontMedium(), value, 13f);
+        float valueMeasured = ClickGuiRenderer.textWidth(fontMedium(), value, 16f);
         float valueBudget = Math.max(72f, Math.min(w * 0.46f, valueMeasured + 4f));
         float keyBudget = Math.max(72f, w - valueBudget - gap);
 
-        String fitKey = ClickGuiRenderer.fitText(fontRegular(), key, 13f, keyBudget);
-        String fitValue = ClickGuiRenderer.fitText(fontMedium(), value, 13f, valueBudget);
-        float valueWidth = ClickGuiRenderer.textWidth(fontMedium(), fitValue, 13f);
+        String fitKey = ClickGuiRenderer.fitText(fontRegular(), key, 16f, keyBudget);
+        String fitValue = ClickGuiRenderer.fitText(fontMedium(), value, 16f, valueBudget);
+        float valueWidth = ClickGuiRenderer.textWidth(fontMedium(), fitValue, 16f);
         float valueCellX = x + keyBudget + gap;
 
-        drawText(fontRegular(), fitKey, x, y, 13f, withAlpha(s.muted, 166));
-        drawText(fontMedium(), fitValue, valueCellX + valueBudget - valueWidth, y, 13f, withAlpha(s.text, 206));
+        drawText(fontRegular(), fitKey, x, y, 16f, withAlpha(s.muted, 213));
+        drawText(fontMedium(), fitValue, valueCellX + valueBudget - valueWidth, y, 16f, withAlpha(s.text, 238));
     }
 
     private static void drawWrapped(String text, float x, float y, float w, float size, int color, int maxLines) {
@@ -1451,8 +1581,26 @@ public final class IrisGraphicsGuiRenderer {
         }
         float dt = Math.max(0.001f, AnimationUtility.deltaTime());
         m.hover = AnimationUtility.approach(m.hover, hover ? 1f : 0f, dt, 11f);
-        m.active = AnimationUtility.approach(m.active, active ? 1f : 0f, dt, 9f);
+        m.active = AnimationUtility.approach(m.active, active ? 1f : 0f, dt, 13f);
+        m.press = AnimationUtility.approach(m.press, 0f, dt, 10f);
         return m;
+    }
+
+    private static void pressed(Object key) {
+        if (key == null) return;
+        synchronized (MOTIONS) {
+            MOTIONS.computeIfAbsent(key, unused -> new Motion()).press = 1f;
+        }
+    }
+
+    private static void updateValueMotion(Motion m, String value) {
+        if (m.lastValue == null) m.lastValue = value;
+        else if (!m.lastValue.equals(value)) {
+            m.lastValue = value;
+            m.change = 1f;
+        }
+        m.change = AnimationUtility.approach(m.change, 0f,
+                Math.max(0.001f, AnimationUtility.deltaTime()), 8f);
     }
 
     private static TextRenderer fontRegular() {
@@ -1487,6 +1635,7 @@ public final class IrisGraphicsGuiRenderer {
         boolean gridView = true;
         String selectedPackName;
         String hoveredPackName;
+        AbstractElementWidget<?> focusedOption;
         final ScrollState packScroll = new ScrollState();
         final ScrollState optionScroll = new ScrollState();
         ActiveSlider activeSlider;
@@ -1512,9 +1661,16 @@ public final class IrisGraphicsGuiRenderer {
         }
     }
 
+    private enum ControlId { GRID, LIST, FOLDER, OPTIONS, HIDE, DOWNLOAD, CANCEL, APPLY, DONE }
+
     private static final class Motion {
         float hover;
         float active;
+        float press;
+        float change;
+        float progress;
+        boolean progressInitialized;
+        String lastValue;
     }
 
 

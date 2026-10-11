@@ -13,7 +13,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3fc;
 import combatant.client.render.engine.RenderState;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.WorldRenderPipelines;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.uniform.MeshBuilder;
 
@@ -39,11 +39,11 @@ public final class FinderRender {
     }
 
     public static FinderRender begin(Renderer3D renderer, float lineWidth) {
-        MeshBuilder tris = renderer.batch(CombatantRenderPipelines.WORLD_COLORED, Renderer3D.DepthMode.NONE);
+        MeshBuilder tris = renderer.batch(WorldRenderPipelines.WORLD_COLORED, Renderer3D.DepthMode.NONE);
         float previous = RenderState.lineWidth;
         try {
             RenderState.lineWidth = Math.max(0.5f, lineWidth);
-            MeshBuilder lines = renderer.batch(CombatantRenderPipelines.WORLD_COLORED_LINES, Renderer3D.DepthMode.NONE);
+            MeshBuilder lines = renderer.batch(WorldRenderPipelines.WORLD_COLORED_LINES, Renderer3D.DepthMode.NONE);
             return new FinderRender(tris, lines);
         } finally {
             RenderState.lineWidth = previous;
@@ -85,6 +85,22 @@ public final class FinderRender {
             line(previousX, center.y, previousZ, x, center.y, z, argb);
             previousX = x;
             previousZ = z;
+        }
+    }
+
+    public void verticalRing(Vec3 center, double radius, boolean alongX, int argb) {
+        if (radius <= 0.0 || alpha(argb) == 0) return;
+        int segments = Math.max(32, Math.min(128, (int) Math.ceil(radius * 5.0)));
+        for (int i = 0; i < segments; i++) {
+            double a = Math.PI * 2.0 * i / segments;
+            double b = Math.PI * 2.0 * (i + 1) / segments;
+            if (alongX) {
+                line(center.x + Math.cos(a) * radius, center.y + Math.sin(a) * radius, center.z,
+                        center.x + Math.cos(b) * radius, center.y + Math.sin(b) * radius, center.z, argb);
+            } else {
+                line(center.x, center.y + Math.sin(a) * radius, center.z + Math.cos(a) * radius,
+                        center.x, center.y + Math.sin(b) * radius, center.z + Math.cos(b) * radius, argb);
+            }
         }
     }
 

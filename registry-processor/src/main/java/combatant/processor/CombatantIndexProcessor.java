@@ -20,6 +20,7 @@ import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
+import javax.tools.Diagnostic;
 import javax.tools.FileObject;
 import javax.tools.StandardLocation;
 import java.io.IOException;
@@ -50,6 +51,9 @@ public final class CombatantIndexProcessor extends AbstractProcessor {
     );
     private static final String ASSET_LOAD = "combatant.client.util.resources.asset.AssetLoad";
     private static final String CONFIG_OBJECT = "combatant.client.config.ConfigObject";
+    private static final String PIPELINE_REGISTER =
+            "combatant.client.render.engine.pipeline.PipelineRegister";
+    private static final String RENDER_PIPELINE = "com.mojang.blaze3d.pipeline.RenderPipeline";
 
     private final Map<String, Set<String>> entries = new TreeMap<>();
     private boolean written;
@@ -86,10 +90,31 @@ public final class CombatantIndexProcessor extends AbstractProcessor {
             if (enclosed.getKind() == ElementKind.METHOD && hasAnnotation(enclosed, ASSET_LOAD)) {
                 hasAssetHook = true;
             }
+            if (enclosed instanceof VariableElement field && hasAnnotation(field, PIPELINE_REGISTER)) {
+                collectPipeline(binaryName, field);
+            }
             if (enclosed instanceof TypeElement nested) collect(nested);
         }
         if (hasAssetHook) add("ASSET_HOOK", binaryName);
         if (declaresConfigSingleton(type)) add("CONFIG", binaryName);
+    }
+
+    private void collectPipeline(String binaryName, VariableElement field) {
+        Set<Modifier> modifiers = field.getModifiers();
+        boolean validModifiers = modifiers.contains(Modifier.PUBLIC)
+                && modifiers.contains(Modifier.STATIC)
+                && modifiers.contains(Modifier.FINAL);
+        boolean validType = processingEnv.getTypeUtils().erasure(field.asType()).toString()
+                .equals(RENDER_PIPELINE);
+        if (!validModifiers || !validType) {
+            processingEnv.getMessager().printMessage(
+                    Diagnostic.Kind.ERROR,
+                    "@PipelineRegister requires a public static final RenderPipeline field",
+                    field
+            );
+            return;
+        }
+        add("PIPELINE", binaryName + "#" + field.getSimpleName());
     }
 
     private boolean declaresConfigSingleton(TypeElement type) {

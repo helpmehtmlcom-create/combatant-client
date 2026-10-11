@@ -31,6 +31,19 @@ public final class UiShapeRenderer {
         };
     }
 
+    private static UiSurfaceMaterialSpec surfaceMaterial(UiProps props) {
+        if (props == null) return null;
+        UiSurfaceMaterialSpec base = UiMaterialCatalog.solid(props.string("materialMode", ""));
+        if (base == null) return null;
+        return base.withAccent(resolveColor(props.get("materialAccent"), base.accentArgb(), 1.0f))
+                .withParameters(
+                        props.number("materialDetailScale", base.detailScale()),
+                        props.number("materialRoughness", base.roughness()),
+                        props.number("materialBevelStrength", base.bevelStrength()),
+                        props.number("materialResponse", base.response())
+                );
+    }
+
     private static boolean hasFillCornerColors(UiProps props) {
         return first(props, "topLeftColor", "cTopLeft") != null
                 || first(props, "topRightColor", "cTopRight") != null
@@ -181,13 +194,13 @@ public final class UiShapeRenderer {
         // Backdrop effects must use the same authored silhouette as the painted shape.
         if (!primitiveShape && !compoundShape) {
             renderShapeBlur(renderer, props, style, shape, x, y, w, h, cut, alpha, context);
-            renderShapeLiquidGlass(renderer, props, style, shape, x, y, w, h, alpha, context);
+            renderShapeLiquidGlass(renderer, node, props, style, shape, x, y, w, h, alpha, context);
         }
 
         if (compoundShape) {
             UiCompoundSdf compound = UiShapeGeometry.buildCompoundSdf(props, shape, x, y, w, h, context.transform().scale());
             if (props.bool("liquidGlass", style.liquidGlass())) {
-                UiBackdropRuntime.drawLiquidGlass(renderer, props, () ->
+                UiBackdropRuntime.drawLiquidGlass(renderer, node, UiRect.of(x, y, w, h), props, () ->
                         renderer.liquidGlassCompound(
                                 compound,
                                 resolveColor(props.get("glassTint"), 0xFFFFFFFF, alpha),
@@ -211,7 +224,7 @@ public final class UiShapeRenderer {
             UiPrimitive primitive = UiShapeGeometry.buildPrimitive(props, style, shape, x, y, w, h, context.transform().scale());
             renderPrimitiveBlur(renderer, props, style, shape, x, y, w, h, cut, alpha, context);
             if (props.bool("liquidGlass", style.liquidGlass())) {
-                UiBackdropRuntime.drawLiquidGlass(renderer, props, () -> {
+                UiBackdropRuntime.drawLiquidGlass(renderer, node, UiRect.of(x, y, w, h), props, () -> {
                     int glassTint = resolveColor(props.get("glassTint"), 0xFFFFFFFF, alpha);
                     float glassAlpha = props.number("glassAlpha", 1.0f) * alpha;
                     float blurAlpha = props.number("blurAlpha", style.blurAlpha()) * alpha;
@@ -231,7 +244,12 @@ public final class UiShapeRenderer {
             }
             UiPaint fillPaint = buildPaint(props, fill, linearGradient, gradientStart, gradientEnd, gradientAngle, gradientOffset, alpha);
             if ((fillPaint.solidColor() >>> 24) > 0 || linearGradient || hasFillCornerColors(props)) {
-                renderer.primitive(primitive, fillPaint);
+                UiSurfaceMaterialSpec material = surfaceMaterial(props);
+                if (material != null) {
+                    renderer.materialPrimitive(primitive, fillPaint, material);
+                } else {
+                    renderer.primitive(primitive, fillPaint);
+                }
             }
             if ((stroke >>> 24) > 0 && strokeWidth > 0.0f) {
                 renderer.primitiveStroke(primitive, buildStrokePaint(props, stroke, gradientAngle, gradientOffset, alpha, context),
@@ -785,7 +803,8 @@ public final class UiShapeRenderer {
                                      double cut,
                                      float alpha,
                                      UiRenderContext context) {
-        if (!props.bool("blur", false)) return;
+        // The glass draw uses the same prepared blur as its optical scene.
+        if (!props.bool("blur", false) || props.bool("liquidGlass", style.liquidGlass())) return;
         float quality = props.number("blurQuality", style.blurQuality());
         float brightness = props.number("blurBrightness", style.blurBrightness());
         float blurAlpha = props.number("blurAlpha", style.blurAlpha()) * alpha;
@@ -809,6 +828,7 @@ public final class UiShapeRenderer {
     }
 
     private void renderShapeLiquidGlass(Renderer2D renderer,
+                                        UiNode node,
                                         UiProps props,
                                         UiStyle style,
                                         String shape,
@@ -849,7 +869,7 @@ public final class UiShapeRenderer {
             default -> null;
         };
 
-        if (draw != null) UiBackdropRuntime.drawLiquidGlass(renderer, props, draw);
+        if (draw != null) UiBackdropRuntime.drawLiquidGlass(renderer, node, UiRect.of(x, y, w, h), props, draw);
     }
 
     private void renderShapeBlur(Renderer2D renderer,
@@ -863,7 +883,8 @@ public final class UiShapeRenderer {
                                  double cut,
                                  float alpha,
                                  UiRenderContext context) {
-        if (!props.bool("blur", false)) return;
+        // The glass draw uses the same prepared blur as its optical scene.
+        if (!props.bool("blur", false) || props.bool("liquidGlass", style.liquidGlass())) return;
         float quality = props.number("blurQuality", style.blurQuality());
         float brightness = props.number("blurBrightness", style.blurBrightness());
         float blurAlpha = props.number("blurAlpha", style.blurAlpha()) * alpha;

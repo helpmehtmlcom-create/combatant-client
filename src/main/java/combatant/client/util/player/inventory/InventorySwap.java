@@ -27,9 +27,10 @@ import combatant.client.events.impl.PacketEvent;
 import combatant.client.events.impl.SprintControlEvent;
 import combatant.client.mixins.accessors.MultiPlayerGameModeAccessor;
 import combatant.client.mixins.accessors.PlayerInventoryAccessor;
-import combatant.client.mixins.accessors.SlotAccessor;
 
 import java.util.ArrayDeque;
+import java.util.Iterator;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.Deque;
 import java.util.Set;
 import java.util.UUID;
@@ -39,11 +40,16 @@ import java.util.function.Predicate;
 public final class InventorySwap {
     public static final InventorySwap INSTANCE = new InventorySwap();
 
-    private static final int OFFHAND_SCREEN_SLOT = 45;
     private static final int OFFHAND_SWAP_BUTTON = 40;
 
     private final Minecraft mc = Minecraft.getInstance();
     private final Deque<QueuedAction> strictQueue = new ArrayDeque<>();
+    // Owner-scoped, serialized transactions. No module is allowed to implement its own tick jitter.
+    private final Deque<QueuedInventoryAction> inventoryQueue = new ArrayDeque<>();
+    private int queuedMinTicks = 1;
+    private int queuedMaxTicks = 4;
+    private UUID queuedPlayerUuid;
+    private net.minecraft.client.multiplayer.ClientLevel queuedLevel;
     private int lastServerSelectedSlot = -1;
     private int savedSelectedSlot = -1;
     // Slot a silent swap holds for the duration of its action; wins over hotbar leases so
@@ -86,15 +92,7 @@ public final class InventorySwap {
 
     public static int mapInventoryToScreenSlot(AbstractContainerMenu handler, Container playerInventory, int inventorySlot) {
         if (inventorySlot < 0 || inventorySlot >= 41) return -1;
-        if (handler != null && playerInventory != null) {
-            for (Slot slot : handler.slots) {
-                if (slot == null || slot.container != playerInventory) continue;
-                if (((SlotAccessor) slot).combatant$getIndex() == inventorySlot) {
-                    return slot.index;
-                }
-            }
-        }
-        return legacyPlayerScreenSlot(inventorySlot);
+        return InventoryComponentMap.menuSlotFor(handler, playerInventory, inventorySlot);
     }
 
     public static int mapHotbarToScreenSlot(int hotbarSlot) {
@@ -105,42 +103,25 @@ public final class InventorySwap {
     public static int playerInventoryStart(AbstractContainerMenu handler) {
         if (handler == null) return -1;
         LocalPlayer player = INSTANCE.mc.player;
-        Container inventory = player != null ? player.getInventory() : null;
-        if (handler != null && inventory != null) {
-            int min = Integer.MAX_VALUE;
-            for (Slot slot : handler.slots) {
-                if (slot == null || slot.container != inventory) continue;
-                int index = ((SlotAccessor) slot).combatant$getIndex();
-                if (index >= 9 && index < 36) {
-                    min = Math.min(min, slot.index);
-                }
-            }
-            if (min != Integer.MAX_VALUE) return min;
+        if (player == null) return -1;
+        int min = Integer.MAX_VALUE;
+        for (int id = 0; id < handler.slots.size(); id++) {
+            int inventoryIndex = InventoryComponentMap.playerInventoryIndex(handler, id, player);
+            if (inventoryIndex >= 9 && inventoryIndex < 36) min = Math.min(min, id);
         }
-        return handler.slots.size() - 36;
+        return min == Integer.MAX_VALUE ? -1 : min;
     }
 
     public static int hotbarStart(AbstractContainerMenu handler) {
         if (handler == null) return -1;
         LocalPlayer player = INSTANCE.mc.player;
-        Container inventory = player != null ? player.getInventory() : null;
-        if (handler != null && inventory != null) {
-            int min = Integer.MAX_VALUE;
-            for (Slot slot : handler.slots) {
-                if (slot == null || slot.container != inventory) continue;
-                int index = ((SlotAccessor) slot).combatant$getIndex();
-                if (index >= 0 && index < 9) {
-                    min = Math.min(min, slot.index);
-                }
-            }
-            if (min != Integer.MAX_VALUE) return min;
+        if (player == null) return -1;
+        int min = Integer.MAX_VALUE;
+        for (int id = 0; id < handler.slots.size(); id++) {
+            int inventoryIndex = InventoryComponentMap.playerInventoryIndex(handler, id, player);
+            if (inventoryIndex >= 0 && inventoryIndex < 9) min = Math.min(min, id);
         }
-        return playerInventoryStart(handler) + 27;
-    }
-
-    private static int legacyPlayerScreenSlot(int inventorySlot) {
-        if (inventorySlot == 40) return OFFHAND_SCREEN_SLOT;
-        return inventorySlot < 9 ? inventorySlot + 36 : inventorySlot;
+        return min == Integer.MAX_VALUE ? -1 : min;
     }
 
     private static boolean isHotbarSlot(int slot) {
@@ -205,6 +186,7 @@ public final class InventorySwap {
                 lastServerSelectedSlot = -1;
                 silentSlot = -1;
                 serverSlotRestorePending = false;
+                clearInventoryQueue();
             });
         }
     }
@@ -218,31 +200,22 @@ public final class InventorySwap {
             movementLockTicks--;
         }
 
-        if (strictQueue.isEmpty()) {
-            return;
+        boolean strictWasPending = !strictQueue.isEmpty();
+        if (strictWasPending) {
+            requestStrictMovementLock();
+            QueuedAction next = strictQueue.peekFirst();
+            if (next != null) {
+                if (next.waitTicks > 0) next.waitTicks--;
+                else if (!next.isSafe()) next.waitTicks = 1;
+                else {
+                    strictQueue.removeFirst();
+                    runGuarded(next.owner, next.action);
+                    if (strictQueue.isEmpty()) requestMovementLock(1);
+                }
+            }
         }
-
-        requestStrictMovementLock();
-
-        QueuedAction next = strictQueue.peekFirst();
-        if (next == null) return;
-
-        if (next.waitTicks > 0) {
-            next.waitTicks--;
-            return;
-        }
-
-        if (!next.isSafe()) {
-            next.waitTicks = 1;
-            return;
-        }
-
-        strictQueue.removeFirst();
-        runGuarded(next.owner, next.action);
-
-        if (strictQueue.isEmpty()) {
-            requestMovementLock(1);
-        }
+        // Never issue a strict action and a normal queued action in the same tick.
+        if (!strictWasPending) tickInventoryQueue();
     }
 
     @EventHandler(priority = -10000)
@@ -287,6 +260,11 @@ public final class InventorySwap {
         return internalSwapDepth > 0;
     }
 
+    /** Owner identity is set only while an inventory action is actually executing. */
+    public Object executingActionOwner() {
+        return internalSwapDepth > 0 ? inventoryActionOwner : null;
+    }
+
     public boolean hasPendingStrictActions() {
         return !strictQueue.isEmpty();
     }
@@ -298,6 +276,108 @@ public final class InventorySwap {
 
     public boolean canRunStrict(InventoryActionKind kind) {
         return isSafeFor(kind, InventorySwapPolicy.GRIM_STRICT);
+    }
+
+    /** A queued transaction is executed at most once and only while its owner still needs it. */
+    public boolean enqueueInventoryAction(Object owner, InventoryActionKind kind, boolean priority,
+                                          BooleanSupplier valid, Runnable action, Runnable onCancel) {
+        LocalPlayer player = mc.player;
+        if (owner == null || action == null || player == null || mc.getConnection() == null) return false;
+        if (hasQueuedInventoryAction(owner, kind)) return false;
+        UUID uuid = player.getUUID();
+        if (queuedPlayerUuid != null && (!queuedPlayerUuid.equals(uuid) || queuedLevel != mc.level)) clearInventoryQueue();
+        queuedPlayerUuid = uuid;
+        queuedLevel = mc.level;
+        QueuedInventoryAction queued = new QueuedInventoryAction(owner, kind, valid, action,
+                onCancel, randomQueuedDelay());
+        if (priority) {
+            // Higher priority goes ahead of normal requests but never skips its sampled delay.
+            // Keep FIFO order among existing priority requests.
+            Deque<QueuedInventoryAction> reordered = new ArrayDeque<>();
+            while (!inventoryQueue.isEmpty() && inventoryQueue.peekFirst().priority) {
+                reordered.addLast(inventoryQueue.removeFirst());
+            }
+            queued.priority = true;
+            reordered.addLast(queued);
+            reordered.addAll(inventoryQueue);
+            inventoryQueue.clear();
+            inventoryQueue.addAll(reordered);
+        } else inventoryQueue.addLast(queued);
+        return true;
+    }
+
+    public boolean hasQueuedInventoryAction(Object owner, InventoryActionKind kind) {
+        for (QueuedInventoryAction action : inventoryQueue) {
+            if (action.owner == owner && (kind == null || action.kind == kind)) return true;
+        }
+        return false;
+    }
+
+    public void cancelQueuedInventoryActions(Object owner) {
+        cancelQueuedInventoryActions(owner, null);
+    }
+
+    public void cancelQueuedInventoryActions(Object owner, InventoryActionKind kind) {
+        if (owner == null) return;
+        for (Iterator<QueuedInventoryAction> it = inventoryQueue.iterator(); it.hasNext();) {
+            QueuedInventoryAction pending = it.next();
+            if (pending.owner != owner || kind != null && pending.kind != kind) continue;
+            it.remove();
+            pending.cancel();
+        }
+    }
+
+    public int queuedMaxTicks() {
+        return queuedMaxTicks;
+    }
+
+    public void setQueuedDelayRange(int minimum, int maximum) {
+        queuedMinTicks = Math.max(0, Math.min(20, Math.min(minimum, maximum)));
+        queuedMaxTicks = Math.max(queuedMinTicks, Math.min(20, Math.max(minimum, maximum)));
+    }
+
+    private int randomQueuedDelay() {
+        return queuedMinTicks == queuedMaxTicks ? queuedMinTicks
+                : ThreadLocalRandom.current().nextInt(queuedMinTicks, queuedMaxTicks + 1);
+    }
+
+    private void tickInventoryQueue() {
+        LocalPlayer player = mc.player;
+        if (player == null || mc.level == null || mc.getConnection() == null
+                || mc.isPaused() || queuedPlayerUuid != null
+                && (!queuedPlayerUuid.equals(player.getUUID()) || queuedLevel != mc.level)) {
+            clearInventoryQueue();
+            return;
+        }
+        if (inventoryQueue.isEmpty()) return;
+        QueuedInventoryAction queued = inventoryQueue.peekFirst();
+        if (queued == null) return;
+        if (!queued.isValid()) {
+            inventoryQueue.removeFirst();
+            queued.cancel();
+            return;
+        }
+        // Strict operations own the inventory until they finish; the ordinary queue never overtakes them.
+        if (!strictQueue.isEmpty()) return;
+        if (queued.waitTicks > 0) {
+            queued.waitTicks--;
+            return;
+        }
+        if (isInventoryAction(queued.kind) && !inventoryAccessAllowed(queued.owner)) return;
+        if (!isSafeFor(queued.kind, InventorySwapPolicy.LEGIT)) {
+            // A delayed inventory click must not execute against a moving-player input packet.
+            // Centralize the short movement pause here, including priority totem transactions.
+            if (isInventoryAction(queued.kind)) requestMovementLock(strictMovementLockTicks);
+            return;
+        }
+        inventoryQueue.removeFirst();
+        runGuarded(queued.owner, queued.action);
+    }
+
+    private void clearInventoryQueue() {
+        while (!inventoryQueue.isEmpty()) inventoryQueue.removeFirst().cancel();
+        queuedPlayerUuid = null;
+        queuedLevel = null;
     }
 
     public InventorySwapPolicy defaultPolicy() {
@@ -373,6 +453,8 @@ public final class InventorySwap {
         legitWaitTicks = 2;
         strictInventoryWaitTicks = 1;
         strictMovementLockTicks = 2;
+        setQueuedDelayRange(1, 4);
+        clearInventoryQueue();
     }
 
     public int serverSelectedSlot() {
@@ -406,7 +488,12 @@ public final class InventorySwap {
 
     public boolean leaseHotbar(Object owner, int slot, int ticksUntilReset) {
         LocalPlayer player = mc.player;
-        if (player == null || !isHotbarSlot(slot)) return false;
+        if (player == null || owner == null || !isHotbarSlot(slot)) return false;
+
+        // An unrelated mining/placement transaction cannot replace another owner's
+        // active tool lease. It must retry after that lease is released/expired.
+        HotbarLease active = activeLease();
+        if (active != null && active.owner != owner) return false;
 
         int resetAfterAge = player.tickCount + Math.max(0, ticksUntilReset) + 1;
         hotbarLease = new HotbarLease(player.getUUID(), owner, slot, clientSelectedSlot(), resetAfterAge);
@@ -509,6 +596,8 @@ public final class InventorySwap {
         AbstractContainerMenu handler = player != null ? player.containerMenu : null;
         if (player == null || interaction == null || handler == null) return false;
         if (!isSwapButton(hotbarButton) || containerSlot < 0) return false;
+        if (InventorySlotLocks.blocks(handler, containerSlot, hotbarButton,
+                ContainerInput.SWAP, player, executingActionOwner())) return false;
 
         beginInternalSwap();
         try {
@@ -526,6 +615,9 @@ public final class InventorySwap {
         AbstractContainerMenu handler = player != null ? player.containerMenu : null;
         if (player == null || interaction == null || handler == null) return false;
         if (slotA < 0 || slotB < 0 || slotA == slotB) return false;
+        if (InventorySlotLocks.blocks(handler, slotA, 0, ContainerInput.PICKUP,
+                player, executingActionOwner()) || InventorySlotLocks.blocks(handler, slotB,
+                0, ContainerInput.PICKUP, player, executingActionOwner())) return false;
 
         beginInternalSwap();
         try {
@@ -556,6 +648,7 @@ public final class InventorySwap {
 
         int sourceScreenSlot = mapInventoryToScreenSlot(inventorySlot);
         int targetScreenSlot = mapHotbarToScreenSlot(hotbarSlot);
+        if (sourceScreenSlot < 0 || targetScreenSlot < 0) return false;
         return command(InventoryActionKind.INVENTORY_CLICK, () -> {
             pickupSwap(sourceScreenSlot, targetScreenSlot);
             selectHotbar(hotbarSlot);
@@ -575,8 +668,10 @@ public final class InventorySwap {
     }
 
     public boolean swapInventoryToOffhand(int inventorySlot, InventorySwapPolicy policy, Object owner, Runnable afterSwap) {
-        if (inventorySlot < 0 || inventorySlot >= 36) return false;
+        if (inventorySlot < 0 || inventorySlot >= 36 ||
+                InventorySlotLocks.blocks(InventorySlotLocks.OFFHAND, owner)) return false;
         int sourceScreenSlot = mapInventoryToScreenSlot(inventorySlot);
+        if (sourceScreenSlot < 0) return false;
         return command(owner, InventoryActionKind.INVENTORY_CLICK, policy, () -> {
             if (!clickSwap(sourceScreenSlot, OFFHAND_SWAP_BUTTON)) return;
             if (afterSwap != null) afterSwap.run();
@@ -609,6 +704,7 @@ public final class InventorySwap {
 
         int moved = 0;
         int playerStart = playerInventoryStart(handler);
+        if (playerStart < 0) return 0;
         for (int slotId = 0; slotId < playerStart; slotId++) {
             Slot slot = handler.slots.get(slotId);
             if (slot == null || !slot.hasItem()) continue;
@@ -1142,6 +1238,38 @@ public final class InventorySwap {
     }
 
     private record InventoryLease(UUID playerUuid, Object owner, int resetAfterAge) {
+    }
+
+    private static final class QueuedInventoryAction {
+        private final Object owner;
+        private final InventoryActionKind kind;
+        private final BooleanSupplier valid;
+        private final Runnable action;
+        private final Runnable onCancel;
+        private int waitTicks;
+        private boolean priority;
+
+        private QueuedInventoryAction(Object owner, InventoryActionKind kind,
+                                      BooleanSupplier valid, Runnable action, Runnable onCancel, int waitTicks) {
+            this.owner = owner;
+            this.kind = kind != null ? kind : InventoryActionKind.GENERIC;
+            this.valid = valid != null ? valid : () -> true;
+            this.action = action;
+            this.onCancel = onCancel;
+            this.waitTicks = Math.max(0, waitTicks);
+        }
+
+        private boolean isValid() {
+            try {
+                return valid.getAsBoolean();
+            } catch (RuntimeException ignored) {
+                return false;
+            }
+        }
+
+        private void cancel() {
+            if (onCancel != null) onCancel.run();
+        }
     }
 
     private static final class QueuedAction {

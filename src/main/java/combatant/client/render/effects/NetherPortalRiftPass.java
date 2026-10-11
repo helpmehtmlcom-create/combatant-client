@@ -13,7 +13,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.PortalProcessor;
 import net.minecraft.world.level.block.Blocks;
 import combatant.client.mixins.accessors.EntityAccessor;
-import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
+import combatant.client.render.engine.pipeline.EffectRenderPipelines;
 import combatant.client.render.engine.postprocess.PostProcessManager;
 import combatant.client.render.engine.postprocess.PostProcessExecutionContext;
 import combatant.client.render.engine.postprocess.PostProcessPass;
@@ -88,7 +88,7 @@ public final class NetherPortalRiftPass implements PostProcessPass {
         FullScreenRenderer.ensureInit();
         FullScreenRenderer.begin("Combatant Fullscreen Pass")
                 .attachment(dst)
-                .pipeline(CombatantRenderPipelines.PORTAL_RIFT)
+                .pipeline(EffectRenderPipelines.PORTAL_RIFT)
                 .uniform("Heat", HeatUniforms.get())
                 .sampler("u_Texture", src, PostProcessManager.getSampler())
                 .end();
