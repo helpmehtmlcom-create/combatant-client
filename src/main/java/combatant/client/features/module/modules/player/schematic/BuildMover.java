@@ -131,6 +131,9 @@ final class BuildMover {
     private List<Long> route;
     private int routeIndex;
     private int steerIndex;
+    /** Progress stalled: line up with the centre of the current cell before heading on (frees a body caught on a corner). */
+    private boolean recenter;
+    private static final int RECENTER_STALL_TICKS = 6;
     private long goal;
     private boolean hasGoal;
     private StandingSpotChooser.Spot spot;
@@ -358,6 +361,7 @@ final class BuildMover {
             return;
         }
         route = path;
+        recenter = false;
         // The first cell is where the player already stands.
         routeIndex = path.size() > 1 ? 1 : 0;
         steerIndex = routeIndex;
@@ -399,10 +403,15 @@ final class BuildMover {
             return route != null;
         }
         double distance = horizontalDistance(pos, route.get(routeIndex));
+        if (recenter && Math.hypot(pos.x - (Math.floor(pos.x) + 0.5), pos.z - (Math.floor(pos.z) + 0.5)) < 0.12) {
+            recenter = false;
+        }
         if (distance < bestWaypointDistance - 0.05) {
             bestWaypointDistance = distance;
             stallTicks = 0;
-        } else if (++stallTicks > STALL_REPLAN_TICKS && player.onGround()) {
+        } else if (++stallTicks == RECENTER_STALL_TICKS) {
+            recenter = true;
+        } else if (stallTicks > STALL_REPLAN_TICKS && player.onGround()) {
             stallTicks = 0;
             replan(player);
         }
@@ -749,6 +758,10 @@ final class BuildMover {
             Vec3 pos = player.position();
             double dx = WalkTerrain.unpackX(aim) + 0.5 - pos.x;
             double dz = WalkTerrain.unpackZ(aim) + 0.5 - pos.z;
+            if (recenter) {
+                dx = Math.floor(pos.x) + 0.5 - pos.x;
+                dz = Math.floor(pos.z) + 0.5 - pos.z;
+            }
             keys = keysToward(RotationManager.INSTANCE.getMovementRotation().yaw(), dx, dz);
             int y = WalkTerrain.unpackY(cell);
             double toCell = Math.hypot(WalkTerrain.unpackX(cell) + 0.5 - pos.x, WalkTerrain.unpackZ(cell) + 0.5 - pos.z);
@@ -785,7 +798,7 @@ final class BuildMover {
         double yaw = Math.toRadians(yawDegrees);
         double forward = -Math.sin(yaw) * dx + Math.cos(yaw) * dz;
         double left = Math.cos(yaw) * dx + Math.sin(yaw) * dz;
-        double threshold = Math.min(0.1 + 0.15 * length, 0.38 * length);
+        double threshold = Math.min(0.08 + 0.1 * length, 0.38 * length);
         int keys = 0;
         if (forward > threshold) keys |= Steering.FORWARD;
         else if (forward < -threshold) keys |= Steering.BACKWARD;
@@ -797,7 +810,9 @@ final class BuildMover {
     /** Any corner of the feet hangs over a cell with nothing to stand on: a step further would fall. */
     private boolean atEdge(LocalPlayer player) {
         ClientLevel level = mc.level;
-        AABB box = player.getBoundingBox();
+        // Where the feet will be in two ticks: stopping keys still leave some momentum to carry over an edge.
+        Vec3 motion = player.getDeltaMovement();
+        AABB box = player.getBoundingBox().move(motion.x * 2.0, 0.0, motion.z * 2.0);
         double y = box.minY - 0.5;
         double[] xs = {box.minX + 0.05, box.maxX - 0.05};
         double[] zs = {box.minZ + 0.05, box.maxZ - 0.05};

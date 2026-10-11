@@ -129,4 +129,17 @@ class StandingSpotChooserTest {
         assertEquals(2, spot.y());
         assertNotNull(flood.pathTo(spot.key()));
     }
+
+    @Test
+    void staysOnTheBuildInsteadOfSteppingDownToItsEdge() {
+        // A finished 5x5 layer at y = 0 with the next layer's edge cell (4, 1, 2) missing: the ground beside it
+        // reaches the cell too, but stepping down would strand the player under the rest of the build.
+        GridWorld world = new GridWorld().fill(0, 0, 0, 4, 0, 4, WalkTerrain.SOLID);
+        long[] targets = {pack(4, 1, 2)};
+        WalkPathfinder.Flood flood = WalkPathfinder.flood(world, pack(2, 1, 2), 1, 40.0, 20_000);
+        StandingSpotChooser.Spot spot = StandingSpotChooser.choose(world, flood, targets, 1,
+                StandingSpotChooser.Mode.PLACE, REACH, null, null);
+        assertNotNull(spot);
+        assertEquals(1, spot.y(), "spot " + spot);
+    }
 }

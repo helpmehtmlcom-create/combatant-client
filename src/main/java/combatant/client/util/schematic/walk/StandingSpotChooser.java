@@ -28,11 +28,6 @@ public final class StandingSpotChooser {
     static final double STOP_TICKS = 25.0;
     /** The previous goal survives while its rate is at least this share of the best one. */
     static final double HYSTERESIS_SHARE = 0.85;
-    /**
-     * Rate bonus for standing level with the lowest target, i.e. on top of the layer below it. Stepping down off
-     * a solid build to finish its edge from the ground strands the player under the next layer.
-     */
-    static final double HIGH_GROUND = 1.5;
 
     public enum Mode {
         PLACE,
@@ -76,23 +71,35 @@ public final class StandingSpotChooser {
 
         // Blocks placed per tick spent getting there and placing them: a spot two steps away that reaches half
         // the layer beats one ten steps away that reaches a few more.
+        // Spots level with the lowest target stand on the layer below it. While any of them reaches something,
+        // lower spots are out: stepping down off a solid build to finish its edge from the ground strands the
+        // player under the next layer, which nothing but a pillar reaches again.
         int lowestTarget = bounds[1] + (int) Math.ceil(reach) + 1 + (int) Math.ceil(ReachModel.EYE_HEIGHT);
+        int floor = Integer.MIN_VALUE;
+        for (int i = 0; i < cells; i++) {
+            if (coverage[i] > 0 && WalkTerrain.unpackY(flood.cells().get(i)) >= lowestTarget) {
+                floor = lowestTarget;
+                break;
+            }
+        }
         double bestRate = 0.0;
         for (int i = 0; i < cells; i++) {
             if (coverage[i] == 0) continue;
             long cell = flood.cells().get(i);
+            if (WalkTerrain.unpackY(cell) < floor) continue;
             double cost = flood.cost(cell);
-            double rate = rate(coverage[i], cost) * (WalkTerrain.unpackY(cell) >= lowestTarget ? HIGH_GROUND : 1.0);
+            double rate = rate(coverage[i], cost);
             if (best == null || rate > bestRate) {
                 bestRate = rate;
                 best = new Spot(WalkTerrain.unpackX(cell), WalkTerrain.unpackY(cell), WalkTerrain.unpackZ(cell),
                         coverage[i], cost);
             }
         }
-        if (current != null && flood.reached(current.key()) && (reject == null || !reject.test(current.key()))) {
+        if (current != null && current.y() >= floor && flood.reached(current.key())
+                && (reject == null || !reject.test(current.key()))) {
             int kept = coverage(terrain, current.x(), current.y(), current.z(), targets, targetCount, mode, reach);
             double cost = flood.cost(current.key());
-            double keptRate = rate(kept, cost) * (current.y() >= lowestTarget ? HIGH_GROUND : 1.0);
+            double keptRate = rate(kept, cost);
             if (kept > 0 && keptRate >= bestRate * HYSTERESIS_SHARE) {
                 return new Spot(current.x(), current.y(), current.z(), kept, cost);
             }
