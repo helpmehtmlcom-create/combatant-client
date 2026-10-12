@@ -103,7 +103,9 @@ public final class PathSmoother {
     }
 
     private static boolean flatCell(WalkTerrain terrain, int x, int y, int z, double floor, int maxDrop) {
-        if (!terrain.standable(x, y, z) || terrain.cell(x, y, z) == WalkTerrain.CLIMB) return false;
+        byte feet = terrain.cell(x, y, z);
+        if (!terrain.standable(x, y, z) || feet == WalkTerrain.CLIMB || feet == WalkTerrain.NARROW
+                || terrain.cell(x, y + 1, z) == WalkTerrain.NARROW) return false;
         if (Math.abs(terrain.floorOffset(x, y, z) - floor) > 0.01) return false;
         return WalkPathfinder.cellCost(terrain, x, y, z, maxDrop) == 0.0;
     }

@@ -43,6 +43,12 @@ public interface WalkTerrain {
     /** A floor lower than half a block (snow layers, a daylight sensor): the feet stay in this cell, a bit higher. */
     byte RAISED = 10;
 
+    /**
+     * An open door: passable, but its leaf takes a strip along one side, so the body goes straight through the
+     * middle and never cuts a corner or a diagonal across it.
+     */
+    byte NARROW = 11;
+
     /** How high the feet stand above the cell floor on a {@link #RAISED} block, roughly. */
     double RAISED_HEIGHT = 0.4;
     /** How far below the cell floor the feet stand on a {@link #STEP} block in the cell underneath. */
@@ -81,7 +87,7 @@ public interface WalkTerrain {
     }
 
     static boolean passable(byte cell) {
-        return cell == OPEN || cell == WATER || cell == CLIMB || cell == WEB || cell == RAISED;
+        return cell == OPEN || cell == WATER || cell == CLIMB || cell == WEB || cell == RAISED || cell == NARROW;
     }
 
     static boolean support(byte cell) {
