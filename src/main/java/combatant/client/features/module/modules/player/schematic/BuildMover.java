@@ -142,7 +142,7 @@ final class BuildMover {
     /** Planning work allowed per tick; the rest waits for the next tick. */
     static final long PLAN_BUDGET_NANOS = 1_000_000L;
     /** The cache is rebuilt from the world this often, catching block changes nobody reported. */
-    private static final int CACHE_REFRESH_TICKS = 200;
+    private static final int CACHE_REFRESH_TICKS = 600;
     private static final int CACHE_MAX_SECTIONS = 4096;
     /** Spots further than this (route cost) are weighed against a pillar near the targets. */
     private static final double PILLAR_COMPARE_COST = 24.0;
