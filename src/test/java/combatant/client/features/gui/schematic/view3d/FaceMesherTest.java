@@ -99,4 +99,38 @@ class FaceMesherTest {
         assertTrue(faces.truncated());
         assertEquals(10, faces.count());
     }
+
+    @Test
+    void hugeVolumesSkipFullDetailInsteadOfAllocatingEveryCell() {
+        // 4096x4x4096 is 67M cells: a step-1 segment alone would be 335 MB of arrays.
+        VoxelVolume floor = new VoxelVolume() {
+            @Override
+            public int sizeX() {
+                return 4096;
+            }
+
+            @Override
+            public int sizeY() {
+                return 4;
+            }
+
+            @Override
+            public int sizeZ() {
+                return 4096;
+            }
+
+            @Override
+            public int cell(int index) {
+                return index < 4096 * 4096 ? 1 : 0;
+            }
+        };
+        for (ViewMode mode : ViewMode.values()) {
+            int start = FaceMesher.coarsestNeeded(floor, mode, floor.sizeY(), 1);
+            assertTrue(start > 1, mode.name());
+            assertTrue(FaceMesher.segmentCells(floor, mode, floor.sizeY(), start) <= FaceMesher.MAX_SEGMENT_CELLS, mode.name());
+            FaceList faces = FaceMesher.build(floor, COLORS, mode, 0, 0f, 25_000);
+            assertTrue(faces.lodStep() >= start, mode.name());
+        }
+        assertEquals(1, FaceMesher.coarsestNeeded(solid(64, 64, 64), ViewMode.ALL, 64, 1));
+    }
 }
