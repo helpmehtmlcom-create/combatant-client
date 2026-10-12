@@ -35,6 +35,7 @@ import java.util.Locale;
 public final class SchematicCommand implements ClientCommand {
 
     private static final int MATERIAL_LINES = 12;
+    private static final int AMBIGUOUS_SHOWN = 6;
     private static final List<String> SUBCOMMANDS = List.of("menu", "load", "origin", "layer", "materials", "unload");
 
     @Override
@@ -61,13 +62,32 @@ public final class SchematicCommand implements ClientCommand {
             return;
         }
         String name = String.join(" ", ctx.args().subList(1, ctx.args().size()));
-        Path path = SchematicLibrary.INSTANCE.resolve(name);
-        if (path == null) {
-            CommandOutput.error("No schematic named '" + name + "' in " + SchematicLibrary.INSTANCE.directory());
-            return;
-        }
-        CommandOutput.send("Loading " + path.getFileName() + "...");
-        SchematicActions.load(path);
+        Minecraft mc = Minecraft.getInstance();
+        // The folder listing runs on the schematic worker; the answer comes back on the main thread.
+        SchematicLibrary.INSTANCE.resolve(name).whenComplete((resolution, error) -> mc.execute(() -> {
+            if (error != null || resolution == null) {
+                CommandOutput.error("Could not search " + SchematicLibrary.INSTANCE.directory());
+                return;
+            }
+            if (resolution.ambiguous()) {
+                List<String> options = resolution.candidates();
+                String shown = String.join(", ", options.subList(0, Math.min(AMBIGUOUS_SHOWN, options.size())));
+                if (options.size() > AMBIGUOUS_SHOWN) shown += ", ...";
+                CommandOutput.warning("'" + name + "' matches " + options.size() + " schematics: " + shown);
+                return;
+            }
+            Path path = resolution.path();
+            if (path == null) {
+                CommandOutput.error("No schematic named '" + name + "' in " + SchematicLibrary.INSTANCE.directory());
+                return;
+            }
+            Path busy = SchematicActions.loadingPath();
+            if (!SchematicActions.load(path)) {
+                CommandOutput.warning("Still loading " + (busy == null ? "another schematic" : busy.getFileName()));
+                return;
+            }
+            CommandOutput.send("Loading " + path.getFileName() + "...");
+        }));
     }
 
     private void origin(String mode) {

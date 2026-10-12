@@ -12,7 +12,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -26,20 +28,19 @@ import java.util.concurrent.Executors;
 import java.util.stream.Stream;
 
 /**
- * The {@code schematics/} folder in the game directory. Scanning and parsing run on one daemon worker so a
- * 50 MB schematic never stalls the render thread; headers are cached by path and modification time.
+ * The {@code schematics/} folder in the game directory. Scanning and loading run on separate daemon workers so a
+ * 50 MB schematic never stalls the render thread and a load never queues behind a folder scan; headers are cached
+ * by path and modification time.
  */
 public final class SchematicLibrary {
 
     public static final SchematicLibrary INSTANCE = new SchematicLibrary();
     private static final Logger LOGGER = LoggerFactory.getLogger("Combatant/Schematic");
 
-    private final ExecutorService worker = Executors.newSingleThreadExecutor(runnable -> {
-        Thread thread = new Thread(runnable, "Combatant-Schematic");
-        thread.setDaemon(true);
-        thread.setPriority(Thread.NORM_PRIORITY - 1);
-        return thread;
-    });
+    /** Folder scans: background work the user is not waiting on. */
+    private final ExecutorService scanner = daemon("Combatant-Schematic-Scan", Thread.NORM_PRIORITY - 1);
+    /** Loads and name lookups: the user just asked for these, so they get their own thread. */
+    private final ExecutorService loader = daemon("Combatant-Schematic-Load", Thread.NORM_PRIORITY);
     private final Map<Path, SchematicHeader> headerCache = new ConcurrentHashMap<>();
     private volatile List<SchematicHeader> headers = List.of();
     private volatile boolean scanning;
@@ -47,6 +48,15 @@ public final class SchematicLibrary {
     private CompletableFuture<Void> pendingScan;
 
     private SchematicLibrary() {
+    }
+
+    private static ExecutorService daemon(String name, int priority) {
+        return Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, name);
+            thread.setDaemon(true);
+            thread.setPriority(priority);
+            return thread;
+        });
     }
 
     public Path directory() {
@@ -75,7 +85,7 @@ public final class SchematicLibrary {
     public synchronized CompletableFuture<Void> refresh() {
         if (pendingScan != null && !pendingScan.isDone()) return pendingScan;
         scanning = true;
-        pendingScan = CompletableFuture.runAsync(this::scan, worker).whenComplete((ignored, error) -> {
+        pendingScan = CompletableFuture.runAsync(this::scan, scanner).whenComplete((ignored, error) -> {
             scanning = false;
             if (error != null) LOGGER.warn("Schematic scan failed", error);
         });
@@ -88,32 +98,69 @@ public final class SchematicLibrary {
                 Schematic schematic = LitematicReader.read(path);
                 return new Loaded(schematic, LayerStats.compute(schematic));
             } catch (IOException e) {
-                throw new java.io.UncheckedIOException(e);
+                throw new UncheckedIOException(e);
+            } catch (OutOfMemoryError e) {
+                // The dense arrays are dropped with this frame, so the client survives; report it as a load error.
+                throw new UncheckedIOException(new IOException("Not enough memory to load " + path.getFileName(), e));
             }
-        }, worker);
+        }, loader);
     }
 
-    /** Finds a file by name with or without the extension; falls back to a prefix match. */
-    public Path resolve(String name) {
-        if (name == null || name.isBlank()) return null;
+    /** {@link #resolveIn} against the schematics folder, off the main thread. */
+    public CompletableFuture<Resolution> resolve(String name) {
+        return CompletableFuture.supplyAsync(() -> resolveIn(directory(), name), loader);
+    }
+
+    /**
+     * Finds a file by exact name (with or without the extension, case-insensitive), then by unique prefix. Every
+     * match must really live inside {@code dir}: {@code ../} names and symlinks pointing elsewhere are rejected.
+     */
+    static Resolution resolveIn(Path dir, String name) {
+        if (name == null || name.isBlank()) return Resolution.notFound();
         String wanted = name.trim();
-        Path dir = directory();
         String lower = wanted.toLowerCase(Locale.ROOT);
         if (lower.endsWith(LitematicReader.EXTENSION)) {
             lower = lower.substring(0, lower.length() - LitematicReader.EXTENSION.length());
         }
+        Path root;
         try {
-            Path direct = dir.resolve(wanted.toLowerCase(Locale.ROOT).endsWith(LitematicReader.EXTENSION)
-                    ? wanted : wanted + LitematicReader.EXTENSION);
-            if (Files.isRegularFile(direct) && direct.normalize().startsWith(dir.normalize())) return direct;
-        } catch (java.nio.file.InvalidPathException ignored) {
-            // Fall through to the prefix match; chat input can hold characters the file system rejects.
+            root = dir.toRealPath();
+        } catch (IOException e) {
+            return Resolution.notFound();
+        }
+        try {
+            Path direct = inside(root, root.resolve(lower.equals(wanted.toLowerCase(Locale.ROOT))
+                    ? wanted + LitematicReader.EXTENSION : wanted));
+            if (direct != null) return Resolution.found(direct);
+        } catch (InvalidPathException ignored) {
+            // Fall through to the listing; chat input can hold characters the file system rejects.
         }
 
-        for (Path candidate : listFiles(dir)) {
-            if (LitematicReader.baseName(candidate).toLowerCase(Locale.ROOT).startsWith(lower)) return candidate;
+        List<Path> prefixed = new ArrayList<>();
+        for (Path candidate : listFiles(root)) {
+            String base = LitematicReader.baseName(candidate).toLowerCase(Locale.ROOT);
+            if (!base.startsWith(lower)) continue;
+            Path real = inside(root, candidate);
+            if (real == null) continue;
+            if (base.equals(lower)) return Resolution.found(real);
+            prefixed.add(real);
         }
-        return null;
+        if (prefixed.size() == 1) return Resolution.found(prefixed.getFirst());
+        if (prefixed.isEmpty()) return Resolution.notFound();
+        List<String> names = new ArrayList<>();
+        for (Path path : prefixed) names.add(LitematicReader.baseName(path));
+        return new Resolution(null, List.copyOf(names));
+    }
+
+    /** The real path of {@code candidate} when it is a regular file under {@code root}, else null. */
+    private static Path inside(Path root, Path candidate) {
+        try {
+            if (!Files.isRegularFile(candidate)) return null;
+            Path real = candidate.toRealPath();
+            return real.startsWith(root) && !real.equals(root) ? real : null;
+        } catch (IOException | SecurityException e) {
+            return null;
+        }
     }
 
     public List<String> fileNames() {
@@ -149,6 +196,8 @@ public final class SchematicLibrary {
             header = LitematicReader.readHeader(path, modified);
         } catch (IOException | RuntimeException e) {
             header = SchematicHeader.failed(path, modified, e.getMessage());
+        } catch (OutOfMemoryError e) {
+            header = SchematicHeader.failed(path, modified, "out of memory");
         }
         headerCache.put(path, header);
         return header;
@@ -167,5 +216,20 @@ public final class SchematicLibrary {
     }
 
     public record Loaded(Schematic schematic, LayerStats stats) {
+    }
+
+    /** A lookup result: {@code path} when exactly one file matched, else every ambiguous candidate (maybe none). */
+    public record Resolution(Path path, List<String> candidates) {
+        static Resolution found(Path path) {
+            return new Resolution(path, List.of());
+        }
+
+        static Resolution notFound() {
+            return new Resolution(null, List.of());
+        }
+
+        public boolean ambiguous() {
+            return path == null && candidates.size() > 1;
+        }
     }
 }
