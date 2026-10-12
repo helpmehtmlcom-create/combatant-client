@@ -138,6 +138,7 @@ final class BuildMover {
     private static final int ABORT_COOLDOWN_TICKS = 100;
     private static final int ARRIVAL_GRACE_TICKS = 3;
     private static final int MAX_PILLAR_RETRIES = 4;
+    private static final int MAX_GOAL_REPLANS = 6;
     private static final float PILLAR_PITCH_READY = 80.0f;
     /** Planning work allowed per tick; the rest waits for the next tick. */
     static final long PLAN_BUDGET_NANOS = 1_000_000L;
@@ -213,6 +214,8 @@ final class BuildMover {
     private int aborts;
     private int pillarJumps;
     private int replans;
+    /** Replans for the current goal; past {@link #MAX_GOAL_REPLANS} the goal is dropped. */
+    private int goalReplans;
     /** Ticks that spent part of their budget on a plan; more than one per plan means it was sliced. */
     private int planTicks;
     /** Longest single tick spent in the mover's planning and route following, for the smoke report. */
@@ -553,6 +556,7 @@ final class BuildMover {
             rejected.add(target);
             return;
         }
+        goalReplans = 0;
         routeDrop = drop;
         follower.start(cache, path, drop);
         goal = target;
@@ -599,6 +603,21 @@ final class BuildMover {
             for (int dz = -2; dz <= 2; dz++) {
                 for (int dy = -2; dy <= 2; dy++) cache.invalidate(fx + dx, fy + dy, fz + dz);
             }
+        }
+        long blocked = follower.blockedCell();
+        if (blocked != Long.MIN_VALUE) {
+            // The cache still has the cell as it was when the route was planned; without this the new route
+            // would run into the same block.
+            int bx = WalkTerrain.unpackX(blocked), by = WalkTerrain.unpackY(blocked), bz = WalkTerrain.unpackZ(blocked);
+            for (int dy = -1; dy <= 2; dy++) cache.invalidateAround(bx, by + dy, bz);
+        }
+        if (++goalReplans > MAX_GOAL_REPLANS) {
+            // The way there keeps breaking: pick another spot instead.
+            rejected.add(goal);
+            follower.stop();
+            hasGoal = false;
+            mode = Mode.IDLE;
+            return;
         }
         routeSearch.startPath(feetKey(player), goal, routeDrop, PATH_NODES, reserved.isEmpty() ? null : reserved);
         replanPending = true;
