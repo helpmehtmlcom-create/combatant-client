@@ -5340,5 +5340,6 @@
   "screen.combatant.schematic.view.lod": "LOD x%s",
   "screen.combatant.schematic.view.truncated": "detail capped",
   "screen.combatant.schematic.view.building": "Building model...",
+  "screen.combatant.schematic.view.failed": "Could not build the 3D model",
   "screen.combatant.schematic.tooltip.click_layer": "Click to select layer %s"
 }

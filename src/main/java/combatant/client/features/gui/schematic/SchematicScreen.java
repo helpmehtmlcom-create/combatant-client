@@ -584,7 +584,10 @@ public final class SchematicScreen extends Screen {
         boolean inside = insideViewport(mouseX, mouseY) && !overViewportChrome(mouseX, mouseY) && !draggingStrip && !draggingGap;
         viewport.render(schematic, grid.paletteColors(schematic), state.layer(), diff, gridX, gridY, gridW, gridH,
                 frameDt, mouseX, mouseY, inside, alpha);
-        if (viewport.faces() == null) {
+        if (viewport.faces() == null && viewport.meshFailed()) {
+            ui.textCentered(tr("screen.combatant.schematic.view.failed"), gridX + gridW * 0.5f, gridY + gridH * 0.5f,
+                    SchematicUi.SMALL, SchematicUi.scaleAlpha(SchematicUi.BAD, alpha), false);
+        } else if (viewport.faces() == null) {
             float spin = (System.nanoTime() / 1_000_000L % 1200L) / 1200f * 360f;
             float cx = gridX + gridW * 0.5f, cy = gridY + gridH * 0.5f;
             Renderer2D.COLOR.arcStroke(cx, cy, 20f, 3f, spin, spin + 260f, SchematicUi.scaleAlpha(SchematicUi.ACCENT, alpha));
@@ -611,6 +614,7 @@ public final class SchematicScreen extends Screen {
         if (faces.lodStep() > 1) stats += "  ·  " + tr("screen.combatant.schematic.view.lod", faces.lodStep());
         if (faces.truncated()) stats += "  ·  " + tr("screen.combatant.schematic.view.truncated");
         if (viewport.meshing()) stats = tr("screen.combatant.schematic.view.building") + "  ·  " + stats;
+        if (viewport.meshFailed()) stats = tr("screen.combatant.schematic.view.failed") + "  ·  " + stats;
         int color = faces.truncated() ? SchematicUi.WARN : SchematicUi.MUTED;
         ui.textRight(stats, right, bottom - tinyH - 4f, SchematicUi.TINY, SchematicUi.scaleAlpha(color, alpha), false);
     }

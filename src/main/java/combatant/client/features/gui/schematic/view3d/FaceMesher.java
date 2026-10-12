@@ -17,6 +17,8 @@ public final class FaceMesher {
     /** Layers either side of the selected one that keep full detail while the rest goes coarse. */
     static final int DETAIL_BAND = 2;
     private static final int MAX_STEP = 64;
+    /** Blocks one segment may allocate (an int and a byte each); bigger volumes start at a coarser block size. */
+    static final long MAX_SEGMENT_CELLS = 1L << 22;
     private static final float[] DIRECTION_SHADE = {1.0f, 0.52f, 0.80f, 0.80f, 0.68f, 0.68f};
 
     private FaceMesher() {
@@ -25,7 +27,8 @@ public final class FaceMesher {
     public static FaceList build(VoxelVolume volume, int[] paletteColors, ViewMode mode, int selected, float gap, int maxFaces) {
         FaceList out = new FaceList();
         int maxSize = Math.max(volume.sizeX(), Math.max(volume.sizeY(), volume.sizeZ()));
-        for (int step = 1; ; step *= 2) {
+        // A 64M-cell volume at full detail would allocate 320 MB of segment arrays just to learn it is over budget.
+        for (int step = coarsestNeeded(volume, mode, volume.sizeY(), 1); ; step *= 2) {
             boolean last = step >= MAX_STEP || step >= maxSize;
             out.reset(step);
             if (emitAll(volume, paletteColors, mode, selected, gap, step, maxFaces, out)) return out;
@@ -53,7 +56,7 @@ public final class FaceMesher {
     private static boolean emitSegment(VoxelVolume volume, int[] colors, ViewMode mode, int selected, float gap,
                                        int y0, int y1, int step, int maxFaces, FaceList out) {
         if (y1 <= y0) return true;
-        Segment seg = new Segment(volume, mode, selected, y0, y1, step);
+        Segment seg = new Segment(volume, mode, selected, y0, y1, coarsestNeeded(volume, mode, y1 - y0, step));
         seg.fill();
         for (int k = 0; k < seg.cy; k++) {
             for (int j = 0; j < seg.cz; j++) {
@@ -65,6 +68,21 @@ public final class FaceMesher {
             }
         }
         return true;
+    }
+
+    /** The smallest power-of-two multiple of {@code step} whose segment over {@code layers} fits the cell cap. */
+    static int coarsestNeeded(VoxelVolume volume, ViewMode mode, int layers, int step) {
+        int widest = Math.max(volume.sizeX(), volume.sizeZ());
+        while (step < widest && segmentCells(volume, mode, layers, step) > MAX_SEGMENT_CELLS) step *= 2;
+        return step;
+    }
+
+    static long segmentCells(VoxelVolume volume, ViewMode mode, int layers, int step) {
+        int height = mode.exploded() ? 1 : step;
+        long cx = (volume.sizeX() + (long) step - 1) / step;
+        long cz = (volume.sizeZ() + (long) step - 1) / step;
+        long cy = (layers + (long) height - 1) / height;
+        return cx * cy * cz;
     }
 
     private static boolean emitBlock(VoxelVolume volume, int[] colors, ViewMode mode, float gap, Segment seg,
