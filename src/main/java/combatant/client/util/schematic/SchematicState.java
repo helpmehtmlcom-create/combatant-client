@@ -10,8 +10,11 @@ package combatant.client.util.schematic;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The one active schematic shared by the menu, the projection and the builder: which file, where it is placed,
@@ -39,6 +42,8 @@ public final class SchematicState {
     private int revision;
     private long lastDiffTick = Long.MIN_VALUE;
     private List<SchematicMaterials.Entry> missingMaterials = List.of();
+    private final Map<Long, SchematicAttention.Entry> attention = new LinkedHashMap<>();
+    private int attentionRevision;
 
     private SchematicState() {
     }
@@ -88,12 +93,49 @@ public final class SchematicState {
         missingMaterials = missing == null ? List.of() : List.copyOf(missing);
     }
 
+    /** Cells the builder could not create exactly, oldest first. */
+    public List<SchematicAttention.Entry> attention() {
+        return List.copyOf(attention.values());
+    }
+
+    public int attentionCount() {
+        return attention.size();
+    }
+
+    /** Bumped whenever an entry is added or removed. */
+    public int attentionRevision() {
+        return attentionRevision;
+    }
+
+    public boolean flagged(BlockPos pos) {
+        return attention.containsKey(pos.asLong());
+    }
+
+    /** Records why the builder could not make the state at {@code pos}; a newer reason replaces an older one. */
+    public void flag(BlockPos pos, BlockState expected, SchematicAttention.Reason reason) {
+        SchematicAttention.Entry previous = attention.get(pos.asLong());
+        if (previous != null && previous.reason() == reason) return;
+        attention.put(pos.asLong(), new SchematicAttention.Entry(pos.immutable(), expected, reason, 1));
+        attentionRevision++;
+    }
+
+    public void unflag(BlockPos pos) {
+        if (attention.remove(pos.asLong()) != null) attentionRevision++;
+    }
+
+    public void clearAttention() {
+        if (attention.isEmpty()) return;
+        attention.clear();
+        attentionRevision++;
+    }
+
     public void setSchematic(Schematic next, LayerStats nextStats) {
         schematic = next;
         stats = next == null ? null : (nextStats != null ? nextStats : LayerStats.compute(next));
         layer = 0;
         diff = null;
         missingMaterials = List.of();
+        clearAttention();
         if (next == null) placement = null;
         changed();
     }
@@ -105,6 +147,7 @@ public final class SchematicState {
     public void setPlacement(SchematicPlacement next) {
         placement = next;
         diff = null;
+        clearAttention();
         changed();
     }
 

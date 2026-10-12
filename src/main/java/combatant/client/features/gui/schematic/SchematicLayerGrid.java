@@ -8,8 +8,12 @@
 package combatant.client.features.gui.schematic;
 
 import combatant.client.render.engine.renderer.Renderer2D;
+import combatant.client.util.schematic.RedstoneRules;
 import combatant.client.util.schematic.Schematic;
+import combatant.client.util.schematic.SchematicAttention;
 import combatant.client.util.schematic.SchematicDiff;
+import combatant.client.util.schematic.SchematicPlacement;
+import combatant.client.util.schematic.SchematicState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.EmptyBlockGetter;
@@ -26,6 +30,8 @@ final class SchematicLayerGrid {
     private static final float MIN_CELL = 1.5f;
     // The diff revision changes in bursts while the world scan runs; re-tinting on every frame of that is waste.
     private static final long TINT_REFRESH_NANOS = 250_000_000L;
+    /** Cell status for a block the builder could not make exactly; drawn in the warning colour. */
+    private static final int ATTENTION = 8;
 
     private Schematic paletteOwner;
     private int[] paletteColors = new int[0];
@@ -35,6 +41,7 @@ final class SchematicLayerGrid {
     private int cachedStep = -1;
     private SchematicDiff cachedDiff;
     private int cachedDiffRevision = -1;
+    private int cachedAttentionRevision = -1;
     private long lastBuildNanos;
 
     private int[] runX = new int[256];
@@ -115,6 +122,12 @@ final class SchematicLayerGrid {
     }
 
     static int colorOf(BlockState state) {
+        int base = baseColorOf(state);
+        // Redstone parts lean red in both the layer grid and the 3D model, so a machine's wiring reads at a glance.
+        return RedstoneRules.isComponent(state) ? SchematicUi.mix(base, SchematicUi.REDSTONE, 0.45f) : base;
+    }
+
+    private static int baseColorOf(BlockState state) {
         try {
             MapColor color = state.getMapColor(EmptyBlockGetter.INSTANCE, BlockPos.ZERO);
             if (color != null && color != MapColor.NONE && color.col != 0) return 0xFF000000 | color.col;
@@ -128,8 +141,9 @@ final class SchematicLayerGrid {
 
     private void ensureRuns(Schematic schematic, int layer, SchematicDiff diff) {
         int revision = diff == null ? -1 : diff.revision();
+        int attentionRevision = SchematicState.INSTANCE.attentionRevision();
         boolean sameShape = schematic == cachedSchematic && layer == cachedLayer && step == cachedStep && diff == cachedDiff;
-        if (sameShape && revision == cachedDiffRevision) return;
+        if (sameShape && revision == cachedDiffRevision && attentionRevision == cachedAttentionRevision) return;
         long now = System.nanoTime();
         if (sameShape && now - lastBuildNanos < TINT_REFRESH_NANOS) return;
         cachedSchematic = schematic;
@@ -137,6 +151,7 @@ final class SchematicLayerGrid {
         cachedStep = step;
         cachedDiff = diff;
         cachedDiffRevision = revision;
+        cachedAttentionRevision = attentionRevision;
         lastBuildNanos = now;
         fillStatus(schematic, layer, diff);
         buildRuns(schematic, layer);
@@ -151,6 +166,14 @@ final class SchematicLayerGrid {
         int base = layer * area;
         for (int cell = diff.layerStart(layer), end = diff.layerEnd(layer); cell < end; cell++) {
             cellStatus[diff.schematicIndex(cell) - base] = diff.status(cell);
+        }
+        SchematicPlacement placement = diff.placement();
+        for (SchematicAttention.Entry entry : SchematicState.INSTANCE.attention()) {
+            BlockPos pos = entry.pos();
+            if (pos == null || placement.localY(pos.getY()) != layer) continue;
+            int x = placement.localX(pos.getX(), pos.getZ());
+            int z = placement.localZ(pos.getX(), pos.getZ());
+            if (schematic.contains(x, layer, z)) cellStatus[z * schematic.sizeX() + x] = ATTENTION;
         }
     }
 
@@ -190,6 +213,7 @@ final class SchematicLayerGrid {
             case SchematicDiff.CORRECT -> SchematicUi.mix(color, SchematicUi.GOOD, 0.55f);
             case SchematicDiff.MISSING -> SchematicUi.mix(color, SchematicUi.BAD, 0.5f);
             case SchematicDiff.WRONG -> SchematicUi.mix(color, SchematicUi.WARN, 0.6f);
+            case ATTENTION -> SchematicUi.mix(color, SchematicUi.WARN, 0.85f);
             default -> color;
         };
     }
