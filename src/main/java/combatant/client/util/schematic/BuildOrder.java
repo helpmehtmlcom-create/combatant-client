@@ -55,6 +55,7 @@ public final class BuildOrder {
                 watchesChange[cell] = RedstoneRules.changesWithPower(watched);
             }
         }
+        keepLookFree(schematic, cells, dependency);
         breakCycles(dependency);
         return new BuildOrder(schematic, cells, propagate(base, dependency, watchesChange), dependency);
     }
@@ -67,6 +68,24 @@ public final class BuildOrder {
         Direction feeds = RedstoneRules.feedsInto(state);
         if (feeds != null) return feeds;
         return RedstoneRules.needsBlockBelow(state) ? Direction.DOWN : null;
+    }
+
+    /**
+     * A piston or dropper is placed looking at it from the side it faces, an observer from behind: a plain
+     * block in that cell placed first would stand between the player and the only clicks that give the facing
+     * (the block a flush door pushes, for one). That cell waits for the piston instead.
+     */
+    private static void keepLookFree(Schematic schematic, int[] cells, int[] dependency) {
+        for (int cell = 0; cell < cells.length; cell++) {
+            BlockState state = schematic.paletteState(schematic.paletteIndexAt(cells[cell]));
+            Direction look = RedstoneRules.requiredLook(state);
+            if (look == null || RedstoneRules.supportDirection(state) != null) continue;
+            int inTheWay = neighbour(schematic, cells, cells[cell], look.getOpposite());
+            if (inTheWay == NO_DEPENDENCY || dependency[inTheWay] != NO_DEPENDENCY) continue;
+            BlockState blocking = schematic.paletteState(schematic.paletteIndexAt(cells[inTheWay]));
+            if (RedstoneRules.baseOrder(blocking) != RedstoneRules.SUPPORT || StateComparison.derived(blocking)) continue;
+            dependency[inTheWay] = cell;
+        }
     }
 
     private static int neighbour(Schematic schematic, int[] cells, int index, Direction direction) {

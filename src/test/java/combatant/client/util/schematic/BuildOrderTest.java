@@ -143,6 +143,8 @@ class BuildOrderTest {
         assertEquals(cell(s, cells, 2, 2, 2), order.dependency(cell(s, cells, 2, 1, 2)));
         assertEquals(cell(s, cells, 0, 1, 2), order.dependency(cell(s, cells, 0, 2, 2)));
         assertEquals(BuildOrder.NO_DEPENDENCY, order.dependency(cell(s, cells, 4, 1, 0)));
+        // The block the door piston pushes would stand where the player looks at the piston from.
+        assertEquals(cell(s, cells, 4, 1, 0), order.dependency(cell(s, cells, 4, 1, 1)));
     }
 
     /** Places the machine the way the builder does: layer by layer within the open band, lowest phase first. */

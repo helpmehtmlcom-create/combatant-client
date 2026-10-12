@@ -148,11 +148,44 @@ public final class RedstoneRules {
      */
     public static Direction requiredLook(BlockState state) {
         Block block = state.getBlock();
+        // Wall levers, buttons and torches go on the first block along the look that holds them: the look has to
+        // run into their wall before it runs into the floor.
+        if (block instanceof FaceAttachedHorizontalDirectionalBlock
+                && state.getValue(BlockStateProperties.ATTACH_FACE) == AttachFace.WALL) {
+            return state.getValue(BlockStateProperties.HORIZONTAL_FACING).getOpposite();
+        }
+        if (block instanceof WallTorchBlock) return state.getValue(WallTorchBlock.FACING).getOpposite();
+        if (block instanceof RedstoneWallTorchBlock) return state.getValue(RedstoneWallTorchBlock.FACING).getOpposite();
         if (block instanceof PistonBaseBlock) return state.getValue(PistonBaseBlock.FACING).getOpposite();
         if (block instanceof ObserverBlock) return state.getValue(ObserverBlock.FACING);
         if (block instanceof DispenserBlock) return state.getValue(DispenserBlock.FACING).getOpposite();
         if (block instanceof CrafterBlock) return state.getValue(BlockStateProperties.ORIENTATION).front().getOpposite();
         return null;
+    }
+
+    /**
+     * The horizontal direction the player has to face (only the yaw counts) for the block to come out facing
+     * right: repeaters and comparators point away from the player, floor and ceiling levers and buttons, doors
+     * and gates along the look, sideways hoppers towards what they feed. {@code null} when the yaw does not
+     * decide it.
+     */
+    public static Direction requiredYaw(BlockState state) {
+        Block block = state.getBlock();
+        if (block instanceof DiodeBlock) return state.getValue(BlockStateProperties.HORIZONTAL_FACING).getOpposite();
+        if (block instanceof FaceAttachedHorizontalDirectionalBlock
+                && state.getValue(BlockStateProperties.ATTACH_FACE) != AttachFace.WALL) {
+            return state.getValue(BlockStateProperties.HORIZONTAL_FACING);
+        }
+        if (block instanceof DoorBlock || block instanceof FenceGateBlock) {
+            return state.getValue(BlockStateProperties.HORIZONTAL_FACING);
+        }
+        // A sideways hopper is clicked on the face of the block it feeds, which only shows looking that way.
+        return feedsInto(state);
+    }
+
+    /** Whether the look (all of it, or only the yaw) decides how this block comes out. */
+    public static boolean lookDecides(BlockState state) {
+        return requiredLook(state) != null || requiredYaw(state) != null;
     }
 
     /** Whether the block's state changes with the circuit, so an observer watching it pulses while power goes in. */

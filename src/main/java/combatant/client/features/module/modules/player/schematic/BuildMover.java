@@ -106,6 +106,8 @@ final class BuildMover {
     private static final int MAX_DROP = 1;
     /** Getting off a finished build to break the support blocks may need a slightly bigger, still harmless drop. */
     private static final int CLEAR_MAX_DROP = 2;
+    /** Falls of up to three blocks cost no health. */
+    private static final int SAFE_DROP = 3;
     private static final int MAX_PILLAR = 8;
     /** Walk planning works with a slightly shorter reach than clicks do: the player never stops dead centre. */
     private static final double PLAN_MARGIN = 0.35;
@@ -122,6 +124,7 @@ final class BuildMover {
     private static final int ARRIVAL_GRACE_TICKS = 3;
     private static final int MAX_PILLAR_RETRIES = 4;
     private static final float PILLAR_PITCH_READY = 80.0f;
+    private static final int PILLAR_STALL_TICKS = 200;
 
     private final Minecraft mc;
     private final Host host;
@@ -143,6 +146,8 @@ final class BuildMover {
     private PillarPlanner.Pillar pillar;
     private int pillarBaseY = Integer.MIN_VALUE;
     private int pillarRetries;
+    private int pillarProgressBlocks;
+    private int pillarIdleTicks;
     private boolean jumpThisTick;
     private boolean controlling;
     private boolean holdStill;
@@ -347,6 +352,13 @@ final class BuildMover {
         double reach = host.reach() - PLAN_MARGIN;
         StandingSpotChooser.Spot next = StandingSpotChooser.choose(terrain, flood, targets, count,
                 StandingSpotChooser.Mode.PLACE, reach, spot, rejected::contains, host::lookAllows);
+        if (next == null && !helpers.isEmpty()) {
+            // Up on a pillar with the rest of the work below (power or TNT left for last): a drop no higher than
+            // a fall that costs no health is the way back down.
+            flood = WalkPathfinder.flood(terrain, start, SAFE_DROP, FLOOD_COST, FLOOD_NODES);
+            next = StandingSpotChooser.choose(terrain, flood, targets, count,
+                    StandingSpotChooser.Mode.PLACE, reach, spot, rejected::contains, host::lookAllows);
+        }
         int lowest = Integer.MAX_VALUE;
         for (int i = 0; i < count; i++) lowest = Math.min(lowest, WalkTerrain.unpackY(targets[i]));
         if (next == null || next.y() < lowest) lowGroundLayer = lowest;
@@ -522,6 +534,16 @@ final class BuildMover {
         }
         if (route != null && followRoute(player)) return null;
         if (route != null || mode != Mode.PILLARING) return null;
+        if (pillarBlocks != pillarProgressBlocks) {
+            pillarProgressBlocks = pillarBlocks;
+            pillarIdleTicks = 0;
+        } else if (++pillarIdleTicks > PILLAR_STALL_TICKS) {
+            // Standing at the column without a block going in for this long: it will not, try somewhere else.
+            pillarIdleTicks = 0;
+            rejected.add(WalkTerrain.pack(column.x(), column.y(), column.z()));
+            abort();
+            return null;
+        }
         int feetY = feetY(player);
         if (feetY >= column.topY() && player.onGround()) {
             finishPillar();
