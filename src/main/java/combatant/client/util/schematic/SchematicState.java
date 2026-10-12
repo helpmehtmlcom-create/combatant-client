@@ -12,6 +12,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 
+import java.lang.ref.WeakReference;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,7 +36,9 @@ public final class SchematicState {
     private LayerStats stats;
     private SchematicPlacement placement;
     private SchematicDiff diff;
-    private Level diffLevel;
+    private SchematicDiff.Layout layout;
+    // Weak: this singleton outlives every world, so a strong reference kept the old level alive after disconnect.
+    private WeakReference<Level> diffLevel = new WeakReference<>(null);
     private int layer;
     private LayerMode layerMode = LayerMode.CURRENT_LAYER;
     private int rangeSize = 3;
@@ -130,7 +133,13 @@ public final class SchematicState {
     }
 
     public void setSchematic(Schematic next, LayerStats nextStats) {
+        setSchematic(next, nextStats, null);
+    }
+
+    /** {@code nextLayout} may be null or for another schematic; it is then built on first use. */
+    public void setSchematic(Schematic next, LayerStats nextStats, SchematicDiff.Layout nextLayout) {
         schematic = next;
+        layout = nextLayout != null && nextLayout.schematic() == next ? nextLayout : null;
         stats = next == null ? null : (nextStats != null ? nextStats : LayerStats.compute(next));
         layer = 0;
         diff = null;
@@ -210,9 +219,10 @@ public final class SchematicState {
     /** The diff for the current placement in the current level, rebuilt when either changes. */
     public SchematicDiff diff(Level level) {
         if (!isPlaced() || level == null) return null;
-        if (diff == null || diffLevel != level) {
-            diff = new SchematicDiff(schematic, placement);
-            diffLevel = level;
+        if (diff == null || diffLevel.get() != level) {
+            if (layout == null || layout.schematic() != schematic) layout = SchematicDiff.Layout.of(schematic);
+            diff = new SchematicDiff(layout, placement);
+            diffLevel = new WeakReference<>(level);
         }
         return diff;
     }
