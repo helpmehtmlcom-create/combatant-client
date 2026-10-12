@@ -253,4 +253,24 @@ class WalkPathfinderGridTest {
         assertTrue(p90 < budget * 2, "p90 slice " + p90 / 1000 + " us over " + sorted.length + " slices");
         assertTrue(sorted.length > 1, "the search did need several ticks");
     }
+
+    @Test
+    void openDoorsArePassedStraightThrough() {
+        // A wall with an open door at z = 0: the route goes through the door cell, entering and leaving it
+        // straight, and no smoothed line cuts across the door leaf.
+        GridWorld world = new GridWorld().fill(3, 0, -6, 3, 2, 6, WalkTerrain.SOLID)
+                .set(3, 0, 0, WalkTerrain.NARROW).set(3, 1, 0, WalkTerrain.NARROW)
+                .fill(-3, -1, -7, 9, 4, -7, WalkTerrain.UNKNOWN).fill(-3, -1, 7, 9, 4, 7, WalkTerrain.UNKNOWN);
+        long[] path = route(world, pack(0, 0, 2), pack(6, 0, -2), 1);
+        assertNotNull(path);
+        int door = -1;
+        for (int i = 0; i < path.length; i++) if (path[i] == pack(3, 0, 0)) door = i;
+        assertTrue(door > 0, Arrays.toString(path));
+        assertEquals(pack(2, 0, 0), path[door - 1]);
+        assertEquals(pack(4, 0, 0), path[door + 1]);
+        long[] smooth = PathSmoother.smooth(world, path, 1);
+        boolean kept = false;
+        for (long cell : smooth) kept |= cell == pack(3, 0, 0);
+        assertTrue(kept, "the door cell stays a waypoint");
+    }
 }

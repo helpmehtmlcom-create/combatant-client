@@ -88,6 +88,7 @@ public final class WalkPathfinder {
             int nx = x + ax + bx;
             int nz = z + az + bz;
             if (!terrain.standable(nx, y, nz) || Math.abs(terrain.floorOffset(nx, y, nz) - here) > STEP_HEIGHT) continue;
+            if (feet == WalkTerrain.NARROW || terrain.cell(nx, y, nz) == WalkTerrain.NARROW) continue;
             // The body sweeps a corner of both side cells: they must be free, and not a hole to slip into.
             if (cornerClear(terrain, x + ax, y, z + az, drop) && cornerClear(terrain, x + bx, y, z + bz, drop)) {
                 sink.accept(nx, y, nz, DIAGONAL_COST);
@@ -129,7 +130,9 @@ public final class WalkPathfinder {
     /** A side cell a diagonal step clips: body room, and either a floor or a harmless drop below it. */
     private static boolean cornerClear(WalkTerrain terrain, int x, int y, int z, int maxDrop) {
         byte feet = terrain.cell(x, y, z);
-        if (!WalkTerrain.passable(feet) || feet == WalkTerrain.WEB || !terrain.passable(x, y + 1, z)) return false;
+        if (!WalkTerrain.passable(feet) || feet == WalkTerrain.WEB || feet == WalkTerrain.NARROW) return false;
+        byte head = terrain.cell(x, y + 1, z);
+        if (!WalkTerrain.passable(head) || head == WalkTerrain.NARROW) return false;
         if (feet == WalkTerrain.RAISED) return terrain.passable(x, y + 2, z);
         return terrain.standable(x, y, z) || !pit(terrain, x, y - 1, z, maxDrop);
     }
