@@ -121,7 +121,9 @@ public final class SchematicBuilder extends Module {
         WALKING,
         PILLARING,
         CLEARING,
-        DONE
+        DONE,
+        /** Nothing left the builder can do, but some cells are wrong or missing (listed under Problems). */
+        DONE_INEXACT
     }
 
     private static final Set<String> DEFAULT_HELPER_BLOCKS =
@@ -432,7 +434,7 @@ public final class SchematicBuilder extends Module {
 
     /** Nothing to click from here: let the mover walk, climb or clear up, and report what it is doing. */
     private Pending move(LocalPlayer player) {
-        if (status == Status.DONE) {
+        if (status == Status.DONE || status == Status.DONE_INEXACT) {
             if (removeHelpers.get() && mover.hasHelpers() && mover.tickClear(player, effectiveRange())) {
                 status = Status.CLEARING;
             } else {
@@ -867,10 +869,17 @@ public final class SchematicBuilder extends Module {
             if (layer >= top) {
                 // Power and cells hanging on higher layers were left behind on the way up; come back for them.
                 if (BuildSafety.backlogOpen(diff, top + 1)) return top;
-                status = Status.DONE;
+                // Wrong or missing cells left behind (approximate facings, states clicks cannot fix, cells nobody
+                // could reach) are not a finished build: say so instead of reporting it exact.
+                int inexact = inexactCells(diff);
+                status = inexact > 0 ? Status.DONE_INEXACT : Status.DONE;
                 if (completedLayerNotified != Integer.MAX_VALUE) {
                     completedLayerNotified = Integer.MAX_VALUE;
-                    Notifier.success(I18n.get("module.schematicbuilder.notify.done"));
+                    if (inexact > 0) {
+                        Notifier.warning(I18n.get("module.schematicbuilder.notify.done_inexact", inexact));
+                    } else {
+                        Notifier.success(I18n.get("module.schematicbuilder.notify.done"));
+                    }
                     flagUnadjusted(diff);
                 }
                 return -1;
@@ -907,6 +916,12 @@ public final class SchematicBuilder extends Module {
             if (BuildSafety.open(diff.status(cell)) && !state.flagged(diff.worldPos(cell, scratch))) return false;
         }
         return true;
+    }
+
+    private static int inexactCells(SchematicDiff diff) {
+        int count = 0;
+        for (int y = 0, layers = diff.schematic().sizeY(); y < layers; y++) count += diff.wrong(y) + diff.missing(y);
+        return count;
     }
 
     /** Blocks still waiting for a delay, mode, note or lever click when the build is done were out of reach. */
