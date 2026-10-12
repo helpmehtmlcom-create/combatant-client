@@ -7,6 +7,7 @@
 
 package combatant.client.features.module.modules.player.schematic;
 
+import combatant.client.mixins.accessors.BlockItemInvoker;
 import combatant.client.util.aiming.data.Rotation;
 import combatant.client.util.schematic.RedstoneRules;
 import combatant.client.util.schematic.StateAdjustments;
@@ -71,6 +72,8 @@ final class BuildPlanner {
     // Pistons, observers, droppers and dispensers face along the nearest axis of the look: when the coarse
     // points give the wrong axis, points near the face edges tilt the look far enough to change it.
     private static final double[] FINE_OFFSETS = {-0.44, -0.15, 0.15, 0.44};
+    /** Degrees a planned look may drift and still give the same facing; matches the builder's check at click time. */
+    static final float LOOK_MARGIN = 2.0f;
 
     private BuildPlanner() {
     }
@@ -92,7 +95,7 @@ final class BuildPlanner {
         for (int pass = 0; pass < 2; pass++) {
             boolean fine = pass == 1;
             // The fine pass only helps blocks whose facing follows the look, and only when nothing exact came up.
-            if (fine && (search.best == null || search.best.exact || RedstoneRules.requiredLook(desired) == null)) break;
+            if (fine && (search.best == null || search.best.exact || !RedstoneRules.lookDecides(desired))) break;
             for (Direction toSupport : Direction.values()) {
                 BlockPos support = target.relative(toSupport);
                 BlockState supportState = level.getBlockState(support);
@@ -113,6 +116,7 @@ final class BuildPlanner {
         private final ItemStack stack;
         private final double rangeSq;
         private final boolean aimAtHit;
+        private final boolean lookDecides;
         private Plan best;
 
         Search(LocalPlayer player, Level level, BlockPos target, BlockState desired, ItemStack stack, double rangeSq,
@@ -124,6 +128,19 @@ final class BuildPlanner {
             this.stack = stack;
             this.rangeSq = rangeSq;
             this.aimAtHit = aimAtHit;
+            this.lookDecides = RedstoneRules.lookDecides(desired);
+        }
+
+        /** A look a couple of degrees off still gives the same facing: the click survives rotation rounding. */
+        private boolean steady(BlockPos support, Direction face, Vec3 point, Rotation rotation) {
+            float[][] nudges = {{LOOK_MARGIN, 0f}, {-LOOK_MARGIN, 0f}, {0f, LOOK_MARGIN}, {0f, -LOOK_MARGIN}};
+            for (float[] nudge : nudges) {
+                Rotation nudged = new Rotation(rotation.yaw() + nudge[0],
+                        Math.max(-90.0f, Math.min(90.0f, rotation.pitch() + nudge[1])));
+                BlockState result = simulate(player, level, stack, target, support, face, point, nudged);
+                if (result == null || !exact(result, desired)) return false;
+            }
+            return true;
         }
 
         void face(BlockPos support, Direction face, Vec3 eyes, boolean sneak, boolean fine) {
@@ -145,7 +162,8 @@ final class BuildPlanner {
             Rotation rotation = Rotation.lookingAt(point, eyes);
             BlockState result = simulate(player, level, stack, target, support, face, point, aimAtHit ? rotation : null);
             if (result == null || result.getBlock() != desired.getBlock()) return;
-            Plan candidate = new Plan(target, support, face, point, rotation, exact(result, desired), distanceSq, sneak);
+            boolean exact = exact(result, desired) && (!aimAtHit || !lookDecides || steady(support, face, point, rotation));
+            Plan candidate = new Plan(target, support, face, point, rotation, exact, distanceSq, sneak);
             if (!better(candidate, best)) return;
             BlockHitResult hit = trace(player, eyes, rotation, Math.sqrt(distanceSq) + 0.5);
             if (hit == null || !hit.getBlockPos().equals(support) || hit.getDirection() != face) return;
@@ -228,8 +246,8 @@ final class BuildPlanner {
             BlockPlaceContext context = new BlockPlaceContext(player, InteractionHand.MAIN_HAND, stack,
                     new BlockHitResult(hit, face, support, false));
             if (!context.canPlace() || !context.getClickedPos().equals(target)) return null;
-            Block block = blockItem.getBlock();
-            BlockState state = block.getStateForPlacement(context);
+            // The item's rule, not the block's: a torch item turns into a wall torch when the look says so.
+            BlockState state = ((BlockItemInvoker) blockItem).combatant$getPlacementState(context);
             if (state == null || !state.canSurvive(level, target)) return null;
             if (!level.isUnobstructed(state, target, CollisionContext.placementContext(player))) return null;
             return state;

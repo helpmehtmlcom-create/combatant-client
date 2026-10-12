@@ -56,6 +56,7 @@ import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -89,7 +90,7 @@ public final class SchematicBuilder extends Module {
     private static final int SHORTFALL_INTERVAL = 20;
     private static final int MISSING_NOTIFY_INTERVAL = 200;
     /** How long a piston or observer that only comes out facing wrong from here waits for the walker to find a better spot. */
-    private static final int APPROXIMATE_PATIENCE_TICKS = 160;
+    private static final int APPROXIMATE_PATIENCE_TICKS = 400;
     /** Times a cell that would fire on placement is put back before it goes in anyway (with a warning). */
     private static final int HAZARD_DEFER_LIMIT = 3;
     /** Nothing placed for this long and nothing left to walk to: the next band opens early. */
@@ -168,6 +169,8 @@ public final class SchematicBuilder extends Module {
     private final Map<Long, Integer> approximateSince = new HashMap<>();
     /** The look direction such a target needs; the walker only counts it from spots that give it. */
     private final Map<Long, Direction> lookWanted = new HashMap<>();
+    /** Of those, the ones where only the yaw counts (repeaters, comparators, floor levers). */
+    private final Set<Long> yawOnly = new HashSet<>();
     private final Map<Long, Integer> hazardDefers = new HashMap<>();
     private final Map<Long, Integer> adjustClicks = new HashMap<>();
     private final long[] gateScratch = new long[1];
@@ -227,6 +230,7 @@ public final class SchematicBuilder extends Module {
         safety.reset();
         approximateSince.clear();
         lookWanted.clear();
+        yawOnly.clear();
         hazardDefers.clear();
         adjustClicks.clear();
         lastPlaceTick = ticks;
@@ -317,7 +321,10 @@ public final class SchematicBuilder extends Module {
     private void checkGateStall(LocalPlayer player) {
         SchematicDiff diff = state.currentDiff();
         if (diff == null || !safety.gated(diff) || ticks - lastPlaceTick < GATE_STALL_TICKS) return;
-        if (pending != null || walkTargets(player, gateScratch) > 0) return;
+        // Walking or climbing towards the missing cells is progress; standing with nothing to do is not. Cells
+        // still worth walking to hold the gate four times as long (a pillar can take a few tries).
+        if (pending != null || autoWalk.get() && mover.mode() != BuildMover.Mode.IDLE) return;
+        if (ticks - lastPlaceTick < GATE_STALL_TICKS * 4 && walkTargets(player, gateScratch) > 0) return;
         int band = safety.openBand(diff);
         flagOpenCells(diff, band);
         safety.force(band + 1);
@@ -519,7 +526,10 @@ public final class SchematicBuilder extends Module {
         // The ray reaches the planned face before the rotation settles on the planned point; clicking then puts
         // a stair or slab in the wrong half. Wait for the exact click, but not past half the plan timeout. A
         // piston or observer facing the wrong way is worse than a late one: it waits for the plan timeout.
-        boolean lookSensitive = RedstoneRules.requiredLook(work.expected) != null;
+        boolean lookSensitive = RedstoneRules.lookDecides(work.expected);
+        if (exact && lookSensitive && facingRotation != null) {
+            exact = robustFacing(player, stack, plan, hit, facingRotation, work.expected);
+        }
         if (!exact && plan.exact() && (pendingAge < EXACT_WAIT_TICKS || lookSensitive)) {
             exactWaitTicks++;
             return false;
@@ -531,8 +541,8 @@ public final class SchematicBuilder extends Module {
         }
 
         selectSlot(work.hotbarSlot);
-        InteractionResult result = mc.gameMode.useItemOn(player, InteractionHand.MAIN_HAND,
-                new BlockHitResult(hit.getLocation(), plan.face(), plan.support(), false));
+        InteractionResult result = useWithRotation(player, new BlockHitResult(hit.getLocation(), plan.face(),
+                plan.support(), false), facingRotation);
         if (result != null && result.consumesAction()) {
             player.swing(InteractionHand.MAIN_HAND);
             placed++;
@@ -543,10 +553,54 @@ public final class SchematicBuilder extends Module {
             }
             approximateSince.remove(plan.target().asLong());
             lookWanted.remove(plan.target().asLong());
+            yawOnly.remove(plan.target().asLong());
             mover.onPlaced();
         }
         retryAfter.put(plan.target().asLong(), ticks + RECENT_PLACE_TICKS);
         cooldown = nextDelay();
+        return true;
+    }
+
+    /**
+     * The click with the client's own prediction made under the rotation the server will use. Predicting under
+     * the camera's look put a piston or observer down facing the camera way until the server's correction came
+     * back, and a correction lost to the prediction's block-change sequence left it that way for good.
+     */
+    private InteractionResult useWithRotation(LocalPlayer player, BlockHitResult hit, Rotation rotation) {
+        if (rotation == null) return mc.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hit);
+        float yaw = player.getYRot();
+        float pitch = player.getXRot();
+        try {
+            player.setYRot(rotation.yaw());
+            player.setXRot(rotation.pitch());
+            return mc.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hit);
+        } finally {
+            player.setYRot(yaw);
+            player.setXRot(pitch);
+        }
+    }
+
+    /**
+     * Which of the two rotations the server reads the facing from depends on packet order, and a look close to
+     * the diagonal flips axis on the smallest rounding: a piston or observer only goes out once both rotations,
+     * and both nudged a couple of degrees, give the wanted facing.
+     */
+    private boolean robustFacing(LocalPlayer player, ItemStack stack, BuildPlanner.Plan plan, BlockHitResult hit,
+                                 Rotation server, BlockState expected) {
+        Rotation current = RotationManager.INSTANCE.getCurrentRotation();
+        Rotation[] checks = {
+                current,
+                new Rotation(server.yaw() + BuildPlanner.LOOK_MARGIN, server.pitch()),
+                new Rotation(server.yaw() - BuildPlanner.LOOK_MARGIN, server.pitch()),
+                new Rotation(server.yaw(), Math.min(90.0f, server.pitch() + BuildPlanner.LOOK_MARGIN)),
+                new Rotation(server.yaw(), Math.max(-90.0f, server.pitch() - BuildPlanner.LOOK_MARGIN))
+        };
+        for (Rotation rotation : checks) {
+            if (rotation == null) return false;
+            BlockState result = BuildPlanner.simulate(player, mc.level, stack, plan.target(), plan.support(),
+                    plan.face(), hit.getLocation(), rotation);
+            if (result == null || !BuildPlanner.exact(result, expected)) return false;
+        }
         return true;
     }
 
@@ -629,6 +683,12 @@ public final class SchematicBuilder extends Module {
             BlockState expected = diff.expectedState(cell);
             Item item = SchematicMaterials.itemFor(expected);
             int hotbar = hotbarSlotFor(player, item);
+            BlockPos target = diff.worldPos(cell, scratch).immutable();
+            // Plan before restocking: swapping in the item for a cell that cannot be clicked from here makes the
+            // next candidate swap its own item back over it, every tick, and nothing gets placed.
+            ItemStack stack = hotbar >= 0 ? player.getInventory().getItem(hotbar) : new ItemStack(item);
+            BuildPlanner.Plan plan = BuildPlanner.plan(player, mc.level, target, expected, stack, reach, aim);
+            if (plan == null || !acceptPlan(diff, plan, expected)) continue;
             if (hotbar < 0) {
                 if (restock.get() && restockFromInventory(player, item)) {
                     status = Status.WORKING;
@@ -636,10 +696,6 @@ public final class SchematicBuilder extends Module {
                 }
                 continue;
             }
-            BlockPos target = diff.worldPos(cell, scratch).immutable();
-            ItemStack stack = player.getInventory().getItem(hotbar);
-            BuildPlanner.Plan plan = BuildPlanner.plan(player, mc.level, target, expected, stack, reach, aim);
-            if (plan == null || !acceptPlan(diff, plan, expected)) continue;
             return new Pending(plan, expected, item, hotbar, Kind.PLACE);
         }
         status = Status.OUT_OF_REACH;
@@ -655,11 +711,16 @@ public final class SchematicBuilder extends Module {
         long key = target.asLong();
         if (!plan.exact()) {
             Direction look = RedstoneRules.requiredLook(expected);
+            Direction yaw = RedstoneRules.requiredYaw(expected);
             int since = approximateSince.computeIfAbsent(key, ignored -> ticks);
-            if (look != null && autoWalk.get() && ticks - since < APPROXIMATE_PATIENCE_TICKS) {
-                lookWanted.put(key, look);
+            if ((look != null || yaw != null) && autoWalk.get() && ticks - since < APPROXIMATE_PATIENCE_TICKS) {
+                lookWanted.put(key, look != null ? look : yaw);
+                if (look == null) yawOnly.add(key);
                 return false;
             }
+            // Out of patience: the walker stops looking for a better spot and the approximate click goes out.
+            lookWanted.remove(key);
+            yawOnly.remove(key);
             if (approximate.get() == ApproximateMode.SKIP) {
                 state.flag(target, expected, SchematicAttention.Reason.APPROXIMATE);
                 retryAfter.put(key, ticks + RETRY_AFTER_TICKS);
@@ -690,7 +751,7 @@ public final class SchematicBuilder extends Module {
         double reach = effectiveRange();
         Vec3 eyes = player.getEyePosition();
         double prefilter = (reach + 0.87) * (reach + 0.87);
-        boolean allPlaced = diff.openTotal() == 0;
+        boolean allPlaced = diff.openTotal() == 0 || ticks % GATE_CHECK_INTERVAL == 0 && nothingElseToPlace(diff);
         for (int y = 0; y <= high && y < state.layerCount(); y++) {
             if (diff.wrong(y) == 0) continue;
             for (int cell = diff.layerStart(y), end = diff.layerEnd(y); cell < end; cell++) {
@@ -789,6 +850,26 @@ public final class SchematicBuilder extends Module {
         return layer;
     }
 
+    /**
+     * Climbing before a layer protects the step onto it from being walled off by the layer's own blocks; a layer
+     * left with only torches, dust or levers to place walls nothing off and is built from where the player is.
+     */
+    private static boolean hasOpenSupport(SchematicDiff diff, int y) {
+        for (int cell = diff.layerStart(y), end = diff.layerEnd(y); cell < end; cell++) {
+            if (BuildSafety.open(diff.status(cell)) && diff.order().order(cell) < RedstoneRules.ATTACHED) return true;
+        }
+        return false;
+    }
+
+    /** Whether every open cell is one the builder already gave up on (listed in the menu). */
+    private boolean nothingElseToPlace(SchematicDiff diff) {
+        if (diff.openTotal() == 0) return true;
+        for (int cell = 0, count = diff.cellCount(); cell < count; cell++) {
+            if (BuildSafety.open(diff.status(cell)) && !state.flagged(diff.worldPos(cell, scratch))) return false;
+        }
+        return true;
+    }
+
     /** Blocks still waiting for a delay, mode, note or lever click when the build is done were out of reach. */
     private void flagUnadjusted(SchematicDiff diff) {
         for (int cell = 0, count = diff.cellCount(); cell < count; cell++) {
@@ -804,7 +885,8 @@ public final class SchematicBuilder extends Module {
 
     private int collectCandidates(LocalPlayer player, SchematicDiff diff, int low, int high, int openBand) {
         missingThisTick = false;
-        if (autoWalk.get() && player.onGround() && mover.climbBeforePlacing(player, state.placement().worldY(low))) return 0;
+        if (autoWalk.get() && player.onGround() && hasOpenSupport(diff, low)
+                && mover.climbBeforePlacing(player, state.placement().worldY(low))) return 0;
         Vec3 eyes = player.getEyePosition();
         Rotation facing = RotationManager.INSTANCE.getCurrentRotation();
         if (facing == null) facing = new Rotation(player.getYRot(), player.getXRot());
@@ -1032,13 +1114,14 @@ public final class SchematicBuilder extends Module {
         @Override
         public boolean lookAllows(long target, double eyeX, double eyeY, double eyeZ) {
             if (lookWanted.isEmpty()) return true;
-            Direction look = lookWanted.get(BlockPos.asLong(WalkTerrain.unpackX(target), WalkTerrain.unpackY(target),
-                    WalkTerrain.unpackZ(target)));
+            long key = BlockPos.asLong(WalkTerrain.unpackX(target), WalkTerrain.unpackY(target), WalkTerrain.unpackZ(target));
+            Direction look = lookWanted.get(key);
             if (look == null) return true;
             double dx = WalkTerrain.unpackX(target) + 0.5 - eyeX;
             double dy = WalkTerrain.unpackY(target) + 0.5 - eyeY;
             double dz = WalkTerrain.unpackZ(target) + 0.5 - eyeZ;
-            return dominantLook(dx, dy, dz, look);
+            // Only the yaw decides a repeater: the height of the eyes does not matter.
+            return dominantLook(dx, yawOnly.contains(key) ? 0.0 : dy, dz, look);
         }
     }
 
