@@ -13,9 +13,12 @@ import combatant.client.features.module.modules.movement.holesnap.Steering;
 import combatant.client.util.aiming.RotationManager;
 import combatant.client.util.aiming.data.Rotation;
 import combatant.client.util.player.inventory.InventorySwap;
+import combatant.client.util.schematic.walk.CellSet;
 import combatant.client.util.schematic.walk.PillarPlanner;
 import combatant.client.util.schematic.walk.ReachModel;
+import combatant.client.util.schematic.walk.RouteFollower;
 import combatant.client.util.schematic.walk.StandingSpotChooser;
+import combatant.client.util.schematic.walk.TerrainCache;
 import combatant.client.util.schematic.walk.WalkPathfinder;
 import combatant.client.util.schematic.walk.WalkTerrain;
 import net.minecraft.client.Minecraft;
@@ -25,6 +28,8 @@ import net.minecraft.client.resources.language.I18n;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.BlockItem;
@@ -36,14 +41,17 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
+import java.util.Arrays;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -52,12 +60,17 @@ import java.util.Set;
 
 /**
  * Moves the player for {@link SchematicBuilder} with nothing but the movement keys: walks to a spot from which
- * the next missing cells can be clicked, jump-places a support column when no spot reaches them, and breaks those
- * support blocks again once the build is done.
+ * the next missing cells can be clicked, jump-places a support column when no spot reaches them (or when that is
+ * much cheaper than the walk), and breaks those support blocks again once the build is done.
  *
  * <p>Everything the server sees is ordinary input: keys pressed through {@link MovementInputEvent}, one jump at a
- * time from the ground, no sprint, no velocity writes. Placement and mining clicks go out from the builder's
- * pre-tick hook, before the movement packet, the same order vanilla uses.</p>
+ * time from the ground, sprint only through the sprint key on long level stretches, never while a click is due, no
+ * velocity writes. Placement and mining clicks go out from the builder's pre-tick hook, before the movement packet,
+ * the same order vanilla uses.</p>
+ *
+ * <p>Planning reads the world through a {@link TerrainCache} and runs in slices: a flood, the spot scoring and a
+ * pillar search each stop when the tick's budget ({@link #PLAN_BUDGET_NANOS}) is spent and carry on next tick, so
+ * a plan never costs a frame spike.</p>
  */
 final class BuildMover {
 
@@ -96,8 +109,17 @@ final class BuildMover {
     record HelperClick(BuildPlanner.Plan plan, int hotbarSlot, BlockState expected) {
     }
 
+    private enum Stage {
+        NONE,
+        FLOOD,
+        SPOTS,
+        PILLAR
+    }
+
     private static final int MAX_TARGETS = 1024;
     private static final double FLOOD_COST = 72.0;
+    /** A first flood only reaches this far past the targets; the full one runs when it finds nothing. */
+    private static final double FLOOD_SLACK = 20.0;
     private static final int FLOOD_NODES = 8000;
     private static final int PATH_NODES = 8000;
     private static final int MAX_DROP = 1;
@@ -106,34 +128,58 @@ final class BuildMover {
     private static final int MAX_PILLAR = 8;
     /** Walk planning works with a slightly shorter reach than clicks do: the player never stops dead centre. */
     private static final double PLAN_MARGIN = 0.35;
-    private static final double ARRIVE_DISTANCE = 0.3;
-    private static final double PASS_DISTANCE = 0.45;
-    /** How many route cells ahead the walker may aim at directly when the straight line there is walkable. */
-    private static final int LOOKAHEAD = 5;
-    /** Half the player's width plus a margin: the straight line is checked this far to both sides. */
-    private static final double BODY_HALF_WIDTH = 0.32;
     private static final double CENTER_DISTANCE = 0.2;
-    private static final int STALL_REPLAN_TICKS = 20;
     private static final int REPLAN_WAIT_TICKS = 40;
     private static final int ABORT_COOLDOWN_TICKS = 100;
     private static final int ARRIVAL_GRACE_TICKS = 3;
     private static final int MAX_PILLAR_RETRIES = 4;
     private static final float PILLAR_PITCH_READY = 80.0f;
+    /** Planning work allowed per tick; the rest waits for the next tick. */
+    static final long PLAN_BUDGET_NANOS = 1_000_000L;
+    /** The cache is rebuilt from the world this often, catching block changes nobody reported. */
+    private static final int CACHE_REFRESH_TICKS = 200;
+    private static final int CACHE_MAX_SECTIONS = 4096;
+    /** Spots further than this (route cost) are weighed against a pillar near the targets. */
+    private static final double PILLAR_COMPARE_COST = 24.0;
+    /** A pillar has to beat the walk by this factor: its blocks still need breaking again afterwards. */
+    private static final double PILLAR_ADVANTAGE = 1.5;
 
     private final Minecraft mc;
     private final Host host;
     private final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+    private final BlockPos.MutableBlockPos probe = new BlockPos.MutableBlockPos();
     private final long[] targets = new long[MAX_TARGETS];
-    private final Set<Long> rejected = new HashSet<>();
+    private int targetCount;
+    /** Targets of the previous plan: those missing from the next one got their block and must be read again. */
+    private long[] previousTargets = new long[0];
+    private final CellSet reserved = new CellSet();
+    private final CellSet rejected = new CellSet();
     private final Map<Long, Block> helpers = new LinkedHashMap<>();
+    /** The world as the planner sees it: one lookup per cell, shared by every search until refreshed. */
+    private final TerrainCache cache = new TerrainCache(new WorldSections());
+    /** Classes of block states whose collision shape never depends on the position: most of them. */
+    private final Map<BlockState, Byte> stateClasses = new IdentityHashMap<>();
+    /** The world right now, for the few cells checked every tick. */
+    private final WalkTerrain live = this::classifyLive;
+    private final WalkPathfinder.Search floodSearch = new WalkPathfinder.Search(cache);
+    private final WalkPathfinder.Search routeSearch = new WalkPathfinder.Search(cache);
+    private final RouteFollower follower = new RouteFollower();
+    private ClientLevel cacheLevel;
+    private int cacheAge;
 
     private Mode mode = Mode.IDLE;
-    private List<Long> route;
-    private int routeIndex;
-    private int steerIndex;
-    /** Progress stalled: line up with the centre of the current cell before heading on (frees a body caught on a corner). */
-    private boolean recenter;
-    private static final int RECENTER_STALL_TICKS = 6;
+    private Stage stage = Stage.NONE;
+    private StandingSpotChooser.Mode planMode;
+    private double planReach;
+    private double floodBound;
+    private long planStart;
+    private WalkPathfinder.Flood flood;
+    private StandingSpotChooser.Scorer scorer;
+    private StandingSpotChooser.Spot found;
+    private PillarPlanner.Planner pillarPlanner;
+    private boolean replanPending;
+    private int routeDrop = MAX_DROP;
+
     private long goal;
     private boolean hasGoal;
     private StandingSpotChooser.Spot spot;
@@ -143,9 +189,6 @@ final class BuildMover {
     private boolean jumpThisTick;
     private boolean controlling;
     private boolean holdStill;
-    private double bestWaypointDistance;
-    private int stallTicks;
-    private int noProgressTicks;
     private int replanWait;
     private int abortCooldown;
     private int arrivalGrace;
@@ -161,6 +204,11 @@ final class BuildMover {
     private int helpersRemoved;
     private int aborts;
     private int pillarJumps;
+    private int replans;
+    /** Ticks that spent part of their budget on a plan; more than one per plan means it was sliced. */
+    private int planTicks;
+    /** Longest single tick spent in the mover's planning and route following, for the smoke report. */
+    private long cpuMaxNanos;
     /** The layer (world y) for which no standing spot level with it reaches anything: build it from below. */
     private int lowGroundLayer = Integer.MIN_VALUE;
 
@@ -227,7 +275,8 @@ final class BuildMover {
     void reset() {
         stopMining();
         mode = Mode.IDLE;
-        route = null;
+        follower.stop();
+        cancelPlan();
         hasGoal = false;
         spot = null;
         pillar = null;
@@ -240,6 +289,9 @@ final class BuildMover {
         rejected.clear();
         warnedUnreachable = false;
         lowGroundLayer = Integer.MIN_VALUE;
+        cache.clear();
+        cacheAge = 0;
+        previousTargets = new long[0];
     }
 
     /** Module switched off: everything goes, the counters too. */
@@ -253,6 +305,9 @@ final class BuildMover {
         helpersRemoved = 0;
         aborts = 0;
         pillarJumps = 0;
+        replans = 0;
+        planTicks = 0;
+        cpuMaxNanos = 0L;
         lastPosition = null;
     }
 
@@ -275,11 +330,14 @@ final class BuildMover {
     void onPlaced() {
         rejected.clear();
         warnedUnreachable = false;
+        // A plan half way through was scored against the targets before this block: start it again when needed.
+        if (mode == Mode.IDLE && stage != Stage.NONE) cancelPlan();
     }
 
     void onHelperPlaced(BlockPos pos, Block block) {
         helpers.put(pos.asLong(), block);
         pillarBlocks++;
+        cache.invalidateAround(pos.getX(), pos.getY(), pos.getZ());
     }
 
     void trackDistance(LocalPlayer player) {
@@ -298,19 +356,31 @@ final class BuildMover {
      * click when one is due this tick.
      */
     HelperClick tickBuild(LocalPlayer player) {
+        long started = System.nanoTime();
+        HelperClick click = tickBuildTimed(player, started + PLAN_BUDGET_NANOS);
+        cpuMaxNanos = Math.max(cpuMaxNanos, System.nanoTime() - started);
+        return click;
+    }
+
+    private HelperClick tickBuildTimed(LocalPlayer player, long deadline) {
         controlling = true;
         holdStill = false;
         jumpThisTick = false;
-        if (mode == Mode.CLEARING) mode = Mode.IDLE;
+        refreshCache();
+        if (mode == Mode.CLEARING) {
+            mode = Mode.IDLE;
+            follower.stop();
+            cancelPlan();
+        }
         if (abortCooldown > 0) {
             abortCooldown--;
             holdStill = true;
             return null;
         }
-        if (mode == Mode.PILLARING) return tickPillar(player);
+        if (mode == Mode.PILLARING) return tickPillar(player, deadline);
         if (mode == Mode.WALKING) {
-            if (followRoute(player)) return null;
-            mode = Mode.IDLE;
+            if (followRoute(player, deadline)) return null;
+            if (mode == Mode.WALKING) mode = Mode.IDLE;
             arrivalGrace = ARRIVAL_GRACE_TICKS;
         }
         holdStill = true;
@@ -318,51 +388,126 @@ final class BuildMover {
             arrivalGrace--;
             return null;
         }
-        if (hasGoal && feetKey(player) == goal) {
-            // Arrived and still nothing to place: this spot only looked good on the grid.
-            rejected.add(goal);
-            hasGoal = false;
+        if (stage == Stage.NONE) {
+            if (hasGoal && feetKey(player) == goal) {
+                // Arrived and still nothing to place: this spot only looked good on the grid.
+                rejected.add(goal);
+                hasGoal = false;
+            }
+            if (replanWait > 0) {
+                replanWait--;
+                return null;
+            }
+            if (!player.onGround() || !startPlan(player, StandingSpotChooser.Mode.PLACE, host.reach() - PLAN_MARGIN)) return null;
         }
-        if (replanWait > 0) {
-            replanWait--;
-            return null;
-        }
-        if (!player.onGround()) return null;
-        planBuild(player);
+        advancePlan(player, deadline);
         return null;
     }
 
-    private void planBuild(LocalPlayer player) {
-        int count = host.walkTargets(player, targets);
-        if (count <= 0) {
-            replanWait = REPLAN_WAIT_TICKS;
-            return;
-        }
-        WalkTerrain terrain = terrain();
-        long start = feetKey(player);
-        WalkPathfinder.Flood flood = WalkPathfinder.flood(terrain, start, MAX_DROP, FLOOD_COST, FLOOD_NODES);
-        double reach = host.reach() - PLAN_MARGIN;
-        StandingSpotChooser.Spot next = StandingSpotChooser.choose(terrain, flood, targets, count,
-                StandingSpotChooser.Mode.PLACE, reach, spot, rejected::contains);
-        int lowest = Integer.MAX_VALUE;
-        for (int i = 0; i < count; i++) lowest = Math.min(lowest, WalkTerrain.unpackY(targets[i]));
-        if (next == null || next.y() < lowest) lowGroundLayer = lowest;
-        if (next != null) {
-            spot = next;
-            startRoute(flood.pathTo(next.key()), next.key(), Mode.WALKING);
-            return;
-        }
-        if (host.pillarEnabled()) {
-            PillarPlanner.Pillar column = PillarPlanner.plan(terrain, flood, targets, count, reach, MAX_PILLAR,
-                    host::inFootprint, rejected::contains);
-            if (column != null) {
-                pillar = column;
-                pillarRetries = 0;
-                pillarBaseY = Integer.MIN_VALUE;
-                startRoute(flood.pathTo(WalkTerrain.pack(column.x(), column.y(), column.z())),
-                        WalkTerrain.pack(column.x(), column.y(), column.z()), Mode.PILLARING);
-                return;
+    /** Collects the targets and starts a flood from the feet; {@code false} when there is nothing to plan for. */
+    private boolean startPlan(LocalPlayer player, StandingSpotChooser.Mode planFor, double reach) {
+        if (planFor == StandingSpotChooser.Mode.PLACE) {
+            targetCount = host.walkTargets(player, targets);
+            reserved.clear();
+            for (int i = 0; i < targetCount; i++) reserved.add(targets[i]);
+            forgetPlacedTargets();
+        } else {
+            targetCount = 0;
+            for (long key : helpers.keySet()) {
+                if (targetCount == MAX_TARGETS) break;
+                targets[targetCount++] = key;
             }
+            reserved.clear();
+        }
+        if (targetCount <= 0) {
+            replanWait = REPLAN_WAIT_TICKS;
+            return false;
+        }
+        planMode = planFor;
+        planReach = reach;
+        planStart = feetKey(player);
+        floodBound = Math.min(FLOOD_COST, distanceToTargets(planStart) + FLOOD_SLACK);
+        startFlood();
+        return true;
+    }
+
+    private void startFlood() {
+        int drop = planMode == StandingSpotChooser.Mode.PLACE ? MAX_DROP : CLEAR_MAX_DROP;
+        floodSearch.startFlood(planStart, drop, floodBound, FLOOD_NODES, reserved.isEmpty() ? null : reserved);
+        stage = Stage.FLOOD;
+        flood = null;
+        scorer = null;
+        pillarPlanner = null;
+        found = null;
+    }
+
+    /** Cells that were targets last time and are not any more got a block: the cache must read them again. */
+    private void forgetPlacedTargets() {
+        for (long key : previousTargets) {
+            if (!reserved.contains(key)) cache.invalidateAround(WalkTerrain.unpackX(key), WalkTerrain.unpackY(key), WalkTerrain.unpackZ(key));
+        }
+        previousTargets = Arrays.copyOf(targets, targetCount);
+    }
+
+    private void advancePlan(LocalPlayer player, long deadline) {
+        if (stage != Stage.NONE) planTicks++;
+        while (stage != Stage.NONE) {
+            switch (stage) {
+                case FLOOD -> {
+                    if (floodSearch.step(deadline) == WalkPathfinder.Search.RUNNING) return;
+                    flood = floodSearch.flood();
+                    scorer = new StandingSpotChooser.Scorer(cache, flood, targets, targetCount, planMode, planReach, rejected);
+                    stage = Stage.SPOTS;
+                }
+                case SPOTS -> {
+                    if (!scorer.step(deadline)) return;
+                    found = scorer.result(planMode == StandingSpotChooser.Mode.PLACE ? spot : null);
+                    if (found == null && floodBound < FLOOD_COST) {
+                        floodBound = FLOOD_COST;
+                        startFlood();
+                    } else if (planMode == StandingSpotChooser.Mode.PLACE && host.pillarEnabled()
+                            && (found == null || found.cost() > PILLAR_COMPARE_COST)) {
+                        pillarPlanner = new PillarPlanner.Planner(cache, flood, targets, targetCount, planReach, MAX_PILLAR,
+                                host::inFootprint, rejected);
+                        stage = Stage.PILLAR;
+                    } else {
+                        finishPlan(player, null);
+                    }
+                }
+                case PILLAR -> {
+                    if (!pillarPlanner.step(deadline)) return;
+                    finishPlan(player, pillarPlanner.result());
+                }
+                default -> stage = Stage.NONE;
+            }
+            if (System.nanoTime() - deadline > 0) return;
+        }
+    }
+
+    private void finishPlan(LocalPlayer player, PillarPlanner.Pillar column) {
+        stage = Stage.NONE;
+        StandingSpotChooser.Spot next = found;
+        if (planMode == StandingSpotChooser.Mode.BREAK) {
+            finishClearPlan(player, next);
+            return;
+        }
+        int lowest = Integer.MAX_VALUE;
+        for (int i = 0; i < targetCount; i++) lowest = Math.min(lowest, WalkTerrain.unpackY(targets[i]));
+        if (next == null || next.y() < lowest) lowGroundLayer = lowest;
+        boolean pillarWins = column != null
+                && (next == null || PillarPlanner.rate(column) > StandingSpotChooser.rate(next.coverage(), next.cost()) * PILLAR_ADVANTAGE);
+        if (next != null && !pillarWins) {
+            spot = next;
+            startRoute(flood.route(next.key()), next.key(), Mode.WALKING, MAX_DROP);
+            return;
+        }
+        if (column != null) {
+            pillar = column;
+            pillarRetries = 0;
+            pillarBaseY = Integer.MIN_VALUE;
+            long base = WalkTerrain.pack(column.x(), column.y(), column.z());
+            startRoute(flood.route(base), base, Mode.PILLARING, MAX_DROP);
+            return;
         }
         if (!warnedUnreachable) {
             warnedUnreachable = true;
@@ -371,138 +516,110 @@ final class BuildMover {
         replanWait = REPLAN_WAIT_TICKS;
     }
 
-    private void startRoute(List<Long> path, long target, Mode next) {
+    private void cancelPlan() {
+        stage = Stage.NONE;
+        flood = null;
+        scorer = null;
+        pillarPlanner = null;
+        found = null;
+        replanPending = false;
+    }
+
+    private double distanceToTargets(long from) {
+        double best = Double.MAX_VALUE;
+        for (int i = 0; i < targetCount; i++) best = Math.min(best, octile(from, targets[i]));
+        return best == Double.MAX_VALUE ? 0.0 : best;
+    }
+
+    private static double octile(long a, long b) {
+        double dx = Math.abs(WalkTerrain.unpackX(a) - WalkTerrain.unpackX(b));
+        double dz = Math.abs(WalkTerrain.unpackZ(a) - WalkTerrain.unpackZ(b));
+        return Math.max(dx, dz) + 0.4142 * Math.min(dx, dz) + Math.abs(WalkTerrain.unpackY(a) - WalkTerrain.unpackY(b));
+    }
+
+    private void startRoute(long[] path, long target, Mode next, int drop) {
         if (path == null) {
             rejected.add(target);
             return;
         }
-        route = path;
-        recenter = false;
-        // The first cell is where the player already stands.
-        routeIndex = path.size() > 1 ? 1 : 0;
-        steerIndex = routeIndex;
+        routeDrop = drop;
+        follower.start(cache, path, drop);
         goal = target;
         hasGoal = true;
         mode = next;
-        bestWaypointDistance = Double.MAX_VALUE;
-        stallTicks = 0;
-        noProgressTicks = 0;
         routes++;
-        routeCells += path.size() - 1;
+        routeCells += path.length - 1;
     }
 
     // ------------------------------------------------------------------ route following
 
     /** Advances along the route; {@code false} once the last cell is reached (or the route was dropped). */
-    private boolean followRoute(LocalPlayer player) {
-        if (route == null) return false;
+    private boolean followRoute(LocalPlayer player, long deadline) {
+        if (replanPending) return advanceReplan(player, deadline);
+        if (!follower.active()) return false;
         Vec3 pos = player.position();
-        // Passing any of the next few cells counts: cutting a corner skips the cells before it.
-        for (int k = Math.min(route.size() - 1, routeIndex + LOOKAHEAD); k >= routeIndex; k--) {
-            long cell = route.get(k);
-            boolean last = k == route.size() - 1;
-            double distance = horizontalDistance(pos, cell);
-            boolean level = Math.abs(pos.y - WalkTerrain.unpackY(cell)) < 0.6;
-            if (!level || distance > (last ? ARRIVE_DISTANCE : PASS_DISTANCE) || last && !player.onGround()) continue;
-            routeIndex = k + 1;
-            bestWaypointDistance = Double.MAX_VALUE;
-            noProgressTicks = 0;
-            break;
+        Vec3 motion = player.getDeltaMovement();
+        RouteFollower.Action action = follower.tick(live, pos.x, pos.y, pos.z, motion.x, motion.z, player.onGround(),
+                player.horizontalCollision, host.stuckTimeout());
+        switch (action) {
+            case FOLLOW -> {
+                return true;
+            }
+            case REPLAN -> {
+                startReplan(player);
+                return replanPending ? advanceReplan(player, deadline) : follower.active();
+            }
+            case ABORT -> {
+                abort();
+                return false;
+            }
+            default -> {
+                return false;
+            }
         }
-        if (routeIndex >= route.size()) {
-            route = null;
-            return false;
-        }
-        steerIndex = furthestStraight(pos);
-        if (blockedAhead()) {
-            replan(player);
-            return route != null;
-        }
-        double distance = horizontalDistance(pos, route.get(routeIndex));
-        if (recenter && Math.hypot(pos.x - (Math.floor(pos.x) + 0.5), pos.z - (Math.floor(pos.z) + 0.5)) < 0.12) {
-            recenter = false;
-        }
-        if (distance < bestWaypointDistance - 0.05) {
-            bestWaypointDistance = distance;
-            stallTicks = 0;
-        } else if (++stallTicks == RECENTER_STALL_TICKS) {
-            recenter = true;
-        } else if (stallTicks > STALL_REPLAN_TICKS && player.onGround()) {
-            stallTicks = 0;
-            replan(player);
-        }
-        if (++noProgressTicks > host.stuckTimeout()) {
-            abort();
-            return false;
-        }
-        return route != null;
     }
 
-    /**
-     * The furthest route cell within {@link #LOOKAHEAD} on the current level that a straight walk reaches over
-     * walkable cells only, body width included: aiming there instead of at every cell centre smooths the path.
-     */
-    private int furthestStraight(Vec3 pos) {
-        int y = WalkTerrain.unpackY(route.get(routeIndex));
-        if (Math.abs(pos.y - y) > 0.01) return routeIndex;
-        WalkTerrain terrain = terrain();
-        int best = routeIndex;
-        for (int k = routeIndex + 1; k < Math.min(route.size(), routeIndex + LOOKAHEAD + 1); k++) {
-            long cell = route.get(k);
-            if (WalkTerrain.unpackY(cell) != y || !straightWalkable(terrain, pos, cell, y)) break;
-            best = k;
-        }
-        return best;
-    }
-
-    private static boolean straightWalkable(WalkTerrain terrain, Vec3 pos, long cell, int y) {
-        double tx = WalkTerrain.unpackX(cell) + 0.5, tz = WalkTerrain.unpackZ(cell) + 0.5;
-        double dx = tx - pos.x, dz = tz - pos.z;
-        double length = Math.hypot(dx, dz);
-        if (length < 1.0e-3) return true;
-        double px = -dz / length * BODY_HALF_WIDTH, pz = dx / length * BODY_HALF_WIDTH;
-        int steps = (int) Math.ceil(length / 0.2);
-        for (int i = 0; i <= steps; i++) {
-            double t = (double) i / steps;
-            double x = pos.x + dx * t, z = pos.z + dz * t;
-            if (!terrain.standable((int) Math.floor(x + px), y, (int) Math.floor(z + pz))
-                    || !terrain.standable((int) Math.floor(x - px), y, (int) Math.floor(z - pz))) return false;
-        }
-        return true;
-    }
-
-    private boolean blockedAhead() {
-        WalkTerrain terrain = terrain();
-        for (int i = routeIndex; i < Math.min(route.size(), routeIndex + 3); i++) {
-            long cell = route.get(i);
-            if (!terrain.standable(WalkTerrain.unpackX(cell), WalkTerrain.unpackY(cell), WalkTerrain.unpackZ(cell))) return true;
-        }
-        return false;
-    }
-
-    private void replan(LocalPlayer player) {
+    private void startReplan(LocalPlayer player) {
         if (!player.onGround()) return;
-        int drop = mode == Mode.CLEARING ? CLEAR_MAX_DROP : MAX_DROP;
-        List<Long> path = WalkPathfinder.find(terrain(), feetKey(player), goal, drop, PATH_NODES);
+        // Whatever made the route wrong may have changed blocks around the player: read them afresh.
+        Vec3 pos = player.position();
+        int fx = (int) Math.floor(pos.x), fy = feetY(player), fz = (int) Math.floor(pos.z);
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                for (int dy = -2; dy <= 2; dy++) cache.invalidate(fx + dx, fy + dy, fz + dz);
+            }
+        }
+        routeSearch.startPath(feetKey(player), goal, routeDrop, PATH_NODES, reserved.isEmpty() ? null : reserved);
+        replanPending = true;
+        replans++;
+    }
+
+    private boolean advanceReplan(LocalPlayer player, long deadline) {
+        int status = routeSearch.step(deadline);
+        if (status == WalkPathfinder.Search.RUNNING) {
+            holdStill = true;
+            return true;
+        }
+        replanPending = false;
+        long[] path = routeSearch.path();
         if (path == null) {
             rejected.add(goal);
-            route = null;
+            follower.stop();
             hasGoal = false;
             mode = Mode.IDLE;
-            return;
+            return false;
         }
-        route = path;
-        routeIndex = path.size() > 1 ? 1 : 0;
-        steerIndex = routeIndex;
-        bestWaypointDistance = Double.MAX_VALUE;
-        routeCells += path.size() - 1;
+        follower.restart(cache, path);
+        routeCells += path.length - 1;
+        return true;
     }
 
     private void abort() {
         aborts++;
         Notifier.warning(I18n.get("module.schematicbuilder.notify.stuck"));
         if (hasGoal) rejected.add(goal);
-        route = null;
+        follower.stop();
+        cancelPlan();
         hasGoal = false;
         pillar = null;
         mode = Mode.IDLE;
@@ -511,14 +628,14 @@ final class BuildMover {
 
     // ------------------------------------------------------------------ pillar
 
-    private HelperClick tickPillar(LocalPlayer player) {
+    private HelperClick tickPillar(LocalPlayer player, long deadline) {
         PillarPlanner.Pillar column = pillar;
         if (column == null) {
             mode = Mode.IDLE;
             return null;
         }
-        if (route != null && followRoute(player)) return null;
-        if (route != null || mode != Mode.PILLARING) return null;
+        if ((follower.active() || replanPending) && followRoute(player, deadline)) return null;
+        if (follower.active() || mode != Mode.PILLARING) return null;
         int feetY = feetY(player);
         if (feetY >= column.topY() && player.onGround()) {
             finishPillar();
@@ -547,6 +664,13 @@ final class BuildMover {
             return null;
         }
         pillarBaseY = Integer.MIN_VALUE;
+        if (off > 0.5 && live.solid(column.x(), feetY, column.z())) {
+            // A support block went in but the body ended up beside the column, not on it: the column cell is no
+            // longer free to centre in. Leave it; the next plan sees the block as ground like any other.
+            rejected.add(WalkTerrain.pack(column.x(), column.y(), column.z()));
+            finishPillar();
+            return null;
+        }
         Vec3 down = new Vec3(column.x() + 0.5, feetY, column.z() + 0.5);
         Rotation look = Rotation.lookingAt(down, player.getEyePosition());
         host.aim(look);
@@ -623,20 +747,31 @@ final class BuildMover {
 
     /** The build is done: break the support blocks again. {@code false} once there is nothing left to do. */
     boolean tickClear(LocalPlayer player, double reach) {
+        long started = System.nanoTime();
+        boolean busy = tickClearTimed(player, reach, started + PLAN_BUDGET_NANOS);
+        cpuMaxNanos = Math.max(cpuMaxNanos, System.nanoTime() - started);
+        return busy;
+    }
+
+    private boolean tickClearTimed(LocalPlayer player, double reach, long deadline) {
         controlling = true;
         holdStill = true;
         jumpThisTick = false;
+        refreshCache();
         prunePlacedHelpers();
         if (helpers.isEmpty()) {
             stopMining();
             if (mode != Mode.IDLE) Notifier.info(I18n.get("module.schematicbuilder.notify.helpers_removed"));
             mode = Mode.IDLE;
+            follower.stop();
+            cancelPlan();
             controlling = false;
             return false;
         }
         if (mode != Mode.CLEARING) {
             mode = Mode.CLEARING;
-            route = null;
+            follower.stop();
+            cancelPlan();
             hasGoal = false;
             rejected.clear();
         }
@@ -644,17 +779,39 @@ final class BuildMover {
             abortCooldown--;
             return true;
         }
-        if (route != null) {
+        if (follower.active() || replanPending) {
             stopMining();
             holdStill = false;
-            if (followRoute(player)) return true;
+            if (followRoute(player, deadline)) return true;
             holdStill = true;
             mode = Mode.CLEARING;
         }
+        if (stage != Stage.NONE) {
+            advancePlan(player, deadline);
+            return true;
+        }
         if (mineReachable(player, reach)) return true;
         if (!player.onGround()) return true;
-        planClear(player, reach);
+        if (replanWait > 0) {
+            replanWait--;
+            return true;
+        }
+        if (startPlan(player, StandingSpotChooser.Mode.BREAK, reach - PLAN_MARGIN)) advancePlan(player, deadline);
         return true;
+    }
+
+    private void finishClearPlan(LocalPlayer player, StandingSpotChooser.Spot next) {
+        if (next == null) {
+            Notifier.warning(I18n.get("module.schematicbuilder.notify.helpers_left", helpers.size()));
+            helpers.clear();
+            return;
+        }
+        if (next.key() == feetKey(player)) {
+            rejected.add(next.key());
+            replanWait = ARRIVAL_GRACE_TICKS;
+            return;
+        }
+        startRoute(flood.route(next.key()), next.key(), Mode.CLEARING, CLEAR_MAX_DROP);
     }
 
     private void prunePlacedHelpers() {
@@ -666,6 +823,7 @@ final class BuildMover {
             if (!mc.level.isLoaded(cursor)) continue;
             if (mc.level.getBlockState(cursor).getBlock() != entry.getValue()) {
                 it.remove();
+                cache.invalidateAround(cursor.getX(), cursor.getY(), cursor.getZ());
                 if (mode == Mode.CLEARING) helpersRemoved++;
                 if (mining != null && mining.asLong() == key) mining = null;
             }
@@ -673,7 +831,6 @@ final class BuildMover {
     }
 
     private boolean mineReachable(LocalPlayer player, double reach) {
-        WalkTerrain terrain = terrain();
         Vec3 eye = player.getEyePosition();
         long best = 0L;
         int bestFace = -1;
@@ -681,7 +838,7 @@ final class BuildMover {
         for (long key : helpers.keySet()) {
             int x = WalkTerrain.unpackX(key), y = WalkTerrain.unpackY(key), z = WalkTerrain.unpackZ(key);
             if (y <= bestY) continue;
-            int face = ReachModel.breakFace(terrain, eye.x, eye.y, eye.z, x, y, z, reach);
+            int face = ReachModel.breakFace(live, eye.x, eye.y, eye.z, x, y, z, reach);
             if (face < 0) continue;
             best = key;
             bestFace = face;
@@ -733,33 +890,6 @@ final class BuildMover {
         miningFace = null;
     }
 
-    private void planClear(LocalPlayer player, double reach) {
-        if (replanWait > 0) {
-            replanWait--;
-            return;
-        }
-        int count = 0;
-        for (long key : helpers.keySet()) {
-            if (count == MAX_TARGETS) break;
-            targets[count++] = key;
-        }
-        WalkTerrain terrain = terrain();
-        WalkPathfinder.Flood flood = WalkPathfinder.flood(terrain, feetKey(player), CLEAR_MAX_DROP, FLOOD_COST, FLOOD_NODES);
-        StandingSpotChooser.Spot next = StandingSpotChooser.choose(terrain, flood, targets, count,
-                StandingSpotChooser.Mode.BREAK, reach - PLAN_MARGIN, null, rejected::contains);
-        if (next == null) {
-            Notifier.warning(I18n.get("module.schematicbuilder.notify.helpers_left", helpers.size()));
-            helpers.clear();
-            return;
-        }
-        if (next.key() == feetKey(player)) {
-            rejected.add(next.key());
-            replanWait = ARRIVAL_GRACE_TICKS;
-            return;
-        }
-        startRoute(flood.pathTo(next.key()), next.key(), Mode.CLEARING);
-    }
-
     // ------------------------------------------------------------------ input
 
     /** Drives the keys while the mover is in charge; leaves the player's own input alone otherwise. */
@@ -768,22 +898,17 @@ final class BuildMover {
         int keys = 0;
         boolean jump = false;
         boolean descending = false;
-        if (!holdStill && route != null && routeIndex < route.size()) {
-            long cell = route.get(routeIndex);
-            long aim = route.get(Math.max(routeIndex, Math.min(steerIndex, route.size() - 1)));
+        boolean sprint = false;
+        if (!holdStill && follower.active() && !replanPending) {
             Vec3 pos = player.position();
-            double dx = WalkTerrain.unpackX(aim) + 0.5 - pos.x;
-            double dz = WalkTerrain.unpackZ(aim) + 0.5 - pos.z;
-            if (recenter) {
-                dx = Math.floor(pos.x) + 0.5 - pos.x;
-                dz = Math.floor(pos.z) + 0.5 - pos.z;
+            if (!follower.coast()) {
+                keys = keysToward(RotationManager.INSTANCE.getMovementRotation().yaw(), follower.aimX() - pos.x,
+                        follower.aimZ() - pos.z);
             }
-            keys = keysToward(RotationManager.INSTANCE.getMovementRotation().yaw(), dx, dz);
-            int y = WalkTerrain.unpackY(cell);
-            double toCell = Math.hypot(WalkTerrain.unpackX(cell) + 0.5 - pos.x, WalkTerrain.unpackZ(cell) + 0.5 - pos.z);
-            jump = y > pos.y + 0.5 && player.onGround() && toCell < 1.4;
-            descending = y < pos.y - 0.5;
-        } else if (mode == Mode.PILLARING && pillar != null && route == null && player.onGround()) {
+            jump = follower.jump() && player.onGround() || follower.climb();
+            descending = follower.descending();
+            sprint = follower.sprint() && keys == Steering.FORWARD && !jump && canSprint(player);
+        } else if (mode == Mode.PILLARING && pillar != null && !follower.active() && player.onGround()) {
             // Centre on the column before the jump; the pillar is one block wide.
             Vec3 pos = player.position();
             double dx = pillar.x() + 0.5 - pos.x;
@@ -793,15 +918,21 @@ final class BuildMover {
             }
         }
         if (jumpThisTick && player.onGround()) jump = true;
-        if (player.isSprinting()) player.setSprinting(false);
+        if (!sprint && player.isSprinting()) player.setSprinting(false);
         event.setForward((keys & Steering.FORWARD) != 0);
         event.setBackward((keys & Steering.BACKWARD) != 0);
         event.setLeft((keys & Steering.LEFT) != 0);
         event.setRight((keys & Steering.RIGHT) != 0);
         event.setJump(jump);
-        event.setSprint(false);
-        event.setSneak(!descending && player.onGround() && atEdge(player));
+        event.setSprint(sprint);
+        event.setSneak(!descending && !sprint && player.onGround() && aboutToFall(player));
         jumpThisTick = false;
+    }
+
+    /** Vanilla's own sprint conditions, checked before the sprint key is pressed at all. */
+    private static boolean canSprint(LocalPlayer player) {
+        return (player.getFoodData().getFoodLevel() > 6 || player.getAbilities().mayfly)
+                && !player.isInWater() && !player.isUsingItem() && !player.isShiftKeyDown();
     }
 
     /**
@@ -823,50 +954,117 @@ final class BuildMover {
         return keys;
     }
 
-    /** Any corner of the feet hangs over a cell with nothing to stand on: a step further would fall. */
-    private boolean atEdge(LocalPlayer player) {
+    /**
+     * Where the feet will be next tick has no floor under any part of the hitbox: one more step falls. Walking
+     * along an edge with only a corner over air is safe and stays at full speed; the sneak only comes when the
+     * whole body is about to leave the floor, and vanilla's sneak edge clamp then holds it on.
+     */
+    private boolean aboutToFall(LocalPlayer player) {
         ClientLevel level = mc.level;
-        // Where the feet will be in two ticks: stopping keys still leave some momentum to carry over an edge.
         Vec3 motion = player.getDeltaMovement();
-        AABB box = player.getBoundingBox().move(motion.x * 2.0, 0.0, motion.z * 2.0);
+        AABB box = player.getBoundingBox().move(motion.x * 1.5, 0.0, motion.z * 1.5);
         double y = box.minY - 0.5;
-        double[] xs = {box.minX + 0.05, box.maxX - 0.05};
-        double[] zs = {box.minZ + 0.05, box.maxZ - 0.05};
+        double[] xs = {box.minX + 0.02, (box.minX + box.maxX) * 0.5, box.maxX - 0.02};
+        double[] zs = {box.minZ + 0.02, (box.minZ + box.maxZ) * 0.5, box.maxZ - 0.02};
         for (double x : xs) {
             for (double z : zs) {
                 cursor.set(Math.floor(x), Math.floor(y), Math.floor(z));
-                if (level.getBlockState(cursor).getCollisionShape(level, cursor).isEmpty()) return true;
+                if (!level.getBlockState(cursor).getCollisionShape(level, cursor).isEmpty()) return false;
             }
         }
-        return false;
+        return true;
     }
 
     // ------------------------------------------------------------------ world view
 
-    private WalkTerrain terrain() {
+    /** Starts the cache afresh when the world changed or it got old; targets placed since are dropped per cell. */
+    private void refreshCache() {
         ClientLevel level = mc.level;
-        Map<Long, Byte> cache = new HashMap<>();
-        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
-        return (x, y, z) -> {
-            long key = WalkTerrain.pack(x, y, z);
-            Byte known = cache.get(key);
-            if (known != null) return known;
-            byte value = classify(level, pos.set(x, y, z));
-            cache.put(key, value);
-            return value;
-        };
+        if (level != cacheLevel || ++cacheAge >= CACHE_REFRESH_TICKS && stage == Stage.NONE && !replanPending
+                || cache.sectionCount() > CACHE_MAX_SECTIONS) {
+            cacheLevel = level;
+            cacheAge = 0;
+            cache.clear();
+        }
+    }
+
+    private byte classifyLive(int x, int y, int z) {
+        ClientLevel level = mc.level;
+        probe.set(x, y, z);
+        if (y < level.getMinY() || y >= level.getMaxY() || !level.isLoaded(probe)) return WalkTerrain.UNKNOWN;
+        return classifyState(level, probe, level.getBlockState(probe));
+    }
+
+    private byte classifyState(ClientLevel level, BlockPos pos, BlockState state) {
+        if (state.getBlock().hasDynamicShape()) return classify(level, pos, state);
+        Byte known = stateClasses.get(state);
+        if (known != null) return known;
+        byte value = classify(level, pos, state);
+        stateClasses.put(state, value);
+        return value;
+    }
+
+    /** Fills the cache a whole chunk section at a time, straight from the section's palette. */
+    private final class WorldSections implements TerrainCache.SectionSource {
+        private final BlockPos.MutableBlockPos at = new BlockPos.MutableBlockPos();
+
+        @Override
+        public byte cell(int x, int y, int z) {
+            return classifyLive(x, y, z);
+        }
+
+        @Override
+        public void fillSection(int sectionX, int sectionY, int sectionZ, byte[] out) {
+            ClientLevel level = mc.level;
+            int index = level.getSectionIndexFromSectionY(sectionY);
+            if (index < 0 || index >= level.getSectionsCount() || !level.hasChunk(sectionX, sectionZ)) {
+                java.util.Arrays.fill(out, WalkTerrain.UNKNOWN);
+                return;
+            }
+            LevelChunk chunk = level.getChunk(sectionX, sectionZ);
+            LevelChunkSection section = chunk.getSection(index);
+            if (section.hasOnlyAir()) {
+                java.util.Arrays.fill(out, WalkTerrain.OPEN);
+                return;
+            }
+            int baseX = sectionX << 4, baseY = sectionY << 4, baseZ = sectionZ << 4;
+            for (int y = 0; y < 16; y++) {
+                for (int z = 0; z < 16; z++) {
+                    for (int x = 0; x < 16; x++) {
+                        BlockState state = section.getBlockState(x, y, z);
+                        at.set(baseX + x, baseY + y, baseZ + z);
+                        out[y << 8 | z << 4 | x] = classifyState(level, at, state);
+                    }
+                }
+            }
+        }
     }
 
     static byte classify(ClientLevel level, BlockPos pos) {
         if (pos.getY() < level.getMinY() || pos.getY() >= level.getMaxY() || !level.isLoaded(pos)) return WalkTerrain.UNKNOWN;
-        BlockState state = level.getBlockState(pos);
-        if (!state.getFluidState().isEmpty() || isDangerous(state.getBlock())) return WalkTerrain.DANGER;
-        if (state.getBlock() instanceof DoorBlock) return state.getValue(DoorBlock.OPEN) ? WalkTerrain.OPEN : WalkTerrain.SOLID;
+        return classify(level, pos, level.getBlockState(pos));
+    }
+
+    private static byte classify(ClientLevel level, BlockPos pos, BlockState state) {
+        Block block = state.getBlock();
+        if (isDangerous(block)) return WalkTerrain.DANGER;
+        FluidState fluid = state.getFluidState();
+        boolean water = !fluid.isEmpty();
+        if (water && !fluid.is(FluidTags.WATER)) return WalkTerrain.DANGER;
+        if (block == Blocks.COBWEB) return WalkTerrain.WEB;
+        if (state.is(BlockTags.CLIMBABLE)) return WalkTerrain.CLIMB;
+        if (block instanceof DoorBlock) return state.getValue(DoorBlock.OPEN) ? WalkTerrain.OPEN : WalkTerrain.SOLID;
         VoxelShape shape = state.getCollisionShape(level, pos);
-        if (shape.isEmpty()) return WalkTerrain.OPEN;
+        if (shape.isEmpty()) return water ? WalkTerrain.WATER : WalkTerrain.OPEN;
         double top = shape.max(Direction.Axis.Y);
         if (top > 1.0) return WalkTerrain.UNKNOWN;
-        if (top < 0.2) return WalkTerrain.OPEN;
+        if (top < 0.2) return water ? WalkTerrain.WATER : WalkTerrain.OPEN;
+        // The feet cell is floor(y + 0.5): floors under half a block keep the feet in this cell, the rest lift
+        // them into the cell above.
+        if (top < 0.5 - 1.0e-6) return WalkTerrain.RAISED;
+        if (top <= 0.5 + 1.0e-6) return WalkTerrain.STEP;
+        if (block.getSpeedFactor() < 1.0f) return WalkTerrain.SLOW;
+        if (block.getFriction() > 0.6f) return WalkTerrain.ICE;
         return WalkTerrain.SOLID;
     }
 
@@ -879,7 +1077,6 @@ final class BuildMover {
                 || block == Blocks.SWEET_BERRY_BUSH
                 || block == Blocks.POWDER_SNOW
                 || block == Blocks.WITHER_ROSE
-                || block == Blocks.COBWEB
                 || block == Blocks.POINTED_DRIPSTONE;
     }
 
@@ -892,10 +1089,6 @@ final class BuildMover {
         return WalkTerrain.pack((int) Math.floor(player.getX()), feetY(player), (int) Math.floor(player.getZ()));
     }
 
-    private static double horizontalDistance(Vec3 pos, long cell) {
-        return Math.hypot(WalkTerrain.unpackX(cell) + 0.5 - pos.x, WalkTerrain.unpackZ(cell) + 0.5 - pos.z);
-    }
-
     private static double clamp(double value, double min, double max) {
         return value < min ? min : Math.min(value, max);
     }
@@ -905,12 +1098,18 @@ final class BuildMover {
     public String toString() {
         List<String> parts = new ArrayList<>();
         parts.add("mode=" + mode);
-        if (route != null) parts.add("route=" + routeIndex + "/" + route.size());
+        long[] waypoints = follower.active() ? follower.waypoints() : null;
+        if (waypoints != null) parts.add("route=" + follower.index() + "/" + waypoints.length);
+        if (stage != Stage.NONE) parts.add("plan=" + stage);
         if (hasGoal) parts.add("goal=" + BlockPos.of(goal).toShortString());
         if (pillar != null) parts.add("pillar=" + pillar);
         parts.add("helpers=" + helpers.size());
         if (!rejected.isEmpty()) parts.add("rejected=" + rejected.size());
         if (abortCooldown > 0 || replanWait > 0) parts.add("wait=" + abortCooldown + "/" + replanWait);
+        parts.add("replans=" + replans);
+        parts.add("planTicks=" + planTicks);
+        parts.add("cpuMaxUs=" + cpuMaxNanos / 1000L);
+        parts.add("cacheMiss=" + cache.misses() + "/" + cache.lookups());
         return String.join(" ", parts);
     }
 }

@@ -142,4 +142,34 @@ class StandingSpotChooserTest {
         assertNotNull(spot);
         assertEquals(1, spot.y(), "spot " + spot);
     }
+
+    @Test
+    void scoringInSlicesGivesTheSameSpotAndPrunesMostCells() {
+        GridWorld world = new GridWorld();
+        long[] targets = new long[22];
+        for (int x = 4; x <= 14; x++) {
+            targets[x - 4] = pack(x, 0, 0);
+            targets[x - 4 + 11] = pack(x, 0, 1);
+        }
+        WalkPathfinder.Flood flood = WalkPathfinder.flood(world, pack(0, 0, 5), 1, 40.0, 20_000);
+        StandingSpotChooser.Spot whole = StandingSpotChooser.choose(world, flood, targets, targets.length,
+                StandingSpotChooser.Mode.PLACE, REACH, null, null);
+        assertNotNull(whole);
+        StandingSpotChooser.Scorer scorer = new StandingSpotChooser.Scorer(world, flood, targets, targets.length,
+                StandingSpotChooser.Mode.PLACE, REACH, null);
+        int slices = 0;
+        while (!scorer.step(System.nanoTime() - 1)) slices++;
+        assertTrue(slices > 0, "a deadline in the past still lets every call make progress");
+        assertEquals(whole, scorer.result(null));
+        // The cheap bound rules most cells out before any line of sight is traced.
+        assertTrue(scorer.evaluated() * 4 < flood.size(), scorer.evaluated() + " of " + flood.size());
+        double best = 0.0;
+        for (int i = 0; i < flood.size(); i++) {
+            long cell = flood.cell(i);
+            int coverage = StandingSpotChooser.coverage(world, WalkTerrain.unpackX(cell), WalkTerrain.unpackY(cell),
+                    WalkTerrain.unpackZ(cell), targets, targets.length, StandingSpotChooser.Mode.PLACE, REACH);
+            best = Math.max(best, StandingSpotChooser.rate(coverage, flood.cost(cell)));
+        }
+        assertTrue(StandingSpotChooser.rate(whole.coverage(), whole.cost()) >= best * StandingSpotChooser.LOOKAHEAD_BAND - 1e-12);
+    }
 }
