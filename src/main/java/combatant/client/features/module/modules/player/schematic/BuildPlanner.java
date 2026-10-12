@@ -9,6 +9,7 @@ package combatant.client.features.module.modules.player.schematic;
 
 import combatant.client.mixins.accessors.BlockItemInvoker;
 import combatant.client.util.aiming.data.Rotation;
+import combatant.client.util.schematic.BlockUse;
 import combatant.client.util.schematic.RedstoneRules;
 import combatant.client.util.schematic.StateAdjustments;
 import combatant.client.util.schematic.StateComparison;
@@ -321,7 +322,10 @@ final class BuildPlanner {
      */
     static boolean isInteractive(BlockState state) {
         Block block = state.getBlock();
-        return block instanceof BaseEntityBlock
+        // Anything whose class overrides a use hook (composter, cake, bell, dust, dragon egg, candles, cave
+        // vines...) is sneaked against; the list below names the well-known ones for readers.
+        return BlockUse.reactsToClick(state)
+                || block instanceof BaseEntityBlock
                 || block instanceof DoorBlock
                 || block instanceof TrapDoorBlock
                 || block instanceof FenceGateBlock
