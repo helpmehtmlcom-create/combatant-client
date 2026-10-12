@@ -51,7 +51,8 @@ final class GridWorld implements WalkTerrain {
     }
 
     /**
-     * Rows of a single layer at height {@code y}: '#' solid, '.' open, '~' danger, '?' unknown; row index is z,
+     * Rows of a single layer at height {@code y}: '#' solid, '.' open, '~' danger, '?' unknown, 'w' water,
+     * 'H' climbable, '_' half-block step, 's' slow ground, 'i' ice, 'c' cobweb, 'r' raised floor; row index is z,
      * column index is x.
      */
     GridWorld layer(int y, String... rows) {
@@ -62,6 +63,13 @@ final class GridWorld implements WalkTerrain {
                     case '#' -> SOLID;
                     case '~' -> DANGER;
                     case '?' -> UNKNOWN;
+                    case 'w' -> WATER;
+                    case 'H' -> CLIMB;
+                    case '_' -> STEP;
+                    case 's' -> SLOW;
+                    case 'i' -> ICE;
+                    case 'c' -> WEB;
+                    case 'r' -> RAISED;
                     default -> OPEN;
                 });
             }
