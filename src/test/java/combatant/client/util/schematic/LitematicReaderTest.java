@@ -21,10 +21,15 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.zip.GZIPOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -160,6 +165,126 @@ class LitematicReaderTest {
         root.put("Regions", regions);
         assertThrows(java.io.IOException.class,
                 () -> LitematicReader.parse(root, "broken", LitematicReader::resolveState));
+    }
+
+    @Test
+    void hugeDeclaredLongArrayFailsCleanlyInsteadOfAllocating(@TempDir Path dir) throws Exception {
+        // ~100 bytes on disk that claim a 16 GB BlockStates array; the accounter must refuse before allocating.
+        Path file = hostileArray(dir.resolve("bomb.litematic"), Integer.MAX_VALUE);
+        assertThrows(IOException.class, () -> LitematicReader.read(file));
+        headerSurvives(file);
+    }
+
+    @Test
+    void negativeArrayLengthIsAMalformedFileNotACrash(@TempDir Path dir) throws Exception {
+        Path file = hostileArray(dir.resolve("negative.litematic"), Integer.MIN_VALUE);
+        assertThrows(IOException.class, () -> LitematicReader.read(file));
+        headerSurvives(file);
+    }
+
+    @Test
+    void headerSkipsBlockArraysLargerThanItsOwnQuota(@TempDir Path dir) throws Exception {
+        CompoundTag root = new CompoundTag();
+        CompoundTag regions = new CompoundTag();
+        CompoundTag region = region(-3, 0, 2, 4, 5, 6, new int[4 * 5 * 6],
+                entry("minecraft:air", Map.of()), entry("minecraft:stone", Map.of()));
+        // 24 MB of longs: more than the header quota, so this only passes if the array is skipped, not collected.
+        region.putLongArray("BlockStates", new long[3 * 1024 * 1024]);
+        regions.put("Big", region);
+        root.put("Regions", regions);
+        Path file = dir.resolve("big.litematic");
+        NbtIo.writeCompressed(root, file);
+
+        SchematicHeader header = LitematicReader.readHeader(file, 1L);
+        assertFalse(header.failed());
+        assertEquals("4x5x6", header.dimensions());
+        assertEquals(1, header.regionCount());
+    }
+
+    @Test
+    void regionsFarApartAreRejectedWithoutIntOverflow() {
+        CompoundTag root = new CompoundTag();
+        CompoundTag regions = new CompoundTag();
+        regions.put("East", region(2_000_000_000, 0, 0, 1, 1, 1, new int[1],
+                entry("minecraft:air", Map.of()), entry("minecraft:stone", Map.of())));
+        regions.put("West", region(-2_000_000_000, 0, 0, 1, 1, 1, new int[1],
+                entry("minecraft:air", Map.of()), entry("minecraft:stone", Map.of())));
+        root.put("Regions", regions);
+        IOException error = assertThrows(IOException.class,
+                () -> LitematicReader.parse(root, "far", LitematicReader::resolveState));
+        assertTrue(error.getMessage().contains("too large"), error.getMessage());
+    }
+
+    @Test
+    void regionAtTheIntEdgeStillParses() throws Exception {
+        // max = position + size - 1 overflows int here; long box math keeps it a plain 2x1x1 build.
+        CompoundTag root = new CompoundTag();
+        CompoundTag regions = new CompoundTag();
+        regions.put("Edge", region(Integer.MAX_VALUE, Integer.MIN_VALUE, 0, 2, 1, 1, new int[]{1, 1},
+                entry("minecraft:air", Map.of()), entry("minecraft:stone", Map.of())));
+        root.put("Regions", regions);
+        Schematic schematic = LitematicReader.parse(root, "edge", LitematicReader::resolveState);
+        assertEquals(2, schematic.sizeX());
+        assertEquals(2, schematic.totalBlocks());
+    }
+
+    @Test
+    void minValueSizeAndOverlongAxesAreRejected() {
+        for (int[] size : new int[][]{{Integer.MIN_VALUE, 1, 1}, {1, Integer.MIN_VALUE, 1},
+                {LitematicReader.MAX_AXIS_SPAN + 1, 1, 1}, {1, 1, -(LitematicReader.MAX_AXIS_SPAN + 1)}}) {
+            CompoundTag root = new CompoundTag();
+            CompoundTag regions = new CompoundTag();
+            CompoundTag region = region(0, 0, 0, 1, 1, 1, new int[1],
+                    entry("minecraft:air", Map.of()), entry("minecraft:stone", Map.of()));
+            region.put("Size", vec(size[0], size[1], size[2]));
+            regions.put("R", region);
+            root.put("Regions", regions);
+            assertThrows(IOException.class, () -> LitematicReader.parse(root, "huge", LitematicReader::resolveState),
+                    size[0] + "x" + size[1] + "x" + size[2]);
+        }
+    }
+
+    @Test
+    void laterRegionOverwritesOverlapsOnlyWithNonAir() throws Exception {
+        CompoundTag root = new CompoundTag();
+        CompoundTag regions = new CompoundTag();
+        // Regions apply in name order: A lays two stone, B on the same cells has air then glass.
+        regions.put("A", region(0, 0, 0, 2, 1, 1, new int[]{1, 1},
+                entry("minecraft:air", Map.of()), entry("minecraft:stone", Map.of())));
+        regions.put("B", region(0, 0, 0, 2, 1, 1, new int[]{0, 1},
+                entry("minecraft:air", Map.of()), entry("minecraft:glass", Map.of())));
+        root.put("Regions", regions);
+        Schematic schematic = LitematicReader.parse(root, "overlap", LitematicReader::resolveState);
+        assertSame(Blocks.STONE.defaultBlockState(), schematic.state(0, 0, 0));
+        assertSame(Blocks.GLASS.defaultBlockState(), schematic.state(1, 0, 0));
+        assertEquals(2, schematic.totalBlocks());
+    }
+
+    /** The header pass skips the array without allocating; it may then fail or see an empty region, never crash. */
+    private static void headerSurvives(Path file) {
+        try {
+            assertEquals("0x0x0", LitematicReader.readHeader(file, 0L).dimensions());
+        } catch (IOException expected) {
+            // A clean load error is fine too.
+        }
+    }
+
+    /** A gzip NBT file whose only region declares a BlockStates LongArray of {@code length} and then ends. */
+    private static Path hostileArray(Path file, int length) throws IOException {
+        try (OutputStream raw = Files.newOutputStream(file);
+             DataOutputStream out = new DataOutputStream(new GZIPOutputStream(raw))) {
+            out.writeByte(10);
+            out.writeUTF("");
+            out.writeByte(10);
+            out.writeUTF("Regions");
+            out.writeByte(10);
+            out.writeUTF("R");
+            out.writeByte(12);
+            out.writeUTF("BlockStates");
+            out.writeInt(length);
+            out.writeLong(0L);
+        }
+        return file;
     }
 
     private static int index(int x, int y, int z, int sizeX, int sizeZ) {
