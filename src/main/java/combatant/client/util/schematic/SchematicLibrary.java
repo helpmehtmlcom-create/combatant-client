@@ -96,7 +96,7 @@ public final class SchematicLibrary {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 Schematic schematic = LitematicReader.read(path);
-                return new Loaded(schematic, LayerStats.compute(schematic));
+                return new Loaded(schematic, LayerStats.compute(schematic), SchematicDiff.Layout.of(schematic));
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             } catch (OutOfMemoryError e) {
@@ -215,7 +215,7 @@ public final class SchematicLibrary {
         }
     }
 
-    public record Loaded(Schematic schematic, LayerStats stats) {
+    public record Loaded(Schematic schematic, LayerStats stats, SchematicDiff.Layout layout) {
     }
 
     /** A lookup result: {@code path} when exactly one file matched, else every ambiguous candidate (maybe none). */

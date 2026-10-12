@@ -47,36 +47,71 @@ public final class SchematicDiff {
     private int revision;
 
     public SchematicDiff(Schematic schematic, SchematicPlacement placement) {
-        this.schematic = schematic;
+        this(Layout.of(schematic), placement);
+    }
+
+    /** A diff for one placement over a layout shared by every placement of the same schematic. */
+    public SchematicDiff(Layout layout, SchematicPlacement placement) {
+        this.schematic = layout.schematic;
         this.placement = placement;
         this.worldPalette = new BlockState[schematic.paletteSize()];
         for (int i = 0; i < worldPalette.length; i++) {
             worldPalette[i] = placement.transform(schematic.paletteState(i));
         }
-
+        this.cells = layout.cells;
+        this.layerStart = layout.layerStart;
+        this.order = layout.order;
         int sizeY = schematic.sizeY();
-        int area = schematic.layerArea();
-        this.layerStart = new int[sizeY + 1];
-        int count = 0;
-        for (int i = 0; i < schematic.volume(); i++) {
-            if (schematic.paletteIndexAt(i) != 0) count++;
-        }
-        this.cells = new int[count];
-        int next = 0;
-        for (int y = 0; y < sizeY; y++) {
-            layerStart[y] = next;
-            int start = y * area;
-            for (int i = start; i < start + area; i++) {
-                if (schematic.paletteIndexAt(i) != 0) cells[next++] = i;
-            }
-        }
-        layerStart[sizeY] = next;
+        int count = cells.length;
         this.status = new byte[count];
         this.correct = new int[sizeY];
         this.missing = new int[sizeY];
         this.wrong = new int[sizeY];
-        this.order = BuildOrder.compute(schematic, cells);
         for (int cell = 0; cell < count; cell++) openPerBand[order.cellBand(cell)]++;
+    }
+
+    /**
+     * The placement-independent part of a diff: which indices hold blocks, where each layer starts and the build
+     * order. Two full volume passes, so it is built once per schematic (on the loader thread) and reused for
+     * every rotate, mirror and origin change. Read-only after construction.
+     */
+    public static final class Layout {
+        private final Schematic schematic;
+        private final int[] cells;
+        private final int[] layerStart;
+        private final BuildOrder order;
+
+        private Layout(Schematic schematic, int[] cells, int[] layerStart, BuildOrder order) {
+            this.schematic = schematic;
+            this.cells = cells;
+            this.layerStart = layerStart;
+            this.order = order;
+        }
+
+        public Schematic schematic() {
+            return schematic;
+        }
+
+        public static Layout of(Schematic schematic) {
+            int sizeY = schematic.sizeY();
+            int area = schematic.layerArea();
+            int[] layerStart = new int[sizeY + 1];
+            int count = 0;
+            for (int i = 0; i < schematic.volume(); i++) {
+                if (schematic.paletteIndexAt(i) != 0) count++;
+            }
+            int[] cells = new int[count];
+            int next = 0;
+            for (int y = 0; y < sizeY; y++) {
+                layerStart[y] = next;
+                int start = y * area;
+                for (int i = start; i < start + area; i++) {
+                    if (schematic.paletteIndexAt(i) != 0) cells[next++] = i;
+                }
+            }
+            layerStart[sizeY] = next;
+            return new Layout(schematic, cells, layerStart, BuildOrder.compute(schematic, cells));
+        }
     }
 
     public Schematic schematic() {
@@ -172,9 +207,24 @@ public final class SchematicDiff {
         return placement.toWorld(schematic.xOf(index), schematic.yOf(index), schematic.zOf(index), out);
     }
 
+    /** What the diff reads from the world: the state at a position, or null while its chunk is not loaded. */
+    @FunctionalInterface
+    interface WorldView {
+        BlockState stateAt(BlockPos pos);
+    }
+
+    private static WorldView view(Level level) {
+        return pos -> level.hasChunkAt(pos) ? level.getBlockState(pos) : null;
+    }
+
     /** Checks up to {@code focusBudget} cells of the focus window and {@code globalBudget} cells of the whole build. */
     public void tick(Level level, int focusBudget, int globalBudget) {
-        if (level == null || cells.length == 0) return;
+        if (level == null) return;
+        tick(view(level), focusBudget, globalBudget);
+    }
+
+    void tick(WorldView level, int focusBudget, int globalBudget) {
+        if (cells.length == 0) return;
         if (focusLow >= 0) {
             int start = layerStart(focusLow);
             int end = layerEnd(focusHigh);
@@ -196,13 +246,12 @@ public final class SchematicDiff {
     }
 
     public byte refresh(Level level, int cell) {
-        worldPos(cell, scratch);
-        byte next;
-        if (!level.hasChunkAt(scratch)) {
-            next = UNKNOWN;
-        } else {
-            next = classify(level.getBlockState(scratch), expectedState(cell));
-        }
+        return refresh(view(level), cell);
+    }
+
+    byte refresh(WorldView level, int cell) {
+        BlockState actual = level.stateAt(worldPos(cell, scratch));
+        byte next = actual == null ? UNKNOWN : classify(actual, expectedState(cell));
         set(cell, next);
         return next;
     }

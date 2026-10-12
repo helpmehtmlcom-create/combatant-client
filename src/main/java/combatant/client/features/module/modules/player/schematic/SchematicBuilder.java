@@ -55,6 +55,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -192,7 +193,8 @@ public final class SchematicBuilder extends Module {
     private int placed;
     private int approximatePlaced;
     private float lastHealth = -1.0f;
-    private ClientLevel lastLevel;
+    // Weak: the module outlives every world, and a strong reference kept the old level alive after disconnect.
+    private WeakReference<ClientLevel> lastLevel = new WeakReference<>(null);
     private Status status = Status.IDLE;
     private int lastShortfallTick = Integer.MIN_VALUE;
     private int lastMissingNotifyTick = Integer.MIN_VALUE;
@@ -223,7 +225,7 @@ public final class SchematicBuilder extends Module {
         cooldown = 0;
         retryAfter.clear();
         lastHealth = -1.0f;
-        lastLevel = mc.level;
+        lastLevel = new WeakReference<>(mc.level);
         completedLayerNotified = -1;
         lastShortfallTick = Integer.MIN_VALUE;
         mover.clearAll();
@@ -282,8 +284,13 @@ public final class SchematicBuilder extends Module {
         return Math.max(value, DONUT_MIN_DELAY) + ThreadLocalRandom.current().nextInt(DONUT_MAX_JITTER + 1);
     }
 
+    /**
+     * Several useItemOn packets in one tick, none matching the server-side rotation, is exactly what place-rate and
+     * rotation checks flag; only a server declared to have no anticheat gets more than one click per tick.
+     */
     private int effectiveBlocksPerTick() {
-        return donutRules() ? 1 : blocksPerTick.get();
+        if (donutRules() || anticheat.get() != AntiCheatPreset.VANILLA) return 1;
+        return blocksPerTick.get();
     }
 
     private boolean effectiveRotate() {
@@ -295,9 +302,9 @@ public final class SchematicBuilder extends Module {
         LocalPlayer player = mc.player;
         if (!isEnabled() || player == null || mc.level == null) return;
         ticks++;
-        if (mc.level != lastLevel) {
+        if (mc.level != lastLevel.get()) {
             reset();
-            lastLevel = mc.level;
+            lastLevel = new WeakReference<>(mc.level);
         }
         if (stopOnDamage.get() && lastHealth >= 0.0f && player.getHealth() < lastHealth - 0.01f) {
             Notifier.warning(I18n.get("module.schematicbuilder.notify.damaged"));
@@ -1146,18 +1153,27 @@ public final class SchematicBuilder extends Module {
             return helperBlocks.get();
         }
 
+        // Items still needed per item, rebuilt once per diff revision: the pillar asks up to 18 times a tick.
+        private final Map<Item, Integer> spareNeeded = new HashMap<>();
+        private SchematicDiff spareDiff;
+        private int spareRevision;
+
         @Override
         public boolean canSpare(Block block) {
             Item item = block.asItem();
             SchematicDiff diff = state.currentDiff();
             if (diff == null || mc.player == null) return true;
-            int needed = 0;
-            for (int cell = 0, count = diff.cellCount(); cell < count; cell++) {
-                if (diff.status(cell) == SchematicDiff.CORRECT) continue;
-                BlockState expected = diff.expectedState(cell);
-                if (SchematicMaterials.itemFor(expected) == item) needed += SchematicMaterials.itemsPerCell(expected);
+            if (diff != spareDiff || diff.revision() != spareRevision) {
+                spareNeeded.clear();
+                for (int cell = 0, count = diff.cellCount(); cell < count; cell++) {
+                    if (diff.status(cell) == SchematicDiff.CORRECT) continue;
+                    BlockState expected = diff.expectedState(cell);
+                    spareNeeded.merge(SchematicMaterials.itemFor(expected), SchematicMaterials.itemsPerCell(expected), Integer::sum);
+                }
+                spareDiff = diff;
+                spareRevision = diff.revision();
             }
-            return SchematicMaterials.countInInventory(mc.player, item) > needed;
+            return SchematicMaterials.countInInventory(mc.player, item) > spareNeeded.getOrDefault(item, 0);
         }
 
         @Override

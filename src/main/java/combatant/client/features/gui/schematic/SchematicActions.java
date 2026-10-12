@@ -70,7 +70,7 @@ public final class SchematicActions {
 
     private static void applyLoaded(Minecraft mc, SchematicLibrary.Loaded loaded) {
         SchematicState state = SchematicState.INSTANCE;
-        state.setSchematic(loaded.schematic(), loaded.stats());
+        state.setSchematic(loaded.schematic(), loaded.stats(), loaded.layout());
         if (state.placement() == null && mc.player != null) {
             state.setOrigin(mc.player.blockPosition());
         }
