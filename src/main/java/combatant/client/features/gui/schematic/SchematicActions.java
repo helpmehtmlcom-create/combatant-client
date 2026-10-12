@@ -49,8 +49,9 @@ public final class SchematicActions {
         mc.schedule(() -> ClientScreen.show(mc, new SchematicScreen(ClientScreen.current(mc))));
     }
 
-    public static void load(Path path) {
-        if (path == null || loadingPath != null) return;
+    /** Starts loading {@code path}; false (and nothing happens) when another load is still running. */
+    public static boolean load(Path path) {
+        if (path == null || loadingPath != null) return false;
         loadingPath = path;
         lastError = "";
         Minecraft mc = Minecraft.getInstance();
@@ -64,6 +65,7 @@ public final class SchematicActions {
             }
             applyLoaded(mc, loaded);
         }));
+        return true;
     }
 
     private static void applyLoaded(Minecraft mc, SchematicLibrary.Loaded loaded) {
