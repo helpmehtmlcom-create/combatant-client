@@ -99,6 +99,7 @@ public final class RouteFollower {
     private final long[] loop = new long[LOOP_SAMPLES];
     private int loopCount;
     private int tick;
+    private long blockedCell = Long.MIN_VALUE;
 
     /** Starts following {@code path} (feet cells from the player's cell to the goal). */
     public void start(WalkTerrain terrain, long[] path, int maxDrop) {
@@ -208,7 +209,8 @@ public final class RouteFollower {
             stop();
             return Action.ARRIVED;
         }
-        if (onGround && (offRoute(x, y, z) || blocked(terrain))) return Action.REPLAN;
+        blockedCell = Long.MIN_VALUE;
+        if (onGround && (offRoute(x, y, z) || blocked(terrain, x, z))) return Action.REPLAN;
         Action stuck = trackProgress(x, y, z, onGround, stuckTimeout);
         if (stuck != Action.FOLLOW) return stuck;
         steer(terrain, x, y, z, vx, vz, onGround, horizontalCollision);
@@ -239,14 +241,32 @@ public final class RouteFollower {
     }
 
     /** A route cell just behind or ahead of the player stopped being walkable (a block went in, a door shut). */
-    private boolean blocked(WalkTerrain terrain) {
+    private boolean blocked(WalkTerrain terrain, double x, double z) {
+        // Only the cells ahead count: a block the builder put into a cell already passed is no obstacle.
         int from = rawIndex[Math.max(0, index - 1)];
-        int to = Math.min(raw.length - 1, rawIndex[index] + 2);
-        for (int i = Math.max(from, 1); i <= to; i++) {
+        int nearest = from;
+        double best = Double.MAX_VALUE;
+        for (int i = from; i <= rawIndex[index]; i++) {
+            double d = horizontal(x, z, raw[i]);
+            if (d < best) {
+                best = d;
+                nearest = i;
+            }
+        }
+        int to = Math.min(raw.length - 1, nearest + 3);
+        for (int i = nearest + 1; i <= to; i++) {
             long cell = raw[i];
-            if (!terrain.standable(WalkTerrain.unpackX(cell), WalkTerrain.unpackY(cell), WalkTerrain.unpackZ(cell))) return true;
+            if (!terrain.standable(WalkTerrain.unpackX(cell), WalkTerrain.unpackY(cell), WalkTerrain.unpackZ(cell))) {
+                blockedCell = cell;
+                return true;
+            }
         }
         return false;
+    }
+
+    /** The route cell found blocked by the last {@link Action#REPLAN}, or {@link Long#MIN_VALUE}. */
+    public long blockedCell() {
+        return blockedCell;
     }
 
     private Action trackProgress(double x, double y, double z, boolean onGround, int stuckTimeout) {
