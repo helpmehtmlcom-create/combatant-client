@@ -5340,5 +5340,6 @@
   "screen.combatant.schematic.view.lod": "LOD x%s",
   "screen.combatant.schematic.view.truncated": "детализация ограничена",
   "screen.combatant.schematic.view.building": "Построение модели...",
+  "screen.combatant.schematic.view.failed": "Не удалось построить 3D-модель",
   "screen.combatant.schematic.tooltip.click_layer": "Нажмите, чтобы выбрать слой %s"
 }

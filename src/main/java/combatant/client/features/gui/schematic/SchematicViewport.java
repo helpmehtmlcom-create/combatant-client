@@ -18,6 +18,8 @@ import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.helpers.ScissorFunction;
 import combatant.client.util.schematic.Schematic;
 import combatant.client.util.schematic.SchematicDiff;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -32,6 +34,7 @@ import java.util.function.Consumer;
 final class SchematicViewport {
 
     static final float MAX_GAP = 4f;
+    private static final Logger LOGGER = LoggerFactory.getLogger("Combatant/Schematic");
     private static final int MAX_FACES = 25_000;
     private static final int SYNC_VOLUME = 64 * 64 * 64;
     private static final float CLICK_SLOP = 4f;
@@ -67,6 +70,11 @@ final class SchematicViewport {
     private ViewMode pendingMode;
     private int pendingLayer;
     private float pendingGap;
+    // The mesh key whose build threw; remembered so a failing build is not retried every frame.
+    private boolean meshFailed;
+    private ViewMode failedMode;
+    private int failedLayer;
+    private float failedGap;
 
     private byte[] faceStatus = new byte[0];
     private FaceList statusFaces;
@@ -122,6 +130,11 @@ final class SchematicViewport {
         return pending != null;
     }
 
+    /** True when the mesh for the current view could not be built; the screen shows an error instead of a spinner. */
+    boolean meshFailed() {
+        return meshFailed;
+    }
+
     FaceList faces() {
         return faces;
     }
@@ -162,6 +175,7 @@ final class SchematicViewport {
         faces = null;
         facesLayer = -1;
         pending = null;
+        meshFailed = false;
         hovered = -1;
         camera.clearFrame();
         camera.reset();
@@ -179,13 +193,28 @@ final class SchematicViewport {
     private void ensureMesh() {
         float meshGap = mode.exploded() ? gap : 0f;
         if (pending != null && pending.isDone()) {
-            FaceList built = pending.getNow(null);
-            if (built != null) adopt(built, pendingMode, pendingLayer, pendingGap);
+            // handle() turns a failed job into a null result; getNow on the raw future would throw every frame.
+            CompletableFuture<FaceList> done = pending;
             pending = null;
+            FaceList built = done.handle((result, error) -> {
+                if (error != null) LOGGER.warn("Schematic mesh build failed", error);
+                return result;
+            }).getNow(null);
+            if (built != null) {
+                adopt(built, pendingMode, pendingLayer, pendingGap);
+            } else {
+                markFailed(pendingMode, pendingLayer, pendingGap);
+            }
         }
         if (faces != null && facesMode == mode && facesLayer == layer && facesGap == meshGap) return;
+        if (meshFailed && failedMode == mode && failedLayer == layer && failedGap == meshGap) return;
         if (schematic.volume() <= SYNC_VOLUME) {
-            adopt(FaceMesher.build(volume, paletteColors, mode, layer, meshGap, MAX_FACES), mode, layer, meshGap);
+            try {
+                adopt(FaceMesher.build(volume, paletteColors, mode, layer, meshGap, MAX_FACES), mode, layer, meshGap);
+            } catch (RuntimeException e) {
+                LOGGER.warn("Schematic mesh build failed", e);
+                markFailed(mode, layer, meshGap);
+            }
             return;
         }
         if (pending != null) return;
@@ -199,7 +228,15 @@ final class SchematicViewport {
         pending = CompletableFuture.supplyAsync(() -> FaceMesher.build(source, colors, jobMode, jobLayer, meshGap, MAX_FACES), MESHER);
     }
 
+    private void markFailed(ViewMode failed, int failedAtLayer, float failedAtGap) {
+        meshFailed = true;
+        failedMode = failed;
+        failedLayer = failedAtLayer;
+        failedGap = failedAtGap;
+    }
+
     private void adopt(FaceList built, ViewMode builtMode, int builtLayer, float builtGap) {
+        meshFailed = false;
         faces = built;
         facesMode = builtMode;
         facesLayer = builtLayer;
