@@ -34,7 +34,7 @@ public final class ReachModel {
     /** Can a block be placed into {@code (tx, ty, tz)} by clicking a neighbour seen from the eyes? */
     public static boolean placeable(WalkTerrain terrain, double ex, double ey, double ez,
                                     int tx, int ty, int tz, double reach) {
-        if (!terrain.open(tx, ty, tz)) return false;
+        if (!replaceable(terrain.cell(tx, ty, tz))) return false;
         for (int[] d : FACES) {
             int sx = tx + d[0], sy = ty + d[1], sz = tz + d[2];
             if (!terrain.solid(sx, sy, sz)) continue;
@@ -59,13 +59,13 @@ public final class ReachModel {
      */
     public static int breakFace(WalkTerrain terrain, double ex, double ey, double ez,
                                 int tx, int ty, int tz, double reach) {
-        if (terrain.cell(tx, ty, tz) != WalkTerrain.SOLID) return -1;
+        if (!terrain.solid(tx, ty, tz)) return -1;
         int best = -1;
         double bestDistance = Double.MAX_VALUE;
         for (int i = 0; i < FACES.length; i++) {
             int[] d = FACES[i];
             int ax = tx + d[0], ay = ty + d[1], az = tz + d[2];
-            if (!terrain.open(ax, ay, az)) continue;
+            if (!replaceable(terrain.cell(ax, ay, az))) continue;
             if (!faceVisible(terrain, ex, ey, ez, d[0], d[1], d[2], tx, ty, tz, ax, ay, az, reach)) continue;
             double dx = tx + 0.5 + d[0] * 0.5 - ex, dy = ty + 0.5 + d[1] * 0.5 - ey, dz = tz + 0.5 + d[2] * 0.5 - ez;
             double distance = dx * dx + dy * dy + dz * dz;
@@ -120,7 +120,7 @@ public final class ReachModel {
         double tMaxZ = stepZ == 0 ? Double.MAX_VALUE : (stepZ > 0 ? z + 1 - z0 : z0 - z) * tDeltaZ;
         for (int guard = 0; guard < 64; guard++) {
             if (x == endX && y == endY && z == endZ) return true;
-            if (guard > 0 && !terrain.open(x, y, z)) return false;
+            if (guard > 0 && !replaceable(terrain.cell(x, y, z))) return false;
             if (tMaxX <= tMaxY && tMaxX <= tMaxZ) {
                 if (tMaxX > 1.0) break;
                 x += stepX;
@@ -136,6 +136,11 @@ public final class ReachModel {
             }
         }
         return x == endX && y == endY && z == endZ;
+    }
+
+    /** Air or water: a block can go there and a click ray passes through it. */
+    static boolean replaceable(byte cell) {
+        return cell == WalkTerrain.OPEN || cell == WalkTerrain.WATER;
     }
 
     /**
