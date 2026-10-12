@@ -36,6 +36,9 @@ public final class SchematicDiff {
     private final int[] correct;
     private final int[] missing;
     private final int[] wrong;
+    private final BuildOrder order;
+    /** Cells per band that are neither correct nor wrong: what still holds a band's gate shut. */
+    private final int[] openPerBand = new int[BuildOrder.BANDS];
     private final BlockPos.MutableBlockPos scratch = new BlockPos.MutableBlockPos();
     private int globalCursor;
     private int focusCursor;
@@ -72,6 +75,8 @@ public final class SchematicDiff {
         this.correct = new int[sizeY];
         this.missing = new int[sizeY];
         this.wrong = new int[sizeY];
+        this.order = BuildOrder.compute(schematic, cells);
+        for (int cell = 0; cell < count; cell++) openPerBand[order.cellBand(cell)]++;
     }
 
     public Schematic schematic() {
@@ -100,6 +105,27 @@ public final class SchematicDiff {
 
     public int schematicIndex(int cell) {
         return cells[cell];
+    }
+
+    /** The diff cell of a schematic index, or -1 when that index is air. Cells are kept in index order. */
+    public int cellOf(int schematicIndex) {
+        int found = Arrays.binarySearch(cells, schematicIndex);
+        return found >= 0 ? found : -1;
+    }
+
+    public BuildOrder order() {
+        return order;
+    }
+
+    /** Cells of each band still missing or unchecked. */
+    public int[] openPerBand() {
+        return openPerBand;
+    }
+
+    public int openTotal() {
+        int total = 0;
+        for (int open : openPerBand) total += open;
+        return total;
     }
 
     public byte status(int cell) {
@@ -183,6 +209,8 @@ public final class SchematicDiff {
 
     public static byte classify(BlockState actual, BlockState expected) {
         if (actual == expected) return CORRECT;
+        if (StateComparison.derived(expected)) return StateComparison.derivedSatisfied(actual, expected) ? CORRECT : WRONG;
+        if (StateComparison.matches(actual, expected)) return CORRECT;
         if (actual.canBeReplaced()) return MISSING;
         return WRONG;
     }
@@ -193,6 +221,9 @@ public final class SchematicDiff {
         int y = schematic.yOf(cells[cell]);
         adjust(previous, y, -1);
         adjust(next, y, 1);
+        boolean wasOpen = previous == UNKNOWN || previous == MISSING;
+        boolean isOpen = next == UNKNOWN || next == MISSING;
+        if (wasOpen != isOpen) openPerBand[order.cellBand(cell)] += isOpen ? 1 : -1;
         status[cell] = next;
         revision++;
     }
@@ -212,6 +243,8 @@ public final class SchematicDiff {
         Arrays.fill(correct, 0);
         Arrays.fill(missing, 0);
         Arrays.fill(wrong, 0);
+        Arrays.fill(openPerBand, 0);
+        for (int cell = 0; cell < cells.length; cell++) openPerBand[order.cellBand(cell)]++;
         globalCursor = 0;
         focusCursor = layerStart(Math.max(0, focusLow));
         revision++;

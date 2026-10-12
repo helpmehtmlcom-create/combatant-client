@@ -46,6 +46,15 @@ public final class StandingSpotChooser {
         BREAK
     }
 
+    /**
+     * Extra condition on a target seen from given eyes: a piston or observer only comes out facing right when the
+     * look from there runs along the right axis, so only spots with that look count for it.
+     */
+    @FunctionalInterface
+    public interface LookFilter {
+        boolean accepts(long target, double eyeX, double eyeY, double eyeZ);
+    }
+
     /** A feet cell, how many targets it reaches and what walking there costs. */
     public record Spot(int x, int y, int z, int coverage, double cost) {
         public long key() {
@@ -66,7 +75,13 @@ public final class StandingSpotChooser {
      */
     public static Spot choose(WalkTerrain terrain, WalkPathfinder.Flood flood, long[] targets, int targetCount,
                               Mode mode, double reach, Spot current, LongPredicate reject) {
-        Scorer scorer = new Scorer(terrain, flood, targets, targetCount, mode, reach, reject);
+        return choose(terrain, flood, targets, targetCount, mode, reach, current, reject, null);
+    }
+
+    /** As above; {@code look} (may be null) drops targets the spot's look cannot place right. */
+    public static Spot choose(WalkTerrain terrain, WalkPathfinder.Flood flood, long[] targets, int targetCount,
+                              Mode mode, double reach, Spot current, LongPredicate reject, LookFilter look) {
+        Scorer scorer = new Scorer(terrain, flood, targets, targetCount, mode, reach, reject, look);
         scorer.step(Long.MAX_VALUE);
         return scorer.result(current);
     }
@@ -79,22 +94,29 @@ public final class StandingSpotChooser {
     /** How many targets a player standing centred in {@code (fx, fy, fz)} can click. */
     public static int coverage(WalkTerrain terrain, int fx, int fy, int fz, long[] targets, int targetCount,
                                Mode mode, double reach) {
+        return coverage(terrain, fx, fy, fz, targets, targetCount, mode, reach, null);
+    }
+
+    static int coverage(WalkTerrain terrain, int fx, int fy, int fz, long[] targets, int targetCount,
+                        Mode mode, double reach, LookFilter look) {
         double ex = fx + 0.5, ey = ReachModel.eyeY(fy), ez = fz + 0.5;
         double prefilter = (reach + 1.0) * (reach + 1.0);
         int count = 0;
         for (int i = 0; i < targetCount; i++) {
-            if (clickable(terrain, targets[i], fx, fy, fz, ex, ey, ez, mode, reach, prefilter)) count++;
+            if (clickable(terrain, targets[i], fx, fy, fz, ex, ey, ez, mode, reach, prefilter, look)) count++;
         }
         return count;
     }
 
     private static boolean clickable(WalkTerrain terrain, long target, int fx, int fy, int fz,
-                                     double ex, double ey, double ez, Mode mode, double reach, double prefilter) {
+                                     double ex, double ey, double ez, Mode mode, double reach, double prefilter,
+                                     LookFilter look) {
         int tx = WalkTerrain.unpackX(target), ty = WalkTerrain.unpackY(target), tz = WalkTerrain.unpackZ(target);
         // A block cannot go where the body stands.
         if (mode == Mode.PLACE && tx == fx && tz == fz && (ty == fy || ty == fy + 1)) return false;
         double dx = tx + 0.5 - ex, dy = ty + 0.5 - ey, dz = tz + 0.5 - ez;
         if (dx * dx + dy * dy + dz * dz > prefilter) return false;
+        if (look != null && !look.accepts(target, ex, ey, ez)) return false;
         return mode == Mode.PLACE
                 ? ReachModel.placeable(terrain, ex, ey, ez, tx, ty, tz, reach)
                 : ReachModel.breakable(terrain, ex, ey, ez, tx, ty, tz, reach);
@@ -112,6 +134,7 @@ public final class StandingSpotChooser {
         private final Mode mode;
         private final double reach;
         private final LongPredicate reject;
+        private final LookFilter look;
         private final int lowest;
         private final int[] bounds;
         private final int words;
@@ -132,6 +155,11 @@ public final class StandingSpotChooser {
 
         public Scorer(WalkTerrain terrain, WalkPathfinder.Flood flood, long[] targets, int targetCount, Mode mode,
                       double reach, LongPredicate reject) {
+            this(terrain, flood, targets, targetCount, mode, reach, reject, null);
+        }
+
+        public Scorer(WalkTerrain terrain, WalkPathfinder.Flood flood, long[] targets, int targetCount, Mode mode,
+                      double reach, LongPredicate reject, LookFilter look) {
             this.terrain = terrain;
             this.flood = flood;
             this.sorted = Arrays.copyOf(targets, Math.max(0, targetCount));
@@ -139,6 +167,7 @@ public final class StandingSpotChooser {
             this.mode = mode;
             this.reach = reach;
             this.reject = reject;
+            this.look = look;
             this.words = (sorted.length + 63) >> 6;
             int low = Integer.MAX_VALUE;
             for (long target : sorted) low = Math.min(low, WalkTerrain.unpackY(target));
@@ -255,7 +284,7 @@ public final class StandingSpotChooser {
             for (int i = first(fx - (int) Math.ceil(reach) - 2); i < sorted.length; i++) {
                 long target = sorted[i];
                 if (WalkTerrain.unpackX(target) > fx + reach + 2) break;
-                if (clickable(terrain, target, fx, fy, fz, ex, ey, ez, mode, reach, prefilter)) {
+                if (clickable(terrain, target, fx, fy, fz, ex, ey, ez, mode, reach, prefilter, look)) {
                     count++;
                     if (mask != null) mask[i >> 6] |= 1L << i;
                 }

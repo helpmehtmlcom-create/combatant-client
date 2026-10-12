@@ -20,7 +20,9 @@ import combatant.client.render.engine.postprocess.MenuBackgroundRenderer;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.util.schematic.LayerStats;
 import combatant.client.util.schematic.LitematicReader;
+import combatant.client.util.schematic.RedstoneRules;
 import combatant.client.util.schematic.Schematic;
+import combatant.client.util.schematic.SchematicAttention;
 import combatant.client.util.schematic.SchematicDiff;
 import combatant.client.util.schematic.SchematicHeader;
 import combatant.client.util.schematic.SchematicLibrary;
@@ -40,7 +42,10 @@ import net.minecraft.client.resources.language.I18n;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Util;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.state.BlockState;
 import org.lwjgl.glfw.GLFW;
@@ -74,7 +79,7 @@ public final class SchematicScreen extends Screen {
         CLOSE, REFRESH, LOAD, OPEN_FOLDER,
         ORIGIN_HERE, ORIGIN_LOOK, ROTATE, MIRROR, BUILDER, PROJECTION, LAYER_MODE, UNLOAD,
         LAYER_DOWN10, LAYER_DOWN, PLAY, SPEED, LAYER_UP, LAYER_UP10,
-        TAB_LAYER, TAB_TOTAL,
+        TAB_LAYER, TAB_TOTAL, TAB_ISSUES,
         TAB_3D, TAB_2D, VIEW_MODE, AUTO_ROTATE, RESET_VIEW
     }
 
@@ -123,7 +128,12 @@ public final class SchematicScreen extends Screen {
     private boolean searchFocused;
 
     private boolean materialsTotal;
+    private boolean issuesShown;
     private int materialsFirst;
+    private List<SchematicAttention.Entry> issues = List.of();
+    private List<ItemStack> issueStacks = List.of();
+    private Object issuesKey;
+    private boolean[] materialRedstone = new boolean[0];
     private List<SchematicMaterials.Entry> materials = List.of();
     private List<ItemStack> materialStacks = List.of();
     private int[] materialHave = new int[0];
@@ -302,8 +312,10 @@ public final class SchematicScreen extends Screen {
             place(ids[i], rightX + (i % 2) * (half + GAP), buttonsY + (i / 2) * (BUTTON_H + GAP), half, BUTTON_H);
         }
         float tabsY = buttonsY + 4f * (BUTTON_H + GAP) + 10f;
-        place(Btn.TAB_LAYER, rightX, tabsY, half, 32f);
-        place(Btn.TAB_TOTAL, rightX + half + GAP, tabsY, half, 32f);
+        float third = (rightW - GAP * 2f) / 3f;
+        place(Btn.TAB_LAYER, rightX, tabsY, third, 32f);
+        place(Btn.TAB_TOTAL, rightX + third + GAP, tabsY, third, 32f);
+        place(Btn.TAB_ISSUES, rightX + (third + GAP) * 2f, tabsY, third, 32f);
         materialsY = tabsY + 32f + GAP;
         materialsH = Math.max(MATERIAL_ROW_H, contentBottom - materialsY);
     }
@@ -757,9 +769,15 @@ public final class SchematicScreen extends Screen {
         drawButton(Btn.LAYER_MODE, tr("screen.combatant.schematic.layer_mode." + state.layerMode().name().toLowerCase(Locale.ROOT)),
                 false, true, alpha);
         drawButton(Btn.UNLOAD, tr("screen.combatant.schematic.unload"), false, loaded, alpha);
-        drawButton(Btn.TAB_LAYER, tr("screen.combatant.schematic.materials_layer"), !materialsTotal, loaded, alpha);
-        drawButton(Btn.TAB_TOTAL, tr("screen.combatant.schematic.materials_total"), materialsTotal, loaded, alpha);
-        renderMaterials(alpha);
+        drawButton(Btn.TAB_LAYER, tr("screen.combatant.schematic.materials_layer"), !materialsTotal && !issuesShown, loaded, alpha);
+        drawButton(Btn.TAB_TOTAL, tr("screen.combatant.schematic.materials_total"), materialsTotal && !issuesShown, loaded, alpha);
+        refreshIssues();
+        drawButton(Btn.TAB_ISSUES, tr("screen.combatant.schematic.attention_tab", issues.size()), issuesShown, loaded, alpha);
+        if (issuesShown) {
+            renderIssues(alpha);
+        } else {
+            renderMaterials(alpha);
+        }
     }
 
     private void renderInfo(float alpha) {
@@ -836,6 +854,67 @@ public final class SchematicScreen extends Screen {
         }
     }
 
+    /** What the builder cannot make exactly: the schematic's own impossibilities, then what the builder met. */
+    private void renderIssues(float alpha) {
+        ui.section(rightX, materialsY, rightW, materialsH, alpha);
+        if (issues.isEmpty()) {
+            String text = tr(state.hasSchematic() ? "screen.combatant.schematic.attention_none" : "screen.combatant.schematic.none_loaded");
+            ui.textCentered(text, rightX + rightW * 0.5f, materialsY + Math.min(materialsH * 0.4f, 60f), SchematicUi.SMALL,
+                    SchematicUi.scaleAlpha(SchematicUi.FAINT, alpha), false);
+            return;
+        }
+        int visible = Math.max(1, (int) ((materialsH - 8f) / MATERIAL_ROW_H));
+        materialsFirst = clampInt(materialsFirst, 0, Math.max(0, issues.size() - visible));
+        for (int i = 0; i < visible && materialsFirst + i < issues.size(); i++) {
+            renderIssueRow(materialsFirst + i, materialsY + 4f + i * MATERIAL_ROW_H, alpha);
+        }
+        if (issues.size() > visible) {
+            renderScrollbar(rightX + rightW - 5f, materialsY + 6f, materialsH - 12f, materialsFirst, visible, issues.size(), alpha);
+        }
+    }
+
+    private void renderIssueRow(int index, float y, float alpha) {
+        SchematicAttention.Entry entry = issues.get(index);
+        float x = rightX + 6f;
+        float w = rightW - 16f;
+        float rh = MATERIAL_ROW_H - 2f;
+        Renderer2D.COLOR.roundedRect(x, y, w, rh, 6f, SchematicUi.scaleAlpha(SchematicUi.mix(SchematicUi.SURFACE, SchematicUi.WARN, 0.14f), alpha));
+        Renderer2D.COLOR.item(issueStacks.get(index), x + 4f, y + (rh - 20f) * 0.5f, 1.25f, index);
+        String where = entry.pos() == null
+                ? "x" + entry.count()
+                : entry.pos().getX() + ", " + entry.pos().getY() + ", " + entry.pos().getZ();
+        float whereW = ui.width(where, SchematicUi.TINY, false);
+        ui.text(ui.ellipsize(entry.state().getBlock().getName().getString(), SchematicUi.SMALL, w - whereW - 44f),
+                x + 32f, y + 3f, SchematicUi.SMALL, SchematicUi.scaleAlpha(SchematicUi.TEXT, alpha), false);
+        ui.textRight(where, x + w - 4f, y + 4f, SchematicUi.TINY, SchematicUi.scaleAlpha(SchematicUi.MUTED, alpha), false);
+        String reason = tr("screen.combatant.schematic.attention." + entry.reason().name().toLowerCase(Locale.ROOT));
+        ui.text(ui.ellipsize(reason, SchematicUi.TINY, w - 36f), x + 32f, y + rh - tinyH - 3f, SchematicUi.TINY,
+                SchematicUi.scaleAlpha(SchematicUi.WARN, alpha), false);
+    }
+
+    private void refreshIssues() {
+        Schematic schematic = state.schematic();
+        LayerStats stats = state.stats();
+        if (schematic == null || stats == null) {
+            issues = List.of();
+            issueStacks = List.of();
+            issuesKey = null;
+            return;
+        }
+        List<Object> key = List.of(schematic, state.attentionRevision(), state.placement() == null ? 0 : state.placement());
+        if (key.equals(issuesKey)) return;
+        issuesKey = key;
+        List<SchematicAttention.Entry> list = new ArrayList<>(SchematicAttention.staticIssues(schematic, stats.paletteTotals()));
+        list.addAll(state.attention());
+        issues = list;
+        List<ItemStack> stacks = new ArrayList<>(list.size());
+        for (SchematicAttention.Entry entry : list) {
+            Item item = SchematicMaterials.itemFor(entry.state());
+            stacks.add(new ItemStack(item == Items.AIR ? Items.BARRIER : item));
+        }
+        issueStacks = stacks;
+    }
+
     private static boolean isMissing(List<SchematicMaterials.Entry> missing, SchematicMaterials.Entry entry) {
         for (SchematicMaterials.Entry m : missing) {
             if (m.item() == entry.item()) return true;
@@ -855,6 +934,10 @@ public final class SchematicScreen extends Screen {
             Renderer2D.COLOR.roundedRect(x, y, w, rh, 6f, SchematicUi.scaleAlpha(SchematicUi.SURFACE_HOVER, alpha));
         }
         Renderer2D.COLOR.item(materialStacks.get(index), x + 4f, y + (rh - 20f) * 0.5f, 1.25f, index);
+        if (index < materialRedstone.length && materialRedstone[index]) {
+            // Redstone parts carry a small dot so a machine's components stand out from its casing.
+            Renderer2D.COLOR.roundedRect(x + 2f, y + 3f, 6f, 6f, 3f, SchematicUi.scaleAlpha(SchematicUi.REDSTONE, alpha));
+        }
         String counts = have + " / " + entry.count();
         float countsW = ui.width(counts, SchematicUi.SMALL, false);
         float textY = y + 4f;
@@ -884,8 +967,15 @@ public final class SchematicScreen extends Screen {
             int[] histogram = materialsTotal ? stats.paletteTotals() : stats.layerHistogram(state.layer());
             materials = SchematicMaterials.materials(schematic, histogram);
             List<ItemStack> stacks = new ArrayList<>(materials.size());
-            for (SchematicMaterials.Entry entry : materials) stacks.add(new ItemStack(entry.item()));
+            boolean[] redstone = new boolean[materials.size()];
+            for (int i = 0; i < materials.size(); i++) {
+                Item item = materials.get(i).item();
+                stacks.add(new ItemStack(item));
+                redstone[i] = item instanceof BlockItem blockItem
+                        && RedstoneRules.isComponent(blockItem.getBlock().defaultBlockState());
+            }
             materialStacks = stacks;
+            materialRedstone = redstone;
             materialHave = new int[materials.size()];
             materialsHaveNanos = 0L;
         }
@@ -1029,8 +1119,18 @@ public final class SchematicScreen extends Screen {
             case SPEED -> speedIndex = (speedIndex + 1) % PLAY_SPEEDS.length;
             case LAYER_UP -> state.stepLayer(1);
             case LAYER_UP10 -> state.stepLayer(10);
-            case TAB_LAYER -> materialsTotal = false;
-            case TAB_TOTAL -> materialsTotal = true;
+            case TAB_LAYER -> {
+                materialsTotal = false;
+                issuesShown = false;
+            }
+            case TAB_TOTAL -> {
+                materialsTotal = true;
+                issuesShown = false;
+            }
+            case TAB_ISSUES -> {
+                issuesShown = true;
+                materialsFirst = 0;
+            }
             case TAB_3D -> setView3d(true);
             case TAB_2D -> setView3d(false);
             case VIEW_MODE -> viewport.cycleMode();
