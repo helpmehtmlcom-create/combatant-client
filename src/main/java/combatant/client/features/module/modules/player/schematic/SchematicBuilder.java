@@ -420,7 +420,7 @@ public final class SchematicBuilder extends Module {
             pending = move(player);
             pendingAge = 0;
         } else if (pending != null && autoWalk.get()) {
-            mover.holdForClick();
+            mover.holdForClick(player, clickOnTheMove(pending));
         }
         if (pending == null) {
             if (!aimedThisTick) RotationManager.INSTANCE.release(this);
@@ -453,6 +453,15 @@ public final class SchematicBuilder extends Module {
         if (click == null) return null;
         ItemStack stack = player.getInventory().getItem(click.hotbarSlot());
         return new Pending(click.plan(), click.expected(), stack.getItem(), click.hotbarSlot(), Kind.HELPER);
+    }
+
+    /**
+     * A placement that comes out the same wherever the click lands and whichever way the player looks (stone,
+     * planks, wool) can go in while walking past. Anything with properties, a look-decided facing or a sneak
+     * click waits for the player to stand.
+     */
+    private static boolean clickOnTheMove(Pending work) {
+        return work.kind == Kind.PLACE && !work.plan.sneak() && work.expected.getProperties().isEmpty();
     }
 
     private void requestRotation(Rotation rotation) {

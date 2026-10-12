@@ -136,7 +136,8 @@ final class BuildMover {
     private static final double CENTER_DISTANCE = 0.2;
     private static final int REPLAN_WAIT_TICKS = 40;
     private static final int ABORT_COOLDOWN_TICKS = 100;
-    private static final int ARRIVAL_GRACE_TICKS = 3;
+    /** After arriving the builder gets this long to find a click before the spot counts as useless. */
+    private static final int ARRIVAL_GRACE_TICKS = 1;
     private static final int MAX_PILLAR_RETRIES = 4;
     private static final int MAX_GOAL_REPLANS = 6;
     private static final float PILLAR_PITCH_READY = 80.0f;
@@ -198,6 +199,8 @@ final class BuildMover {
     private boolean jumpThisTick;
     private boolean controlling;
     private boolean holdStill;
+    /** A click is due this tick (the builder holds the rotation for it). */
+    private boolean clicking;
     private int replanWait;
     private int abortCooldown;
     private int arrivalGrace;
@@ -324,17 +327,34 @@ final class BuildMover {
 
     /** A pause condition holds (screen, item use, low health, no material): let go of the keys. */
     void pause() {
+        clicking = false;
         stopMining();
         controlling = false;
         holdStill = false;
         jumpThisTick = false;
     }
 
-    /** The builder is about to click: stand still under the planner. */
-    void holdForClick() {
+    /**
+     * The builder is about to click. Usually the player stands still for it. With {@code walkOn} (a plain block
+     * whose state does not depend on the look or the click point) a walk already under way goes on: the block goes
+     * in as the player passes, instead of a stop, a click and a fresh start for every block picked up on the way.
+     */
+    void holdForClick(LocalPlayer player, boolean walkOn) {
         controlling = true;
-        holdStill = true;
         jumpThisTick = false;
+        clicking = true;
+        if (walkOn && mode == Mode.WALKING && (follower.active() || replanPending)) {
+            long started = System.nanoTime();
+            holdStill = false;
+            if (!followRoute(player, started + PLAN_BUDGET_NANOS)) {
+                if (mode == Mode.WALKING) mode = Mode.IDLE;
+                arrivalGrace = ARRIVAL_GRACE_TICKS;
+                holdStill = true;
+            }
+            cpuMaxNanos = Math.max(cpuMaxNanos, System.nanoTime() - started);
+            return;
+        }
+        holdStill = true;
     }
 
     /** A block went in: spots that looked useless may not be any more. */
@@ -374,6 +394,7 @@ final class BuildMover {
     }
 
     private HelperClick tickBuildTimed(LocalPlayer player, long deadline) {
+        clicking = false;
         controlling = true;
         holdStill = false;
         jumpThisTick = false;
@@ -795,6 +816,7 @@ final class BuildMover {
     }
 
     private boolean tickClearTimed(LocalPlayer player, double reach, long deadline) {
+        clicking = false;
         controlling = true;
         holdStill = true;
         jumpThisTick = false;
@@ -948,7 +970,8 @@ final class BuildMover {
             }
             jump = follower.jump() && player.onGround() || follower.climb();
             descending = follower.descending();
-            sprint = follower.sprint() && keys == Steering.FORWARD && !jump && canSprint(player);
+            // Never sprint toward a click: the rule is no sprint while placing.
+            sprint = !clicking && follower.sprint() && keys == Steering.FORWARD && !jump && canSprint(player);
         } else if (mode == Mode.PILLARING && pillar != null && !follower.active() && player.onGround()) {
             // Centre on the column before the jump; the pillar is one block wide.
             Vec3 pos = player.position();
