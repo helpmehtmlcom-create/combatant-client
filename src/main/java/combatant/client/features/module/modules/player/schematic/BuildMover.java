@@ -135,6 +135,7 @@ final class BuildMover {
     private static final double PLAN_MARGIN = 0.35;
     private static final double CENTER_DISTANCE = 0.2;
     private static final int REPLAN_WAIT_TICKS = 40;
+    private static final int EMPTY_WAIT_TICKS = 10;
     private static final int ABORT_COOLDOWN_TICKS = 100;
     /** After arriving the builder gets this long to find a click before the spot counts as useless. */
     private static final int ARRIVAL_GRACE_TICKS = 1;
@@ -221,6 +222,8 @@ final class BuildMover {
     private int goalReplans;
     /** Ticks that spent part of their budget on a plan; more than one per plan means it was sliced. */
     private int planTicks;
+    private int emptyWaits;
+    private int unreachableWaits;
     /** Longest single tick spent in the mover's planning and route following, for the smoke report. */
     private long cpuMaxNanos;
     /** The layer (world y) for which no standing spot level with it reaches anything: build it from below. */
@@ -321,6 +324,8 @@ final class BuildMover {
         pillarJumps = 0;
         replans = 0;
         planTicks = 0;
+        emptyWaits = 0;
+        unreachableWaits = 0;
         cpuMaxNanos = 0L;
         lastPosition = null;
     }
@@ -452,7 +457,9 @@ final class BuildMover {
             reserved.clear();
         }
         if (targetCount <= 0) {
-            replanWait = REPLAN_WAIT_TICKS;
+            // Nothing to walk to right now (the rest waits for a retry or for power): look again soon.
+            emptyWaits++;
+            replanWait = EMPTY_WAIT_TICKS;
             return false;
         }
         planMode = planFor;
@@ -548,6 +555,7 @@ final class BuildMover {
             warnedUnreachable = true;
             Notifier.warning(I18n.get("module.schematicbuilder.notify.unreachable"));
         }
+        unreachableWaits++;
         replanWait = REPLAN_WAIT_TICKS;
     }
 
@@ -1117,7 +1125,7 @@ final class BuildMover {
         if (water && !fluid.is(FluidTags.WATER)) return WalkTerrain.DANGER;
         if (block == Blocks.COBWEB) return WalkTerrain.WEB;
         if (state.is(BlockTags.CLIMBABLE)) return WalkTerrain.CLIMB;
-        if (block instanceof DoorBlock) return state.getValue(DoorBlock.OPEN) ? WalkTerrain.OPEN : WalkTerrain.SOLID;
+        if (block instanceof DoorBlock) return state.getValue(DoorBlock.OPEN) ? WalkTerrain.NARROW : WalkTerrain.SOLID;
         VoxelShape shape = state.getCollisionShape(level, pos);
         if (shape.isEmpty()) return water ? WalkTerrain.WATER : WalkTerrain.OPEN;
         double top = shape.max(Direction.Axis.Y);
@@ -1172,6 +1180,7 @@ final class BuildMover {
         if (abortCooldown > 0 || replanWait > 0) parts.add("wait=" + abortCooldown + "/" + replanWait);
         parts.add("replans=" + replans);
         parts.add("planTicks=" + planTicks);
+        parts.add("waits=" + emptyWaits + "/" + unreachableWaits);
         parts.add("cpuMaxUs=" + cpuMaxNanos / 1000L);
         parts.add("cacheMiss=" + cache.misses() + "/" + cache.lookups());
         return String.join(" ", parts);
