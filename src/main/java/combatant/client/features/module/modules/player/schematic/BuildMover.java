@@ -103,6 +103,9 @@ final class BuildMover {
 
         /** Ends the builder's silent hotbar lease so a tool switch is what the server sees. */
         void releaseHotbar();
+
+        /** Whether a target is worth walking to these eyes for; pistons and observers need a particular look. */
+        boolean lookAllows(long target, double eyeX, double eyeY, double eyeZ);
     }
 
     /** A support block click the builder should send this tick. */
@@ -125,6 +128,8 @@ final class BuildMover {
     private static final int MAX_DROP = 1;
     /** Getting off a finished build to break the support blocks may need a slightly bigger, still harmless drop. */
     private static final int CLEAR_MAX_DROP = 2;
+    /** Falls of up to three blocks cost no health. */
+    private static final int SAFE_DROP = 3;
     private static final int MAX_PILLAR = 8;
     /** Walk planning works with a slightly shorter reach than clicks do: the player never stops dead centre. */
     private static final double PLAN_MARGIN = 0.35;
@@ -143,6 +148,7 @@ final class BuildMover {
     private static final double PILLAR_COMPARE_COST = 24.0;
     /** A pillar has to beat the walk by this factor: its blocks still need breaking again afterwards. */
     private static final double PILLAR_ADVANTAGE = 1.5;
+    private static final int PILLAR_STALL_TICKS = 200;
 
     private final Minecraft mc;
     private final Host host;
@@ -186,6 +192,8 @@ final class BuildMover {
     private PillarPlanner.Pillar pillar;
     private int pillarBaseY = Integer.MIN_VALUE;
     private int pillarRetries;
+    private int pillarProgressBlocks;
+    private int pillarIdleTicks;
     private boolean jumpThisTick;
     private boolean controlling;
     private boolean holdStill;
@@ -432,7 +440,9 @@ final class BuildMover {
     }
 
     private void startFlood() {
-        int drop = planMode == StandingSpotChooser.Mode.PLACE ? MAX_DROP : CLEAR_MAX_DROP;
+        int drop = planMode == StandingSpotChooser.Mode.PLACE
+                ? (helpers.isEmpty() ? MAX_DROP : SAFE_DROP)
+                : CLEAR_MAX_DROP;
         floodSearch.startFlood(planStart, drop, floodBound, FLOOD_NODES, reserved.isEmpty() ? null : reserved);
         stage = Stage.FLOOD;
         flood = null;
@@ -456,7 +466,8 @@ final class BuildMover {
                 case FLOOD -> {
                     if (floodSearch.step(deadline) == WalkPathfinder.Search.RUNNING) return;
                     flood = floodSearch.flood();
-                    scorer = new StandingSpotChooser.Scorer(cache, flood, targets, targetCount, planMode, planReach, rejected);
+                    scorer = new StandingSpotChooser.Scorer(cache, flood, targets, targetCount, planMode, planReach,
+                            rejected, planMode == StandingSpotChooser.Mode.PLACE ? host::lookAllows : null);
                     stage = Stage.SPOTS;
                 }
                 case SPOTS -> {
@@ -636,6 +647,16 @@ final class BuildMover {
         }
         if ((follower.active() || replanPending) && followRoute(player, deadline)) return null;
         if (follower.active() || mode != Mode.PILLARING) return null;
+        if (pillarBlocks != pillarProgressBlocks) {
+            pillarProgressBlocks = pillarBlocks;
+            pillarIdleTicks = 0;
+        } else if (++pillarIdleTicks > PILLAR_STALL_TICKS) {
+            // Standing at the column without a block going in for this long: it will not, try somewhere else.
+            pillarIdleTicks = 0;
+            rejected.add(WalkTerrain.pack(column.x(), column.y(), column.z()));
+            abort();
+            return null;
+        }
         int feetY = feetY(player);
         if (feetY >= column.topY() && player.onGround()) {
             finishPillar();
@@ -700,7 +721,8 @@ final class BuildMover {
         if (mc.level.getBlockState(support).canBeReplaced()) return null;
         Rotation rotation = Rotation.lookingAt(down, player.getEyePosition());
         double distanceSq = player.getEyePosition().distanceToSqr(down);
-        BuildPlanner.Plan plan = new BuildPlanner.Plan(target, support, Direction.UP, down, rotation, false, distanceSq);
+        BuildPlanner.Plan plan = new BuildPlanner.Plan(target, support, Direction.UP, down, rotation, false,
+                distanceSq, false);
         return new HelperClick(plan, slot, blockItem.getBlock().defaultBlockState());
     }
 

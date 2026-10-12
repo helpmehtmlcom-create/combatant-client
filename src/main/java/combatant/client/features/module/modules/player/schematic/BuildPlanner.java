@@ -7,7 +7,11 @@
 
 package combatant.client.features.module.modules.player.schematic;
 
+import combatant.client.mixins.accessors.BlockItemInvoker;
 import combatant.client.util.aiming.data.Rotation;
+import combatant.client.util.schematic.RedstoneRules;
+import combatant.client.util.schematic.StateAdjustments;
+import combatant.client.util.schematic.StateComparison;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -15,6 +19,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.entity.Pose;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.AnvilBlock;
@@ -22,23 +27,31 @@ import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.ButtonBlock;
+import net.minecraft.world.level.block.CakeBlock;
+import net.minecraft.world.level.block.CandleCakeBlock;
 import net.minecraft.world.level.block.CartographyTableBlock;
+import net.minecraft.world.level.block.ComposterBlock;
 import net.minecraft.world.level.block.CraftingTableBlock;
+import net.minecraft.world.level.block.DaylightDetectorBlock;
 import net.minecraft.world.level.block.DiodeBlock;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.FenceGateBlock;
+import net.minecraft.world.level.block.FlowerPotBlock;
 import net.minecraft.world.level.block.GrindstoneBlock;
 import net.minecraft.world.level.block.LeverBlock;
 import net.minecraft.world.level.block.LoomBlock;
 import net.minecraft.world.level.block.NoteBlock;
+import net.minecraft.world.level.block.RespawnAnchorBlock;
 import net.minecraft.world.level.block.SmithingTableBlock;
 import net.minecraft.world.level.block.StonecutterBlock;
 import net.minecraft.world.level.block.TrapDoorBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 /**
  * Picks the face and hit point that reproduce a schematic block state.
@@ -46,7 +59,9 @@ import net.minecraft.world.phys.shapes.CollisionContext;
  * <p>Rather than encode per-block placement rules, every candidate click is run through the block's own
  * {@code getStateForPlacement} with the player briefly turned to the aim rotation, exactly what the server
  * will do with the click. A click that yields the wanted state is exact; one that yields the right block in
- * another state (a stair facing the wrong way, a single slab where a double one goes) is approximate.</p>
+ * another state (a stair facing the wrong way, a single slab where a double one goes) is approximate. Derived
+ * state (power, lit, connections) does not count, and neither does what clicking the placed block sets later
+ * (a repeater's delay, a comparator's mode, a note).</p>
  */
 final class BuildPlanner {
 
@@ -54,64 +69,154 @@ final class BuildPlanner {
     // The vertical centre of a side face is the top/bottom boundary for stairs, slabs and trapdoors: a click
     // planned there flips half on the smallest rotation rounding, so side faces are aimed clear of it.
     private static final double[] SIDE_HEIGHTS = {-0.25, 0.25};
+    // Pistons, observers, droppers and dispensers face along the nearest axis of the look: when the coarse
+    // points give the wrong axis, points near the face edges tilt the look far enough to change it.
+    private static final double[] FINE_OFFSETS = {-0.44, -0.15, 0.15, 0.44};
+    /** Degrees a planned look may drift and still give the same facing; matches the builder's check at click time. */
+    static final float LOOK_MARGIN = 2.0f;
 
     private BuildPlanner() {
     }
 
+    /**
+     * One click that places the target. {@code sneak}: the support is a block that would open or toggle on a
+     * plain click, so the click goes out sneaking (vanilla then places against it), aimed from the lower eyes.
+     */
     record Plan(BlockPos target, BlockPos support, Direction face, Vec3 hit, Rotation rotation,
-                boolean exact, double distanceSq) {
+                boolean exact, double distanceSq, boolean sneak) {
     }
 
     static Plan plan(LocalPlayer player, Level level, BlockPos target, BlockState desired, ItemStack stack,
                      double range, boolean aimAtHit) {
         if (!(stack.getItem() instanceof BlockItem)) return null;
         Vec3 eyes = player.getEyePosition();
+        Vec3 crouchedEyes = player.position().add(0.0, player.getEyeHeight(Pose.CROUCHING), 0.0);
+        Search search = new Search(player, level, target, desired, stack, range * range, aimAtHit);
+        for (int pass = 0; pass < 2; pass++) {
+            boolean fine = pass == 1;
+            // The fine pass only helps blocks whose facing follows the look, and only when nothing exact came up.
+            if (fine && (search.best == null || search.best.exact || !RedstoneRules.lookDecides(desired))) break;
+            for (Direction toSupport : Direction.values()) {
+                BlockPos support = target.relative(toSupport);
+                BlockState supportState = level.getBlockState(support);
+                if (supportState.canBeReplaced() || supportState.getShape(level, support).isEmpty()) continue;
+                boolean sneak = isInteractive(supportState);
+                search.face(support, toSupport.getOpposite(), sneak ? crouchedEyes : eyes, sneak, fine);
+            }
+        }
+        return search.best;
+    }
+
+    /** Best click found so far over the faces of the target's neighbours. */
+    private static final class Search {
+        private final LocalPlayer player;
+        private final Level level;
+        private final BlockPos target;
+        private final BlockState desired;
+        private final ItemStack stack;
+        private final double rangeSq;
+        private final boolean aimAtHit;
+        private final boolean lookDecides;
+        private Plan best;
+
+        Search(LocalPlayer player, Level level, BlockPos target, BlockState desired, ItemStack stack, double rangeSq,
+               boolean aimAtHit) {
+            this.player = player;
+            this.level = level;
+            this.target = target;
+            this.desired = desired;
+            this.stack = stack;
+            this.rangeSq = rangeSq;
+            this.aimAtHit = aimAtHit;
+            this.lookDecides = RedstoneRules.lookDecides(desired);
+        }
+
+        /** A look a couple of degrees off still gives the same facing: the click survives rotation rounding. */
+        private boolean steady(BlockPos support, Direction face, Vec3 point, Rotation rotation) {
+            float[][] nudges = {{LOOK_MARGIN, 0f}, {-LOOK_MARGIN, 0f}, {0f, LOOK_MARGIN}, {0f, -LOOK_MARGIN}};
+            for (float[] nudge : nudges) {
+                Rotation nudged = new Rotation(rotation.yaw() + nudge[0],
+                        Math.max(-90.0f, Math.min(90.0f, rotation.pitch() + nudge[1])));
+                BlockState result = simulate(player, level, stack, target, support, face, point, nudged);
+                if (result == null || !exact(result, desired)) return false;
+            }
+            return true;
+        }
+
+        void face(BlockPos support, Direction face, Vec3 eyes, boolean sneak, boolean fine) {
+            Vec3 center = Vec3.atCenterOf(support).add(face.getStepX() * 0.5, face.getStepY() * 0.5, face.getStepZ() * 0.5);
+            // A face pointing away from the eyes cannot be clicked without looking through the support block.
+            double facing = (eyes.x - center.x) * face.getStepX() + (eyes.y - center.y) * face.getStepY()
+                    + (eyes.z - center.z) * face.getStepZ();
+            if (facing <= 0.0) return;
+            double[] across = fine ? FINE_OFFSETS : FACE_OFFSETS;
+            double[] heights = fine ? FINE_OFFSETS : face.getAxis() == Direction.Axis.Y ? FACE_OFFSETS : SIDE_HEIGHTS;
+            for (double u : across) {
+                for (double v : heights) point(support, face, pointOnFace(center, face, u, v), eyes, sneak);
+            }
+        }
+
+        private void point(BlockPos support, Direction face, Vec3 point, Vec3 eyes, boolean sneak) {
+            double distanceSq = eyes.distanceToSqr(point);
+            if (distanceSq > rangeSq) return;
+            Rotation rotation = Rotation.lookingAt(point, eyes);
+            BlockState result = simulate(player, level, stack, target, support, face, point, aimAtHit ? rotation : null);
+            if (result == null || result.getBlock() != desired.getBlock()) return;
+            boolean exact = exact(result, desired) && (!aimAtHit || !lookDecides || steady(support, face, point, rotation));
+            Plan candidate = new Plan(target, support, face, point, rotation, exact, distanceSq, sneak);
+            if (!better(candidate, best)) return;
+            BlockHitResult hit = trace(player, eyes, rotation, Math.sqrt(distanceSq) + 0.5);
+            if (hit == null || !hit.getBlockPos().equals(support) || hit.getDirection() != face) return;
+            best = candidate;
+        }
+    }
+
+    /**
+     * A plain (not sneaking) click on the block at {@code pos} itself, to step a repeater's delay, a comparator's
+     * mode, a note or a lever. Aims at the middle of the block's outline and at the middle of each face of it
+     * that looks towards the eyes; the first one the ray really hits wins.
+     */
+    static Plan planClick(LocalPlayer player, Level level, BlockPos pos, double range) {
+        VoxelShape shape = level.getBlockState(pos).getShape(level, pos);
+        if (shape.isEmpty()) return null;
+        AABB box = shape.bounds().move(pos);
+        Vec3 eyes = player.getEyePosition();
         double rangeSq = range * range;
         Plan best = null;
-        for (Direction toSupport : Direction.values()) {
-            BlockPos support = target.relative(toSupport);
-            BlockState supportState = level.getBlockState(support);
-            if (supportState.canBeReplaced() || isInteractive(supportState)
-                    || supportState.getShape(level, support).isEmpty()) continue;
-            Direction face = toSupport.getOpposite();
-            Plan candidate = bestOnFace(player, level, target, desired, stack, support, face, eyes, rangeSq, aimAtHit);
-            if (candidate != null && better(candidate, best)) best = candidate;
+        Vec3 center = box.getCenter();
+        best = clickAt(player, pos, center, eyes, rangeSq, best);
+        for (Direction face : Direction.values()) {
+            Vec3 onFace = new Vec3(
+                    face.getStepX() == 0 ? center.x : face.getStepX() > 0 ? box.maxX - 0.01 : box.minX + 0.01,
+                    face.getStepY() == 0 ? center.y : face.getStepY() > 0 ? box.maxY - 0.01 : box.minY + 0.01,
+                    face.getStepZ() == 0 ? center.z : face.getStepZ() > 0 ? box.maxZ - 0.01 : box.minZ + 0.01);
+            best = clickAt(player, pos, onFace, eyes, rangeSq, best);
         }
         return best;
     }
 
-    private static Plan bestOnFace(LocalPlayer player, Level level, BlockPos target, BlockState desired, ItemStack stack,
-                                   BlockPos support, Direction face, Vec3 eyes, double rangeSq, boolean aimAtHit) {
-        Vec3 center = Vec3.atCenterOf(support).add(face.getStepX() * 0.5, face.getStepY() * 0.5, face.getStepZ() * 0.5);
-        // A face pointing away from the eyes cannot be clicked without looking through the support block.
-        double facing = (eyes.x - center.x) * face.getStepX() + (eyes.y - center.y) * face.getStepY()
-                + (eyes.z - center.z) * face.getStepZ();
-        if (facing <= 0.0) return null;
+    private static Plan clickAt(LocalPlayer player, BlockPos pos, Vec3 point, Vec3 eyes, double rangeSq, Plan best) {
+        double distanceSq = eyes.distanceToSqr(point);
+        if (distanceSq > rangeSq || best != null && best.distanceSq <= distanceSq) return best;
+        Rotation rotation = Rotation.lookingAt(point, eyes);
+        BlockHitResult hit = trace(player, eyes, rotation, Math.sqrt(distanceSq) + 0.5);
+        if (hit == null || !hit.getBlockPos().equals(pos)) return best;
+        return new Plan(pos, pos, hit.getDirection(), hit.getLocation(), rotation, true, distanceSq, false);
+    }
 
-        Plan best = null;
-        double[] heights = face.getAxis() == Direction.Axis.Y ? FACE_OFFSETS : SIDE_HEIGHTS;
-        for (double u : FACE_OFFSETS) {
-            for (double v : heights) {
-                Vec3 point = pointOnFace(center, face, u, v);
-                double distanceSq = eyes.distanceToSqr(point);
-                if (distanceSq > rangeSq) continue;
-                Rotation rotation = Rotation.lookingAt(point, eyes);
-                BlockState result = simulate(player, level, stack, target, support, face, point,
-                        aimAtHit ? rotation : null);
-                if (result == null || result.getBlock() != desired.getBlock()) continue;
-                Plan candidate = new Plan(target, support, face, point, rotation, result == desired, distanceSq);
-                if (!better(candidate, best)) continue;
-                BlockHitResult hit = trace(player, rotation, Math.sqrt(distanceSq) + 0.5);
-                if (hit == null || !hit.getBlockPos().equals(support) || hit.getDirection() != face) continue;
-                best = candidate;
-            }
-        }
-        return best;
+    /**
+     * Whether a click producing {@code result} builds {@code desired}: equal up to derived state (see
+     * {@link StateComparison}) and to what a few clicks on the placed block still set (delay, mode, note).
+     */
+    static boolean exact(BlockState result, BlockState desired) {
+        return result == desired || StateAdjustments.clicksNeeded(result, desired) != StateAdjustments.IMPOSSIBLE;
     }
 
     private static boolean better(Plan candidate, Plan best) {
         if (best == null) return true;
         if (candidate.exact != best.exact) return candidate.exact;
+        // Sneaking costs a tick to crouch and moves the eyes; a plain click wins a tie.
+        if (candidate.sneak != best.sneak) return !candidate.sneak;
         return candidate.distanceSq < best.distanceSq;
     }
 
@@ -141,8 +246,8 @@ final class BuildPlanner {
             BlockPlaceContext context = new BlockPlaceContext(player, InteractionHand.MAIN_HAND, stack,
                     new BlockHitResult(hit, face, support, false));
             if (!context.canPlace() || !context.getClickedPos().equals(target)) return null;
-            Block block = blockItem.getBlock();
-            BlockState state = block.getStateForPlacement(context);
+            // The item's rule, not the block's: a torch item turns into a wall torch when the look says so.
+            BlockState state = ((BlockItemInvoker) blockItem).combatant$getPlacementState(context);
             if (state == null || !state.canSurvive(level, target)) return null;
             if (!level.isUnobstructed(state, target, CollisionContext.placementContext(player))) return null;
             return state;
@@ -155,8 +260,11 @@ final class BuildPlanner {
     }
 
     static BlockHitResult trace(LocalPlayer player, Rotation rotation, double range) {
+        return trace(player, player.getEyePosition(), rotation, range);
+    }
+
+    static BlockHitResult trace(LocalPlayer player, Vec3 eyes, Rotation rotation, double range) {
         if (rotation == null) return null;
-        Vec3 eyes = player.getEyePosition();
         Vec3 end = eyes.add(rotation.directionVector().scale(range));
         HitResult hit = player.level().clip(new ClipContext(eyes, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player));
         return hit instanceof BlockHitResult blockHit && hit.getType() == HitResult.Type.BLOCK ? blockHit : null;
@@ -166,7 +274,11 @@ final class BuildPlanner {
         return hit != null && hit.getBlockPos().equals(plan.support()) && hit.getDirection() == plan.face();
     }
 
-    /** Clicking these without sneaking opens or toggles them instead of placing against them. */
+    /**
+     * Clicking these without sneaking opens, toggles or feeds them instead of placing against them: containers,
+     * hoppers, droppers, dispensers, crafters, doors, levers, buttons, repeaters, comparators, note blocks,
+     * daylight sensors, workstations. The builder places against them sneaking, the vanilla rule.
+     */
     static boolean isInteractive(BlockState state) {
         Block block = state.getBlock();
         return block instanceof BaseEntityBlock
@@ -184,6 +296,12 @@ final class BuildPlanner {
                 || block instanceof StonecutterBlock
                 || block instanceof GrindstoneBlock
                 || block instanceof CartographyTableBlock
-                || block instanceof SmithingTableBlock;
+                || block instanceof SmithingTableBlock
+                || block instanceof DaylightDetectorBlock
+                || block instanceof CakeBlock
+                || block instanceof CandleCakeBlock
+                || block instanceof ComposterBlock
+                || block instanceof FlowerPotBlock
+                || block instanceof RespawnAnchorBlock;
     }
 }
