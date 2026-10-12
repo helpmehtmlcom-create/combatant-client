@@ -28,6 +28,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.AABB;
 
 import java.util.Arrays;
 
@@ -218,7 +219,8 @@ public final class SchematicProjection extends Module {
         int sum = 0;
         for (int d = 0; d < distanceBuckets.length; d++) {
             sum += distanceBuckets[d];
-            if (sum > cap) return d - 1;
+            // Bucket 0 alone over the cap still keeps the nearest cells (collect stops at the cap) instead of none.
+            if (sum > cap) return Math.max(0, d - 1);
         }
         return distanceBuckets.length - 1;
     }
@@ -278,7 +280,8 @@ public final class SchematicProjection extends Module {
         Frustum frustum = RenderState.frustum;
         for (int i = 0; i < boxCount; i++) {
             int x = boxX[i], y = boxY[i], z = boxZ[i];
-            if (frustum != null && !frustum.pointInFrustum(x + 0.5, y + 0.5, z + 0.5)) continue;
+            // The whole cell, not its centre: a box half on screen at the frustum edge must still draw.
+            if (frustum != null && !Renderer3D.Culling.isInFrustum(new AABB(x, y, z, x + 1.0, y + 1.0, z + 1.0))) continue;
             byte status = boxStatus[i];
             int argb = status == SchematicDiff.MISSING ? missing : status == SchematicDiff.WRONG ? wrong : correct;
             // Missing cells are empty, so a slightly smaller cube reads as a ghost; overlays on real blocks
