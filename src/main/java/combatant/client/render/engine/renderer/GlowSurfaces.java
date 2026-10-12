@@ -61,51 +61,47 @@ public final class GlowSurfaces {
         float phase = phaseFor(box.minX, box.minY, box.minZ);
         float bottomFade = 1.0f;
         float topFade = fadeTop ? 0.0f : 1.0f;
-        Payload p = new Payload(time, phase, scan, rimAlpha);
 
         double x1 = box.minX, y1 = box.minY, z1 = box.minZ;
         double x2 = box.maxX, y2 = box.maxY, z2 = box.maxZ;
 
         // Walls: v = 0 at the bottom, 1 at the top so the shader's "climb" direction matches world up.
-        wall(mesh, p, x1, z2, x2, z2, y1, y2, 0, 0, 1, bottomArgb, topArgb, bottomFade, topFade);
-        wall(mesh, p, x2, z1, x1, z1, y1, y2, 0, 0, -1, bottomArgb, topArgb, bottomFade, topFade);
-        wall(mesh, p, x2, z2, x2, z1, y1, y2, 1, 0, 0, bottomArgb, topArgb, bottomFade, topFade);
-        wall(mesh, p, x1, z1, x1, z2, y1, y2, -1, 0, 0, bottomArgb, topArgb, bottomFade, topFade);
+        wall(mesh, time, phase, scan, rimAlpha, x1, z2, x2, z2, y1, y2, 0, 0, 1, bottomArgb, topArgb, bottomFade, topFade);
+        wall(mesh, time, phase, scan, rimAlpha, x2, z1, x1, z1, y1, y2, 0, 0, -1, bottomArgb, topArgb, bottomFade, topFade);
+        wall(mesh, time, phase, scan, rimAlpha, x2, z2, x2, z1, y1, y2, 1, 0, 0, bottomArgb, topArgb, bottomFade, topFade);
+        wall(mesh, time, phase, scan, rimAlpha, x1, z1, x1, z2, y1, y2, -1, 0, 0, bottomArgb, topArgb, bottomFade, topFade);
 
         if (caps) {
-            cap(mesh, p, x1, z1, x2, z2, y1, -1, bottomArgb, bottomFade);
-            cap(mesh, p, x1, z1, x2, z2, y2, 1, topArgb, topFade);
+            cap(mesh, time, phase, scan, rimAlpha, x1, z1, x2, z2, y1, -1, bottomArgb, bottomFade);
+            cap(mesh, time, phase, scan, rimAlpha, x1, z1, x2, z2, y2, 1, topArgb, topFade);
         }
     }
 
-    private record Payload(float time, float phase, float scan, float rim) {
-    }
-
-    private static void wall(MeshBuilder mesh, Payload p,
+    private static void wall(MeshBuilder mesh, float time, float phase, float scan, float rim,
                              double ax, double az, double bx, double bz,
                              double yLow, double yHigh,
                              float nx, float ny, float nz,
                              int lowArgb, int highArgb, float lowFade, float highFade) {
         mesh.ensureQuadCapacity();
-        int i1 = vertex(mesh, p, ax, yLow, az, 0, 0, nx, ny, nz, lowArgb, lowFade);
-        int i2 = vertex(mesh, p, bx, yLow, bz, 1, 0, nx, ny, nz, lowArgb, lowFade);
-        int i3 = vertex(mesh, p, bx, yHigh, bz, 1, 1, nx, ny, nz, highArgb, highFade);
-        int i4 = vertex(mesh, p, ax, yHigh, az, 0, 1, nx, ny, nz, highArgb, highFade);
+        int i1 = vertex(mesh, time, phase, scan, rim, ax, yLow, az, 0, 0, nx, ny, nz, lowArgb, lowFade);
+        int i2 = vertex(mesh, time, phase, scan, rim, bx, yLow, bz, 1, 0, nx, ny, nz, lowArgb, lowFade);
+        int i3 = vertex(mesh, time, phase, scan, rim, bx, yHigh, bz, 1, 1, nx, ny, nz, highArgb, highFade);
+        int i4 = vertex(mesh, time, phase, scan, rim, ax, yHigh, az, 0, 1, nx, ny, nz, highArgb, highFade);
         mesh.quad(i1, i2, i3, i4);
     }
 
-    private static void cap(MeshBuilder mesh, Payload p,
+    private static void cap(MeshBuilder mesh, float time, float phase, float scan, float rim,
                             double x1, double z1, double x2, double z2, double y,
                             float ny, int argb, float fade) {
         mesh.ensureQuadCapacity();
-        int i1 = vertex(mesh, p, x1, y, z1, 0, 0, 0, ny, 0, argb, fade);
-        int i2 = vertex(mesh, p, x2, y, z1, 1, 0, 0, ny, 0, argb, fade);
-        int i3 = vertex(mesh, p, x2, y, z2, 1, 1, 0, ny, 0, argb, fade);
-        int i4 = vertex(mesh, p, x1, y, z2, 0, 1, 0, ny, 0, argb, fade);
+        int i1 = vertex(mesh, time, phase, scan, rim, x1, y, z1, 0, 0, 0, ny, 0, argb, fade);
+        int i2 = vertex(mesh, time, phase, scan, rim, x2, y, z1, 1, 0, 0, ny, 0, argb, fade);
+        int i3 = vertex(mesh, time, phase, scan, rim, x2, y, z2, 1, 1, 0, ny, 0, argb, fade);
+        int i4 = vertex(mesh, time, phase, scan, rim, x1, y, z2, 0, 1, 0, ny, 0, argb, fade);
         mesh.quad(i1, i2, i3, i4);
     }
 
-    private static int vertex(MeshBuilder mesh, Payload p,
+    private static int vertex(MeshBuilder mesh, float time, float phase, float scan, float rim,
                               double x, double y, double z,
                               float u, float v,
                               float nx, float ny, float nz,
@@ -114,7 +110,7 @@ public final class GlowSurfaces {
                 .raw2(u, v)
                 .colorArgb(argb)
                 .vec4(nx, ny, nz, fade)
-                .vec4(p.time, p.phase, p.scan, p.rim)
+                .vec4(time, phase, scan, rim)
                 .next();
     }
 }

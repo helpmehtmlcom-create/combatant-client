@@ -65,6 +65,58 @@ public final class WorldRenderPipelines {
             .withCull(true)
             .build();
 
+    /** Procedural additive glow sprite (no texture); drop-in for textured additive billboards. */
+    @PipelineRegister
+    public static final RenderPipeline WORLD_GLOW_SPRITE = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
+            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_glow_sprite"))
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexShader(shader("pos_tex_color.vert"))
+            .withFragmentShader(shader("world_glow_sprite.frag"))
+            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withBlend(BlendFunctions.ALPHA_ADDITIVE)
+            .withCull(false)
+            .build();
+
+    /** Glow sprite against the pre-translucent depth attachment. */
+    @PipelineRegister
+    public static final RenderPipeline WORLD_GLOW_SPRITE_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
+            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_glow_sprite_depth"))
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexShader(shader("pos_tex_color.vert"))
+            .withFragmentShader(shader("world_glow_sprite.frag"))
+            .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withBlend(BlendFunctions.ALPHA_ADDITIVE)
+            .withCull(false)
+            .build();
+
+    /** Procedural additive ground ring (no texture); drop-in for textured jump circles. */
+    @PipelineRegister
+    public static final RenderPipeline WORLD_GLOW_RING = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
+            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_glow_ring"))
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexShader(shader("pos_tex_color.vert"))
+            .withFragmentShader(shader("world_glow_ring.frag"))
+            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withBlend(BlendFunctions.ALPHA_ADDITIVE)
+            .withCull(false)
+            .build();
+
+    /** Glow ring against the pre-translucent depth attachment. */
+    @PipelineRegister
+    public static final RenderPipeline WORLD_GLOW_RING_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
+            .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_glow_ring_depth"))
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexShader(shader("pos_tex_color.vert"))
+            .withFragmentShader(shader("world_glow_ring.frag"))
+            .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withBlend(BlendFunctions.ALPHA_ADDITIVE)
+            .withCull(false)
+            .build();
+
     /**
      * Animated ESP surface (pixel-width rim, climbing scan band, fresnel + sheen). Same vertex payload
      * as the bubble surface: UV0 = face uv, Params = normal + vertical fade, Params2 = time/phase/scan/rim.
