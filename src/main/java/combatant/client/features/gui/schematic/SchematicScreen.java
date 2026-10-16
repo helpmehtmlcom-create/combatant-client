@@ -25,6 +25,7 @@ import combatant.client.util.schematic.Schematic;
 import combatant.client.util.schematic.SchematicAttention;
 import combatant.client.util.schematic.SchematicDiff;
 import combatant.client.util.schematic.SchematicHeader;
+import combatant.client.util.schematic.SchematicFiles;
 import combatant.client.util.schematic.SchematicLibrary;
 import combatant.client.util.schematic.SchematicMaterials;
 import combatant.client.util.schematic.SchematicPlacement;
@@ -173,7 +174,7 @@ public final class SchematicScreen extends Screen {
         tinyH = ui.height(SchematicUi.TINY);
         library.refresh();
         if (selectedPath == null && state.schematic() != null) {
-            selectedPath = library.directory().resolve(state.schematic().fileName() + LitematicReader.EXTENSION);
+            selectedPath = library.resolve(state.schematic().fileName());
         }
         thumbLayer = state.layer();
     }
@@ -467,7 +468,7 @@ public final class SchematicScreen extends Screen {
         float rh = ROW_H - 4f;
         boolean selected = header.path().equals(selectedPath);
         boolean hovered = SchematicUi.inside(mouseX, mouseY, x, y, w, rh);
-        boolean active = state.schematic() != null && LitematicReader.baseName(header.path()).equals(state.schematic().fileName());
+        boolean active = state.schematic() != null && SchematicFiles.baseName(header.path()).equals(state.schematic().fileName());
         float h = 0f;
         if (slot < rowHover.length) {
             rowHover[slot] = AnimationUtility.approach(rowHover[slot], hovered ? 1f : 0f, frameDt, 14f);

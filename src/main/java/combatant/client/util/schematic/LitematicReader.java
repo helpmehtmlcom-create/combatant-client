@@ -53,7 +53,7 @@ public final class LitematicReader {
 
     public static Schematic read(Path path) throws IOException {
         CompoundTag root = NbtIo.readCompressed(path, NbtAccounter.unlimitedHeap());
-        return parse(root, baseName(path), LitematicReader::resolveState);
+        return parse(root, SchematicFiles.baseName(path), LitematicReader::resolveState);
     }
 
     public static SchematicHeader readHeader(Path path, long lastModified) throws IOException {
@@ -64,20 +64,13 @@ public final class LitematicReader {
         return new SchematicHeader(
                 path,
                 path.getFileName().toString(),
-                meta.getStringOr("Name", baseName(path)),
+                meta.getStringOr("Name", SchematicFiles.baseName(path)),
                 meta.getStringOr("Author", ""),
                 size[0], size[1], size[2],
                 total,
                 root.getCompoundOrEmpty("Regions").keySet().size(),
                 lastModified,
                 "");
-    }
-
-    public static String baseName(Path path) {
-        String file = path.getFileName().toString();
-        return file.toLowerCase(java.util.Locale.ROOT).endsWith(EXTENSION)
-                ? file.substring(0, file.length() - EXTENSION.length())
-                : file;
     }
 
     public static Schematic parse(CompoundTag root, String fallbackName, PaletteResolver resolver) throws IOException {
@@ -307,7 +300,7 @@ public final class LitematicReader {
     }
 
     /** Merges region palettes into one; index 0 is always air so an empty cell is a zero short. */
-    private static final class PaletteBuilder {
+    static final class PaletteBuilder {
         private final PaletteResolver resolver;
         private final List<String> warnings;
         private final Map<String, Integer> byKey = new HashMap<>();
@@ -329,6 +322,10 @@ public final class LitematicReader {
             for (String key : properties.keySet()) {
                 props.put(key, properties.getStringOr(key, ""));
             }
+            return indexOf(name, props);
+        }
+
+        int indexOf(String name, Map<String, String> props) throws IOException {
             String key = props.isEmpty() ? name : name + props.toString().replace('{', '[').replace('}', ']').replace(", ", ",");
             Integer existing = byKey.get(key);
             if (existing != null) return existing;
