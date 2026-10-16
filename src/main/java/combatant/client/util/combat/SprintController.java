@@ -98,7 +98,7 @@ public final class SprintController {
 
         NoSlow noSlow = Modules.get(NoSlow.class);
         if (noSlow != null && noSlow.shouldAllowSprint(player)) {
-            return !player.isSprinting() && hasMovementMotion(player) && hasFoodForSprint(player);
+            return !player.isSprinting() && player.input != null && player.input.hasForwardImpulse() && hasFoodForSprint(player);
         }
 
         return ((LocalPlayerAccessor) player).combatant$canStartSprinting();
@@ -207,7 +207,7 @@ public final class SprintController {
 
         NoSlow noSlow = Modules.get(NoSlow.class);
         if (noSlow != null && noSlow.shouldAllowSprint(player)) {
-            if (hasMovementMotion(player)) {
+            if (original && player.input.hasForwardImpulse()) {
                 return true;
             }
         }

@@ -145,7 +145,7 @@ public final class Sprint extends Module {
 
         boolean allow = shouldUseOmniDirectional(player)
                 || (isEnabled() && canOperate(player) && !shouldSuppressExternalVulcanSprint(player) && event.getForward() > 1.0E-5F)
-                || noSlowAllow;
+                || (noSlowAllow && event.getForward() > 1.0E-5F);
         if (!allow) {
             return;
         }
