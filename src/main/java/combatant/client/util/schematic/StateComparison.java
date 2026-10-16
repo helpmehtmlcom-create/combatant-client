@@ -9,15 +9,18 @@ package combatant.client.util.schematic;
 
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.BubbleColumnBlock;
+import net.minecraft.world.level.block.CrossCollisionBlock;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.FenceGateBlock;
 import net.minecraft.world.level.block.LeverBlock;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.NoteBlock;
 import net.minecraft.world.level.block.RedStoneWireBlock;
+import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.TrapDoorBlock;
 import net.minecraft.world.level.block.TripWireBlock;
 import net.minecraft.world.level.block.TripWireHookBlock;
+import net.minecraft.world.level.block.WallBlock;
 import net.minecraft.world.level.block.piston.MovingPistonBlock;
 import net.minecraft.world.level.block.piston.PistonHeadBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -34,9 +37,10 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>A schematic is a snapshot of a running machine. Power levels, lit lamps, extended pistons, triggered
  * dispensers and the auto-computed connections of dust and string are what the circuit does at that instant,
- * not something a builder places; once the parts are in, the world derives them again. Only the state the
- * player decides with a click (facing, half, delay, mode, note, hinge, attach face, a lever's position, a hand
- * opened door) has to match.</p>
+ * not something a builder places; once the parts are in, the world derives them again. The same goes for the
+ * shapes neighbours give: corner stairs, fence, pane and bar arms, wall sides. Only the state the player decides
+ * with a click (facing, half, delay, mode, note, hinge, attach face, a lever's position, a hand opened door) has
+ * to match.</p>
  */
 public final class StateComparison {
 
@@ -130,6 +134,22 @@ public final class StateComparison {
             out.add(TripWireBlock.WEST);
         }
         if (block instanceof TripWireHookBlock) out.add(TripWireHookBlock.ATTACHED);
+        // Corner stairs, fence/pane/bar arms and wall sides follow the neighbours once they are in; only a stair's
+        // facing and half are clicked.
+        if (block instanceof StairBlock) out.add(StairBlock.SHAPE);
+        if (block instanceof CrossCollisionBlock) {
+            out.add(CrossCollisionBlock.NORTH);
+            out.add(CrossCollisionBlock.EAST);
+            out.add(CrossCollisionBlock.SOUTH);
+            out.add(CrossCollisionBlock.WEST);
+        }
+        if (block instanceof WallBlock) {
+            out.add(WallBlock.UP);
+            out.add(WallBlock.NORTH);
+            out.add(WallBlock.EAST);
+            out.add(WallBlock.SOUTH);
+            out.add(WallBlock.WEST);
+        }
         // The instrument follows the block underneath (or a head on top).
         if (block instanceof NoteBlock) out.add(NoteBlock.INSTRUMENT);
         return out.toArray(new Property<?>[0]);
