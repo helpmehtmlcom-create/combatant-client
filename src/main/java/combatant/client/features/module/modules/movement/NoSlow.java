@@ -10,8 +10,6 @@ package combatant.client.features.module.modules.movement;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.component.DataComponents;
-import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ItemUseAnimation;
 import net.minecraft.world.item.Items;
@@ -27,7 +25,6 @@ import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.util.anticheat.AntiCheatPreset;
 import combatant.client.util.item.FoodUtil;
-import combatant.client.util.player.InteractionUtil;
 
 @ModuleInfo(
         id = "noslow",
@@ -127,6 +124,7 @@ public final class NoSlow extends Module {
         return isEnabled() && allowSprint.get() && shouldModifyInput(player);
     }
 
+    /** GRIM is kept as a value so saved configs still load; it plays as GRIM_TICK (Grim closed its offhand trick). */
     private Mode modeNow() {
         Mode chosen = anticheat.get().pick(mode.get(), Mode.GRIM_TICK, Mode.VANILLA);
         return chosen == Mode.GRIM ? Mode.GRIM_TICK : chosen;
@@ -136,40 +134,22 @@ public final class NoSlow extends Module {
         return modeNow() == Mode.CUSTOM;
     }
 
+    /**
+     * The item-use slowdown vanilla applies this tick, before its square-movement compensation: GRIM_TICK keeps
+     * vanilla's {@code original} on one tick and lifts it on the next (Grim accepts that rhythm); every other mode
+     * lifts it (CUSTOM then scales the input itself, see {@link #getModifiedInput}).
+     */
     public float getItemUseSpeedMultiplier(float original) {
-        Mode currentMode = modeNow();
-        if (currentMode == Mode.GRIM || currentMode == Mode.GRIM_TICK) {
-            if (grimTicks >= 2) {
-                grimTicks = 0;
-                return 1.0f;
-            }
-            return original;
-        } else if (currentMode == Mode.CUSTOM) {
-            return 1.0f;
-        } else {
+        if (modeNow() != Mode.GRIM_TICK) return 1.0f;
+        if (grimTicks >= 2) {
+            grimTicks = 0;
             return 1.0f;
         }
+        return original;
     }
 
+    /** CUSTOM's per-axis multipliers on the movement input. */
     public Vec2 getModifiedInput(Vec2 input, LocalPlayer player) {
-        Mode currentMode = modeNow();
-        if (currentMode == Mode.GRIM || currentMode == Mode.GRIM_TICK) {
-            float mult = getItemUseSpeedMultiplier(0.2f);
-            return mult == 1.0f ? input : input.scale(mult);
-        } else if (currentMode == Mode.CUSTOM) {
-            return new Vec2(input.x * strafeMultiplier.get(), input.y * forwardMultiplier.get());
-        } else {
-            return input;
-        }
-    }
-
-    private void handleGrimBypass(LocalPlayer player) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.getConnection() == null || player == null) return;
-        InteractionHand activeHand = player.getUsedItemHand();
-        InteractionHand otherHand = (activeHand == InteractionHand.MAIN_HAND) ? InteractionHand.OFF_HAND : InteractionHand.MAIN_HAND;
-        InteractionUtil.sendSequencedPacket(id ->
-                new ServerboundUseItemPacket(otherHand, id, player.getYRot(), player.getXRot())
-        );
+        return new Vec2(input.x * strafeMultiplier.get(), input.y * forwardMultiplier.get());
     }
 }
