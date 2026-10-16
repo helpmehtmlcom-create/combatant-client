@@ -722,7 +722,7 @@ public class BlockESP extends Module {
                 BlockOutlineRenderer.render(renderer, mc.level, target.pos, state, shapeMode, color);
                 if (glowFill.get()) {
                     int fill = ((int) (Math.min(1.0f, glowAlpha.get()) * 255.0f) << 24) | (color & 0x00FFFFFF);
-                    GlowSurfaces.box(renderer, new AABB(target.pos), fill, fill, 0.55f, 1.0f, false, true, false);
+                    GlowSurfaces.box(renderer, target.box, fill, fill, 0.55f, 1.0f, false, true, false);
                 }
             }
         } finally {
