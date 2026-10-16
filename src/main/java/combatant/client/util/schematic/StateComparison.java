@@ -26,6 +26,7 @@ import net.minecraft.world.level.block.piston.PistonHeadBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.Property;
+import net.minecraft.world.level.block.state.properties.SlabType;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -61,6 +62,11 @@ public final class StateComparison {
 
     private static final Map<Block, Property<?>[]> IGNORED = new ConcurrentHashMap<>();
 
+    /** Properties that count pieces stacked in one cell. */
+    private static final List<Property<Integer>> PIECE_COUNTS = List.of(
+            BlockStateProperties.CANDLES, BlockStateProperties.PICKLES, BlockStateProperties.EGGS,
+            BlockStateProperties.FLOWER_AMOUNT, BlockStateProperties.SEGMENT_AMOUNT, BlockStateProperties.LAYERS);
+
     private StateComparison() {
     }
 
@@ -73,6 +79,23 @@ public final class StateComparison {
             if (!actual.getValue(property).equals(expected.getValue(property))) return false;
         }
         return true;
+    }
+
+    /**
+     * Whether {@code actual} is the expected block with fewer pieces in the cell: a single slab where a double one
+     * goes, one candle of three, fewer pickles, eggs, petals or snow layers. Another click on the placed block
+     * adds a piece, so such a cell is still open, not wrong.
+     */
+    public static boolean fewerPieces(BlockState actual, BlockState expected) {
+        if (actual == null || expected == null || actual.getBlock() != expected.getBlock()) return false;
+        if (expected.hasProperty(BlockStateProperties.SLAB_TYPE)) {
+            return expected.getValue(BlockStateProperties.SLAB_TYPE) == SlabType.DOUBLE
+                    && actual.getValue(BlockStateProperties.SLAB_TYPE) != SlabType.DOUBLE;
+        }
+        for (Property<Integer> count : PIECE_COUNTS) {
+            if (expected.hasProperty(count)) return actual.getValue(count) < expected.getValue(count);
+        }
+        return false;
     }
 
     /** Whether {@code property} of {@code expected} is derived by the world rather than chosen by the builder. */
