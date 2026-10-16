@@ -290,6 +290,65 @@ final class BuildPlanner {
         return null;
     }
 
+    /** Half a step of the 16-way rotation, in degrees. */
+    static final float ROTATION_HALF_STEP = 11.25f;
+
+    /** The yaw that sits in the middle of 16-step rotation {@code rotation} (vanilla {@code RotationSegment}: r * 22.5). */
+    static float yawForRotation(int rotation) {
+        return net.minecraft.world.level.block.state.properties.RotationSegment.convertToDegrees(rotation & 15);
+    }
+
+    /** The 16-step rotation vanilla derives from a yaw. */
+    static int rotationForYaw(float yaw) {
+        return net.minecraft.world.level.block.state.properties.RotationSegment.convertToSegment(yaw);
+    }
+
+    /**
+     * The first yaw, nearest {@code fromYaw} first, among the 16 rotation centres for which {@code exactAt} says the
+     * click comes out exact; {@code null} when none does. Centres, not edges, so a small aiming error keeps the
+     * rotation.
+     */
+    static Float chooseRotationYaw(float fromYaw, java.util.function.Predicate<Float> exactAt) {
+        Float best = null;
+        float bestGap = Float.MAX_VALUE;
+        for (int r = 0; r < 16; r++) {
+            float yaw = yawForRotation(r);
+            float gap = Math.abs(net.minecraft.util.Mth.wrapDegrees(yaw - fromYaw));
+            if (gap < bestGap && exactAt.test(yaw)) {
+                best = yaw;
+                bestGap = gap;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * The yaw to face so a block with a 16-step rotation comes out exact, or {@code null} when no yaw does from
+     * this click. The walker uses it to pick a standing spot whose line to the cell has that yaw.
+     */
+    static Float rotationFixing(LocalPlayer player, Level level, ItemStack stack, Plan plan, BlockState desired) {
+        if (!desired.hasProperty(BlockStateProperties.ROTATION_16)) return null;
+        float pitch = plan.rotation().pitch();
+        return chooseRotationYaw(plan.rotation().yaw(), yaw -> {
+            BlockState result = simulate(player, level, stack, plan.target(), plan.support(), plan.face(), plan.hit(),
+                    new Rotation(yaw, pitch));
+            return result != null && exact(result, desired);
+        });
+    }
+
+    /**
+     * Whether the line from the eyes to a cell, offset {@code dx}/{@code dz}, has a yaw that stays within the
+     * rotation step of {@code wantedYaw} even when the click lands a little off the cell centre.
+     */
+    static boolean yawAllows(double dx, double dz, float wantedYaw) {
+        double dist = Math.hypot(dx, dz);
+        if (dist < 0.75) return false;
+        double yaw = Math.toDegrees(Math.atan2(-dx, dz));
+        double gap = Math.abs(net.minecraft.util.Mth.wrapDegrees(yaw - wantedYaw));
+        double spread = Math.toDegrees(Math.asin(Math.min(1.0, 0.35 / dist)));
+        return gap + spread <= ROTATION_HALF_STEP;
+    }
+
     private static boolean better(Plan candidate, Plan best) {
         if (best == null) return true;
         if (candidate.exact != best.exact) return candidate.exact;
