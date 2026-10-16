@@ -12,6 +12,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.ComparatorBlock;
+import net.minecraft.world.level.block.CrossCollisionBlock;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.HopperBlock;
 import net.minecraft.world.level.block.LeverBlock;
@@ -20,15 +21,20 @@ import net.minecraft.world.level.block.ObserverBlock;
 import net.minecraft.world.level.block.RedStoneWireBlock;
 import net.minecraft.world.level.block.RedstoneTorchBlock;
 import net.minecraft.world.level.block.RepeaterBlock;
+import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.TrapDoorBlock;
 import net.minecraft.world.level.block.TripWireBlock;
+import net.minecraft.world.level.block.WallBlock;
 import net.minecraft.world.level.block.piston.PistonBaseBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.ComparatorMode;
 import net.minecraft.world.level.block.state.properties.DoorHingeSide;
+import net.minecraft.world.level.block.state.properties.Half;
 import net.minecraft.world.level.block.state.properties.NoteBlockInstrument;
 import net.minecraft.world.level.block.state.properties.RedstoneSide;
+import net.minecraft.world.level.block.state.properties.StairsShape;
+import net.minecraft.world.level.block.state.properties.WallSide;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -90,6 +96,22 @@ class StateComparisonTest {
         BlockState string = Blocks.TRIPWIRE.defaultBlockState();
         assertTrue(StateComparison.matches(string.setValue(TripWireBlock.ATTACHED, true)
                 .setValue(TripWireBlock.DISARMED, true).setValue(TripWireBlock.NORTH, true), string));
+    }
+
+    @Test
+    void neighbourShapesAreDerivedButStairFacingAndHalfAreNot() {
+        BlockState stair = Blocks.OAK_STAIRS.defaultBlockState().setValue(StairBlock.FACING, Direction.EAST);
+        assertTrue(StateComparison.matches(stair.setValue(StairBlock.SHAPE, StairsShape.OUTER_RIGHT), stair));
+        assertFalse(StateComparison.matches(stair.setValue(StairBlock.FACING, Direction.WEST), stair));
+        assertFalse(StateComparison.matches(stair.setValue(StairBlock.HALF, Half.TOP), stair));
+
+        BlockState fence = Blocks.OAK_FENCE.defaultBlockState();
+        assertTrue(StateComparison.matches(fence.setValue(CrossCollisionBlock.NORTH, true), fence));
+        BlockState pane = Blocks.GLASS_PANE.defaultBlockState();
+        assertTrue(StateComparison.matches(pane.setValue(CrossCollisionBlock.EAST, true), pane));
+        BlockState wall = Blocks.COBBLESTONE_WALL.defaultBlockState();
+        assertTrue(StateComparison.matches(wall.setValue(WallBlock.UP, false)
+                .setValue(WallBlock.NORTH, WallSide.TALL), wall));
     }
 
     @Test
