@@ -12,6 +12,7 @@ import combatant.client.features.module.Notifier;
 import combatant.client.features.module.modules.player.schematic.SchematicBuilder;
 import combatant.client.features.module.modules.visuals.schematic.SchematicProjection;
 import combatant.client.util.schematic.LitematicReader;
+import combatant.client.util.schematic.SchematicFiles;
 import combatant.client.util.schematic.Schematic;
 import combatant.client.util.schematic.SchematicLibrary;
 import combatant.client.util.schematic.SchematicState;
@@ -60,7 +61,7 @@ public final class SchematicActions {
             if (error != null) {
                 Throwable cause = error instanceof CompletionException && error.getCause() != null ? error.getCause() : error;
                 lastError = cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage();
-                Notifier.error(I18n.get("screen.combatant.schematic.status.load_failed", LitematicReader.baseName(path), lastError));
+                Notifier.error(I18n.get("screen.combatant.schematic.status.load_failed", SchematicFiles.baseName(path), lastError));
                 return;
             }
             applyLoaded(mc, loaded);

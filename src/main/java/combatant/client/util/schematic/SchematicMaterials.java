@@ -109,6 +109,7 @@ public final class SchematicMaterials {
         return out;
     }
 
+    /** Items the builder can place from: hotbar and main inventory. The offhand is never used, so it is not counted. */
     public static int countInInventory(Player player, Item item) {
         if (player == null || item == null || item == Items.AIR) return 0;
         Inventory inventory = player.getInventory();
@@ -117,8 +118,6 @@ public final class SchematicMaterials {
             ItemStack stack = inventory.getItem(i);
             if (!stack.isEmpty() && stack.getItem() == item) count += stack.getCount();
         }
-        ItemStack offhand = inventory.getItem(Inventory.SLOT_OFFHAND);
-        if (!offhand.isEmpty() && offhand.getItem() == item) count += offhand.getCount();
         return count;
     }
 }

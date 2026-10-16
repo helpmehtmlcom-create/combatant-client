@@ -67,15 +67,7 @@ public final class LitematicReader {
     }
 
     public static Schematic read(Path path) throws IOException {
-        checkFileSize(path);
-        CompoundTag root;
-        try {
-            root = NbtIo.readCompressed(path, NbtAccounter.create(NBT_QUOTA_BYTES));
-        } catch (RuntimeException e) {
-            // NbtAccounterException, negative array lengths and ReportedNbtException all mean a malformed file.
-            throw new IOException("Malformed schematic: " + e.getMessage(), e);
-        }
-        return parse(root, baseName(path), LitematicReader::resolveState);
+        return parse(readBounded(path), SchematicFiles.baseName(path), LitematicReader::resolveState);
     }
 
     /** Reads metadata and region boxes only; block palettes and state arrays are skipped while streaming. */
@@ -94,7 +86,7 @@ public final class LitematicReader {
         return new SchematicHeader(
                 path,
                 path.getFileName().toString(),
-                meta.getStringOr("Name", baseName(path)),
+                meta.getStringOr("Name", SchematicFiles.baseName(path)),
                 meta.getStringOr("Author", ""),
                 size[0], size[1], size[2],
                 total,
@@ -103,18 +95,21 @@ public final class LitematicReader {
                 "");
     }
 
+    /** Reads a gzip NBT file with the size cap and heap quota every schematic format shares. */
+    static CompoundTag readBounded(Path path) throws IOException {
+        checkFileSize(path);
+        try {
+            return NbtIo.readCompressed(path, NbtAccounter.create(NBT_QUOTA_BYTES));
+        } catch (RuntimeException e) {
+            // NbtAccounterException, negative array lengths and ReportedNbtException all mean a malformed file.
+            throw new IOException("Malformed schematic: " + e.getMessage(), e);
+        }
+    }
+
     private static void checkFileSize(Path path) throws IOException {
         long bytes = Files.size(path);
         if (bytes > MAX_FILE_BYTES) throw new IOException("File too large: " + (bytes >> 20) + " MB");
     }
-
-    public static String baseName(Path path) {
-        String file = path.getFileName().toString();
-        return file.toLowerCase(java.util.Locale.ROOT).endsWith(EXTENSION)
-                ? file.substring(0, file.length() - EXTENSION.length())
-                : file;
-    }
-
     public static Schematic parse(CompoundTag root, String fallbackName, PaletteResolver resolver) throws IOException {
         CompoundTag regions = root.getCompoundOrEmpty("Regions");
         if (regions.keySet().isEmpty()) throw new IOException("No regions in schematic");
@@ -406,7 +401,7 @@ public final class LitematicReader {
     }
 
     /** Merges region palettes into one; index 0 is always air so an empty cell is a zero short. */
-    private static final class PaletteBuilder {
+    static final class PaletteBuilder {
         private final PaletteResolver resolver;
         private final List<String> warnings;
         private final Map<String, Integer> byKey = new HashMap<>();
@@ -428,6 +423,10 @@ public final class LitematicReader {
             for (String key : properties.keySet()) {
                 props.put(key, properties.getStringOr(key, ""));
             }
+            return indexOf(name, props);
+        }
+
+        int indexOf(String name, Map<String, String> props) throws IOException {
             String key = props.isEmpty() ? name : name + props.toString().replace('{', '[').replace('}', ']').replace(", ", ",");
             Integer existing = byKey.get(key);
             if (existing != null) return existing;
