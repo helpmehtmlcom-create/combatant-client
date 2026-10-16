@@ -123,6 +123,9 @@ public final class SchematicScreen extends Screen {
     private List<SchematicHeader> filtered = List.of();
     private int filteredGeneration = -1;
     private String filteredQuery = "";
+    private String[] rowFormat = new String[0];
+    private String[] rowDims = new String[0];
+    private String[] rowBlocks = new String[0];
     private int listFirst;
     private Path selectedPath;
     private String search = "";
@@ -444,11 +447,15 @@ public final class SchematicScreen extends Screen {
         } else {
             SchematicViewport.drawCubeIcon(cx, cy, 18f, SchematicUi.mix(SchematicUi.SURFACE_HOVER, SchematicUi.ACCENT, 0.35f), alpha);
         }
-        String empty = library.isScanning() ? tr("screen.combatant.schematic.scanning") : tr("screen.combatant.schematic.empty");
+        boolean noMatch = !library.isScanning() && !library.headers().isEmpty();
+        String empty = library.isScanning() ? tr("screen.combatant.schematic.scanning")
+                : tr(noMatch ? "screen.combatant.schematic.no_match" : "screen.combatant.schematic.empty");
         ui.textCentered(ui.ellipsize(empty, SchematicUi.SMALL, leftW - 24f), cx, cy + 32f, SchematicUi.SMALL,
                 SchematicUi.scaleAlpha(SchematicUi.MUTED, alpha), false);
-        ui.textCentered(ui.ellipsize(tr("screen.combatant.schematic.empty_hint"), SchematicUi.TINY, leftW - 24f), cx, cy + 38f + smallH,
-                SchematicUi.TINY, SchematicUi.scaleAlpha(SchematicUi.FAINT, alpha), false);
+        if (!noMatch) {
+            ui.textCentered(ui.ellipsize(tr("screen.combatant.schematic.empty_hint"), SchematicUi.TINY, leftW - 24f), cx, cy + 38f + smallH,
+                    SchematicUi.TINY, SchematicUi.scaleAlpha(SchematicUi.FAINT, alpha), false);
+        }
     }
 
     private void renderSearch(float alpha) {
@@ -491,10 +498,15 @@ public final class SchematicScreen extends Screen {
                     SchematicUi.scaleAlpha(SchematicUi.MUTED, alpha), false);
             return;
         }
+        int index = listFirst + slot;
         float cx = x + 12f;
-        cx += ui.chip(cx, chipY, header.dimensions(), SchematicUi.ACCENT, alpha) + 6f;
-        if (header.totalBlocks() >= 0) {
-            ui.chip(cx, chipY, tr("screen.combatant.schematic.blocks_count", header.totalBlocks()), SchematicUi.GOOD, alpha);
+        cx += ui.chip(cx, chipY, rowDims[index], SchematicUi.ACCENT, alpha) + 6f;
+        String blocksLabel = rowBlocks[index];
+        if (!blocksLabel.isEmpty()) cx += ui.chip(cx, chipY, blocksLabel, SchematicUi.GOOD, alpha) + 6f;
+        String format = rowFormat[index];
+        if (!format.isEmpty()) {
+            float fw = ui.width(format, SchematicUi.TINY, false) + 12f;
+            if (cx + fw <= x + w - 4f) ui.chip(x + w - 4f - fw, chipY, format, SchematicUi.MUTED, alpha);
         }
     }
 
@@ -516,6 +528,16 @@ public final class SchematicScreen extends Screen {
                     || header.fileName().toLowerCase(Locale.ROOT).contains(query)) next.add(header);
         }
         filtered = next;
+        rowFormat = new String[next.size()];
+        rowDims = new String[next.size()];
+        rowBlocks = new String[next.size()];
+        for (int i = 0; i < next.size(); i++) {
+            SchematicHeader header = next.get(i);
+            rowFormat[i] = SchematicFiles.formatLabel(header.fileName());
+            if (header.failed()) continue;
+            rowDims[i] = header.dimensions();
+            rowBlocks[i] = header.totalBlocks() >= 0 ? tr("screen.combatant.schematic.blocks_count", header.totalBlocks()) : "";
+        }
     }
 
     // ---------------------------------------------------------------- centre
