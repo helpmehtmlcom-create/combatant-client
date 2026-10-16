@@ -127,18 +127,33 @@ public final class NoSlow extends Module {
         return chosen == Mode.GRIM ? Mode.GRIM_TICK : chosen;
     }
 
-    public Vec2 getModifiedInput(Vec2 input, LocalPlayer player) {
+    public boolean hasCustomMultipliers() {
+        return modeNow() == Mode.CUSTOM;
+    }
+
+    public float getItemUseSpeedMultiplier(float original) {
         Mode currentMode = modeNow();
         if (currentMode == Mode.GRIM || currentMode == Mode.GRIM_TICK) {
             if (grimTicks >= 2) {
                 grimTicks = 0;
-                return input;
+                return 1.0f;
             }
-            return input.scale(0.2f);
+            return original;
+        } else if (currentMode == Mode.CUSTOM) {
+            return 1.0f;
+        } else {
+            return 1.0f;
+        }
+    }
+
+    public Vec2 getModifiedInput(Vec2 input, LocalPlayer player) {
+        Mode currentMode = modeNow();
+        if (currentMode == Mode.GRIM || currentMode == Mode.GRIM_TICK) {
+            float mult = getItemUseSpeedMultiplier(0.2f);
+            return mult == 1.0f ? input : input.scale(mult);
         } else if (currentMode == Mode.CUSTOM) {
             return new Vec2(input.x * strafeMultiplier.get(), input.y * forwardMultiplier.get());
         } else {
-            // VANILLA
             return input;
         }
     }
