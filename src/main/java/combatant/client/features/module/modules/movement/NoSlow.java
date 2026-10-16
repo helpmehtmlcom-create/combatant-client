@@ -123,17 +123,13 @@ public final class NoSlow extends Module {
     }
 
     private Mode modeNow() {
-        return anticheat.get().pick(mode.get(), Mode.GRIM_TICK, Mode.VANILLA);
+        Mode chosen = anticheat.get().pick(mode.get(), Mode.GRIM_TICK, Mode.VANILLA);
+        return chosen == Mode.GRIM ? Mode.GRIM_TICK : chosen;
     }
 
     public Vec2 getModifiedInput(Vec2 input, LocalPlayer player) {
         Mode currentMode = modeNow();
-        if (currentMode == Mode.GRIM) {
-            if (input.x != 0.0f || input.y != 0.0f) {
-                handleGrimBypass(player);
-            }
-            return input;
-        } else if (currentMode == Mode.GRIM_TICK) {
+        if (currentMode == Mode.GRIM || currentMode == Mode.GRIM_TICK) {
             if (grimTicks >= 2) {
                 grimTicks = 0;
                 return input;
