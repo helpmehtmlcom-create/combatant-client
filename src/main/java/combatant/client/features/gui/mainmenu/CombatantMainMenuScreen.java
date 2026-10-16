@@ -207,7 +207,7 @@ public final class CombatantMainMenuScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
-        if (click.button() != 0) return true;
+        if (click.button() != combatant.client.input.InputKeys.MOUSE_LEFT) return true;
         updateUiMetrics();
         ensureGrid();
         float opacity = easeOutCubic(getMenuProgress(Util.getMillis()));
@@ -229,11 +229,11 @@ public final class CombatantMainMenuScreen extends Screen {
     @Override
     public boolean keyPressed(KeyEvent input) {
         // Emergency escape from a custom menu whose graphics are not usable.
-        if (input.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_F8) {
+        if (input.key() == combatant.client.input.InputKeys.F8) {
             switchToVanillaTitleScreen(null);
             return true;
         }
-        return input.key() == 256 || super.keyPressed(input);
+        return input.key() == combatant.client.input.InputKeys.ESCAPE || super.keyPressed(input);
     }
 
     @Override

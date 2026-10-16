@@ -157,11 +157,10 @@ dependencies {
 
 
     // Renderer targets. Sodium is required; Iris stays optional but available in dev runtime.
-    compileOnly "maven.modrinth:sodium:${project.sodium_version}"
+    modImplementation "maven.modrinth:sodium:${project.sodium_version}"
     compileOnly "maven.modrinth:iris:${project.iris_version}"
     compileOnly "maven.modrinth:immediatelyfast:${project.immediatelyfast_version}"
     if (providers.gradleProperty("withOptionalModRuntime").map { it.toBoolean() }.orElse(false).get()) {
-        runtimeOnly "maven.modrinth:sodium:${project.sodium_version}"
         runtimeOnly "maven.modrinth:iris:${project.iris_version}"
         runtimeOnly "maven.modrinth:immediatelyfast:${project.immediatelyfast_version}"
     }

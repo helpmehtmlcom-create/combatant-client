@@ -168,7 +168,7 @@ public final class CombatantAddonManagerScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
-        if (click.button() != 0) return true;
+        if (click.button() != combatant.client.input.InputKeys.MOUSE_LEFT) return true;
         return handleClick(toFixedX((float) click.x()), toFixedY((float) click.y()));
     }
 
@@ -189,7 +189,7 @@ public final class CombatantAddonManagerScreen extends Screen {
 
     @Override
     public boolean keyPressed(net.minecraft.client.input.KeyEvent input) {
-        if (input.key() == 256) {
+        if (input.key() == combatant.client.input.InputKeys.ESCAPE) {
             closeToParent();
             return true;
         }
