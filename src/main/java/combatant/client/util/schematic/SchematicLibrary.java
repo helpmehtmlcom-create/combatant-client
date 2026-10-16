@@ -85,7 +85,7 @@ public final class SchematicLibrary {
     public CompletableFuture<Loaded> load(Path path) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                Schematic schematic = LitematicReader.read(path);
+                Schematic schematic = SchematicFiles.read(path);
                 return new Loaded(schematic, LayerStats.compute(schematic));
             } catch (IOException e) {
                 throw new java.io.UncheckedIOException(e);
@@ -99,26 +99,27 @@ public final class SchematicLibrary {
         String wanted = name.trim();
         Path dir = directory();
         String lower = wanted.toLowerCase(Locale.ROOT);
-        if (lower.endsWith(LitematicReader.EXTENSION)) {
-            lower = lower.substring(0, lower.length() - LitematicReader.EXTENSION.length());
-        }
+        if (SchematicFiles.extensionOf(lower) != null) lower = SchematicFiles.baseName(lower);
         try {
-            Path direct = dir.resolve(wanted.toLowerCase(Locale.ROOT).endsWith(LitematicReader.EXTENSION)
-                    ? wanted : wanted + LitematicReader.EXTENSION);
-            if (Files.isRegularFile(direct) && direct.normalize().startsWith(dir.normalize())) return direct;
+            Path typed = dir.resolve(wanted);
+            if (SchematicFiles.isSupported(typed) && Files.isRegularFile(typed) && typed.normalize().startsWith(dir.normalize())) return typed;
+            for (String extension : SchematicFiles.EXTENSIONS) {
+                Path direct = dir.resolve(wanted + extension);
+                if (Files.isRegularFile(direct) && direct.normalize().startsWith(dir.normalize())) return direct;
+            }
         } catch (java.nio.file.InvalidPathException ignored) {
             // Fall through to the prefix match; chat input can hold characters the file system rejects.
         }
 
         for (Path candidate : listFiles(dir)) {
-            if (LitematicReader.baseName(candidate).toLowerCase(Locale.ROOT).startsWith(lower)) return candidate;
+            if (SchematicFiles.baseName(candidate).toLowerCase(Locale.ROOT).startsWith(lower)) return candidate;
         }
         return null;
     }
 
     public List<String> fileNames() {
         List<String> names = new ArrayList<>();
-        for (Path path : listFiles(directory())) names.add(LitematicReader.baseName(path));
+        for (Path path : listFiles(directory())) names.add(SchematicFiles.baseName(path));
         return names;
     }
 
@@ -146,7 +147,7 @@ public final class SchematicLibrary {
         if (cached != null && cached.lastModified() == modified) return cached;
         SchematicHeader header;
         try {
-            header = LitematicReader.readHeader(path, modified);
+            header = SchematicFiles.readHeader(path, modified);
         } catch (IOException | RuntimeException e) {
             header = SchematicHeader.failed(path, modified, e.getMessage());
         }
@@ -158,7 +159,7 @@ public final class SchematicLibrary {
         try (Stream<Path> stream = Files.list(dir)) {
             return stream
                     .filter(Files::isRegularFile)
-                    .filter(p -> p.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(LitematicReader.EXTENSION))
+                    .filter(SchematicFiles::isSupported)
                     .sorted()
                     .toList();
         } catch (IOException e) {
