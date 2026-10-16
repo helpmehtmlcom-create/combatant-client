@@ -95,7 +95,7 @@ public final class SchematicLibrary {
     public CompletableFuture<Loaded> load(Path path) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                Schematic schematic = LitematicReader.read(path);
+                Schematic schematic = SchematicFiles.read(path);
                 return new Loaded(schematic, LayerStats.compute(schematic), SchematicDiff.Layout.of(schematic));
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
@@ -119,9 +119,7 @@ public final class SchematicLibrary {
         if (name == null || name.isBlank()) return Resolution.notFound();
         String wanted = name.trim();
         String lower = wanted.toLowerCase(Locale.ROOT);
-        if (lower.endsWith(LitematicReader.EXTENSION)) {
-            lower = lower.substring(0, lower.length() - LitematicReader.EXTENSION.length());
-        }
+        if (SchematicFiles.extensionOf(lower) != null) lower = SchematicFiles.baseName(lower);
         Path root;
         try {
             root = dir.toRealPath();
@@ -129,16 +127,21 @@ public final class SchematicLibrary {
             return Resolution.notFound();
         }
         try {
-            Path direct = inside(root, root.resolve(lower.equals(wanted.toLowerCase(Locale.ROOT))
-                    ? wanted + LitematicReader.EXTENSION : wanted));
-            if (direct != null) return Resolution.found(direct);
+            if (SchematicFiles.extensionOf(wanted) != null) {
+                Path typed = inside(root, root.resolve(wanted));
+                if (typed != null) return Resolution.found(typed);
+            }
+            for (String extension : SchematicFiles.EXTENSIONS) {
+                Path direct = inside(root, root.resolve(wanted + extension));
+                if (direct != null) return Resolution.found(direct);
+            }
         } catch (InvalidPathException ignored) {
             // Fall through to the listing; chat input can hold characters the file system rejects.
         }
 
         List<Path> prefixed = new ArrayList<>();
         for (Path candidate : listFiles(root)) {
-            String base = LitematicReader.baseName(candidate).toLowerCase(Locale.ROOT);
+            String base = SchematicFiles.baseName(candidate).toLowerCase(Locale.ROOT);
             if (!base.startsWith(lower)) continue;
             Path real = inside(root, candidate);
             if (real == null) continue;
@@ -148,7 +151,7 @@ public final class SchematicLibrary {
         if (prefixed.size() == 1) return Resolution.found(prefixed.getFirst());
         if (prefixed.isEmpty()) return Resolution.notFound();
         List<String> names = new ArrayList<>();
-        for (Path path : prefixed) names.add(LitematicReader.baseName(path));
+        for (Path path : prefixed) names.add(SchematicFiles.baseName(path));
         return new Resolution(null, List.copyOf(names));
     }
 
@@ -165,7 +168,7 @@ public final class SchematicLibrary {
 
     public List<String> fileNames() {
         List<String> names = new ArrayList<>();
-        for (Path path : listFiles(directory())) names.add(LitematicReader.baseName(path));
+        for (Path path : listFiles(directory())) names.add(SchematicFiles.baseName(path));
         return names;
     }
 
@@ -193,7 +196,7 @@ public final class SchematicLibrary {
         if (cached != null && cached.lastModified() == modified) return cached;
         SchematicHeader header;
         try {
-            header = LitematicReader.readHeader(path, modified);
+            header = SchematicFiles.readHeader(path, modified);
         } catch (IOException | RuntimeException e) {
             header = SchematicHeader.failed(path, modified, e.getMessage());
         } catch (OutOfMemoryError e) {
@@ -207,7 +210,7 @@ public final class SchematicLibrary {
         try (Stream<Path> stream = Files.list(dir)) {
             return stream
                     .filter(Files::isRegularFile)
-                    .filter(p -> p.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(LitematicReader.EXTENSION))
+                    .filter(SchematicFiles::isSupported)
                     .sorted()
                     .toList();
         } catch (IOException e) {
