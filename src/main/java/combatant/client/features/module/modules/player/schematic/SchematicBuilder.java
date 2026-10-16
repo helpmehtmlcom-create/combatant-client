@@ -31,6 +31,7 @@ import combatant.client.util.schematic.Schematic;
 import combatant.client.util.schematic.SchematicAttention;
 import combatant.client.util.schematic.SchematicDiff;
 import combatant.client.util.schematic.SchematicMaterials;
+import combatant.client.util.schematic.SchematicPlacement;
 import combatant.client.util.schematic.SchematicState;
 import combatant.client.util.schematic.StateAdjustments;
 import combatant.client.util.schematic.StateComparison;
@@ -89,7 +90,7 @@ public final class SchematicBuilder extends Module {
     private static final int MAX_CANDIDATES = 96;
     private static final int SHORTFALL_INTERVAL = 20;
     private static final int MISSING_NOTIFY_INTERVAL = 200;
-    /** How long a piston or observer that only comes out facing wrong from here waits for the walker to find a better spot. */
+    /** How long a block that only comes out facing wrong from here (piston, observer, stair, furnace) waits for the walker to find a better spot. */
     private static final int APPROXIMATE_PATIENCE_TICKS = 400;
     /** Times a cell that would fire on placement is put back before it goes in anyway (with a warning). */
     private static final int HAZARD_DEFER_LIMIT = 3;
@@ -526,7 +527,7 @@ public final class SchematicBuilder extends Module {
         // The ray reaches the planned face before the rotation settles on the planned point; clicking then puts
         // a stair or slab in the wrong half. Wait for the exact click, but not past half the plan timeout. A
         // piston or observer facing the wrong way is worse than a late one: it waits for the plan timeout.
-        boolean lookSensitive = RedstoneRules.lookDecides(work.expected);
+        boolean lookSensitive = BuildPlanner.lookDependent(work.expected);
         if (exact && lookSensitive && facingRotation != null) {
             exact = robustFacing(player, stack, plan, hit, facingRotation, work.expected);
         }
@@ -688,7 +689,7 @@ public final class SchematicBuilder extends Module {
             // next candidate swap its own item back over it, every tick, and nothing gets placed.
             ItemStack stack = hotbar >= 0 ? player.getInventory().getItem(hotbar) : new ItemStack(item);
             BuildPlanner.Plan plan = BuildPlanner.plan(player, mc.level, target, expected, stack, reach, aim);
-            if (plan == null || !acceptPlan(diff, plan, expected)) continue;
+            if (plan == null || !acceptPlan(player, stack, diff, plan, expected)) continue;
             if (hotbar < 0) {
                 if (restock.get() && restockFromInventory(player, item)) {
                     status = Status.WORKING;
@@ -703,19 +704,29 @@ public final class SchematicBuilder extends Module {
     }
 
     /**
-     * Whether a plan found for a candidate goes out now. An approximate piston or observer first gives the walker
-     * a while to find a spot with the right look; a cell that would fire waits a few times for the circuit.
+     * Whether a plan found for a candidate goes out now. An approximate block whose facing follows the look (a
+     * piston, observer, stair, furnace) first gives the walker a while to find a spot with the right look; one that
+     * no look fixes (a top slab or upside-down stair with only a floor to click) waits while a schematic neighbour
+     * is still unbuilt, since that neighbour's side face gives the click for the right half; a cell that would fire
+     * waits for the circuit. Both waits end after {@link #APPROXIMATE_PATIENCE_TICKS}.
      */
-    private boolean acceptPlan(SchematicDiff diff, BuildPlanner.Plan plan, BlockState expected) {
+    private boolean acceptPlan(LocalPlayer player, ItemStack stack, SchematicDiff diff, BuildPlanner.Plan plan,
+                               BlockState expected) {
         BlockPos target = plan.target();
         long key = target.asLong();
         if (!plan.exact()) {
             Direction look = RedstoneRules.requiredLook(expected);
             Direction yaw = RedstoneRules.requiredYaw(expected);
+            if (look == null && yaw == null) yaw = BuildPlanner.lookFixing(player, mc.level, stack, plan, expected);
             int since = approximateSince.computeIfAbsent(key, ignored -> ticks);
             if ((look != null || yaw != null) && autoWalk.get() && ticks - since < APPROXIMATE_PATIENCE_TICKS) {
                 lookWanted.put(key, look != null ? look : yaw);
                 if (look == null) yawOnly.add(key);
+                return false;
+            }
+            if (look == null && yaw == null && ticks - since < APPROXIMATE_PATIENCE_TICKS
+                    && unbuiltNeighbour(diff, target)) {
+                retryAfter.put(key, ticks + RECENT_PLACE_TICKS);
                 return false;
             }
             // Out of patience: the walker stops looking for a better spot and the approximate click goes out.
@@ -737,6 +748,25 @@ public final class SchematicBuilder extends Module {
         }
         state.flag(target, expected, SchematicAttention.Reason.WOULD_TRIGGER);
         return true;
+    }
+
+    /**
+     * Whether a schematic cell beside {@code target} still waits for its block (the world has air there). Only the
+     * sides count: the cell above belongs to a later layer, which strict layers keep closed until this one is done.
+     */
+    private boolean unbuiltNeighbour(SchematicDiff diff, BlockPos target) {
+        SchematicPlacement placement = diff.placement();
+        for (Direction direction : Direction.Plane.HORIZONTAL) {
+            BlockPos neighbour = target.relative(direction);
+            int x = placement.localX(neighbour.getX(), neighbour.getZ());
+            int y = placement.localY(neighbour.getY());
+            int z = placement.localZ(neighbour.getX(), neighbour.getZ());
+            if (!diff.schematic().contains(x, y, z)) continue;
+            int cell = diff.cellOf(diff.schematic().index(x, y, z));
+            if (cell < 0 || diff.expectedState(cell).isAir()) continue;
+            if (mc.level.getBlockState(neighbour).canBeReplaced()) return true;
+        }
+        return false;
     }
 
     /**

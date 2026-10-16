@@ -46,6 +46,7 @@ import net.minecraft.world.level.block.SmithingTableBlock;
 import net.minecraft.world.level.block.StonecutterBlock;
 import net.minecraft.world.level.block.TrapDoorBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -95,7 +96,7 @@ final class BuildPlanner {
         for (int pass = 0; pass < 2; pass++) {
             boolean fine = pass == 1;
             // The fine pass only helps blocks whose facing follows the look, and only when nothing exact came up.
-            if (fine && (search.best == null || search.best.exact || !RedstoneRules.lookDecides(desired))) break;
+            if (fine && (search.best == null || search.best.exact || !lookDependent(desired))) break;
             for (Direction toSupport : Direction.values()) {
                 BlockPos support = target.relative(toSupport);
                 BlockState supportState = level.getBlockState(support);
@@ -116,7 +117,7 @@ final class BuildPlanner {
         private final ItemStack stack;
         private final double rangeSq;
         private final boolean aimAtHit;
-        private final boolean lookDecides;
+        private final boolean lookDependent;
         private Plan best;
 
         Search(LocalPlayer player, Level level, BlockPos target, BlockState desired, ItemStack stack, double rangeSq,
@@ -128,7 +129,7 @@ final class BuildPlanner {
             this.stack = stack;
             this.rangeSq = rangeSq;
             this.aimAtHit = aimAtHit;
-            this.lookDecides = RedstoneRules.lookDecides(desired);
+            this.lookDependent = lookDependent(desired);
         }
 
         /** A look a couple of degrees off still gives the same facing: the click survives rotation rounding. */
@@ -162,7 +163,7 @@ final class BuildPlanner {
             Rotation rotation = Rotation.lookingAt(point, eyes);
             BlockState result = simulate(player, level, stack, target, support, face, point, aimAtHit ? rotation : null);
             if (result == null || result.getBlock() != desired.getBlock()) return;
-            boolean exact = exact(result, desired) && (!aimAtHit || !lookDecides || steady(support, face, point, rotation));
+            boolean exact = exact(result, desired) && (!aimAtHit || !lookDependent || steady(support, face, point, rotation));
             Plan candidate = new Plan(target, support, face, point, rotation, exact, distanceSq, sneak);
             if (!better(candidate, best)) return;
             BlockHitResult hit = trace(player, eyes, rotation, Math.sqrt(distanceSq) + 0.5);
@@ -210,6 +211,45 @@ final class BuildPlanner {
      */
     static boolean exact(BlockState result, BlockState desired) {
         return result == desired || StateAdjustments.clicksNeeded(result, desired) != StateAdjustments.IMPOSSIBLE;
+    }
+
+    /**
+     * Whether the look can change how this block comes out: the redstone parts {@link RedstoneRules} knows, plus
+     * anything with a facing (stairs, furnaces, chests, pumpkins, barrels...), whose placement rule reads the
+     * player's yaw or look.
+     */
+    static boolean lookDependent(BlockState desired) {
+        return RedstoneRules.lookDecides(desired) || desired.hasProperty(BlockStateProperties.HORIZONTAL_FACING)
+                || desired.hasProperty(BlockStateProperties.FACING);
+    }
+
+    /**
+     * The horizontal direction to look along so a click on this cell comes out exact, or {@code null} when none
+     * does from here. First the planned click with the look turned to each side (a stair or furnace that only
+     * faces wrong); then the side face of each placed neighbour looked at head-on, high and low (a top slab or
+     * an upside-down stair the floor click cannot give). The walker uses it to pick a spot facing that way.
+     */
+    static Direction lookFixing(LocalPlayer player, Level level, ItemStack stack, Plan plan, BlockState desired) {
+        float pitch = plan.rotation().pitch();
+        for (Direction side : Direction.Plane.HORIZONTAL) {
+            BlockState result = simulate(player, level, stack, plan.target(), plan.support(), plan.face(), plan.hit(),
+                    new Rotation(side.toYRot(), pitch));
+            if (result != null && exact(result, desired)) return side;
+        }
+        for (Direction toSupport : Direction.Plane.HORIZONTAL) {
+            BlockPos support = plan.target().relative(toSupport);
+            BlockState supportState = level.getBlockState(support);
+            if (supportState.canBeReplaced() || supportState.getShape(level, support).isEmpty()) continue;
+            Direction face = toSupport.getOpposite();
+            Vec3 center = Vec3.atCenterOf(support).add(face.getStepX() * 0.5, 0.0, face.getStepZ() * 0.5);
+            Rotation headOn = new Rotation(toSupport.toYRot(), 0.0f);
+            for (double v : SIDE_HEIGHTS) {
+                BlockState result = simulate(player, level, stack, plan.target(), support, face, center.add(0.0, v, 0.0),
+                        headOn);
+                if (result != null && exact(result, desired)) return toSupport;
+            }
+        }
+        return null;
     }
 
     private static boolean better(Plan candidate, Plan best) {
