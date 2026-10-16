@@ -211,7 +211,7 @@ public final class SchematicDiff {
         if (actual == expected) return CORRECT;
         if (StateComparison.derived(expected)) return StateComparison.derivedSatisfied(actual, expected) ? CORRECT : WRONG;
         if (StateComparison.matches(actual, expected)) return CORRECT;
-        if (actual.canBeReplaced()) return MISSING;
+        if (actual.canBeReplaced() || StateComparison.fewerPieces(actual, expected)) return MISSING;
         return WRONG;
     }
 

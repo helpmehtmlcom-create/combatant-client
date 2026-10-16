@@ -149,4 +149,34 @@ class StateComparisonTest {
         assertEquals(SchematicDiff.WRONG, SchematicDiff.classify(repeater.setValue(RepeaterBlock.DELAY, 4), repeater));
         assertEquals(SchematicDiff.MISSING, SchematicDiff.classify(air, repeater));
     }
+
+    @Test
+    void singleSlabWhereDoubleGoesIsOpenNotWrong() {
+        BlockState doubleSlab = Blocks.OAK_SLAB.defaultBlockState().setValue(BlockStateProperties.SLAB_TYPE,
+                net.minecraft.world.level.block.state.properties.SlabType.DOUBLE);
+        BlockState bottom = Blocks.OAK_SLAB.defaultBlockState();
+        assertTrue(StateComparison.fewerPieces(bottom, doubleSlab));
+        assertFalse(StateComparison.fewerPieces(doubleSlab, doubleSlab));
+        assertFalse(StateComparison.fewerPieces(doubleSlab, bottom));
+        assertEquals(SchematicDiff.MISSING, SchematicDiff.classify(bottom, doubleSlab));
+        assertEquals(SchematicDiff.CORRECT, SchematicDiff.classify(doubleSlab, doubleSlab));
+        assertEquals(SchematicDiff.WRONG, SchematicDiff.classify(Blocks.STONE.defaultBlockState(), doubleSlab));
+    }
+
+    @Test
+    void fewerCandlesAreOpen() {
+        BlockState three = Blocks.CANDLE.defaultBlockState().setValue(BlockStateProperties.CANDLES, 3);
+        BlockState one = Blocks.CANDLE.defaultBlockState();
+        assertTrue(StateComparison.fewerPieces(one, three));
+        assertFalse(StateComparison.fewerPieces(three, one));
+        assertEquals(SchematicDiff.MISSING, SchematicDiff.classify(one, three));
+    }
+
+    @Test
+    void ceilingHungBlocksDependOnTheCellAbove() {
+        assertEquals(Direction.UP, RedstoneRules.supportDirection(Blocks.SPORE_BLOSSOM.defaultBlockState()));
+        assertEquals(Direction.UP, RedstoneRules.supportDirection(Blocks.HANGING_ROOTS.defaultBlockState()));
+        assertEquals(Direction.UP, RedstoneRules.supportDirection(Blocks.OAK_HANGING_SIGN.defaultBlockState()));
+        assertEquals(Direction.UP, RedstoneRules.supportDirection(Blocks.WEEPING_VINES.defaultBlockState()));
+    }
 }
