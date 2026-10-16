@@ -23,7 +23,11 @@ public final class TerrainCache implements WalkTerrain {
      * lookup, then palette reads). Cells are stored at {@code (y & 15) << 8 | (z & 15) << 4 | x & 15}.
      */
     public interface SectionSource extends WalkTerrain {
-        void fillSection(int sectionX, int sectionY, int sectionZ, byte[] out);
+        /**
+         * Fills {@code out}; returns {@code false} when part of the section was unknown only because it was not
+         * loaded yet, so the cache asks again later ({@link #refillIncomplete}) instead of keeping the gap.
+         */
+        boolean fillSection(int sectionX, int sectionY, int sectionZ, byte[] out);
     }
 
     private static final byte UNSAMPLED = -1;
@@ -35,6 +39,9 @@ public final class TerrainCache implements WalkTerrain {
     private int count;
     private long lookups;
     private long misses;
+    /** Section coordinates (x, y, z triples) whose last fill was incomplete. */
+    private int[] incomplete = new int[12];
+    private int incompleteCount;
 
     public TerrainCache(WalkTerrain source) {
         this.source = source;
@@ -77,15 +84,39 @@ public final class TerrainCache implements WalkTerrain {
         Arrays.fill(sectionKeys, FREE);
         Arrays.fill(sections, null);
         count = 0;
+        incompleteCount = 0;
     }
 
     private void fill(byte[] section, int sx, int sy, int sz) {
         if (source instanceof SectionSource bulk) {
-            bulk.fillSection(sx, sy, sz, section);
             misses += 4096;
+            if (!bulk.fillSection(sx, sy, sz, section)) {
+                if (incompleteCount + 3 > incomplete.length) incomplete = Arrays.copyOf(incomplete, incomplete.length * 2);
+                incomplete[incompleteCount++] = sx;
+                incomplete[incompleteCount++] = sy;
+                incomplete[incompleteCount++] = sz;
+            }
         } else {
             Arrays.fill(section, UNSAMPLED);
         }
+    }
+
+    /**
+     * Reads again the sections that were filled while some of their chunk was not loaded. Call between searches:
+     * a search running over the cache would see cells change under it.
+     */
+    public void refillIncomplete() {
+        if (incompleteCount == 0 || !(source instanceof SectionSource bulk)) return;
+        int kept = 0;
+        for (int i = 0; i < incompleteCount; i += 3) {
+            int sx = incomplete[i], sy = incomplete[i + 1], sz = incomplete[i + 2];
+            byte[] section = section(sx, sy, sz, false);
+            if (section == null || bulk.fillSection(sx, sy, sz, section)) continue;
+            incomplete[kept++] = sx;
+            incomplete[kept++] = sy;
+            incomplete[kept++] = sz;
+        }
+        incompleteCount = kept;
     }
 
     /** Sections held; the owner starts afresh once this grows past what one build area needs. */

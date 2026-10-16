@@ -39,6 +39,7 @@ import net.minecraft.world.level.block.BaseFireBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
+import net.minecraft.world.level.block.TrapDoorBlock;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -49,6 +50,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.IdentityHashMap;
@@ -147,6 +149,8 @@ final class BuildMover {
     /** The cache is rebuilt from the world this often, catching block changes nobody reported. */
     private static final int CACHE_REFRESH_TICKS = 600;
     private static final int CACHE_MAX_SECTIONS = 4096;
+    /** Sections read while their chunk was missing are read again this often. */
+    private static final int CACHE_REFILL_TICKS = 20;
     /** Spots further than this (route cost) are weighed against a pillar near the targets. */
     private static final double PILLAR_COMPARE_COST = 24.0;
     /** A pillar has to beat the walk by this factor: its blocks still need breaking again afterwards. */
@@ -164,6 +168,8 @@ final class BuildMover {
     private final CellSet reserved = new CellSet();
     private final CellSet rejected = new CellSet();
     private final Map<Long, Block> helpers = new LinkedHashMap<>();
+    /** The world the tracked support blocks stand in; blocks of another world are never broken. */
+    private WeakReference<ClientLevel> helperLevel = new WeakReference<>(null);
     /** The world as the planner sees it: one lookup per cell, shared by every search until refreshed. */
     private final TerrainCache cache = new TerrainCache(new WorldSections());
     /** Classes of block states whose collision shape never depends on the position: most of them. */
@@ -188,6 +194,8 @@ final class BuildMover {
     private PillarPlanner.Planner pillarPlanner;
     private boolean replanPending;
     private int routeDrop = MAX_DROP;
+    /** The drop the current plan's flood allowed; routes and replans for it must allow the same. */
+    private int floodDrop = MAX_DROP;
 
     private long goal;
     private boolean hasGoal;
@@ -311,10 +319,15 @@ final class BuildMover {
         previousTargets = new long[0];
     }
 
-    /** Module switched off: everything goes, the counters too. */
+    /**
+     * Module switched off (or the world changed): the counters go, and so does the route. Support blocks stay
+     * tracked while the world is the same, so switching the module off and on again can still break them; blocks
+     * of another world are forgotten.
+     */
     void clearAll() {
         reset();
-        helpers.clear();
+        ClientLevel level = helperLevel.get();
+        if (level == null || level != mc.level) helpers.clear();
         routes = 0;
         routeCells = 0;
         walked = 0.0;
@@ -372,6 +385,7 @@ final class BuildMover {
 
     void onHelperPlaced(BlockPos pos, Block block) {
         helpers.put(pos.asLong(), block);
+        helperLevel = new WeakReference<>(mc.level);
         pillarBlocks++;
         cache.invalidateAround(pos.getX(), pos.getY(), pos.getZ());
     }
@@ -435,7 +449,7 @@ final class BuildMover {
                 replanWait--;
                 return null;
             }
-            if (!player.onGround() || !startPlan(player, StandingSpotChooser.Mode.PLACE, host.reach() - PLAN_MARGIN)) return null;
+            if (!grounded(player) || !startPlan(player, StandingSpotChooser.Mode.PLACE, host.reach() - PLAN_MARGIN)) return null;
         }
         advancePlan(player, deadline);
         return null;
@@ -474,6 +488,7 @@ final class BuildMover {
         int drop = planMode == StandingSpotChooser.Mode.PLACE
                 ? (helpers.isEmpty() ? MAX_DROP : SAFE_DROP)
                 : CLEAR_MAX_DROP;
+        floodDrop = drop;
         floodSearch.startFlood(planStart, drop, floodBound, FLOOD_NODES, reserved.isEmpty() ? null : reserved);
         stage = Stage.FLOOD;
         flood = null;
@@ -540,15 +555,17 @@ final class BuildMover {
                 && (next == null || PillarPlanner.rate(column) > StandingSpotChooser.rate(next.coverage(), next.cost()) * PILLAR_ADVANTAGE);
         if (next != null && !pillarWins) {
             spot = next;
-            startRoute(flood.route(next.key()), next.key(), Mode.WALKING, MAX_DROP);
+            startRoute(flood.route(next.key()), next.key(), Mode.WALKING, floodDrop);
             return;
         }
         if (column != null) {
             pillar = column;
             pillarRetries = 0;
+            pillarIdleTicks = 0;
+            pillarProgressBlocks = pillarBlocks;
             pillarBaseY = Integer.MIN_VALUE;
             long base = WalkTerrain.pack(column.x(), column.y(), column.z());
-            startRoute(flood.route(base), base, Mode.PILLARING, MAX_DROP);
+            startRoute(flood.route(base), base, Mode.PILLARING, floodDrop);
             return;
         }
         if (!warnedUnreachable) {
@@ -603,7 +620,7 @@ final class BuildMover {
         if (!follower.active()) return false;
         Vec3 pos = player.position();
         Vec3 motion = player.getDeltaMovement();
-        RouteFollower.Action action = follower.tick(live, pos.x, pos.y, pos.z, motion.x, motion.z, player.onGround(),
+        RouteFollower.Action action = follower.tick(live, pos.x, pos.y, pos.z, motion.x, motion.z, grounded(player),
                 player.horizontalCollision, host.stuckTimeout());
         switch (action) {
             case FOLLOW -> {
@@ -624,7 +641,7 @@ final class BuildMover {
     }
 
     private void startReplan(LocalPlayer player) {
-        if (!player.onGround()) return;
+        if (!grounded(player)) return;
         // Whatever made the route wrong may have changed blocks around the player: read them afresh.
         Vec3 pos = player.position();
         int fx = (int) Math.floor(pos.x), fy = feetY(player), fz = (int) Math.floor(pos.z);
@@ -862,7 +879,7 @@ final class BuildMover {
             return true;
         }
         if (mineReachable(player, reach)) return true;
-        if (!player.onGround()) return true;
+        if (!grounded(player)) return true;
         if (replanWait > 0) {
             replanWait--;
             return true;
@@ -1034,17 +1051,25 @@ final class BuildMover {
     private boolean aboutToFall(LocalPlayer player) {
         ClientLevel level = mc.level;
         Vec3 motion = player.getDeltaMovement();
-        AABB box = player.getBoundingBox().move(motion.x * 1.5, 0.0, motion.z * 1.5);
-        double y = box.minY - 0.5;
-        double[] xs = {box.minX + 0.02, (box.minX + box.maxX) * 0.5, box.maxX - 0.02};
-        double[] zs = {box.minZ + 0.02, (box.minZ + box.maxZ) * 0.5, box.maxZ - 0.02};
-        for (double x : xs) {
-            for (double z : zs) {
-                cursor.set(Math.floor(x), Math.floor(y), Math.floor(z));
+        AABB box = player.getBoundingBox();
+        double shiftX = motion.x * 1.5, shiftZ = motion.z * 1.5;
+        double minX = box.minX + shiftX + 0.02, maxX = box.maxX + shiftX - 0.02;
+        double minZ = box.minZ + shiftZ + 0.02, maxZ = box.maxZ + shiftZ - 0.02;
+        int y = (int) Math.floor(box.minY - 0.5);
+        for (int i = 0; i < 3; i++) {
+            double x = i == 0 ? minX : i == 1 ? (minX + maxX) * 0.5 : maxX;
+            for (int j = 0; j < 3; j++) {
+                double z = j == 0 ? minZ : j == 1 ? (minZ + maxZ) * 0.5 : maxZ;
+                cursor.set((int) Math.floor(x), y, (int) Math.floor(z));
                 if (!level.getBlockState(cursor).getCollisionShape(level, cursor).isEmpty()) return false;
             }
         }
         return true;
+    }
+
+    /** On the ground, or swimming: the two states in which the walker can plan and steer. */
+    private static boolean grounded(LocalPlayer player) {
+        return player.onGround() || player.isInWater();
     }
 
     // ------------------------------------------------------------------ world view
@@ -1057,6 +1082,9 @@ final class BuildMover {
             cacheLevel = level;
             cacheAge = 0;
             cache.clear();
+        } else if (cacheAge % CACHE_REFILL_TICKS == 0 && stage == Stage.NONE && !replanPending) {
+            // Chunks that were missing when their section was read may have arrived since.
+            cache.refillIncomplete();
         }
     }
 
@@ -1086,18 +1114,22 @@ final class BuildMover {
         }
 
         @Override
-        public void fillSection(int sectionX, int sectionY, int sectionZ, byte[] out) {
+        public boolean fillSection(int sectionX, int sectionY, int sectionZ, byte[] out) {
             ClientLevel level = mc.level;
             int index = level.getSectionIndexFromSectionY(sectionY);
-            if (index < 0 || index >= level.getSectionsCount() || !level.hasChunk(sectionX, sectionZ)) {
+            if (index < 0 || index >= level.getSectionsCount()) {
                 java.util.Arrays.fill(out, WalkTerrain.UNKNOWN);
-                return;
+                return true;
+            }
+            if (!level.hasChunk(sectionX, sectionZ)) {
+                java.util.Arrays.fill(out, WalkTerrain.UNKNOWN);
+                return false;
             }
             LevelChunk chunk = level.getChunk(sectionX, sectionZ);
             LevelChunkSection section = chunk.getSection(index);
             if (section.hasOnlyAir()) {
                 java.util.Arrays.fill(out, WalkTerrain.OPEN);
-                return;
+                return true;
             }
             int baseX = sectionX << 4, baseY = sectionY << 4, baseZ = sectionZ << 4;
             for (int y = 0; y < 16; y++) {
@@ -1109,6 +1141,7 @@ final class BuildMover {
                     }
                 }
             }
+            return true;
         }
     }
 
@@ -1126,6 +1159,7 @@ final class BuildMover {
         if (block == Blocks.COBWEB) return WalkTerrain.WEB;
         if (state.is(BlockTags.CLIMBABLE)) return WalkTerrain.CLIMB;
         if (block instanceof DoorBlock) return state.getValue(DoorBlock.OPEN) ? WalkTerrain.NARROW : WalkTerrain.SOLID;
+        if (block instanceof TrapDoorBlock && state.getValue(TrapDoorBlock.OPEN)) return WalkTerrain.NARROW;
         VoxelShape shape = state.getCollisionShape(level, pos);
         if (shape.isEmpty()) return water ? WalkTerrain.WATER : WalkTerrain.OPEN;
         double top = shape.max(Direction.Axis.Y);
