@@ -104,19 +104,7 @@ public enum AttackUtil {
                     }
                     return result;
                 }
-                if (player.getUsedItemHand() == net.minecraft.world.InteractionHand.OFF_HAND
-                        && !player.getMainHandItem().is(Items.SHIELD)) {
-                    return performAttack(mc, player, target, keepSprint);
-                }
                 return false;
-            }
-
-            combatant.client.features.module.modules.movement.NoSlow noSlow =
-                    combatant.client.features.module.Modules.get(combatant.client.features.module.modules.movement.NoSlow.class);
-            if (noSlow != null && noSlow.shouldModifyInput(player)) {
-                if (player.getUsedItemHand() == net.minecraft.world.InteractionHand.OFF_HAND) {
-                    return performAttack(mc, player, target, keepSprint);
-                }
             }
 
             return false;

@@ -678,6 +678,14 @@ public class KillAura extends Module {
 
 
     public boolean willAttackInTicks(LivingEntity target, int ticks) {
+        return willAttackInTicks(target, ticks, true);
+    }
+
+    /**
+     * @param requireCrit when false, a pending Criticals wait does not count as "not attacking";
+     *                    used by SNAP so the rotation is held while only the crit check fails.
+     */
+    private boolean willAttackInTicks(LivingEntity target, int ticks, boolean requireCrit) {
         if (!isEnabled() || mc.player == null) {
             return false;
         }
@@ -693,11 +701,7 @@ public class KillAura extends Module {
             return false;
         }
 
-        if (safeTicks == 0 && !criticalHitAllowed(candidate)) {
-            return false;
-        }
-
-        return true;
+        return !requireCrit || safeTicks != 0 || criticalHitAllowed(candidate);
     }
 
     public boolean willAttackInTicks(int ticks) {
@@ -953,7 +957,7 @@ public class KillAura extends Module {
         KillAura.RotationTiming timing = rotationTiming.get();
         if (timing == RotationTiming.SNAP) {
             int rotTicks = calculateTicks(rotation.rotation());
-            if (!isInRange(target) || !willAttackInTicks(target, Math.max(0, rotTicks))) {
+            if (!isInRange(target) || !willAttackInTicks(target, Math.max(0, rotTicks), false)) {
                 RotationManager.INSTANCE.clear(this);
                 lastRotation = null;
                 lastRotationTick = -1;
