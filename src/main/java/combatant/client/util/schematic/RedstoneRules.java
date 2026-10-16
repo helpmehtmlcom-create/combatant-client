@@ -118,7 +118,29 @@ public final class RedstoneRules {
                 || block instanceof RedStoneWireBlock || block instanceof BasePressurePlateBlock
                 || block instanceof BaseRailBlock || block instanceof CarpetBlock || block instanceof DoorBlock
                 || block instanceof StandingSignBlock) return Direction.DOWN;
-        return null;
+        return hanging(block, state) ? Direction.UP : null;
+    }
+
+    /** Blocks that grow or hang from the cell above them: no click holds them up without it. */
+    private static boolean hanging(Block block, BlockState state) {
+        if (block instanceof net.minecraft.world.level.block.CeilingHangingSignBlock
+                || block instanceof net.minecraft.world.level.block.CaveVinesBlock
+                || block instanceof net.minecraft.world.level.block.CaveVinesPlantBlock
+                || block instanceof net.minecraft.world.level.block.WeepingVinesBlock
+                || block instanceof net.minecraft.world.level.block.WeepingVinesPlantBlock
+                || block instanceof net.minecraft.world.level.block.HangingRootsBlock
+                || block instanceof net.minecraft.world.level.block.SporeBlossomBlock) return true;
+        if (block instanceof net.minecraft.world.level.block.MangrovePropaguleBlock) {
+            return state.getValue(net.minecraft.world.level.block.MangrovePropaguleBlock.HANGING);
+        }
+        if (block instanceof net.minecraft.world.level.block.PointedDripstoneBlock) {
+            return state.getValue(net.minecraft.world.level.block.PointedDripstoneBlock.TIP_DIRECTION) == Direction.DOWN;
+        }
+        if (block instanceof net.minecraft.world.level.block.BellBlock) {
+            return state.getValue(net.minecraft.world.level.block.BellBlock.ATTACHMENT)
+                    == net.minecraft.world.level.block.state.properties.BellAttachType.CEILING;
+        }
+        return false;
     }
 
     /**

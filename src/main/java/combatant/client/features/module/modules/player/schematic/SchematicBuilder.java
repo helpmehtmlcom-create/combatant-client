@@ -40,6 +40,7 @@ import combatant.client.util.screen.ClientScreen;
 import combatant.client.util.server.DonutSmp;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.gui.screens.inventory.AbstractSignEditScreen;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.core.BlockPos;
@@ -84,8 +85,8 @@ public final class SchematicBuilder extends Module {
     private static final int PLAN_TIMEOUT_TICKS = 20;
     private static final int RETRY_AFTER_TICKS = 40;
     private static final int RECENT_PLACE_TICKS = 10;
-    /** A stair or slab clicked before the rotation settled lands in the wrong half; this is how long to wait for it. */
-    private static final int EXACT_WAIT_TICKS = 4;
+    /** Plans for one cell that timed out while waiting for an exact click, before the cell is placed approximate. */
+    private static final int EXACT_GIVE_UP_PLANS = 6;
     private static final int MAX_PLAN_ATTEMPTS = 12;
     private static final int MAX_CANDIDATES = 96;
     private static final int SHORTFALL_INTERVAL = 20;
@@ -162,6 +163,7 @@ public final class SchematicBuilder extends Module {
     private final LinearAngleSmooth smoothing =
             new LinearAngleSmooth(effectiveSpeedMin, effectiveSpeedMax, effectiveSpeedMin, effectiveSpeedMax);
     private final Map<Long, Integer> retryAfter = new HashMap<>();
+    private final Map<Long, Integer> exactGiveUps = new HashMap<>();
     private final int[] candidateCells = new int[MAX_CANDIDATES];
     private final double[] candidateDistance = new double[MAX_CANDIDATES];
     private final BuildMover mover = new BuildMover(mc, new MoverHost());
@@ -220,6 +222,7 @@ public final class SchematicBuilder extends Module {
         pendingAge = 0;
         cooldown = 0;
         retryAfter.clear();
+        exactGiveUps.clear();
         lastHealth = -1.0f;
         lastLevel = mc.level;
         completedLayerNotified = -1;
@@ -367,6 +370,8 @@ public final class SchematicBuilder extends Module {
             status = Status.NO_SCHEMATIC;
             return false;
         }
+        // A placed sign opens the server's text editor; closing it sends the (unchanged) text and the build goes on.
+        if (ClientScreen.current(mc) instanceof AbstractSignEditScreen signEditor) signEditor.onClose();
         if (ClientScreen.current() != null || player.isUsingItem()
                 || pauseHealth.get() > 0.0f && player.getHealth() <= pauseHealth.get()) {
             status = Status.PAUSED;
@@ -404,6 +409,7 @@ public final class SchematicBuilder extends Module {
         if (pending != null && (++pendingAge > PLAN_TIMEOUT_TICKS || !stillValid(player, pending))) {
             if (pendingAge > PLAN_TIMEOUT_TICKS && pending.kind != Kind.HELPER) {
                 retryAfter.put(pending.plan.target().asLong(), ticks + RETRY_AFTER_TICKS);
+                if (pending.plan.exact()) exactGiveUps.merge(pending.plan.target().asLong(), 1, Integer::sum);
             }
             pending = null;
         }
@@ -501,11 +507,12 @@ public final class SchematicBuilder extends Module {
                 rotationWaitTicks++;
                 return false;
             }
+            // The click goes out ahead of this tick's flying packet, so Grim reads it against the rotation the
+            // previous packet carried (RotationPlace "pre-flying") as well as the one this tick sends. One miss
+            // there arms the check, after which every click that does not already face the block is denied and
+            // the denials keep it armed. The last sent rotation has to look at the face too, whatever the block.
             facingRotation = server;
-            // The server picks the block's facing from the rotation it already has; that only has to look at
-            // the face too when the facing matters. A stone block comes out the same whatever the old rotation.
-            if (!BuildPlanner.matches(BuildPlanner.trace(player, server, reach), plan)
-                    && !facingIndependent(player, work, plan, hit, server, current)) {
+            if (!BuildPlanner.matches(BuildPlanner.trace(player, server, reach), plan)) {
                 rotationWaitTicks++;
                 return false;
             }
@@ -531,7 +538,12 @@ public final class SchematicBuilder extends Module {
         if (exact && lookSensitive && facingRotation != null) {
             exact = robustFacing(player, stack, plan, hit, facingRotation, work.expected);
         }
-        if (!exact && plan.exact() && (pendingAge < EXACT_WAIT_TICKS || lookSensitive)) {
+        // A plan that can give the exact state waits for it; clicking early puts a slab in the wrong half for good.
+        // Only a cell whose exact click keeps failing (see exactGiveUps) is placed approximate. A sneaking click was
+        // simulated by the planner standing up (a chest beside a hopper looks like a double chest there), while this
+        // prediction ran crouched: that one is the truth, so no wait.
+        if (!exact && plan.exact() && !plan.sneak()
+                && exactGiveUps.getOrDefault(plan.target().asLong(), 0) < EXACT_GIVE_UP_PLANS) {
             exactWaitTicks++;
             return false;
         }
@@ -605,16 +617,6 @@ public final class SchematicBuilder extends Module {
         return true;
     }
 
-    private boolean facingIndependent(LocalPlayer player, Pending work, BuildPlanner.Plan plan, BlockHitResult hit,
-                                      Rotation server, Rotation current) {
-        ItemStack stack = player.getInventory().getItem(work.hotbarSlot);
-        BlockState withServer = BuildPlanner.simulate(player, mc.level, stack, plan.target(), plan.support(),
-                plan.face(), hit.getLocation(), server);
-        BlockState withCurrent = BuildPlanner.simulate(player, mc.level, stack, plan.target(), plan.support(),
-                plan.face(), hit.getLocation(), current);
-        return withServer != null && withServer == withCurrent;
-    }
-
     /** A support block under the feet mid-jump: no exactness rules, but it is remembered for clean-up. */
     private boolean placeHelper(LocalPlayer player, Pending work, BlockHitResult hit) {
         BuildPlanner.Plan plan = work.plan;
@@ -647,8 +649,11 @@ public final class SchematicBuilder extends Module {
         // A support click only makes sense while the feet are above the cell it fills.
         if (work.kind == Kind.HELPER && player.getY() < work.plan.target().getY() + 1.0) return false;
         BlockState current = mc.level.getBlockState(work.plan.target());
-        if (!current.canBeReplaced()) return false;
-        if (mc.level.getBlockState(work.plan.support()).canBeReplaced()) return false;
+        BlockPos support = work.plan.support();
+        // A cell holding part of its stack (one slab of a double one) is clicked on the block itself.
+        boolean stacking = support.equals(work.plan.target()) && StateComparison.fewerPieces(current, work.expected);
+        if (!current.canBeReplaced() && !stacking) return false;
+        if (!stacking && mc.level.getBlockState(support).canBeReplaced()) return false;
         ItemStack stack = player.getInventory().getItem(work.hotbarSlot);
         if (stack.isEmpty() || stack.getItem() != work.item) return false;
         double reach = effectiveRange();
@@ -725,7 +730,7 @@ public final class SchematicBuilder extends Module {
                 return false;
             }
             if (look == null && yaw == null && ticks - since < APPROXIMATE_PATIENCE_TICKS
-                    && unbuiltNeighbour(diff, target)) {
+                    && unbuiltNeighbour(diff, target, player)) {
                 retryAfter.put(key, ticks + RECENT_PLACE_TICKS);
                 return false;
             }
@@ -751,11 +756,14 @@ public final class SchematicBuilder extends Module {
     }
 
     /**
-     * Whether a schematic cell beside {@code target} still waits for its block (the world has air there). Only the
-     * sides count: the cell above belongs to a later layer, which strict layers keep closed until this one is done.
+     * Whether a schematic cell beside {@code target} is going to be built soon enough to click its side face: it is
+     * missing now, open under the current band, not derived, its material is usable and its chunk is loaded. Only
+     * full blocks count: a neighbouring slab or stair gives no side face covering the upper half, and two such
+     * cells would wait on each other. Only the sides count: the cell above belongs to a later layer.
      */
-    private boolean unbuiltNeighbour(SchematicDiff diff, BlockPos target) {
+    private boolean unbuiltNeighbour(SchematicDiff diff, BlockPos target, LocalPlayer player) {
         SchematicPlacement placement = diff.placement();
+        int openBand = safety.openBand(diff);
         for (Direction direction : Direction.Plane.HORIZONTAL) {
             BlockPos neighbour = target.relative(direction);
             int x = placement.localX(neighbour.getX(), neighbour.getZ());
@@ -763,8 +771,14 @@ public final class SchematicBuilder extends Module {
             int z = placement.localZ(neighbour.getX(), neighbour.getZ());
             if (!diff.schematic().contains(x, y, z)) continue;
             int cell = diff.cellOf(diff.schematic().index(x, y, z));
-            if (cell < 0 || diff.expectedState(cell).isAir()) continue;
-            if (mc.level.getBlockState(neighbour).canBeReplaced()) return true;
+            if (cell < 0 || !mc.level.hasChunkAt(neighbour)) continue;
+            BlockState neighbourState = diff.expectedState(cell);
+            if (neighbourState.isAir() || StateComparison.derived(neighbourState)
+                    || !neighbourState.isCollisionShapeFullBlock(mc.level, neighbour)) continue;
+            if (diff.status(cell) != SchematicDiff.MISSING || !safety.eligible(mc.level, diff, cell, openBand)) continue;
+            Item item = SchematicMaterials.itemFor(neighbourState);
+            if (item == Items.AIR || usableCount(player, item) == 0) continue;
+            return true;
         }
         return false;
     }
@@ -942,7 +956,7 @@ public final class SchematicBuilder extends Module {
                 BlockState expected = diff.expectedState(cell);
                 Item item = SchematicMaterials.itemFor(expected);
                 if (item == Items.AIR || SchematicMaterials.itemsPerCell(expected) == 0) continue;
-                if (SchematicMaterials.countInInventory(player, item) == 0) {
+                if (usableCount(player, item) == 0) {
                     missingThisTick = true;
                     continue;
                 }
@@ -989,6 +1003,20 @@ public final class SchematicBuilder extends Module {
         return -1;
     }
 
+    /**
+     * Items the builder can actually put in a hand: the hotbar, and the main inventory when restocking is on. The
+     * offhand and a restock-off main inventory count for nothing here, however much the player carries.
+     */
+    private int usableCount(LocalPlayer player, Item item) {
+        Inventory inventory = player.getInventory();
+        int total = 0;
+        for (int i = 0; i < (restock.get() ? Inventory.INVENTORY_SIZE : 9); i++) {
+            ItemStack stack = inventory.getItem(i);
+            if (stack.getItem() == item) total += stack.getCount();
+        }
+        return total;
+    }
+
     /** Swaps a stack from the main inventory into the restock slot; placement resumes on a later tick. */
     private boolean restockFromInventory(LocalPlayer player, Item item) {
         if (player.containerMenu != player.inventoryMenu) return false;
@@ -1028,7 +1056,7 @@ public final class SchematicBuilder extends Module {
         }
         List<SchematicMaterials.Entry> shortfall = new ArrayList<>();
         for (Map.Entry<Item, int[]> entry : needed.entrySet()) {
-            int missing = entry.getValue()[0] - SchematicMaterials.countInInventory(player, entry.getKey());
+            int missing = entry.getValue()[0] - usableCount(player, entry.getKey());
             if (missing > 0) shortfall.add(new SchematicMaterials.Entry(entry.getKey(), missing));
         }
         shortfall.sort((a, b) -> Integer.compare(b.count(), a.count()));
@@ -1073,7 +1101,7 @@ public final class SchematicBuilder extends Module {
                 BlockState expected = diff.expectedState(cell);
                 Item item = SchematicMaterials.itemFor(expected);
                 if (item == Items.AIR || SchematicMaterials.itemsPerCell(expected) == 0) continue;
-                if (SchematicMaterials.countInInventory(player, item) == 0) continue;
+                if (usableCount(player, item) == 0) continue;
                 diff.worldPos(cell, scratch);
                 if (retryAfter.containsKey(scratch.asLong())) continue;
                 out[count++] = WalkTerrain.pack(scratch.getX(), scratch.getY(), scratch.getZ());
