@@ -87,6 +87,11 @@ public final class NoSlow extends Module {
     }
 
     @Override
+    public void onEnable() {
+        grimTicks = 0;
+    }
+
+    @Override
     public void onDisable() {
         grimTicks = 0;
     }
