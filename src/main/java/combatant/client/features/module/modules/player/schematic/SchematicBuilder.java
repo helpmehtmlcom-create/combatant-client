@@ -177,6 +177,8 @@ public final class SchematicBuilder extends Module {
     private final Map<Long, Direction> lookWanted = new HashMap<>();
     /** Of those, the ones where only the yaw counts (repeaters, comparators, floor levers). */
     private final Set<Long> yawOnly = new HashSet<>();
+    /** Cells whose 16-step rotation needs this exact yaw (signs, banners, heads standing on the floor). */
+    private final Map<Long, Float> yawWanted = new HashMap<>();
     private final Map<Long, Integer> hazardDefers = new HashMap<>();
     private final Map<Long, Integer> adjustClicks = new HashMap<>();
     private final long[] gateScratch = new long[1];
@@ -239,6 +241,7 @@ public final class SchematicBuilder extends Module {
         approximateSince.clear();
         lookWanted.clear();
         yawOnly.clear();
+        yawWanted.clear();
         hazardDefers.clear();
         adjustClicks.clear();
         lastPlaceTick = ticks;
@@ -585,6 +588,7 @@ public final class SchematicBuilder extends Module {
             approximateSince.remove(plan.target().asLong());
             lookWanted.remove(plan.target().asLong());
             yawOnly.remove(plan.target().asLong());
+            yawWanted.remove(plan.target().asLong());
             mover.onPlaced();
         }
         retryAfter.put(plan.target().asLong(), ticks + RECENT_PLACE_TICKS);
@@ -740,14 +744,24 @@ public final class SchematicBuilder extends Module {
         if (!plan.exact()) {
             Direction look = RedstoneRules.requiredLook(expected);
             Direction yaw = RedstoneRules.requiredYaw(expected);
-            if (look == null && yaw == null) yaw = BuildPlanner.lookFixing(player, mc.level, stack, plan, expected);
+            Float rotation = null;
+            if (look == null && yaw == null) {
+                rotation = BuildPlanner.rotationFixing(player, mc.level, stack, plan, expected);
+                if (rotation == null) yaw = BuildPlanner.lookFixing(player, mc.level, stack, plan, expected);
+            }
             int since = approximateSince.computeIfAbsent(key, ignored -> ticks);
-            if ((look != null || yaw != null) && autoWalk.get() && ticks - since < APPROXIMATE_PATIENCE_TICKS) {
-                lookWanted.put(key, look != null ? look : yaw);
-                if (look == null) yawOnly.add(key);
+            if ((look != null || yaw != null || rotation != null) && autoWalk.get()
+                    && ticks - since < APPROXIMATE_PATIENCE_TICKS) {
+                if (rotation != null) {
+                    yawWanted.put(key, rotation);
+                } else {
+                    lookWanted.put(key, look != null ? look : yaw);
+                    if (look == null) yawOnly.add(key);
+                }
                 return false;
             }
-            if (look == null && yaw == null && ticks - since < APPROXIMATE_PATIENCE_TICKS
+            boolean fixable = look != null || yaw != null || rotation != null;
+            if (!fixable && ticks - since < APPROXIMATE_PATIENCE_TICKS
                     && unbuiltNeighbour(diff, target, player)) {
                 retryAfter.put(key, ticks + RECENT_PLACE_TICKS);
                 return false;
@@ -755,6 +769,7 @@ public final class SchematicBuilder extends Module {
             // Out of patience: the walker stops looking for a better spot and the approximate click goes out.
             lookWanted.remove(key);
             yawOnly.remove(key);
+            yawWanted.remove(key);
             if (approximate.get() == ApproximateMode.SKIP) {
                 state.flag(target, expected, SchematicAttention.Reason.APPROXIMATE);
                 retryAfter.put(key, ticks + RETRY_AFTER_TICKS);
@@ -1211,8 +1226,13 @@ public final class SchematicBuilder extends Module {
 
         @Override
         public boolean lookAllows(long target, double eyeX, double eyeY, double eyeZ) {
-            if (lookWanted.isEmpty()) return true;
+            if (lookWanted.isEmpty() && yawWanted.isEmpty()) return true;
             long key = BlockPos.asLong(WalkTerrain.unpackX(target), WalkTerrain.unpackY(target), WalkTerrain.unpackZ(target));
+            Float wantedYaw = yawWanted.get(key);
+            if (wantedYaw != null) {
+                return BuildPlanner.yawAllows(WalkTerrain.unpackX(target) + 0.5 - eyeX,
+                        WalkTerrain.unpackZ(target) + 0.5 - eyeZ, wantedYaw);
+            }
             Direction look = lookWanted.get(key);
             if (look == null) return true;
             double dx = WalkTerrain.unpackX(target) + 0.5 - eyeX;
