@@ -93,6 +93,9 @@ final class BuildPlanner {
         if (!(stack.getItem() instanceof BlockItem)) return null;
         Vec3 eyes = player.getEyePosition();
         Vec3 crouchedEyes = player.position().add(0.0, player.getEyeHeight(Pose.CROUCHING), 0.0);
+        if (StateComparison.fewerPieces(level.getBlockState(target), desired)) {
+            return planStack(player, level, target, desired, stack, range, aimAtHit);
+        }
         Search search = new Search(player, level, target, desired, stack, range * range, aimAtHit);
         for (int pass = 0; pass < 2; pass++) {
             boolean fine = pass == 1;
@@ -107,6 +110,38 @@ final class BuildPlanner {
             }
         }
         return search.best;
+    }
+
+    /**
+     * A click on the block already in the cell that adds a piece (the second slab of a double one, another candle).
+     * Aims at the middle of the outline's face, like {@link #planClick}; the first face the ray really hits and
+     * the item's own placement rule accepts wins.
+     */
+    private static Plan planStack(LocalPlayer player, Level level, BlockPos target, BlockState desired,
+                                  ItemStack stack, double range, boolean aimAtHit) {
+        VoxelShape shape = level.getBlockState(target).getShape(level, target);
+        if (shape.isEmpty()) return null;
+        AABB box = shape.bounds().move(target);
+        Vec3 eyes = player.getEyePosition();
+        double rangeSq = range * range;
+        Vec3 center = box.getCenter();
+        Plan best = null;
+        for (Direction face : Direction.values()) {
+            Vec3 point = new Vec3(
+                    face.getStepX() == 0 ? center.x : face.getStepX() > 0 ? box.maxX - 0.01 : box.minX + 0.01,
+                    face.getStepY() == 0 ? center.y : face.getStepY() > 0 ? box.maxY - 0.01 : box.minY + 0.01,
+                    face.getStepZ() == 0 ? center.z : face.getStepZ() > 0 ? box.maxZ - 0.01 : box.minZ + 0.01);
+            double distanceSq = eyes.distanceToSqr(point);
+            if (distanceSq > rangeSq || best != null && best.distanceSq <= distanceSq) continue;
+            Rotation rotation = Rotation.lookingAt(point, eyes);
+            BlockHitResult hit = trace(player, eyes, rotation, Math.sqrt(distanceSq) + 0.5);
+            if (hit == null || !hit.getBlockPos().equals(target) || hit.getDirection() != face) continue;
+            BlockState result = simulate(player, level, stack, target, target, face, hit.getLocation(),
+                    aimAtHit ? rotation : null);
+            if (result == null || !exact(result, desired)) continue;
+            best = new Plan(target, target, face, hit.getLocation(), rotation, true, distanceSq, false);
+        }
+        return best;
     }
 
     /** Best click found so far over the faces of the target's neighbours. */
@@ -211,7 +246,9 @@ final class BuildPlanner {
      * {@link StateComparison}) and to what a few clicks on the placed block still set (delay, mode, note).
      */
     static boolean exact(BlockState result, BlockState desired) {
-        return result == desired || StateAdjustments.clicksNeeded(result, desired) != StateAdjustments.IMPOSSIBLE;
+        // One candle of three or the first slab of a double one is the right step; the cell stays open for the rest.
+        return result == desired || StateComparison.fewerPieces(result, desired)
+                || StateAdjustments.clicksNeeded(result, desired) != StateAdjustments.IMPOSSIBLE;
     }
 
     /**
@@ -221,7 +258,7 @@ final class BuildPlanner {
      */
     static boolean lookDependent(BlockState desired) {
         return RedstoneRules.lookDecides(desired) || desired.hasProperty(BlockStateProperties.HORIZONTAL_FACING)
-                || desired.hasProperty(BlockStateProperties.FACING);
+                || desired.hasProperty(BlockStateProperties.FACING) || desired.hasProperty(BlockStateProperties.ROTATION_16);
     }
 
     /**
