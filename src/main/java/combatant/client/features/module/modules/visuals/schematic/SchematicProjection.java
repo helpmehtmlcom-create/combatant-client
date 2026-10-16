@@ -28,7 +28,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.phys.AABB;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
 
 import java.util.Arrays;
 
@@ -79,7 +79,12 @@ public final class SchematicProjection extends Module {
     private int[] boxY = new int[0];
     private int[] boxZ = new int[0];
     private byte[] boxStatus = new byte[0];
+    private byte[] faceMask = new byte[0];
+    private final SchematicFaceCulling faceCulling = new SchematicFaceCulling();
     private int boxCount;
+    // Reused one-cell box moved in place for the frustum test; Frustum#isVisible(AABB) would need a fresh AABB per cell.
+    private final BoundingBox cullBox = new BoundingBox(0, 0, 0, 0, 0, 0);
+    private int cullX, cullY, cullZ;
 
     private LayerMode appliedMode;
     private int builtStateRevision = -1;
@@ -187,11 +192,13 @@ public final class SchematicProjection extends Module {
             boxY = new int[cap];
             boxZ = new int[cap];
             boxStatus = new byte[cap];
+            faceMask = new byte[cap];
         }
         int range = renderDistance.get();
         int total = countByDistance(diff, player, range);
         int cutoff = total > cap ? distanceCutoff(cap) : range;
         boxCount = collect(diff, player, range, cutoff, cap);
+        faceCulling.compute(boxX, boxY, boxZ, boxStatus, boxCount, faceMask);
     }
 
     /** First pass: how many shown cells sit at each whole-block distance, so the nearest {@code cap} can be kept. */
@@ -272,6 +279,15 @@ public final class SchematicProjection extends Module {
         drawBoxes(tris, lines);
     }
 
+    /** Whole-cell frustum test; Frustum returns -2 (inside) / -1 (intersecting) for anything visible. */
+    private boolean cellVisible(Frustum frustum, int x, int y, int z) {
+        cullBox.move(x - cullX, y - cullY, z - cullZ);
+        cullX = x;
+        cullY = y;
+        cullZ = z;
+        return frustum.cubeInFrustum(cullBox) < 0;
+    }
+
     private void drawBoxes(MeshBuilder tris, MeshBuilder lines) {
         int fillAlpha = Math.round(opacity.get() * 2.55f);
         int missing = missingColor.getArgb();
@@ -281,7 +297,7 @@ public final class SchematicProjection extends Module {
         for (int i = 0; i < boxCount; i++) {
             int x = boxX[i], y = boxY[i], z = boxZ[i];
             // The whole cell, not its centre: a box half on screen at the frustum edge must still draw.
-            if (frustum != null && !Renderer3D.Culling.isInFrustum(new AABB(x, y, z, x + 1.0, y + 1.0, z + 1.0))) continue;
+            if (frustum != null && !cellVisible(frustum, x, y, z)) continue;
             byte status = boxStatus[i];
             int argb = status == SchematicDiff.MISSING ? missing : status == SchematicDiff.WRONG ? wrong : correct;
             // Missing cells are empty, so a slightly smaller cube reads as a ghost; overlays on real blocks
@@ -292,21 +308,21 @@ public final class SchematicProjection extends Module {
             // Real blocks already show their own texture, so their tint is half as strong as a ghost's.
             int alpha = Math.min(fillAlpha, (argb >>> 24) & 0xFF);
             if (status != SchematicDiff.MISSING) alpha >>= 1;
-            filledBox(tris, minX, minY, minZ, maxX, maxY, maxZ, (argb & 0x00FFFFFF) | (alpha << 24));
+            filledBox(tris, minX, minY, minZ, maxX, maxY, maxZ, (argb & 0x00FFFFFF) | (alpha << 24), faceMask[i]);
             if (lines != null) outlineBox(lines, minX, minY, minZ, maxX, maxY, maxZ, argb);
         }
     }
 
-    private static void filledBox(MeshBuilder tris, double x1, double y1, double z1, double x2, double y2, double z2, int argb) {
+    private static void filledBox(MeshBuilder tris, double x1, double y1, double z1, double x2, double y2, double z2, int argb, int faces) {
         int a = (argb >>> 24) & 0xFF;
         if (a == 0) return;
         int r = (argb >>> 16) & 0xFF, g = (argb >>> 8) & 0xFF, b = argb & 0xFF;
-        quad(tris, x1, y1, z1, x2, y1, z1, x2, y1, z2, x1, y1, z2, r, g, b, a);
-        quad(tris, x1, y2, z1, x1, y2, z2, x2, y2, z2, x2, y2, z1, r, g, b, a);
-        quad(tris, x1, y1, z2, x2, y1, z2, x2, y2, z2, x1, y2, z2, r, g, b, a);
-        quad(tris, x1, y1, z1, x1, y2, z1, x2, y2, z1, x2, y1, z1, r, g, b, a);
-        quad(tris, x2, y1, z1, x2, y2, z1, x2, y2, z2, x2, y1, z2, r, g, b, a);
-        quad(tris, x1, y1, z1, x1, y1, z2, x1, y2, z2, x1, y2, z1, r, g, b, a);
+        if ((faces & SchematicFaceCulling.FACE_DOWN) != 0) quad(tris, x1, y1, z1, x2, y1, z1, x2, y1, z2, x1, y1, z2, r, g, b, a);
+        if ((faces & SchematicFaceCulling.FACE_UP) != 0) quad(tris, x1, y2, z1, x1, y2, z2, x2, y2, z2, x2, y2, z1, r, g, b, a);
+        if ((faces & SchematicFaceCulling.FACE_SOUTH) != 0) quad(tris, x1, y1, z2, x2, y1, z2, x2, y2, z2, x1, y2, z2, r, g, b, a);
+        if ((faces & SchematicFaceCulling.FACE_NORTH) != 0) quad(tris, x1, y1, z1, x1, y2, z1, x2, y2, z1, x2, y1, z1, r, g, b, a);
+        if ((faces & SchematicFaceCulling.FACE_EAST) != 0) quad(tris, x2, y1, z1, x2, y2, z1, x2, y2, z2, x2, y1, z2, r, g, b, a);
+        if ((faces & SchematicFaceCulling.FACE_WEST) != 0) quad(tris, x1, y1, z1, x1, y1, z2, x1, y2, z2, x1, y2, z1, r, g, b, a);
     }
 
     private static void outlineBox(MeshBuilder lines, double x1, double y1, double z1, double x2, double y2, double z2, int argb) {
