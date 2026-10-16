@@ -193,6 +193,7 @@ public final class SchematicBuilder extends Module {
     private Pending pending;
     private int pendingAge;
     private int cooldown;
+    private final RestockGate restockGate = new RestockGate();
     private int ticks;
     private int placed;
     private int approximatePlaced;
@@ -413,10 +414,12 @@ public final class SchematicBuilder extends Module {
         aimedThisTick = false;
         if (!canWork(player)) {
             pending = null;
+            restockGate.reset();
             mover.pause();
             RotationManager.INSTANCE.release(this);
             return;
         }
+        restockGate.observe(movingOrSneaking(player));
         if (cooldown > 0) cooldown--;
         if (pending != null && (++pendingAge > PLAN_TIMEOUT_TICKS || !stillValid(player, pending))) {
             if (pendingAge > PLAN_TIMEOUT_TICKS && pending.kind != Kind.HELPER) {
@@ -1063,9 +1066,21 @@ public final class SchematicBuilder extends Module {
         return total;
     }
 
-    /** Swaps a stack from the main inventory into the restock slot; placement resumes on a later tick. */
+    private static boolean movingOrSneaking(LocalPlayer player) {
+        if (player.isSprinting() || player.isShiftKeyDown()) return true;
+        if (player.input == null || player.input.keyPresses == null) return false;
+        net.minecraft.world.entity.player.Input keys = player.input.keyPresses;
+        return keys.forward() || keys.backward() || keys.left() || keys.right() || keys.shift() || keys.sprint();
+    }
+
+    /**
+     * Swaps a stack from the main inventory into the restock slot; placement resumes on a later tick. A container
+     * click while moving is a Grim MultiActionsC flag, so the click waits (reporting success, so no other candidate
+     * is tried and the walker is paused) until the player has stood still for a moment.
+     */
     private boolean restockFromInventory(LocalPlayer player, Item item) {
         if (player.containerMenu != player.inventoryMenu) return false;
+        if (!restockGate.ready()) return true;
         Inventory inventory = player.getInventory();
         for (int i = 9; i < Inventory.INVENTORY_SIZE; i++) {
             if (inventory.getItem(i).getItem() != item) continue;
