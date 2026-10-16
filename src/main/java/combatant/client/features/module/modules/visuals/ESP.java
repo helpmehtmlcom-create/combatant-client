@@ -1002,8 +1002,8 @@ public class ESP extends Module {
         boolean sizeChanged = width != shaderBufferW || height != shaderBufferH;
         if (shaderMask == null) {
             shaderMask = new TextureTarget("combatant-shader-esp-mask", width, height, true, GpuFormat.RGBA8_UNORM);
-            shaderBlurBuffer = new TextureTarget("combatant-shader-esp-blur", width, height, false, GpuFormat.RGBA8_UNORM);
-            shaderEffectBuffer = new TextureTarget("combatant-shader-esp-effect", width, height, false, GpuFormat.RGBA8_UNORM);
+            shaderBlurBuffer = createShaderBuffer("combatant-shader-esp-blur", width, height);
+            shaderEffectBuffer = createShaderBuffer("combatant-shader-esp-effect", width, height);
             shaderBufferW = width;
             shaderBufferH = height;
         } else if (sizeChanged) {
@@ -1014,6 +1014,15 @@ public class ESP extends Module {
             shaderBufferH = height;
         }
 
+    }
+
+    /** Half-float target so blurs and glow gradients do not band; falls back to 8-bit if the device refuses it. */
+    private static TextureTarget createShaderBuffer(String name, int width, int height) {
+        try {
+            return new TextureTarget(name, width, height, false, GpuFormat.RGBA16_FLOAT);
+        } catch (Throwable t) {
+            return new TextureTarget(name, width, height, false, GpuFormat.RGBA8_UNORM);
+        }
     }
 
     private boolean renderShaderEntityMask(List<RenderEntry> entries, float tickDelta) {
