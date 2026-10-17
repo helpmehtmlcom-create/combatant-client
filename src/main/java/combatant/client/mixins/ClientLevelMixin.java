@@ -92,8 +92,8 @@ public abstract class ClientLevelMixin {
         }
     }
 
-    @Inject(method = "addBreakingBlockEffect", at = @At("HEAD"), cancellable = true)
-    private void combatant$noRenderBlockBreakingParticles(BlockPos pos, Direction direction, CallbackInfo ci) {
+    @Inject(method = "addBreakingBlockEffects", at = @At("HEAD"), cancellable = true)
+    private void combatant$noRenderBlockBreakingParticles(BlockPos pos, Direction direction, boolean playSound, CallbackInfo ci) {
         NoRender noRender = Modules.get(NoRender.class);
         if (noRender != null
                 && (noRender.offParticle("all_particles") || noRender.offParticle("block_breaking_particles"))) {

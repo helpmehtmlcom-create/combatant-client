@@ -8,7 +8,7 @@
 package combatant.client.mixins;
 
 import com.llamalad7.mixinextras.injector.ModifyReturnValue;
-import com.mojang.blaze3d.shaders.ShaderType;
+import com.mojang.renderpearl.api.pipeline.ShaderType;
 import net.minecraft.client.renderer.PostChainConfig;
 import net.minecraft.client.renderer.ShaderManager;
 import net.minecraft.resources.Identifier;
@@ -202,7 +202,7 @@ public abstract class ShaderLoaderMixin {
 
         Map<Identifier, PostChainConfig> postChains = accessor.combatant$getPostChains();
         @SuppressWarnings({"rawtypes", "unchecked"})
-        ShaderManager.Configs updated = new ShaderManager.Configs((Map) replaced, postChains);
+        ShaderManager.Configs updated = new ShaderManager.Configs((Map) replaced, definitions.includeSources(), postChains);
         return updated;
     }
 }

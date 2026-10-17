@@ -7,7 +7,6 @@
 
 package combatant.client.mixins.iris;
 
-import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.renderer.GameRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -22,11 +21,11 @@ public abstract class IrisGameRendererInteropMixin {
             method = "renderLevel",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/renderer/GameRenderer;renderItemInHand(Lnet/minecraft/client/renderer/state/level/CameraRenderState;FLorg/joml/Matrix4fc;)V",
+                    target = "Lnet/minecraft/client/renderer/GameRenderer;renderItemInHand(Lnet/minecraft/client/renderer/state/level/CameraRenderState;Lnet/minecraft/client/renderer/state/level/PlayerRenderState;Lcom/mojang/renderpearl/api/textures/GpuTextureView;)V",
                     shift = At.Shift.BEFORE
             )
     )
-    private void combatant$renderIrisHandInSecondScene(DeltaTracker tickCounter, CallbackInfo ci) {
+    private void combatant$renderIrisHandInSecondScene(CallbackInfo ci) {
         IrisSecondHandScene.finalizeWorld();
         IrisCombatantFrameHooks.renderAfterIrisFinalization();
     }

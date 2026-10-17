@@ -1,4 +1,5 @@
 #version 330 core
+#extension GL_ARB_separate_shader_objects : require
 
 /*
  * This file is part of the Combatant Client distribution.
@@ -16,11 +17,11 @@ layout (std140) uniform MeshData {
     mat4 u_ModelView;
 };
 
-#moj_import <combatant:ui_batch.glsl>
+#include <combatant:ui_batch.glsl>
 
-out vec2 v_TexCoord;
-out vec4 v_Color;
-out vec2 v_UiPosition;
+layout(location = 0) out vec2 v_TexCoord;
+layout(location = 2) out vec4 v_Color;
+layout(location = 4) out vec2 v_UiPosition;
 
 void main() {
     vec4 clipPosition = u_Proj * u_ModelView * Position;

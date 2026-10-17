@@ -62,10 +62,10 @@ public abstract class ItemEntityRendererMixin extends EntityRenderer<ItemEntity,
         matrices.translate(0.0F, baseY, 0.0F);
 
         if (((IItemEntityRenderState) state).combatant$isOnGround()) {
-            matrices.mulPose(Axis.XP.rotationDegrees(90.0F));
+            matrices.rotateDegrees(Axis.XP, 90.0F);
         } else {
             float rotation = ItemEntity.getSpin(state.ageInTicks, state.bobOffset);
-            matrices.mulPose(Axis.XP.rotationDegrees(rotation * 300.0F));
+            matrices.rotateDegrees(Axis.XP, rotation * 300.0F);
         }
 
         ItemEntityRenderer.submitMultipleFromCount(matrices, queue, state.lightCoords, state, this.random, box);

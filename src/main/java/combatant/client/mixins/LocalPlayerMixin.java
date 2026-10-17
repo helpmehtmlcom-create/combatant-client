@@ -710,7 +710,7 @@ public abstract class LocalPlayerMixin implements ILocalPlayer {
                 combatant$rotationPrevZ,
                 self.getX(),
                 self.getZ(),
-                self.attackAnim
+                self.getSwingAnimation(1.0f)
         );
 
         self.setYBodyRot(newBodyYaw);

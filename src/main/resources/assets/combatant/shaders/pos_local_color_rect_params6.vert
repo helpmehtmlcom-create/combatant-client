@@ -1,4 +1,5 @@
 #version 330 core
+#extension GL_ARB_separate_shader_objects : require
 
 /*
  * Combatant widget material vertex contract.
@@ -21,15 +22,15 @@ layout (std140) uniform MeshData {
     mat4 u_ModelView;
 };
 
-out vec4 v_Local;
-out vec4 v_Color;
-out vec4 v_Rect;
-out vec4 v_CornerModes;
-out vec4 v_CornerExtentX;
-out vec4 v_CornerExtentY;
-out vec4 v_EdgeModes;
-out vec4 v_EdgeData;
-out vec4 v_MaterialData;
+layout(location = 1) out vec4 v_Local;
+layout(location = 2) out vec4 v_Color;
+layout(location = 3) out vec4 v_Rect;
+layout(location = 4) out vec4 v_CornerModes;
+layout(location = 5) out vec4 v_CornerExtentX;
+layout(location = 6) out vec4 v_CornerExtentY;
+layout(location = 7) out vec4 v_EdgeModes;
+layout(location = 8) out vec4 v_EdgeData;
+layout(location = 9) out vec4 v_MaterialData;
 
 void main() {
     gl_Position = u_Proj * u_ModelView * Position;

@@ -7,11 +7,14 @@
 
 package combatant.client.mixins.iris;
 
+import com.llamalad7.mixinextras.sugar.Local;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.renderpearl.api.textures.GpuTextureView;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
+import net.minecraft.client.renderer.state.level.PlayerRenderState;
 import net.minecraft.world.level.GameType;
-import org.joml.Matrix4fc;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -23,7 +26,7 @@ import combatant.client.render.iris.IrisRuntime;
 @Mixin(value = GameRenderer.class, priority = 900)
 public abstract class IrisVanillaHandInteropMixin {
     @Inject(
-            method = "renderItemInHand(Lnet/minecraft/client/renderer/state/level/CameraRenderState;FLorg/joml/Matrix4fc;)V",
+            method = "renderItemInHand(Lnet/minecraft/client/renderer/state/level/CameraRenderState;Lnet/minecraft/client/renderer/state/level/PlayerRenderState;Lcom/mojang/renderpearl/api/textures/GpuTextureView;)V",
             at = @At(
                     value = "INVOKE",
                     target = "Lorg/joml/Matrix4fStack;popMatrix()Lorg/joml/Matrix4fStack;",
@@ -32,9 +35,10 @@ public abstract class IrisVanillaHandInteropMixin {
             )
     )
     private void combatant$renderHandInFinalScene(CameraRenderState cameraRenderState,
-                                                  float tickProgress,
-                                                  Matrix4fc positionMatrix,
-                                                  CallbackInfo ci) {
+                                                  PlayerRenderState playerRenderState,
+                                                  GpuTextureView depthTextureView,
+                                                  CallbackInfo ci,
+                                                  @Local(ordinal = 0) PoseStack handPoseStack) {
         if (!IrisRuntime.isShaderpackRendererActive()) {
             return;
         }
@@ -56,6 +60,10 @@ public abstract class IrisVanillaHandInteropMixin {
         }
 
         GameRenderer renderer = (GameRenderer) (Object) this;
-        chams.renderIrisHandMask(renderer, cameraRenderState, positionMatrix, tickProgress);
+        chams.renderIrisHandMask(
+                renderer,
+                cameraRenderState,
+                handPoseStack.last().pose(),
+                cameraRenderState.cameraEntityPartialTicks);
     }
 }

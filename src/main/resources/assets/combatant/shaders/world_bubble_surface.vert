@@ -1,4 +1,5 @@
 #version 330 core
+#extension GL_ARB_separate_shader_objects : require
 
 /*
  * This file is part of the Combatant Client distribution.
@@ -18,11 +19,11 @@ layout (std140) uniform MeshData {
     mat4 u_ModelView;
 };
 
-out vec4 v_Color;
-out vec3 v_ViewNormal;
-out vec3 v_ViewPosition;
-out vec2 v_AgePhase;
-out float v_Membrane;
+layout(location = 2) out vec4 v_Color;
+layout(location = 7) out vec3 v_ViewNormal;
+layout(location = 6) out vec3 v_ViewPosition;
+layout(location = 8) out vec2 v_AgePhase;
+layout(location = 9) out float v_Membrane;
 
 void main() {
     vec3 normal = normalize(Params.xyz);

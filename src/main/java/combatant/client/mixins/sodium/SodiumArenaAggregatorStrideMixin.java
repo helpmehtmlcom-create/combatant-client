@@ -7,7 +7,7 @@
 
 package combatant.client.mixins.sodium;
 
-import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.renderpearl.api.vertex.VertexFormat;
 import combatant.client.render.sodium.terrain.CombatantChunkMeshFormats;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
