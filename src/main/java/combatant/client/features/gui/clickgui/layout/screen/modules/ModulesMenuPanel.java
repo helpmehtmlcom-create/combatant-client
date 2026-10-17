@@ -325,6 +325,11 @@ final class ModulesMenuPanel {
                 return true;
             }
 
+            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && hit.openSettings) {
+                openSettings(hit.id);
+                return true;
+            }
+
             if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && hit.toggleable) {
                 ModulesMenuResolver.toggleEntry(hit.id);
                 return true;
@@ -337,15 +342,7 @@ final class ModulesMenuPanel {
             }
 
             if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
-                ModulesMenuResolver.ResolvedSettings resolved = ModulesMenuResolver.resolveSettings(hit.id);
-                if (resolved == null) return true;
-
-                selected = resolved.getId();
-                selectedTitle = resolved.title();
-                selectedSettings.clear();
-                selectedSettings.addAll(resolved.settings());
-                settingsScroll = 0.0f;
-                settingsSmoothScroll = 0.0f;
+                openSettings(hit.id);
                 return true;
             }
 
@@ -353,6 +350,19 @@ final class ModulesMenuPanel {
         }
 
         return true;
+    }
+
+    /** Opens the settings page of a module (no-op if it has none). */
+    void openSettings(String id) {
+        ModulesMenuResolver.ResolvedSettings resolved = ModulesMenuResolver.resolveSettings(id);
+        if (resolved == null) return;
+
+        selected = resolved.getId();
+        selectedTitle = resolved.title();
+        selectedSettings.clear();
+        selectedSettings.addAll(resolved.settings());
+        settingsScroll = 0.0f;
+        settingsSmoothScroll = 0.0f;
     }
 
     void mouseReleased(float mx, float my, int button) {
@@ -487,7 +497,8 @@ final class ModulesMenuPanel {
     record SubcategoryHit(ModuleSubcategoryDefinition subcategory, float x, float y, float w, float h) {
     }
 
-    record ModuleHit(String id, float x, float y, float w, float h, boolean hasSettings, boolean toggleable) {
+    record ModuleHit(String id, float x, float y, float w, float h, boolean hasSettings, boolean toggleable,
+                     boolean openSettings) {
     }
 
     record SettingHit(Setting setting, float x, float y, float w, float h) {

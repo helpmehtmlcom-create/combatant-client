@@ -14,6 +14,7 @@ import net.minecraft.client.Minecraft;
 import org.lwjgl.glfw.GLFW;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.gui.clickgui.ClickGuiSearch;
+import combatant.client.features.gui.clickgui.nav.ModuleSearch;
 import combatant.client.features.gui.clickgui.layout.screen.settings.implement.module.ModuleComponent;
 import combatant.client.features.gui.clickgui.layout.screen.settings.render.LayoutRender2D;
 import combatant.client.features.gui.clickgui.settings.Setting;
@@ -74,6 +75,7 @@ public final class ModulesMenuScreen {
     private static float ACTIVE_PORT_SCALE = LIQUID_GLASS_LOGICAL_SCALE;
 
     private final List<ModulesMenuPanel> panels = new ArrayList<>();
+    private final java.util.Map<String, ModuleSearch.Result> searchResults = new java.util.HashMap<>();
 
     private float areaX;
     private float areaY;
@@ -139,7 +141,8 @@ public final class ModulesMenuScreen {
         if (client == null || client.getWindow() == null || ClickGuiSearch.isActive()) {
             return false;
         }
-        return GLFW.glfwGetKey(client.getWindow().handle(), GLFW.GLFW_KEY_E) == GLFW.GLFW_PRESS;
+        return GLFW.glfwGetKey(client.getWindow().handle(), GLFW.GLFW_KEY_LEFT_ALT) == GLFW.GLFW_PRESS
+                || GLFW.glfwGetKey(client.getWindow().handle(), GLFW.GLFW_KEY_RIGHT_ALT) == GLFW.GLFW_PRESS;
     }
 
     private static float middle(float child, float parent) {
@@ -412,6 +415,21 @@ public final class ModulesMenuScreen {
             if (panel.charTyped(chr, modifiers)) return true;
         }
 
+        // Typing anywhere (no settings page open, not capturing a bind) starts a search.
+        if (chr >= 32 && chr != 127 && !ClickGuiRenderer.waitingForKey && !anySettingsOpen()
+                && !isModuleListEditHeld()) {
+            ClickGuiSearch.setActive(true);
+            ClickGuiSearch.append(chr);
+            return true;
+        }
+
+        return false;
+    }
+
+    private boolean anySettingsOpen() {
+        for (ModulesMenuPanel panel : panels) {
+            if (panel.selected != null) return true;
+        }
         return false;
     }
 
@@ -832,7 +850,8 @@ public final class ModulesMenuScreen {
 
         boolean globalSearch = ClickGuiSearch.isActive() || ClickGuiSearch.hasQuery();
         ModuleSubcategoryDefinition subcategoryFilter = globalSearch ? null : panel.activeSubcategory();
-        List<ModuleComponent.CardEntry> entries = ModulesMenuResolver.buildCards(panel.category, subcategoryFilter);
+        List<ModuleComponent.CardEntry> entries = visibleEntries(panel,
+                ModulesMenuResolver.buildCards(panel.category, subcategoryFilter));
         boolean panelShapeClip = false;
         if (ClipFunction.usesMsaaStencilByDefault()) {
             // The selected fallback owns the complete panel subtree, including procedural hovers.
@@ -842,8 +861,6 @@ public final class ModulesMenuScreen {
         }
         try {
             for (ModuleComponent.CardEntry entry : entries) {
-                if (!ClickGuiSearch.matches(entry.title(), entry.searchAliases())) continue;
-
                 if (y + MODULE_ROW_H * scale >= clipY && y <= clipY + clipH) {
                     float rowH = MODULE_ROW_H * scale;
                     boolean hover = inside(mouseX, mouseY, pageX, y, listW, rowH);
@@ -874,7 +891,6 @@ public final class ModulesMenuScreen {
             try {
                 y = listY - panel.modulesSmoothScroll;
                 for (ModuleComponent.CardEntry entry : entries) {
-                    if (!ClickGuiSearch.matches(entry.title(), entry.searchAliases())) continue;
                     if (y + MODULE_ROW_H * scale >= clipY && y <= clipY + clipH) {
                         renderModuleRow(panel, entry, pageX, y, listW, alpha,
                                 panel.hoverAnimValue(entry.getId()));
@@ -887,7 +903,6 @@ public final class ModulesMenuScreen {
                 // splitting one compatible analytic geometry batch into another render pass.
                 y = listY - panel.modulesSmoothScroll;
                 for (ModuleComponent.CardEntry entry : entries) {
-                    if (!ClickGuiSearch.matches(entry.title(), entry.searchAliases())) continue;
                     if (y + MODULE_ROW_H * scale >= clipY && y <= clipY + clipH) {
                         renderModuleRowCheck(panel, entry, pageX, y, listW, alpha);
                     }
@@ -909,6 +924,43 @@ public final class ModulesMenuScreen {
         if (clipped) ScissorFunction.pop();
 
         renderScrollbar(panel, panel.modulesSmoothScroll, panel.maxModulesScroll, clipY, clipH, alpha, mouseX, mouseY);
+    }
+
+    /**
+     * Filters and ranks module entries for the current query (name, alias, fuzzy, setting names,
+     * description). Cached per query + module set so it is not recomputed every frame.
+     */
+    private List<ModuleComponent.CardEntry> visibleEntries(ModulesMenuPanel panel, List<ModuleComponent.CardEntry> src) {
+        String query = ClickGuiSearch.getText();
+        if (query == null || query.isBlank()) {
+            searchResults.clear();
+            return src;
+        }
+        record Ranked(ModuleComponent.CardEntry entry, ModuleSearch.Result result) {
+        }
+        List<Ranked> ranked = new ArrayList<>();
+        for (ModuleComponent.CardEntry entry : src) {
+            Module module = ModulesMenuResolver.moduleById(entry.getId());
+            List<String> settingNames = new ArrayList<>();
+            if (module != null) {
+                for (Setting setting : module.getSettings()) {
+                    if (setting != null) settingNames.add(setting.getDisplayName());
+                }
+            }
+            ModuleSearch.Result r = ClickGuiSearch.matchModule(
+                    entry.title(), entry.searchAliases(), settingNames, entry.description());
+            if (!r.matched()) {
+                searchResults.remove(entry.getId());
+                continue;
+            }
+            searchResults.put(entry.getId(), r);
+            ranked.add(new Ranked(entry, r));
+        }
+        ranked.sort(java.util.Comparator.<Ranked>comparingInt(x -> x.result().rank())
+                .thenComparing(x -> x.entry().title(), String.CASE_INSENSITIVE_ORDER));
+        List<ModuleComponent.CardEntry> out = new ArrayList<>(ranked.size());
+        for (Ranked x : ranked) out.add(x.entry());
+        return out;
     }
 
     private void renderModuleRow(
@@ -950,12 +1002,18 @@ public final class ModulesMenuScreen {
                 ? Math.max(12.0f * scale, moduleListX - nameX - 5.0f * scale)
                 : Math.max(12.0f * scale, rowW - (nameX - x) - 18.0f * scale);
 
-        String matchedAlias = panel.bindingId == null || !panel.bindingId.equals(entry.getId())
-                ? ClickGuiSearch.matchingAlias(entry.searchAliases())
+        ModuleSearch.Result searchResult = panel.bindingId == null || !panel.bindingId.equals(entry.getId())
+                ? searchResults.get(entry.getId())
                 : null;
-        String aliasLabel = matchedAlias == null || matchedAlias.isBlank()
-                ? null
-                : "(aka " + matchedAlias + ")";
+        String aliasLabel = null;
+        if (searchResult != null && searchResult.matchedText() != null && !searchResult.matchedText().isBlank()) {
+            if (searchResult.field() == ModuleSearch.Field.ALIAS) {
+                aliasLabel = "(aka " + searchResult.matchedText() + ")";
+            } else if (searchResult.field() == ModuleSearch.Field.SETTING) {
+                aliasLabel = "(" + String.format(ClickGuiI18n.tr("clickgui.nav.search.in_setting", "setting: %s"),
+                        searchResult.matchedText()) + ")";
+            }
+        }
 
         if (failed) {
             SettingErrorView.warning(x+rowW-15f*scale,y+5f*scale,9f*scale,alpha);
@@ -970,7 +1028,8 @@ public final class ModulesMenuScreen {
         int divider = withAlpha(ModulesMenuStyle.text(), alpha * 0.02f);
         LayoutRender2D.rect(x + 3.0f * scale, y + h, Math.max(1f, rowW - 6.0f * scale), 0.5f * scale, divider);
 
-        panel.hits.add(new ModulesMenuPanel.ModuleHit(entry.getId(), x, y, rowW, h, entry.hasSettings(), entry.toggleable()));
+        panel.hits.add(new ModulesMenuPanel.ModuleHit(entry.getId(), x, y, rowW, h, entry.hasSettings(), entry.toggleable(),
+                searchResult != null && searchResult.field() == ModuleSearch.Field.SETTING && entry.hasSettings()));
     }
 
     private void renderModuleSearchTitle(
@@ -1464,7 +1523,8 @@ public final class ModulesMenuScreen {
         LayoutRender2D.roundedQuad(searchX, searchY, searchW, searchH, radius, veil, veil, veil, veil);
 
         String text = ClickGuiSearch.getText();
-        String draw = text == null || text.isBlank() ? "Search..." : text;
+        String draw = text == null || text.isBlank()
+                ? ClickGuiI18n.tr("clickgui.nav.search.placeholder", "Search modules and settings...") : text;
         int color = text == null || text.isBlank() ? withAlpha(ModulesMenuStyle.textFaint(), alpha) : withAlpha(ModulesMenuStyle.text(), alpha);
 
         float tx = searchX + 8.0f * scale;
@@ -1493,8 +1553,9 @@ public final class ModulesMenuScreen {
                 alpha,
                 ClickGuiI18n.tr("clickgui.hints.modules.toggle", "LMB - toggle module"),
                 ClickGuiI18n.tr("clickgui.hints.modules.settings", "RMB - settings"),
-                ClickGuiI18n.tr("clickgui.hints.modules.module_list", "E - edit ModuleList"),
-                ClickGuiI18n.tr("clickgui.hints.modules.search", "Ctrl+F - search"),
+                ClickGuiI18n.tr("clickgui.hints.modules.module_list", "Alt+click - edit ModuleList"),
+                ClickGuiI18n.tr("clickgui.hints.modules.search", "Type or Ctrl+F - search"),
+                ClickGuiI18n.tr("clickgui.hints.modules.bind", "MMB - bind key"),
                 ClickGuiI18n.tr("clickgui.hints.modules.close", "Esc - close ClickGui"),
                 ClickGuiI18n.tr("clickgui.hints.modules.hide", "Alt+H - hide hints")
         );

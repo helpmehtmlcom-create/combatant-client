@@ -7,6 +7,7 @@
 
 package combatant.client.features.gui.clickgui;
 
+import combatant.client.features.gui.clickgui.nav.ModuleSearch;
 import combatant.client.util.text.SingleLineTextInput;
 
 import java.util.Locale;
@@ -57,66 +58,24 @@ public enum ClickGuiSearch {
 
     public static boolean keyPressed(int keyCode, int modifiers) { return INPUT.keyPressed(keyCode, modifiers); }
 
-    public static boolean matches(String moduleName) {
-        if (INPUT.text().isEmpty()) return true;
-        return matchesCandidate(moduleName);
+    /** Simple name filter used by non-module tabs (themes, configs, relations). */
+    public static boolean matches(String candidate) {
+        if (INPUT.text().isBlank()) return true;
+        return ModuleSearch.textRank(ModuleSearch.normalize(INPUT.text()), candidate) != ModuleSearch.NO_MATCH;
     }
 
-    public static boolean matches(String moduleName, Iterable<String> aliases) {
-        if (INPUT.text().isEmpty()) return true;
-        if (matchesCandidate(moduleName)) return true;
-        return matchingAlias(aliases) != null;
-    }
-
-    /**
-     * Returns the alias that best explains why the current query matched a module.
-     * The original spelling is preserved for presentation in search results.
-     */
-    public static String matchingAlias(Iterable<String> aliases) {
-        if (INPUT.text().isBlank() || aliases == null) return null;
-
-        String best = null;
-        int bestRank = Integer.MAX_VALUE;
-        int bestLength = Integer.MAX_VALUE;
+    public static boolean matches(String candidate, Iterable<String> aliases) {
+        if (matches(candidate)) return true;
+        if (aliases == null) return false;
         for (String alias : aliases) {
-            if (!matchesCandidate(alias)) continue;
-
-            int rank = matchRank(alias);
-            int length = alias == null ? Integer.MAX_VALUE : alias.length();
-            if (rank < bestRank || (rank == bestRank && length < bestLength)) {
-                best = alias;
-                bestRank = rank;
-                bestLength = length;
-            }
+            if (matches(alias)) return true;
         }
-        return best;
+        return false;
     }
 
-    private static int matchRank(String candidate) {
-        if (candidate == null || candidate.isBlank()) return Integer.MAX_VALUE;
-
-        String normalized = candidate.toLowerCase(Locale.ROOT);
-        String compactCandidate = compact(normalized);
-        String query = INPUT.text().toLowerCase(Locale.ROOT);
-        String compactQuery = compact(query);
-        if (normalized.equals(query) || compactCandidate.equals(compactQuery)) return 0;
-        if (normalized.startsWith(query) || compactCandidate.startsWith(compactQuery)) return 1;
-        return 2;
-    }
-
-    private static boolean matchesCandidate(String candidate) {
-        if (candidate == null || candidate.isBlank()) return false;
-
-        String normalized = candidate.toLowerCase(Locale.ROOT);
-        String compactCandidate = compact(normalized);
-        String query = INPUT.text().toLowerCase(Locale.ROOT);
-        String compactQuery = compact(query);
-
-        return normalized.contains(query)
-                || compactCandidate.contains(compactQuery);
-    }
-
-    private static String compact(String value) {
-        return value == null ? "" : value.replace(" ", "").replace("_", "").replace("-", "");
+    /** Full tiered module match (name, alias, fuzzy name, setting names, description). */
+    public static ModuleSearch.Result matchModule(String name, java.util.List<String> aliases,
+                                                  java.util.List<String> settingNames, String description) {
+        return ModuleSearch.match(INPUT.text(), name, aliases, settingNames, description);
     }
 }
