@@ -14,6 +14,7 @@ import net.minecraft.client.Minecraft;
 import org.lwjgl.glfw.GLFW;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.gui.clickgui.ClickGuiSearch;
+import combatant.client.features.gui.clickgui.nav.ClickGuiMemory;
 import combatant.client.features.gui.clickgui.nav.ClickGuiScaling;
 import combatant.client.features.gui.clickgui.nav.ModuleSearch;
 import combatant.client.features.gui.clickgui.layout.screen.settings.implement.module.ModuleComponent;
@@ -178,10 +179,12 @@ public final class ModulesMenuScreen {
 
     public void open() {
         openTarget = true;
+        restoreMemory();
     }
 
     public void close() {
         openTarget = false;
+        saveMemory();
         ClickGuiSearch.deactivate();
         if (!ClickGuiRenderer.isClosingForExit()) {
             screenAnim = 0.0f;
@@ -189,9 +192,47 @@ public final class ModulesMenuScreen {
         }
     }
 
+    private static String shortBind(String bind) {
+        if (bind == null || bind.isBlank()) return "";
+        String b = bind.trim();
+        return b.length() > 7 ? b.substring(0, 6) + "." : b;
+    }
+
+    private void saveMemory() {
+        ClickGuiMemory memory = ClickGuiMemory.get();
+        String last = null;
+        for (ModulesMenuPanel panel : panels) {
+            ClickGuiMemory.PanelState state = memory.panel(panel.category.name());
+            state.scroll = panel.modulesScroll;
+            ModuleSubcategoryDefinition sub = panel.activeSubcategory();
+            state.subcategory = sub == null ? null : sub.key();
+            if (panel.selected != null) last = panel.selected;
+        }
+        memory.setLastModule(last);
+        memory.savePanels();
+    }
+
+    private void restoreMemory() {
+        ClickGuiMemory memory = ClickGuiMemory.get();
+        for (ModulesMenuPanel panel : panels) {
+            ClickGuiMemory.PanelState state = memory.panel(panel.category.name());
+            panel.restoreList(state.subcategory, state.scroll);
+        }
+        String last = memory.lastModule();
+        if (last == null) return;
+        Module module = ModulesMenuResolver.moduleById(last);
+        if (module == null) return;
+        for (ModulesMenuPanel panel : panels) {
+            if (panel.category.matches(module.getCategory())) {
+                panel.openSettings(last);
+                break;
+            }
+        }
+    }
     public boolean isVisible() {
         return openTarget || screenAnim > 0.001f;
     }
+
 
     public void layout(float x, float y, float w, float h) {
         this.areaX = x;
@@ -364,6 +405,9 @@ public final class ModulesMenuScreen {
         return false;
     }
 
+    private int navPanel = -1;
+    private String navId;
+
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (!isInteractive()) return false;
         if (isHintToggle(keyCode, modifiers)) {
@@ -373,11 +417,14 @@ public final class ModulesMenuScreen {
         }
 
         boolean ctrl = (modifiers & GLFW.GLFW_MOD_CONTROL) != 0;
+        boolean shift = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0;
 
         if (ctrl && keyCode == GLFW.GLFW_KEY_F) {
             ClickGuiSearch.setActive(!ClickGuiSearch.isActive());
             return true;
         }
+
+        if (!anySettingsOpen() && handleNavKey(keyCode, shift)) return true;
 
         if (ClickGuiSearch.isActive()) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
@@ -389,11 +436,136 @@ public final class ModulesMenuScreen {
             return true;
         }
 
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE && ClickGuiSearch.hasQuery() && !anySettingsOpen()) {
+            ClickGuiSearch.deactivate();
+            return true;
+        }
+
         for (ModulesMenuPanel panel : panels) {
             if (panel.keyPressed(keyCode, scanCode, modifiers)) return true;
         }
 
         return false;
+    }
+
+    /** Arrow / Tab / Enter navigation across the module lists. Returns true when consumed. */
+    private boolean handleNavKey(int keyCode, boolean shift) {
+        boolean searching = ClickGuiSearch.isActive();
+        switch (keyCode) {
+            case GLFW.GLFW_KEY_DOWN -> {
+                moveNav(1);
+                return true;
+            }
+            case GLFW.GLFW_KEY_UP -> {
+                moveNav(-1);
+                return true;
+            }
+            case GLFW.GLFW_KEY_TAB -> {
+                switchNavPanel(shift ? -1 : 1, true);
+                return true;
+            }
+            case GLFW.GLFW_KEY_LEFT -> {
+                if (searching) return false;
+                switchNavPanel(-1, false);
+                return true;
+            }
+            case GLFW.GLFW_KEY_RIGHT -> {
+                if (searching) return false;
+                switchNavPanel(1, false);
+                return true;
+            }
+            case GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> {
+                return activateNav(shift);
+            }
+            default -> {
+                return false;
+            }
+        }
+    }
+
+    private ModulesMenuPanel navPanelRef() {
+        return navPanel >= 0 && navPanel < panels.size() ? panels.get(navPanel) : null;
+    }
+
+    private int navIndex(ModulesMenuPanel panel) {
+        return panel == null || navId == null ? -1 : panel.orderedIds.indexOf(navId);
+    }
+
+    private void moveNav(int delta) {
+        ModulesMenuPanel panel = navPanelRef();
+        int idx = navIndex(panel);
+        if (idx < 0) {
+            // Nothing valid selected: start from the first non-empty panel.
+            for (ModulesMenuPanel candidate : panels) {
+                if (!candidate.orderedIds.isEmpty()) {
+                    navPanel = candidate.index;
+                    navId = candidate.orderedIds.get(delta >= 0 ? 0 : candidate.orderedIds.size() - 1);
+                    scrollNavIntoView(candidate);
+                    return;
+                }
+            }
+            return;
+        }
+        int next = Math.max(0, Math.min(panel.orderedIds.size() - 1, idx + delta));
+        navId = panel.orderedIds.get(next);
+        scrollNavIntoView(panel);
+    }
+
+    private void switchNavPanel(int delta, boolean wrap) {
+        int n = panels.size();
+        if (n == 0) return;
+        ModulesMenuPanel from = navPanelRef();
+        int idx = navIndex(from);
+        int target = from == null ? (delta > 0 ? 0 : n - 1) : from.index + delta;
+        if (wrap) target = ((target % n) + n) % n;
+        else target = Math.max(0, Math.min(n - 1, target));
+        // Skip empty panels in the travel direction.
+        for (int step = 0; step < n; step++) {
+            ModulesMenuPanel candidate = panels.get(target);
+            if (!candidate.orderedIds.isEmpty()) {
+                navPanel = candidate.index;
+                int keep = Math.max(0, Math.min(candidate.orderedIds.size() - 1, idx < 0 ? 0 : idx));
+                navId = candidate.orderedIds.get(keep);
+                scrollNavIntoView(candidate);
+                return;
+            }
+            target += delta >= 0 ? 1 : -1;
+            if (wrap) target = ((target % n) + n) % n;
+            else if (target < 0 || target >= n) return;
+        }
+    }
+
+    private void scrollNavIntoView(ModulesMenuPanel panel) {
+        int idx = navIndex(panel);
+        if (idx < 0 || panel.listClipH <= 0.0f) return;
+        float rowH = MODULE_ROW_H * scale;
+        float top = idx * rowH;
+        if (top < panel.modulesScroll) {
+            panel.modulesScroll = top;
+        } else if (top + rowH > panel.modulesScroll + panel.listClipH) {
+            panel.modulesScroll = top + rowH - panel.listClipH;
+        }
+    }
+
+    /** Enter toggles the highlighted module (or opens a setting-search result); Shift+Enter opens settings. */
+    private boolean activateNav(boolean openSettings) {
+        ModulesMenuPanel panel = navPanelRef();
+        if (navIndex(panel) < 0) {
+            // Enter straight after typing: act on the best (first) result.
+            moveNav(1);
+            panel = navPanelRef();
+            if (navIndex(panel) < 0) return false;
+        }
+        ModuleSearch.Result r = searchResults.get(navId);
+        boolean settingResult = r != null && r.field() == ModuleSearch.Field.SETTING;
+        if (openSettings || settingResult) {
+            panel.openSettings(navId);
+            ClickGuiSearch.deactivate();
+        } else {
+            ModulesMenuResolver.toggleEntry(navId);
+            ClickGuiMemory.get().markUsed(navId);
+        }
+        return true;
     }
 
     private static boolean isHintToggle(int keyCode, int modifiers) {
@@ -848,6 +1020,9 @@ public final class ModulesMenuScreen {
         ModuleSubcategoryDefinition subcategoryFilter = globalSearch ? null : panel.activeSubcategory();
         List<ModuleComponent.CardEntry> entries = visibleEntries(panel,
                 ModulesMenuResolver.buildCards(panel.category, subcategoryFilter));
+        panel.orderedIds.clear();
+        for (ModuleComponent.CardEntry e : entries) panel.orderedIds.add(e.getId());
+        panel.listClipH = clipH;
         boolean panelShapeClip = false;
         if (ClipFunction.usesMsaaStencilByDefault()) {
             // The selected fallback owns the complete panel subtree, including procedural hovers.
@@ -930,7 +1105,21 @@ public final class ModulesMenuScreen {
         String query = ClickGuiSearch.getText();
         if (query == null || query.isBlank()) {
             searchResults.clear();
-            return src;
+            ClickGuiMemory memory = ClickGuiMemory.get();
+            if (ClickGuiSearch.isActive() && memory.hasQuickList()) {
+                // Empty focused search: pinned first, then recently used.
+                List<ModuleComponent.CardEntry> quick = new ArrayList<>();
+                for (ModuleComponent.CardEntry e : src) {
+                    if (memory.isFavourite(e.getId()) || memory.recentIndex(e.getId()) >= 0) quick.add(e);
+                }
+                quick.sort(java.util.Comparator
+                        .<ModuleComponent.CardEntry>comparingInt(e -> memory.isFavourite(e.getId()) ? 0 : 1)
+                        .thenComparingInt(e -> memory.recentIndex(e.getId())));
+                return quick;
+            }
+            List<ModuleComponent.CardEntry> out = new ArrayList<>(src);
+            out.sort(java.util.Comparator.comparingInt(e -> memory.isFavourite(e.getId()) ? 0 : 1));
+            return out;
         }
         record Ranked(ModuleComponent.CardEntry entry, ModuleSearch.Result result) {
         }
@@ -969,6 +1158,11 @@ public final class ModulesMenuScreen {
             float hoverAnim
     ) {
         float h = MODULE_ROW_H * scale;
+        if (panel.index == navPanel && entry.getId().equals(navId)) {
+            int nav = withAlpha(ModulesMenuStyle.categoryFxPrimary(panel.category, 1.0f), alpha * 0.9f);
+            LayoutRender2D.roundedStrokeQuad(x + 3.0f * scale, y + 1.5f * scale, rowW - 6.0f * scale, h - 3.0f * scale,
+                    5.0f * scale, 0.7f * scale, nav, nav, nav, nav);
+        }
 
         float enabled = panel.enabledAnim(entry.getId(), entry.enabled());
 
@@ -994,9 +1188,15 @@ public final class ModulesMenuScreen {
         float nameX = x + (TEXT_LEFT_PADDING + 2.0f * enabled) * scale;
         float nameSize = 8.0f * scale;
         float nameY = y + middle(textHeight(regular, nameSize), h) - 0.5f * scale;
+        boolean pinned = ClickGuiMemory.get().isFavourite(entry.getId());
+        String bindText = shortBind(entry.bindLabel());
+        float bindSize = 5.6f * scale;
+        float bindW = bindText.isEmpty() ? 0.0f
+                : ClickGuiRenderer.textWidth(medium, bindText, bindSize) + 5.0f * scale;
+        float bindReserve = bindText.isEmpty() ? 0.0f : bindW + 4.0f * scale;
         float nameMaxW = moduleListEdit
                 ? Math.max(12.0f * scale, moduleListX - nameX - 5.0f * scale)
-                : Math.max(12.0f * scale, rowW - (nameX - x) - 18.0f * scale);
+                : Math.max(12.0f * scale, rowW - (nameX - x) - 18.0f * scale - bindReserve);
 
         ModuleSearch.Result searchResult = panel.bindingId == null || !panel.bindingId.equals(entry.getId())
                 ? searchResults.get(entry.getId())
@@ -1015,6 +1215,26 @@ public final class ModulesMenuScreen {
             SettingErrorView.warning(x+rowW-15f*scale,y+5f*scale,9f*scale,alpha);
         }
         renderModuleSearchTitle(label, aliasLabel, nameX, nameY, nameMaxW, nameSize, nameColor, alpha, hoverAnim);
+
+        if (enabled > 0.02f && !failed) {
+            int bar = withAlpha(ModulesMenuStyle.categoryFxPrimary(panel.category, 1.0f), alpha * enabled);
+            LayoutRender2D.roundedQuad(x + 3.0f * scale, y + 5.0f * scale, 1.5f * scale, h - 10.0f * scale,
+                    0.75f * scale, bar, bar, bar, bar);
+        }
+        if (pinned) {
+            int gold = withAlpha(0xFFFFC857, alpha);
+            float dot = 2.6f * scale;
+            LayoutRender2D.roundedQuad(x + 6.0f * scale, y + (h - dot) * 0.5f, dot, dot, dot * 0.5f, gold, gold, gold, gold);
+        }
+        if (!bindText.isEmpty() && !moduleListEdit) {
+            float bx = x + rowW - 18.0f * scale - bindW;
+            float by = y + (h - 8.0f * scale) * 0.5f;
+            int fill = withAlpha(ModulesMenuStyle.panelBgGlassDark(), alpha * 0.85f);
+            LayoutRender2D.roundedQuad(bx, by, bindW, 8.0f * scale, 3.0f * scale, fill, fill, fill, fill);
+            ClickGuiRenderer.drawText(medium, bindText, bx + 2.5f * scale,
+                    by + middle(textHeight(medium, bindSize), 8.0f * scale), bindSize,
+                    withAlpha(ModulesMenuStyle.textMuted(), alpha), false);
+        }
 
         if (moduleListEdit) {
             int listColor = entry.shownInModuleList() ? ModulesMenuStyle.MODULE_LIST_ON : ModulesMenuStyle.MODULE_LIST_OFF;
@@ -1552,6 +1772,8 @@ public final class ModulesMenuScreen {
                 ClickGuiI18n.tr("clickgui.hints.modules.module_list", "Alt+click - edit ModuleList"),
                 ClickGuiI18n.tr("clickgui.hints.modules.search", "Type or Ctrl+F - search"),
                 ClickGuiI18n.tr("clickgui.hints.modules.bind", "MMB - bind key"),
+                ClickGuiI18n.tr("clickgui.hints.modules.pin", "Shift+LMB - pin module"),
+                ClickGuiI18n.tr("clickgui.hints.modules.keys", "Arrows/Tab/Enter - navigate"),
                 ClickGuiI18n.tr("clickgui.hints.modules.close", "Esc - close ClickGui"),
                 ClickGuiI18n.tr("clickgui.hints.modules.hide", "Alt+H - hide hints")
         );

@@ -26,6 +26,9 @@ final class ModulesMenuPanel {
     final ModulesMenuCategory category;
     final int index;
     final List<ModuleHit> hits = new ArrayList<>();
+    /** Ids of every row currently listed (filtered + ordered), for keyboard navigation. */
+    final List<String> orderedIds = new ArrayList<>();
+    float listClipH;
     final List<SettingHit> settingHits = new ArrayList<>();
     final List<SubcategoryHit> subcategoryHits = new ArrayList<>();
     final Map<String, Float> enabledAnim = new HashMap<>();
@@ -330,8 +333,14 @@ final class ModulesMenuPanel {
                 return true;
             }
 
+            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && shiftHeld()) {
+                combatant.client.features.gui.clickgui.nav.ClickGuiMemory.get().toggleFavourite(hit.id);
+                return true;
+            }
+
             if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && hit.toggleable) {
                 ModulesMenuResolver.toggleEntry(hit.id);
+                combatant.client.features.gui.clickgui.nav.ClickGuiMemory.get().markUsed(hit.id);
                 return true;
             }
 
@@ -352,8 +361,31 @@ final class ModulesMenuPanel {
         return true;
     }
 
+    private static boolean shiftHeld() {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc == null || mc.getWindow() == null) return false;
+        long h = mc.getWindow().handle();
+        return GLFW.glfwGetKey(h, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS
+                || GLFW.glfwGetKey(h, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS;
+    }
+
+    /** Restores remembered list state (subcategory key and scroll) when the GUI opens. */
+    void restoreList(String subcategoryKey, float scroll) {
+        if (subcategoryKey != null) {
+            for (ModuleSubcategoryDefinition candidate : category.subcategories()) {
+                if (candidate.key().equals(subcategoryKey)) {
+                    selectedSubcategory = candidate;
+                    break;
+                }
+            }
+        }
+        modulesScroll = Math.max(0.0f, scroll);
+        modulesSmoothScroll = modulesScroll;
+    }
+
     /** Opens the settings page of a module (no-op if it has none). */
     void openSettings(String id) {
+        combatant.client.features.gui.clickgui.nav.ClickGuiMemory.get().markUsed(id);
         ModulesMenuResolver.ResolvedSettings resolved = ModulesMenuResolver.resolveSettings(id);
         if (resolved == null) return;
 
