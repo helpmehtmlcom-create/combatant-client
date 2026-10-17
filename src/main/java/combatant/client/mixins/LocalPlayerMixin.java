@@ -596,7 +596,7 @@ public abstract class LocalPlayerMixin implements ILocalPlayer {
     }
 
     @Inject(
-            method = "tick",
+            method = "sendChanges",
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/client/player/LocalPlayer;sendPosition()V",
