@@ -41,6 +41,7 @@ public abstract class DebugHudMixin {
     private void combatant$captureDebugHudLines(GuiGraphicsExtractor context,
                                                  List<String> lines,
                                                  boolean leftAligned,
+                                                 int y,
                                                  CallbackInfo ci) {
         if (!RuntimeGate.canRunHud() || RuntimeGate.isPanic()) return;
         DebugHudReplacement.captureLines(lines, leftAligned);
