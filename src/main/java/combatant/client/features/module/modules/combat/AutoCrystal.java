@@ -954,10 +954,10 @@ public class AutoCrystal extends Module {
                 effBreakWallRange()
         );
         if (rotation == null) {
-            rotation = new RotationWithVector(
-                    Rotation.lookingAt(crystal.position(), mc.player.getEyePosition()).normalize(),
-                    crystal.position()
-            );
+            // No ray from the eye reaches the crystal's box inside the break range (or through the wall limit); an
+            // attack at its centre would miss the hitbox and trip Grim's Reach check.
+            debugLog("break-skip reason=no-ray id=%d", crystal.getId());
+            return false;
         }
 
         Rotation attackRotation = rotation.rotation().normalize();
