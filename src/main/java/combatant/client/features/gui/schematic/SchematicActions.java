@@ -64,14 +64,15 @@ public final class SchematicActions {
                 Notifier.error(I18n.get("screen.combatant.schematic.status.load_failed", SchematicFiles.baseName(path), lastError));
                 return;
             }
-            applyLoaded(mc, loaded);
+            applyLoaded(mc, loaded, path);
         }));
         return true;
     }
 
-    private static void applyLoaded(Minecraft mc, SchematicLibrary.Loaded loaded) {
+    private static void applyLoaded(Minecraft mc, SchematicLibrary.Loaded loaded, Path path) {
         SchematicState state = SchematicState.INSTANCE;
         state.setSchematic(loaded.schematic(), loaded.stats(), loaded.layout());
+        state.setSource(path);
         if (state.placement() == null && mc.player != null) {
             state.setOrigin(mc.player.blockPosition());
         }

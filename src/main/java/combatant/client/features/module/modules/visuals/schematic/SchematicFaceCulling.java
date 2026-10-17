@@ -1,10 +1,12 @@
 package combatant.client.features.module.modules.visuals.schematic;
 
+import combatant.client.util.schematic.SchematicDiff;
 import java.util.Arrays;
 
 /**
- * Computes which cube faces need drawing. A face shared by two neighbouring cells of the same status is interior to a
- * solid region of one colour class, so drawing it only double-blends the translucent fill. Pure and allocation-free
+ * Computes which cube faces need drawing. A face shared by two neighbouring cells of the same full-size status
+ * (CORRECT/WRONG) is interior to a solid region of one colour class, so drawing it only double-blends the translucent
+ * fill. MISSING cells are drawn inset and are never culled. Pure and allocation-free
  * after warm-up (the open-addressing table is reused between calls).
  */
 final class SchematicFaceCulling {
@@ -27,7 +29,9 @@ final class SchematicFaceCulling {
         }
         mask = capacity - 1;
         Arrays.fill(keys, 0, capacity, EMPTY);
-        for (int i = 0; i < count; i++) put(pack(x[i], y[i], z[i]), status[i]);
+        // MISSING cells are drawn shrunk (SchematicProjection.GHOST_INSET), so their shared faces are never interior:
+        // they stay out of the table, which keeps every MISSING face and every face touching one.
+        for (int i = 0; i < count; i++) if (status[i] != SchematicDiff.MISSING) put(pack(x[i], y[i], z[i]), status[i]);
         for (int i = 0; i < count; i++) {
             int xi = x[i], yi = y[i], zi = z[i];
             byte s = status[i];
