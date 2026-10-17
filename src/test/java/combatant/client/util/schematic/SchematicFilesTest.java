@@ -138,6 +138,21 @@ class SchematicFilesTest {
     }
 
     @Test
+    void overflowingSpongeVarIntIsAnIoErrorNotAnArrayIndexError() {
+        CompoundTag root = new CompoundTag();
+        root.putShort("Width", (short) 1);
+        root.putShort("Height", (short) 1);
+        root.putShort("Length", (short) 1);
+        CompoundTag palette = new CompoundTag();
+        palette.putInt("minecraft:stone", 0);
+        root.put("Palette", palette);
+        root.put("BlockData", new ByteArrayTag(new byte[]{(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, 0x7F}));
+        java.io.IOException e = assertThrows(java.io.IOException.class,
+                () -> SchematicFiles.parse(root, "bad", LitematicReader::resolveState));
+        assertTrue(e.getMessage().contains("negative palette index"), e.getMessage());
+    }
+
+    @Test
     void readsAVanillaStructureAndSkipsStructureVoid() throws Exception {
         CompoundTag root = new CompoundTag();
         ListTag size = new ListTag();
