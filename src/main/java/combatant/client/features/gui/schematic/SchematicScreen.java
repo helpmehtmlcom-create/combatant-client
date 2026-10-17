@@ -176,7 +176,9 @@ public final class SchematicScreen extends Screen {
         titleH = ui.height(SchematicUi.TITLE);
         tinyH = ui.height(SchematicUi.TINY);
         library.refresh();
-        if (selectedPath == null && state.schematic() != null) {
+        if (selectedPath == null && state.source() != null) {
+            selectedPath = state.source();
+        } else if (selectedPath == null && state.schematic() != null) {
             library.resolve(state.schematic().fileName()).thenAccept(found -> minecraft.execute(() -> {
                 if (selectedPath == null) selectedPath = found.path();
             }));
@@ -477,7 +479,8 @@ public final class SchematicScreen extends Screen {
         float rh = ROW_H - 4f;
         boolean selected = header.path().equals(selectedPath);
         boolean hovered = SchematicUi.inside(mouseX, mouseY, x, y, w, rh);
-        boolean active = state.schematic() != null && SchematicFiles.baseName(header.path()).equals(state.schematic().fileName());
+        boolean active = state.source() != null ? state.source().equals(header.path())
+                : state.schematic() != null && SchematicFiles.baseName(header.path()).equals(state.schematic().fileName());
         float h = 0f;
         if (slot < rowHover.length) {
             rowHover[slot] = AnimationUtility.approach(rowHover[slot], hovered ? 1f : 0f, frameDt, 14f);
