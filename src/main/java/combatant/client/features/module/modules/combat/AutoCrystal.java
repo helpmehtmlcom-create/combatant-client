@@ -1144,16 +1144,16 @@ public class AutoCrystal extends Module {
         tryPlaceCrystal(candidate.pos());
     }
 
-    // GrimAC's RotationPlace raytraces the placement from the rotation the server saw before it. A placement made in
-    // the tick its rotation changes leaves ahead of the flying packet that carries it, so under the grim preset it
-    // waits a tick; the rotation target is rebuilt every tick and the next one places against the sent rotation.
+    // GrimAC's RotationPlace checks that a ray along the rotation the server saw intersects the box of the block
+    // being clicked. A placement made in the tick its rotation changes leaves ahead of the flying packet that carries
+    // it, so whenever the module rotates it waits until the last sent rotation already touches that block; the
+    // rotation target is rebuilt every tick and the next one places against the sent rotation.
     private boolean serverRotationClicks(BlockHitResult hit) {
-        if (!usesRotationSettings() || !anticheat.get().pick(false, true, false)) return true;
+        if (!usesRotationSettings()) return true;
         Rotation server = RotationManager.INSTANCE.getServerRotation();
         if (server == null || hit == null || mc.player == null) return false;
-        return AutoCrystalInteractionUtil.rayEntersFace(
-                mc.player.getEyePosition(), server.directionVector(), hit.getBlockPos(), hit.getDirection(),
-                effPlaceRange() + 1.0);
+        return combatant.client.util.block.placer.PlaceRayUtil.rayHitsBlock(
+                mc.player.getEyePosition(), server.directionVector(), hit.getBlockPos(), effPlaceRange() + 1.0);
     }
 
     private boolean serverRotationHits(AABB box, double range) {

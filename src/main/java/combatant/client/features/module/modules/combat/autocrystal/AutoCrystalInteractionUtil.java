@@ -37,18 +37,6 @@ public final class AutoCrystalInteractionUtil {
         );
     }
 
-    /**
-     * Whether a ray from {@code eye} along {@code direction} enters the unit cube at {@code pos} through
-     * {@code face}. This is the test GrimAC's RotationPlace runs against the rotation the server last saw.
-     */
-    public static boolean rayEntersFace(Vec3 eye, Vec3 direction, BlockPos pos, Direction face, double range) {
-        if (eye == null || direction == null || pos == null || face == null) {
-            return false;
-        }
-        BlockHitResult hit = AABB.clip(List.of(new AABB(0, 0, 0, 1, 1, 1)), eye, eye.add(direction.scale(range)), pos);
-        return hit != null && hit.getBlockPos().equals(pos) && hit.getDirection() == face;
-    }
-
     public static Vec3 crystalVec(BlockPos pos) {
         return new Vec3(pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5);
     }

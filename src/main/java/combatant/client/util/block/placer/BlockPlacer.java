@@ -475,12 +475,25 @@ public final class BlockPlacer {
             return;
         }
 
-        BlockHitResult hitResult = raytraceTarget(
-                player,
-                plan.target().getInteractedBlockPos(),
-                rotationModeSupplier.get() == RotationMode.NORMAL ? verificationRotation : plan.target().getRotation(),
-                plan.target().getDirection()
-        );
+        BlockHitResult hitResult;
+        if (rotationModeSupplier.get() == RotationMode.NORMAL) {
+            // GrimAC's RotationPlace raytraces the click from the rotation the server saw before it; the one this
+            // tick's flying packet carries only counts afterwards. Wait until the last sent rotation touches the block.
+            Rotation sent = RotationManager.INSTANCE.getServerRotation();
+            double reach = Math.max(rangeSupplier.getAsDouble(), wallRangeSupplier.getAsDouble()) + 1.0;
+            if (sent == null || !PlaceRayUtil.rayHitsBlock(
+                    player.getEyePosition(), sent.directionVector(), plan.target().getInteractedBlockPos(), reach)) {
+                return;
+            }
+            hitResult = raytraceTarget(player, plan.target().getInteractedBlockPos(), verificationRotation, plan.target().getDirection());
+        } else {
+            // No rotation is sent, so the server checks against the look it already has: click a face that look
+            // actually enters when there is one, the planned face otherwise.
+            hitResult = visibleClick(player, plan.pos());
+            if (hitResult == null) {
+                hitResult = raytraceTarget(player, plan.target().getInteractedBlockPos(), plan.target().getRotation(), plan.target().getDirection());
+            }
+        }
         if (hitResult == null && (constructFailResultSupplier.getAsBoolean() || rotationModeSupplier.get() != RotationMode.NORMAL)) {
             hitResult = new BlockHitResult(plan.target().getHitVec(), plan.target().getDirection(), plan.target().getInteractedBlockPos(), false);
         }
@@ -512,6 +525,15 @@ public final class BlockPlacer {
     private static Rotation rotationOfThisTick(LocalPlayer player) {
         Rotation current = RotationManager.INSTANCE.getCurrentRotation();
         return current != null ? current : new Rotation(player.getYRot(), player.getXRot(), true);
+    }
+
+    private BlockHitResult visibleClick(LocalPlayer player, BlockPos target) {
+        return PlaceRayUtil.visibleSupportClick(
+                player.getEyePosition(),
+                player.getViewVector(1.0f),
+                target,
+                rangeSupplier.getAsDouble() + 1.0,
+                pos -> !player.level().getBlockState(pos).canBeReplaced());
     }
 
     private BlockHitResult raytraceTarget(LocalPlayer player, BlockPos interactedPos, Rotation rotation, net.minecraft.core.Direction direction) {
