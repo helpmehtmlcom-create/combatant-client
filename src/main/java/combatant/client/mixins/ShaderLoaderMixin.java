@@ -72,6 +72,19 @@ public abstract class ShaderLoaderMixin {
                 shaderSources.put(combatant$newShaderSourceKey(canonicalId, type), source);
                 added++;
             }
+
+            if (type == ShaderType.FRAGMENT && !CombatantShaderSources.isAnalyticClipVariant(resourceId)
+                    && !CombatantShaderSources.isUiUnderlayVariant(resourceId)) {
+                Identifier analytic = CombatantShaderSources.analyticClipVariantId(resourceId);
+                Identifier underlay = CombatantShaderSources.uiUnderlayVariantId(analytic);
+                Identifier baseUnderlay = CombatantShaderSources.uiUnderlayVariantId(resourceId);
+                for (Identifier variant : new Identifier[]{analytic, underlay, baseUnderlay}) {
+                    String variantSource = CombatantShaderSources.load(resourceManager, variant, type);
+                    shaderSources.put(combatant$newShaderSourceKey(variant, type), variantSource);
+                    shaderSources.put(combatant$newShaderSourceKey(CombatantShaderSources.canonicalShaderId(variant), type), variantSource);
+                    added += 2;
+                }
+            }
         }
 
         if (added > 0 && !combatant$loggedExtendedShaderSources) {
