@@ -1035,6 +1035,10 @@ public class AutoCrystal extends Module {
             return;
         }
 
+        if (!serverRotationClicks(refreshed.hitResult())) {
+            return;
+        }
+
         if (hand.hotbarSlot() >= 0) {
             InventorySwap.INSTANCE.leaseHotbar(this, hand.hotbarSlot(), BASE_HOTBAR_RESET_TICKS);
         }
@@ -1081,6 +1085,11 @@ public class AutoCrystal extends Module {
         BlockHitResult hitResult = placeData.bhr();
         debugLog("place-attempt pos=%s hand=%s slot=%d hit=%s side=%s",
                 pos, hand.hand(), hand.hotbarSlot(), hitResult.getBlockPos(), hitResult.getDirection());
+
+        if (!serverRotationClicks(hitResult)) {
+            debugLog("place-skip reason=rotation-not-sent pos=%s", pos);
+            return;
+        }
 
         if (hand.hotbarSlot() >= 0) {
             InventorySwap.INSTANCE.leaseHotbar(this, hand.hotbarSlot(), HOTBAR_RESET_TICKS);
@@ -1133,6 +1142,18 @@ public class AutoCrystal extends Module {
         if (usesRotationSettings() && !serverRotationHits(new AABB(candidate.pos()), effPlaceRange())) return;
         // tryPlaceCrystal re-validates the spot and damage against the world as it is now.
         tryPlaceCrystal(candidate.pos());
+    }
+
+    // GrimAC's RotationPlace raytraces the placement from the rotation the server saw before it. A placement made in
+    // the tick its rotation changes leaves ahead of the flying packet that carries it, so under the grim preset it
+    // waits a tick; the rotation target is rebuilt every tick and the next one places against the sent rotation.
+    private boolean serverRotationClicks(BlockHitResult hit) {
+        if (!usesRotationSettings() || !anticheat.get().pick(false, true, false)) return true;
+        Rotation server = RotationManager.INSTANCE.getServerRotation();
+        if (server == null || hit == null || mc.player == null) return false;
+        return AutoCrystalInteractionUtil.rayEntersFace(
+                mc.player.getEyePosition(), server.directionVector(), hit.getBlockPos(), hit.getDirection(),
+                effPlaceRange() + 1.0);
     }
 
     private boolean serverRotationHits(AABB box, double range) {
