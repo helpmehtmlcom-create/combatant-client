@@ -74,6 +74,7 @@ public final class SpongeSchemReader {
                 shift += 7;
                 if (shift > 28) throw new IOException("Malformed var-int in block data");
             }
+            if (value < 0) throw new IOException("Malformed var-int in block data: negative palette index at cell " + cell);
             if (value >= globalIds.length) {
                 outOfRange++;
                 continue;
