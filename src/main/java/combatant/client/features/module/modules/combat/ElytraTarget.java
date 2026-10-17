@@ -43,6 +43,7 @@ import combatant.client.util.aiming.RotationTarget;
 import combatant.client.util.aiming.data.Rotation;
 import combatant.client.util.aiming.features.MovementCorrection;
 import combatant.client.util.player.ElytraRecastUtil;
+import combatant.client.util.player.ElytraMath;
 import combatant.client.util.player.inventory.FireworkUseController;
 import combatant.client.util.player.simulation.PlayerSimulationCache;
 import combatant.client.util.target.TargetManager;
@@ -730,21 +731,23 @@ public final class ElytraTarget extends Module {
     }
 
     private boolean isValidSelf(LocalPlayer player) {
-        return player != null
-                && player.getItemBySlot(EquipmentSlot.CHEST).is(Items.ELYTRA)
-                && player.isFallFlying();
+        if (player == null || !player.isFallFlying()) return false;
+        ItemStack chest = player.getItemBySlot(EquipmentSlot.CHEST);
+        // vanilla stops gliding on the last durability point; nothing to chase with then
+        return chest.is(Items.ELYTRA) && (!chest.isDamageableItem() || chest.getMaxDamage() - chest.getDamageValue() > 1);
     }
 
+    /** Any living entity KillAura's own filters let through (players, mobs, armor stands are KillAura's call). */
     private boolean isValidTarget(LivingEntity entity) {
-        if (!(entity instanceof Player playerTarget)) return false;
+        if (entity == null) return false;
         if (!entity.isAlive() || entity.isRemoved()) return false;
 
         String mode = String.valueOf(targetMode.get());
         if ("flying".equals(mode)) {
-            return playerTarget.isFallFlying();
+            return entity.isFallFlying();
         }
         if ("grounded".equals(mode)) {
-            return !playerTarget.isFallFlying();
+            return !entity.isFallFlying();
         }
         return true;
     }
@@ -1079,8 +1082,21 @@ public final class ElytraTarget extends Module {
         return player.getMainHandItem().is(Items.MACE) || player.getOffhandItem().is(Items.MACE);
     }
 
+    /**
+     * Ticks to look ahead at {@code target}: the time it takes us to reach it at our current speed (interception),
+     * never more than {@code maxTicks}. Close targets get a short lead so the aim does not overshoot them.
+     */
+    private int resolveLeadTicks(LivingEntity target, int maxTicks) {
+        int cap = Mth.clamp(maxTicks, 0, 20);
+        LocalPlayer player = mc.player;
+        if (player == null || cap <= 0) return cap;
+        Vec3 relative = target.getBoundingBox().getCenter().subtract(player.getEyePosition());
+        double lead = ElytraMath.leadTicks(relative, target.getDeltaMovement(), player.getDeltaMovement().length(), cap);
+        return (int) Math.round(lead);
+    }
+
     private Vec3 predictTargetCenter(LivingEntity currentTarget, int ticks) {
-        int safeTicks = Mth.clamp(ticks, 0, 20);
+        int safeTicks = resolveLeadTicks(currentTarget, ticks);
         Vec3 base = currentTarget.getBoundingBox().getCenter();
         if (safeTicks <= 0) {
             return base;
@@ -1589,12 +1605,15 @@ public final class ElytraTarget extends Module {
         return null;
     }
 
+    /** Next-tick velocity of a vanilla glide heading along {@code velocity} at the player's current pitch. */
     private Vec3 approximateNextElytraVelocity(Vec3 velocity) {
-        return new Vec3(
-                velocity.x * 0.99,
-                velocity.y * 0.98,
-                velocity.z * 0.99
-        );
+        LocalPlayer player = mc.player;
+        float pitch = player != null ? player.getXRot() : 0.0f;
+        float yaw = player != null ? player.getYRot() : 0.0f;
+        if (velocity.horizontalDistanceSqr() > 1.0E-6) {
+            yaw = (float) Math.toDegrees(Math.atan2(-velocity.x, velocity.z));
+        }
+        return ElytraMath.step(velocity, yaw, pitch);
     }
 
     private boolean hasSolidCollision(LocalPlayer player, AABB box) {

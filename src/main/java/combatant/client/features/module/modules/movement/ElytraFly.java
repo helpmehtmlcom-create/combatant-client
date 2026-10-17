@@ -41,6 +41,9 @@ import combatant.client.util.aiming.features.MovementCorrection;
 import combatant.client.util.player.MovementUtil;
 import combatant.client.util.player.inventory.FireworkUseController;
 import combatant.client.util.player.inventory.InventorySwap;
+import combatant.client.util.anticheat.AntiCheatPreset;
+import combatant.client.util.anticheat.PresetRules;
+import combatant.client.util.player.ElytraMath;
 
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
@@ -67,10 +70,14 @@ public class ElytraFly extends Module {
     private static final float DIVE_THRESHOLD_ANGLE = 15.0f;
     private static final double DIVE_BOOST_MULTIPLIER = 2.0;
     private static final double PACKET_START_COLLISION_XZ_CONTRACT = 0.25;
+    private static final int PITCH_CONTROL_PRIORITY = 6;
     private static final double PACKET_START_COLLISION_Y_OFFSET = -0.3;
-    public final BooleanValue noCrash = bool("elytrafly_no_crash", true);
+    private final EnumValue<AntiCheatPreset> anticheat = enumMode("anticheat_mode", AntiCheatPreset.CUSTOM);
+    public final BooleanValue noCrash = presetBound(bool("elytrafly_no_crash", true),
+            anticheat, PresetRules.Flag.OFF, PresetRules.Flag.FREE);
     private final Minecraft mc = Minecraft.getInstance();
-    private final EnumValue<Mode> mode = enumMode("elytrafly_mode", Mode.BOOST, Mode.values());
+    private final EnumValue<Mode> mode = presetBound(enumMode("elytrafly_mode", Mode.BOOST, Mode.values()),
+            anticheat, PresetRules.Opt.fixed(Mode.FIREWORK), PresetRules.Opt.any());
     private final BooleanValue instantStart = bool("elytrafly_instant_start", false);
     private final BooleanValue instantStop = bool("elytrafly_instant_stop", false);
     private final BooleanValue speedEnabled =
@@ -80,7 +87,8 @@ public class ElytraFly extends Module {
     private final NumberValue<Float> horizontalSpeed =
             visibleWhen(num("elytrafly_speed_horizontal", 0.0f, 0.0f, 8.0f), () -> mode.get() == Mode.STATIC && speedEnabled.get());
     private final BooleanValue notInFluid = bool("elytrafly_not_in_fluid", false);
-    private final BooleanValue durabilityExploit = bool("elytrafly_durability_exploit", false);
+    private final BooleanValue durabilityExploit = presetBound(bool("elytrafly_durability_exploit", false),
+            anticheat, PresetRules.Flag.OFF, PresetRules.Flag.FREE);
     private final BooleanValue staticDurabilityExploitNotWhileNoMove =
             visibleWhen(bool("elytrafly_static_durability_exploit_not_while_no_move", false), () -> mode.get() == Mode.STATIC);
     private final BooleanValue staticGlide =
@@ -103,6 +111,8 @@ public class ElytraFly extends Module {
             visibleWhen(bool("elytrafly_boost_auto_boost", true), () -> mode.get() == Mode.BOOST);
     private final NumberValue<Float> boostVerticalControl =
             visibleWhen(num("elytrafly_boost_vertical_control", 0.0f, 0.0f, 1.0f), () -> mode.get() == Mode.BOOST);
+    private final NumberValue<Float> boostStrafeSpeed =
+            visibleWhen(num("elytrafly_boost_strafe_speed", 0.0f, 0.0f, 8.0f), () -> mode.get() == Mode.BOOST);
     private final BooleanValue boostSmartGround =
             visibleWhen(bool("elytrafly_boost_smart_ground", true), () -> mode.get() == Mode.BOOST);
     private final NumberValue<Float> boostGroundDistance =
@@ -123,8 +133,24 @@ public class ElytraFly extends Module {
             visibleWhen(bool("elytrafly_firework_silent_rotation", true), () -> mode.get() == Mode.FIREWORK);
     private final NumberValue<Float> fireworkPitch =
             visibleWhen(num("elytrafly_firework_pitch", 0.0f, -90.0f, 90.0f), () -> mode.get() == Mode.FIREWORK && fireworkSilentRotation.get());
-    private final BooleanValue fireworkVelocityControl =
-            visibleWhen(bool("elytrafly_firework_velocity_control", true), () -> mode.get() == Mode.FIREWORK);
+    // grim: the only flight GrimAC's elytra simulation accepts is vanilla gliding: pitch/yaw steering plus firework
+    // rockets. Every mode that adds motion, packet tricks, a firework velocity rewrite, a velocity wipe on impact
+    // (no_crash) or the glide toggle spam (durability exploit) is a Simulation/Exploit flag, so they are not offered.
+    private final BooleanValue fireworkVelocityControl = presetBound(
+            visibleWhen(bool("elytrafly_firework_velocity_control", true), () -> mode.get() == Mode.FIREWORK),
+            anticheat, PresetRules.Flag.OFF, PresetRules.Flag.FREE);
+    private final BooleanValue fireworkAuto =
+            visibleWhen(bool("elytrafly_firework_auto", true), () -> mode.get() == Mode.FIREWORK);
+    private final NumberValue<Integer> fireworkMaxSpeed =
+            visibleWhen(num("elytrafly_firework_max_speed", 0, 0, 200), () -> mode.get() == Mode.FIREWORK && fireworkAuto.get());
+    private final BooleanValue pitchControl =
+            visibleWhen(bool("elytrafly_pitch_control", false), () -> mode.get() == Mode.FIREWORK);
+    private final NumberValue<Integer> pitchControlMinSpeed =
+            visibleWhen(num("elytrafly_pitch_control_min_speed", 45, 10, 120), () -> mode.get() == Mode.FIREWORK && pitchControl.get());
+    private final NumberValue<Float> pitchControlMaxStep =
+            visibleWhen(num("elytrafly_pitch_control_max_step", 8.0f, 1.0f, 30.0f), () -> mode.get() == Mode.FIREWORK && pitchControl.get());
+    private final BooleanValue pitchControlAvoidBlocks =
+            visibleWhen(bool("elytrafly_pitch_control_avoid_blocks", true), () -> mode.get() == Mode.FIREWORK && pitchControl.get());
     private final NumberValue<Float> fireworkVelocityFactor =
             visibleWhen(num("elytrafly_firework_velocity_factor", 0.1f, 0.0f, 2.0f), () -> mode.get() == Mode.FIREWORK && fireworkVelocityControl.get());
     private final BooleanValue packetAutoStart =
@@ -141,6 +167,9 @@ public class ElytraFly extends Module {
     private int groundCheckCooldown;
     private int fireworkSkipTicks;
     private boolean queuedFireworkUse;
+    private double holdY;
+    private boolean holdValid;
+    private boolean holdKeyActive;
 
     {
         setDefaultBind("LEFT_ALT+L");
@@ -231,12 +260,63 @@ public class ElytraFly extends Module {
             return;
         }
 
-        if (mode.get() == Mode.FIREWORK && fireworkSilentRotation.get() && queuedFireworkUse && player.isFallFlying()) {
-            queueSilentRotation(player, fireworkPitch.get(), FIREWORK_ROTATION_PRIORITY, 3);
-            return;
+        if (mode.get() == Mode.FIREWORK && player.isFallFlying() && !isElytraTargetRunning()) {
+            Float controlled = pitchControl.get() ? computeControlPitch(player) : null;
+            if (controlled != null) {
+                queueSilentRotation(player, controlled, PITCH_CONTROL_PRIORITY, 2);
+                return;
+            }
+            if (fireworkSilentRotation.get() && queuedFireworkUse) {
+                queueSilentRotation(player, fireworkPitch.get(), FIREWORK_ROTATION_PRIORITY, 3);
+                return;
+            }
+        } else {
+            resetPitchControl();
         }
 
         RotationManager.INSTANCE.clear(this);
+    }
+
+    private boolean isElytraTargetRunning() {
+        ElytraTarget elytraTarget = Modules.get(ElytraTarget.class);
+        return elytraTarget != null && elytraTarget.isRunning();
+    }
+
+    /**
+     * Vanilla-physics autopilot: holds the altitude the player last flew at (jump climbs, sneak descends) by choosing
+     * the glide pitch that the real elytra step predicts to stay level, keep speed and clear blocks.
+     */
+    private Float computeControlPitch(LocalPlayer player) {
+        Vec3 pos = player.position();
+        Vec3 vel = player.getDeltaMovement();
+        boolean up = mc.options.keyJump.isDown();
+        boolean down = mc.options.keyShift.isDown();
+        if (!holdValid) {
+            holdY = pos.y;
+            holdValid = true;
+            holdKeyActive = false;
+        }
+        if (up != down) {
+            holdY = pos.y + (up ? 8.0 : -10.0);
+            holdKeyActive = true;
+        } else if (holdKeyActive) {
+            holdY = pos.y + vel.y * 3.0;
+            holdKeyActive = false;
+        }
+
+        float previousPitch = RotationManager.INSTANCE.getMovementRotation().pitch();
+        ElytraMath.CollisionProbe probe = pitchControlAvoidBlocks.get()
+                ? p -> !mc.level.noCollision(player, player.getBoundingBox().move(p.subtract(pos)).inflate(0.1))
+                : ElytraMath.CollisionProbe.NONE;
+        ElytraMath.ControlParams params = new ElytraMath.ControlParams(
+                holdY,
+                pitchControlMinSpeed.get() / ElytraMath.KMH_PER_BLOCK_TICK,
+                12,
+                pitchControlMaxStep.get(),
+                -55.0f,
+                60.0f
+        );
+        return ElytraMath.controlPitch(pos, vel, player.getYRot(), previousPitch, params, probe);
     }
 
     private void queueSilentRotation(LocalPlayer player, float pitch, int priority, int resetTicks) {
@@ -385,7 +465,7 @@ public class ElytraFly extends Module {
 
         handleBoostAcceleration(shouldBoost);
 
-        if (MovementUtil.isMoving()) {
+        if (boostStrafeSpeed.get() > 0.0f && MovementUtil.isMoving()) {
             double speed = calculateEffectiveBoostSpeed(player, nearGround);
             player.setDeltaMovement(applyStrafe(player.getDeltaMovement(), player, speed, 1.0));
         }
@@ -428,7 +508,10 @@ public class ElytraFly extends Module {
 
     private boolean shouldUseFirework(LocalPlayer player) {
         if (player == null || !player.isFallFlying() || player.isUsingItem()) return false;
-        if (fireworkSkipTicks > 0) return false;
+        if (!fireworkAuto.get() || fireworkSkipTicks > 0) return false;
+        if (fireworkMaxSpeed.get() > 0 && ElytraMath.speedKmh(player.getDeltaMovement()) >= fireworkMaxSpeed.get()) {
+            return false;
+        }
         if (!hasFireworkRocket(player)) return false;
 
         ElytraTarget elytraTarget = Modules.get(ElytraTarget.class);
@@ -657,7 +740,7 @@ public class ElytraFly extends Module {
     }
 
     private double calculateEffectiveBoostSpeed(LocalPlayer player, boolean nearGround) {
-        double baseSpeed = horizontalSpeed.get();
+        double baseSpeed = boostStrafeSpeed.get();
         double pitchReduction = player.getXRot() < 0.0f
                 ? Math.abs(player.getXRot() / MAX_PITCH_ANGLE) * PITCH_REDUCTION_FACTOR
                 : 0.0;
@@ -687,7 +770,7 @@ public class ElytraFly extends Module {
     private double calculateBoostVerticalMovement(Vec3 movement, double divePullUpBoost) {
         double horizontal = Math.hypot(movement.x, movement.z);
         double naturalLift = horizontal * NATURAL_LIFT_FACTOR;
-        double manualVertical = verticalSpeed.get() * boostVerticalControl.get();
+        double manualVertical = boostVerticalControl.get();
         double baseY = movement.y - GRAVITY_COMPENSATION + naturalLift + divePullUpBoost;
 
         if (mc.options.keyJump.isDown() && !mc.options.keyShift.isDown()) {
@@ -738,6 +821,7 @@ public class ElytraFly extends Module {
         resetBoostState();
         fireworkSkipTicks = 0;
         queuedFireworkUse = false;
+        resetPitchControl();
     }
 
     private void resetModeState(Mode currentMode) {
@@ -747,7 +831,13 @@ public class ElytraFly extends Module {
         if (currentMode == Mode.FIREWORK) {
             fireworkSkipTicks = 0;
             queuedFireworkUse = false;
+            resetPitchControl();
         }
+    }
+
+    private void resetPitchControl() {
+        holdValid = false;
+        holdKeyActive = false;
     }
 
     private void resetBoostState() {
