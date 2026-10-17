@@ -11,6 +11,7 @@ import com.mojang.renderpearl.api.pipeline.CompiledRenderPipeline;
 import com.mojang.renderpearl.api.pipeline.RenderPipeline;
 import com.mojang.renderpearl.backend.api.BackendRenderPipeline;
 import com.mojang.renderpearl.frontend.shaders.PipelineBuilder;
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import combatant.client.util.CompiledPipelineSource;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ReferenceArrayList;
@@ -33,5 +34,18 @@ public abstract class PipelineBuilderMixin {
         if (cir.getReturnValue() instanceof CompiledPipelineSource source) {
             source.combatant$setSource(pipeline);
         }
+    }
+
+    /**
+     * The 26.3 pipeline compiler rejects vertex shaders that declare more components for an input
+     * attribute than the vertex format supplies. Combatant's shaders declare {@code vec4 Position}
+     * for 2D/3D formats and rely on the implicit w = 1 default, so the check is relaxed for them.
+     */
+    @ModifyExpressionValue(method = "generateBackendCreateInfo",
+            at = @At(value = "INVOKE",
+                    target = "Lcom/mojang/renderpearl/api/GpuFormat;componentCount()I",
+                    ordinal = 0))
+    private int combatant$allowWiderShaderAttributes(int formatComponents) {
+        return Math.max(formatComponents, 4);
     }
 }

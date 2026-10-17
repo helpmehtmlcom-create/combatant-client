@@ -137,6 +137,7 @@
     "PowderSnowFogModifierMixin",
     "RecipeBookScreenMixin",
     "RenderPassMixin",
+    "GameRendererPreloadShaderSourceMixin",
     "FrontendRenderPipelineMixin",
     "PipelineBuilderMixin",
     "RenderPipelineMixin",
