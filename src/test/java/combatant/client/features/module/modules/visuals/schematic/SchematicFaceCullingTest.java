@@ -21,7 +21,7 @@ class SchematicFaceCullingTest {
         byte[] s = new byte[count], out = new byte[count];
         int i = 0;
         for (int a = 0; a < n; a++) for (int b = 0; b < n; b++) for (int c = 0; c < n; c++) {
-            x[i] = a; y[i] = b; z[i] = c; s[i++] = SchematicDiff.MISSING;
+            x[i] = a; y[i] = b; z[i] = c; s[i++] = SchematicDiff.WRONG;
         }
         int after = faces(x, y, z, s, out);
         int before = count * 6;
@@ -35,6 +35,24 @@ class SchematicFaceCullingTest {
         byte[] out = new byte[2];
         int total = faces(new int[] {0, 1}, new int[] {0, 0}, new int[] {0, 0},
                 new byte[] {SchematicDiff.MISSING, SchematicDiff.WRONG}, out);
+        assertEquals(12, total);
+    }
+
+    @Test
+    void missingNeighboursKeepAllFacesBecauseTheyAreDrawnInset() {
+        byte[] out = new byte[2];
+        int total = faces(new int[] {0, 1}, new int[] {0, 0}, new int[] {0, 0},
+                new byte[] {SchematicDiff.MISSING, SchematicDiff.MISSING}, out);
+        assertEquals(12, total);
+        assertEquals(SchematicFaceCulling.ALL_FACES, out[0] & 0xFF);
+        assertEquals(SchematicFaceCulling.ALL_FACES, out[1] & 0xFF);
+    }
+
+    @Test
+    void fullSizeCellKeepsItsFaceTouchingAMissingCell() {
+        byte[] out = new byte[2];
+        int total = faces(new int[] {0, 1}, new int[] {0, 0}, new int[] {0, 0},
+                new byte[] {SchematicDiff.CORRECT, SchematicDiff.MISSING}, out);
         assertEquals(12, total);
     }
 
