@@ -591,27 +591,13 @@ public final class Criticals extends Module {
 
     private Mode getMode() {
         Mode chosen = killAuraModeOverride != null ? killAuraModeOverride : mode.get();
-        if (anticheat.get() == AntiCheatPreset.GRIM) {
-            return grimSafeMode(chosen);
-        }
-        if (anticheat.get() == AntiCheatPreset.VULCAN) {
-            return vulcanSafeMode(chosen);
-        }
-        return chosen;
+        return anticheat.get() == AntiCheatPreset.GRIM ? grimSafeMode(chosen) : chosen;
     }
 
     /** The mode GrimAC tolerates in place of {@code chosen}. */
     static Mode grimSafeMode(Mode chosen) {
         return switch (chosen) {
             case PACKET, NO_GROUND, VULCAN_297 -> Mode.JUMP;
-            default -> chosen;
-        };
-    }
-
-    /** The mode Vulcan tolerates in place of {@code chosen}. */
-    static Mode vulcanSafeMode(Mode chosen) {
-        return switch (chosen) {
-            case PACKET, NO_GROUND -> Mode.VULCAN_297;
             default -> chosen;
         };
     }
