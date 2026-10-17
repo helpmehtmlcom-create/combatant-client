@@ -1153,7 +1153,7 @@ public class AutoCrystal extends Module {
         Rotation server = RotationManager.INSTANCE.getServerRotation();
         if (server == null || hit == null || mc.player == null) return false;
         return combatant.client.util.block.placer.PlaceRayUtil.rayHitsBlock(
-                mc.player.getEyePosition(), server.directionVector(), hit.getBlockPos(), effPlaceRange() + 1.0);
+                mc.player.getEyePosition(), server.directionVector(), hit.getBlockPos(), mc.player.blockInteractionRange());
     }
 
     private boolean serverRotationHits(AABB box, double range) {

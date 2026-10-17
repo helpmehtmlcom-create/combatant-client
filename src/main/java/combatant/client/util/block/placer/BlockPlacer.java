@@ -480,18 +480,17 @@ public final class BlockPlacer {
             // GrimAC's RotationPlace raytraces the click from the rotation the server saw before it; the one this
             // tick's flying packet carries only counts afterwards. Wait until the last sent rotation touches the block.
             Rotation sent = RotationManager.INSTANCE.getServerRotation();
-            double reach = Math.max(rangeSupplier.getAsDouble(), wallRangeSupplier.getAsDouble()) + 1.0;
-            if (sent == null || !PlaceRayUtil.rayHitsBlock(
-                    player.getEyePosition(), sent.directionVector(), plan.target().getInteractedBlockPos(), reach)) {
+            if (sent == null || !PlaceRayUtil.rayHitsBlock(player.getEyePosition(), sent.directionVector(),
+                    plan.target().getInteractedBlockPos(), player.blockInteractionRange())) {
                 return;
             }
             hitResult = raytraceTarget(player, plan.target().getInteractedBlockPos(), verificationRotation, plan.target().getDirection());
         } else {
             // No rotation is sent, so the server checks against the look it already has: click a face that look
-            // actually enters when there is one, the planned face otherwise.
+            // actually enters, or skip the tick when it enters none.
             hitResult = visibleClick(player, plan.pos());
             if (hitResult == null) {
-                hitResult = raytraceTarget(player, plan.target().getInteractedBlockPos(), plan.target().getRotation(), plan.target().getDirection());
+                return;
             }
         }
         if (hitResult == null && (constructFailResultSupplier.getAsBoolean() || rotationModeSupplier.get() != RotationMode.NORMAL)) {
@@ -532,7 +531,7 @@ public final class BlockPlacer {
                 player.getEyePosition(),
                 player.getViewVector(1.0f),
                 target,
-                rangeSupplier.getAsDouble() + 1.0,
+                player.blockInteractionRange(),
                 pos -> !player.level().getBlockState(pos).canBeReplaced());
     }
 
