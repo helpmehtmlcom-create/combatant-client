@@ -26,6 +26,7 @@ import combatant.client.render.engine.text.TextRenderer;
 import combatant.client.render.engine.text.WorldTextRenderer;
 import combatant.client.render.engine.world.WorldUiPresentationService;
 import combatant.client.util.anticheat.AntiCheatPreset;
+import combatant.client.util.anticheat.PresetRules;
 import combatant.client.util.aiming.RestrictedSingleUseAction;
 import combatant.client.util.aiming.RotationManager;
 import combatant.client.util.aiming.RotationTarget;
@@ -106,22 +107,22 @@ public class AutoAnchor extends Module {
             1000
     );
     private final NumberValue<Integer> lowExplodeDelay = numCommon("autoanchorLowExplodeDelay", "low_explode_delay", CommonSettingSchemas.LOW_EXPLODE_DELAY, 550, 0, 1000);
-    private final NumberValue<Float> placeRange = numCommon(
+    private final NumberValue<Float> placeRange = presetBound(numCommon(
             "autoanchorPlaceRange",
             "place_range",
             CommonSettingSchemas.PLACEMENT_RANGE,
             5.0f,
             1.0f,
             6.0f
-    );
-    private final NumberValue<Float> wallRange = numCommon(
+    ), anticheat, AntiCheatPreset.GRIM_BLOCK_RANGE, AntiCheatPreset.VANILLA_BLOCK_RANGE);
+    private final NumberValue<Float> wallRange = presetBound(numCommon(
             "autoanchorWallRange",
             "wall_range",
             CommonSettingSchemas.PLACEMENT_WALL_RANGE,
             3.5f,
             0.0f,
             6.0f
-    );
+    ), anticheat, 0.0, AntiCheatPreset.VANILLA_BLOCK_RANGE);
     private final EnumValue<AutoAnchorPlacementMode> placementMode = enumCommon(
             "autoanchorPlacementMode",
             "placement_mode",
@@ -129,7 +130,8 @@ public class AutoAnchor extends Module {
             AutoAnchorPlacementMode.DEFAULT,
             AutoAnchorPlacementMode.values()
     );
-    private final BooleanValue airPlace = boolCommon("autoanchorAirPlace", "air_place", CommonSettingSchemas.AIR_PLACE, false);
+    private final BooleanValue airPlace = presetBound(boolCommon("autoanchorAirPlace", "air_place", CommonSettingSchemas.AIR_PLACE, false),
+            anticheat, PresetRules.Flag.OFF, PresetRules.Flag.FREE);
     private final NumberValue<Float> targetRange = numCommon(
             "autoanchorTargetRange",
             "target_range",
@@ -374,7 +376,7 @@ public class AutoAnchor extends Module {
                 plannerContext,
                 target,
                 resolvePredictedPosition(target, predictTicks.get()),
-                Mth.ceil(effPlaceRange())
+                Mth.ceil(placeRange.get())
         );
         bestPlace = result.bestPlace();
         bestExplode = result.bestExplode();
@@ -674,8 +676,8 @@ public class AutoAnchor extends Module {
                 mc.player,
                 data.pos(),
                 placementMode.get(),
-                effPlaceRange(),
-                effWallRange()
+                placeRange.get(),
+                wallRange.get()
         );
         if (anchorHit == null) return;
 
@@ -716,8 +718,8 @@ public class AutoAnchor extends Module {
                 mc.player,
                 data.pos(),
                 placementMode.get(),
-                effPlaceRange(),
-                effWallRange()
+                placeRange.get(),
+                wallRange.get()
         );
         if (anchorHit == null) return;
 
@@ -1032,25 +1034,13 @@ public class AutoAnchor extends Module {
                 mc.player,
                 pos,
                 existingAnchor,
-                effAirPlace(),
+                airPlace.get(),
                 placementMode.get(),
-                effPlaceRange(),
-                effWallRange()
+                placeRange.get(),
+                wallRange.get()
         );
     }
 
-
-    private float effPlaceRange() {
-        return anticheat.get().limit(placeRange.get(), (float) AntiCheatPreset.GRIM_BLOCK_RANGE, (float) AntiCheatPreset.VANILLA_BLOCK_RANGE);
-    }
-
-    private float effWallRange() {
-        return anticheat.get().limit(wallRange.get(), 0.0f, (float) AntiCheatPreset.VANILLA_BLOCK_RANGE);
-    }
-
-    private boolean effAirPlace() {
-        return anticheat.get().pick(airPlace.get(), false, airPlace.get());
-    }
 
     private boolean effUsesRotations() {
         return anticheat.get().pick(CombatRotationModeUtil.usesRotations(attackMode), true, CombatRotationModeUtil.usesRotations(attackMode));
@@ -1070,7 +1060,7 @@ public class AutoAnchor extends Module {
         if (server == null) return false;
         return AutoAnchorInteractionUtil.rayEntersFace(
                 mc.player.getEyePosition(), server.directionVector(), hit.getBlockPos(), hit.getDirection(),
-                effPlaceRange() + 1.0);
+                placeRange.get() + 1.0);
     }
 
     private String buildDamageText() {
@@ -1182,12 +1172,12 @@ public class AutoAnchor extends Module {
 
         @Override
         public boolean allowAirPlace() {
-            return effAirPlace();
+            return airPlace.get();
         }
 
         @Override
         public float placeRange() {
-            return effPlaceRange();
+            return placeRange.get();
         }
     }
 

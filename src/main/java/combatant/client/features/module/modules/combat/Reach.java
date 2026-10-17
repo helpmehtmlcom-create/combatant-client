@@ -57,7 +57,7 @@ public class Reach extends Module {
                     Mode.values()
             );
 
-    private final NumberValue<Double> distance =
+    private final NumberValue<Double> distance = presetBound(
             numCommon(
                     "reachDistance",
                     "range",
@@ -65,8 +65,9 @@ public class Reach extends Module {
                     4.5,
                     3.0,
                     6.0
-            );
-    private final NumberValue<Double> wallDistance =
+            ),
+            anticheat, AntiCheatPreset.GRIM_ENTITY_RANGE, AntiCheatPreset.VANILLA_ENTITY_RANGE);
+    private final NumberValue<Double> wallDistance = presetBound(
             visibleWhen(numCommon(
                     "reachWallDistance",
                     "wall_range",
@@ -74,7 +75,8 @@ public class Reach extends Module {
                     3.0,
                     0.0,
                     6.0
-            ), () -> raycast.get() == KillAura.RaycastMode.THROUGH_WALLS);
+            ), () -> raycast.get() == KillAura.RaycastMode.THROUGH_WALLS),
+            anticheat, AntiCheatPreset.GRIM_ENTITY_RANGE, AntiCheatPreset.VANILLA_ENTITY_RANGE);
 
     private static double boxDistanceSq(AABB box, Vec3 p) {
         double dx = 0.0;
@@ -96,9 +98,9 @@ public class Reach extends Module {
         if (!isEnabled()) return null;
         if (player == null || mc.level == null) return null;
 
-        double visibleRange = effectiveDistance();
+        double visibleRange = distance.get();
         double throughWallsRange = raycast.get() == KillAura.RaycastMode.THROUGH_WALLS
-                ? effectiveWallDistance()
+                ? wallDistance.get()
                 : 0.0;
         double searchRange = Math.max(visibleRange, throughWallsRange);
 
@@ -123,9 +125,9 @@ public class Reach extends Module {
         if (!isEnabled()) return null;
         if (player == null || mc.level == null) return null;
 
-        double visibleRange = effectiveDistance();
+        double visibleRange = distance.get();
         double throughWallsRange = raycast.get() == KillAura.RaycastMode.THROUGH_WALLS
-                ? effectiveWallDistance()
+                ? wallDistance.get()
                 : 0.0;
         double searchRange = Math.max(visibleRange, throughWallsRange);
 
@@ -203,15 +205,7 @@ public class Reach extends Module {
     }
 
     public double getConfiguredDistance() {
-        return effectiveDistance();
-    }
-
-    private double effectiveDistance() {
-        return anticheat.get().limit(distance.get(), AntiCheatPreset.GRIM_ENTITY_RANGE, AntiCheatPreset.VANILLA_ENTITY_RANGE);
-    }
-
-    private double effectiveWallDistance() {
-        return anticheat.get().limit(wallDistance.get(), AntiCheatPreset.GRIM_ENTITY_RANGE, AntiCheatPreset.VANILLA_ENTITY_RANGE);
+        return distance.get();
     }
 
     private double resolveBlockLimitSq(LocalPlayer player,

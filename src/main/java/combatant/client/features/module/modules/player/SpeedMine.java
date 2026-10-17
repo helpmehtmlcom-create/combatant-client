@@ -9,6 +9,7 @@ package combatant.client.features.module.modules.player;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import combatant.client.util.anticheat.PresetRules;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -103,19 +104,31 @@ public final class SpeedMine extends Module {
     // gap between finished blocks (GrimAC FastBreak flags early STOPs and chained breaks closer than that);
     // vanilla = every packet trick on, for servers with no anticheat.
     private final EnumValue<AntiCheatPreset> anticheat = enumMode("anticheat_mode", AntiCheatPreset.CUSTOM);
-    private final NumberValue<Float> range = num("range", 5.0f, 3.0f, 6.0f);
+    private final NumberValue<Float> range = presetBound(num("range", 5.0f, 3.0f, 6.0f), anticheat,
+            AntiCheatPreset.GRIM_BLOCK_RANGE, AntiCheatPreset.VANILLA_BLOCK_RANGE);
     // Fraction of the predicted break time before STOP. 1.0 is exact; values closer to 0.7 finish
     // sooner on servers that trust the vanilla threshold, but lag makes early STOPs park the block.
-    private final NumberValue<Float> breakAt = num("break_at", 1.0f, 0.7f, 1.0f);
-    private final EnumValue<SwapMode> swapMode = enumMode("swap_mode", SwapMode.SILENT);
-    private final BooleanValue rebreak = bool("rebreak", true);
-    private final EnumValue<RebreakMode> rebreakMode =
-            visibleWhen(enumMode("rebreak_mode", RebreakMode.INSTANT), rebreak::get);
-    private final NumberValue<Integer> rebreakDelay =
-            visibleWhen(num("rebreak_delay", 0, 0, 20), rebreak::get);
-    private final BooleanValue doubleMine = bool("double_mine", true);
-    private final BooleanValue rotate = bool("rotate", false);
-    private final BooleanValue swing = bool("swing", true);
+    // GrimAC FastBreak adds every STOP sent 25 ms or more before the predicted break time to its balance.
+    private final NumberValue<Float> breakAt = presetBound(num("break_at", 1.0f, 0.7f, 1.0f), anticheat,
+            PresetRules.Num.fixed(1.0), PresetRules.Num.fixed(1.0));
+    private final EnumValue<SwapMode> swapMode = presetBound(enumMode("swap_mode", SwapMode.SILENT), anticheat,
+            PresetRules.Opt.any(), PresetRules.Opt.fixed(SwapMode.SILENT));
+    private final BooleanValue rebreak = presetBound(bool("rebreak", true), anticheat,
+            PresetRules.Flag.OFF, PresetRules.Flag.ON);
+    private final EnumValue<RebreakMode> rebreakMode = presetBound(
+            visibleWhen(enumMode("rebreak_mode", RebreakMode.INSTANT), rebreak::get), anticheat,
+            PresetRules.Opt.any(), PresetRules.Opt.fixed(RebreakMode.INSTANT));
+    private final NumberValue<Integer> rebreakDelay = presetBound(
+            visibleWhen(num("rebreak_delay", 0, 0, 20), rebreak::get), anticheat,
+            PresetRules.Num.FREE, PresetRules.Num.fixed(0));
+    private final BooleanValue doubleMine = presetBound(bool("double_mine", true), anticheat,
+            PresetRules.Flag.OFF, PresetRules.Flag.ON);
+    // GRIM forces rotation on: GrimAC RotationBreak checks every START/STOP against the sent rotation.
+    private final BooleanValue rotate = presetBound(bool("rotate", false), anticheat,
+            PresetRules.Flag.ON, PresetRules.Flag.FREE);
+    // GRIM sends its own arm swing with every START/STOP (sendAction), so the extra swing on start is off.
+    private final BooleanValue swing = presetBound(bool("swing", true), anticheat,
+            PresetRules.Flag.OFF, PresetRules.Flag.FREE);
     private final BooleanValue render = bool("render", true);
     private final RGBAColorValue miningColor = visibleWhen(color("mining_color", "#50FF3C3C"), render::get);
     private final RGBAColorValue readyColor = visibleWhen(color("ready_color", "#503CFF5A"), render::get);
@@ -149,38 +162,9 @@ public final class SpeedMine extends Module {
         reset();
     }
 
-    private SwapMode swapNow() {
-        return anticheat.get().pick(swapMode.get(), swapMode.get(), SwapMode.SILENT);
-    }
-
-    private boolean rebreakNow() {
-        return anticheat.get().pick(rebreak.get(), false, true);
-    }
-
-    private RebreakMode rebreakModeNow() {
-        return anticheat.get().pick(rebreakMode.get(), rebreakMode.get(), RebreakMode.INSTANT);
-    }
-
-    private int rebreakDelayNow() {
-        return anticheat.get().pick(rebreakDelay.get(), rebreakDelay.get(), 0);
-    }
-
-    private boolean doubleMineNow() {
-        return anticheat.get().pick(doubleMine.get(), false, true);
-    }
-
-    /** GrimAC FastBreak adds every STOP sent 25 ms or more before the predicted break time to its balance. */
-    private float breakAtNow() {
-        return anticheat.get().pick(breakAt.get(), 1.0f, 1.0f);
-    }
-
     /** True while GRIM still owes vanilla's gap after the last finished block. */
     private boolean breakGapPending() {
         return anticheat.get() == AntiCheatPreset.GRIM && ticks - lastStopTick < BREAK_GAP_TICKS;
-    }
-
-    private float rangeNow() {
-        return anticheat.get().limit(range.get(), (float) AntiCheatPreset.GRIM_BLOCK_RANGE, (float) AntiCheatPreset.VANILLA_BLOCK_RANGE);
     }
 
     /**
@@ -212,7 +196,7 @@ public final class SpeedMine extends Module {
     /** Starts packet-mining {@code pos} within the range setting. Used by AutoMine. */
     public boolean mine(BlockPos pos, Direction direction) {
         if (breakGapPending()) return false;
-        return start(pos, direction, rangeNow());
+        return start(pos, direction, range.get());
     }
 
     private boolean start(BlockPos pos, Direction direction, double reach) {
@@ -234,7 +218,7 @@ public final class SpeedMine extends Module {
         // The server's destroyPos moves with this START, so the old rebreak target is gone.
         rebreakTask = null;
         sendAction(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK, primary);
-        if (swing.get() && anticheat.get() != AntiCheatPreset.GRIM) player.swing(InteractionHand.MAIN_HAND, player.getItemInHand(InteractionHand.MAIN_HAND).getAttackAnimation(), false);
+        if (swing.get()) player.swing(InteractionHand.MAIN_HAND, player.getItemInHand(InteractionHand.MAIN_HAND).getAttackAnimation(), false);
         return true;
     }
 
@@ -255,7 +239,7 @@ public final class SpeedMine extends Module {
 
     /** True when a new {@link #mine} call would run in parallel instead of aborting the current block. */
     public boolean canDoubleMine() {
-        return doubleMineNow() && delayed == null && primary != null && !primary.stopSent;
+        return doubleMine.get() && delayed == null && primary != null && !primary.stopSent;
     }
 
     public BlockPos rebreakPos() {
@@ -306,7 +290,7 @@ public final class SpeedMine extends Module {
             onPrimaryBroken(task);
             return;
         }
-        if (!inRange(player, task.pos, rangeNow() + ABORT_RANGE_SLACK)) {
+        if (!inRange(player, task.pos, range.get() + ABORT_RANGE_SLACK)) {
             sendAction(ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK, task);
             primary = null;
             return;
@@ -317,7 +301,7 @@ public final class SpeedMine extends Module {
         // Server math is stateless: speed of whatever is held at STOP times elapsed ticks.
         float full = progressPerTick(task.pos, state, toolSlot);
         task.progress = elapsed * full;
-        if (!readyToStop(task.pos, state, toolSlot, elapsed, full, breakAtNow()) || !isFacing(player, task)) return;
+        if (!readyToStop(task.pos, state, toolSlot, elapsed, full, breakAt.get()) || !isFacing(player, task)) return;
 
         sendWithTool(toolSlot, ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK, task);
         task.stopSent = true;
@@ -338,7 +322,7 @@ public final class SpeedMine extends Module {
         int elapsed = ticks - task.startTick + 1;
         float full = progressPerTick(task.pos, state, toolSlot);
         task.progress = elapsed * full;
-        if (swapNow() == SwapMode.OFF || toolSlot < 0) return;
+        if (swapMode.get() == SwapMode.OFF || toolSlot < 0) return;
         // The server finishes a parked block at a full 1.0, never at the 0.7 STOP threshold, and it
         // re-checks every tick with whatever is held then. Hold the tool early enough that its
         // Efficiency is already applied on the tick the block comes due.
@@ -359,7 +343,7 @@ public final class SpeedMine extends Module {
     private void tickRebreak(LocalPlayer player) {
         MineTask task = rebreakTask;
         if (task == null || primary != null) return;
-        if (!inRange(player, task.pos, rangeNow() + ABORT_RANGE_SLACK)) return;
+        if (!inRange(player, task.pos, range.get() + ABORT_RANGE_SLACK)) return;
 
         BlockState state = mc.level.getBlockState(task.pos);
         if (state.isAir()) {
@@ -370,8 +354,8 @@ public final class SpeedMine extends Module {
         float full = progressPerTick(task.pos, state, toolSlot);
         if (full <= 0.0f) return;
 
-        if (rebreakModeNow() == RebreakMode.NORMAL) {
-            if (ticks - task.stopTick >= rebreakDelayNow()) restartRebreak(task);
+        if (rebreakMode.get() == RebreakMode.NORMAL) {
+            if (ticks - task.stopTick >= rebreakDelay.get()) restartRebreak(task);
             return;
         }
 
@@ -380,7 +364,7 @@ public final class SpeedMine extends Module {
             if (ticks - rebreakSentTick > CONFIRM_TIMEOUT_TICKS) restartRebreak(task);
             return;
         }
-        if (ticks - task.stopTick < rebreakDelayNow()) return;
+        if (ticks - task.stopTick < rebreakDelay.get()) return;
         if (!readyToStop(task.pos, state, toolSlot, ticks - task.startTick + 1, full, SERVER_STOP_PROGRESS)
                 || !isFacing(player, task)) return;
 
@@ -407,8 +391,8 @@ public final class SpeedMine extends Module {
     }
 
     private void holdTool(int toolSlot, int leaseTicks) {
-        if (swapNow() == SwapMode.OFF) return;
-        if (swapNow() == SwapMode.NORMAL) {
+        if (swapMode.get() == SwapMode.OFF) return;
+        if (swapMode.get() == SwapMode.NORMAL) {
             InventorySwap.INSTANCE.selectHotbar(toolSlot);
         } else {
             InventorySwap.INSTANCE.leaseHotbar(this, toolSlot, leaseTicks);
@@ -425,7 +409,7 @@ public final class SpeedMine extends Module {
 
     private void onPrimaryBroken(MineTask task) {
         primary = null;
-        if (!rebreakNow()) return;
+        if (!rebreak.get()) return;
         task.stopTick = ticks;
         rebreakTask = task;
         rebreakSentTick = Integer.MIN_VALUE;
@@ -463,11 +447,11 @@ public final class SpeedMine extends Module {
     private void sendWithTool(int toolSlot, ServerboundPlayerActionPacket.Action action, MineTask task) {
         if (action == ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK) lastStopTick = ticks;
         InventorySwap swap = InventorySwap.INSTANCE;
-        if (toolSlot < 0 || swapNow() == SwapMode.OFF || swap.serverSelectedSlot() == toolSlot) {
+        if (toolSlot < 0 || swapMode.get() == SwapMode.OFF || swap.serverSelectedSlot() == toolSlot) {
             sendAction(action, task);
             return;
         }
-        if (swapNow() == SwapMode.NORMAL) {
+        if (swapMode.get() == SwapMode.NORMAL) {
             swap.selectHotbar(toolSlot);
             sendAction(action, task);
             return;
@@ -497,7 +481,7 @@ public final class SpeedMine extends Module {
 
     private void updateRotation(LocalPlayer player) {
         MineTask task = rotationTask();
-        if (!rotateNow() || task == null) {
+        if (!rotate.get() || task == null) {
             if (rotating) RotationManager.INSTANCE.clear(this);
             rotating = false;
             return;
@@ -522,13 +506,8 @@ public final class SpeedMine extends Module {
         return null;
     }
 
-    /** GrimAC RotationBreak checks every START/STOP against the sent rotation, so GRIM always rotates. */
-    private boolean rotateNow() {
-        return anticheat.get().pick(rotate.get(), true, rotate.get());
-    }
-
     private boolean isFacing(LocalPlayer player, MineTask task) {
-        if (!rotateNow()) return true;
+        if (!rotate.get()) return true;
         Rotation server = RotationManager.INSTANCE.getServerRotation();
         if (server == null) return true;
         if (anticheat.get() == AntiCheatPreset.GRIM) {
@@ -547,7 +526,7 @@ public final class SpeedMine extends Module {
     }
 
     private int toolSlot(BlockPos pos, BlockState state) {
-        if (swapNow() == SwapMode.OFF) return InventorySwap.INSTANCE.clientSelectedSlot();
+        if (swapMode.get() == SwapMode.OFF) return InventorySwap.INSTANCE.clientSelectedSlot();
         int best = BreakSpeedUtil.bestHotbarSlot(mc.player, mc.level, pos, state);
         return best >= 0 ? best : InventorySwap.INSTANCE.clientSelectedSlot();
     }
@@ -580,7 +559,7 @@ public final class SpeedMine extends Module {
     }
 
     public float mineRange() {
-        return rangeNow();
+        return range.get();
     }
 
     /**
@@ -632,7 +611,7 @@ public final class SpeedMine extends Module {
         float prevWidth = RenderState.lineWidth;
         RenderState.lineWidth = 1.5f;
         try {
-            renderTask(renderer, primary, breakAtNow());
+            renderTask(renderer, primary, breakAt.get());
             renderTask(renderer, delayed, 1.0f);
             MineTask rebreakTarget = rebreakTask;
             if (rebreakTarget != null && primary == null) {

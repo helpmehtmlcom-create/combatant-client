@@ -25,6 +25,7 @@ import combatant.client.util.aiming.data.Rotation;
 import combatant.client.util.aiming.features.MovementCorrection;
 import combatant.client.util.aiming.features.processors.anglesmooth.impl.LinearAngleSmooth;
 import combatant.client.util.anticheat.AntiCheatPreset;
+import combatant.client.util.anticheat.PresetRules;
 import combatant.client.util.player.inventory.InventorySwap;
 import combatant.client.util.schematic.RedstoneRules;
 import combatant.client.util.schematic.Schematic;
@@ -131,10 +132,14 @@ public final class SchematicBuilder extends Module {
     private static final Set<String> DEFAULT_HELPER_BLOCKS =
             new LinkedHashSet<>(List.of("minecraft:cobblestone", "minecraft:dirt"));
 
-    private final NumberValue<Float> range = num("range", 4.0f, 2.0f, 4.5f);
+    private final EnumValue<AntiCheatPreset> anticheat = enumMode("anticheat_mode", AntiCheatPreset.CUSTOM);
+    private final NumberValue<Float> range = presetBound(num("range", 4.0f, 2.0f, 4.5f), anticheat,
+            AntiCheatPreset.GRIM_BLOCK_RANGE, AntiCheatPreset.VANILLA_BLOCK_RANGE);
     private final NumberValue<Integer> delay = num("delay", 1, 0, 20);
-    private final NumberValue<Integer> blocksPerTick = num("blocks_per_tick", 1, 1, 4);
-    private final BooleanValue rotate = bool("rotate", true);
+    private final NumberValue<Integer> blocksPerTick = presetBound(num("blocks_per_tick", 1, 1, 4), anticheat,
+            PresetRules.Num.fixed(1), PresetRules.Num.FREE);
+    private final BooleanValue rotate = presetBound(bool("rotate", true), anticheat,
+            PresetRules.Flag.ON, PresetRules.Flag.FREE);
     private final NumberValue<Float> rotationSpeedMin =
             visibleWhen(num("rotation_speed_min", 60.0f, 5.0f, 180.0f), rotate::get);
     private final NumberValue<Float> rotationSpeedMax =
@@ -156,7 +161,6 @@ public final class SchematicBuilder extends Module {
     private final BooleanValue removeHelpers =
             visibleWhen(bool("remove_helpers", true), () -> autoWalk.get() && autoJumpPillar.get());
     private final BooleanValue donutSmpSafe = bool("donutsmp_safe", true);
-    private final EnumValue<AntiCheatPreset> anticheat = enumMode("anticheat_mode", AntiCheatPreset.CUSTOM);
 
     private final Minecraft mc = Minecraft.getInstance();
     private final SchematicState state = SchematicState.INSTANCE;
@@ -280,7 +284,7 @@ public final class SchematicBuilder extends Module {
     }
 
     private double effectiveRange() {
-        double value = anticheat.get().limit((double) range.get(), AntiCheatPreset.GRIM_BLOCK_RANGE, AntiCheatPreset.VANILLA_BLOCK_RANGE);
+        double value = range.get();
         return donutRules() ? Math.min(value, DONUT_RANGE) : value;
     }
 
@@ -301,7 +305,7 @@ public final class SchematicBuilder extends Module {
     }
 
     private boolean effectiveRotate() {
-        return rotate.get() || donutRules() || anticheat.get() == AntiCheatPreset.GRIM;
+        return rotate.get() || donutRules();
     }
 
     @Override

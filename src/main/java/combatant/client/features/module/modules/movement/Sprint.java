@@ -39,6 +39,7 @@ import combatant.client.util.combat.CombatStrikeController;
 import combatant.client.util.combat.SprintController;
 import combatant.client.util.player.MovementUtil;
 import combatant.client.util.anticheat.AntiCheatPreset;
+import combatant.client.util.anticheat.PresetRules;
 
 @ModuleInfo(
         id = "sprint",
@@ -58,10 +59,12 @@ public final class Sprint extends Module {
     // when GrimAC flags (SprintA hunger, SprintD blindness, SprintE horizontal collision, SprintG shallow water,
     // plus vanilla canStartSprinting conditions); vanilla = identical to custom (vanilla has no sprint checks).
     private final EnumValue<AntiCheatPreset> anticheat = enumMode("anticheat_mode", AntiCheatPreset.CUSTOM);
-    private final EnumValue<ResetMode> defaultResetMode =
-            enumMode("default_reset_mode", ResetMode.LEGIT, ResetMode.values());
-    private final BooleanValue omniDirectional =
-            bool("omni_directional", false);
+    private final EnumValue<ResetMode> defaultResetMode = presetBound(
+            enumMode("default_reset_mode", ResetMode.LEGIT, ResetMode.values()),
+            anticheat, PresetRules.Opt.except(ResetMode.LEGIT, ResetMode.FORCE), PresetRules.Opt.any());
+    private final BooleanValue omniDirectional = presetBound(
+            bool("omni_directional", false),
+            anticheat, PresetRules.Flag.OFF, PresetRules.Flag.FREE);
     private final BooleanValue vulcanBypass =
             visibleWhen(bool("omni_directional_vulcan_bypass", true), omniDirectional::get);
     private final BooleanValue avoidSwimStartForce =
@@ -98,7 +101,7 @@ public final class Sprint extends Module {
     @EventHandler
     private void onPacketReceive(PacketEvent.Receive event) {
         LocalPlayer player = mc.player;
-        if (!isEnabled() || !effOmniDirectional() || !vulcanBypass.get() || player == null || mc.level == null) {
+        if (!isEnabled() || !omniDirectional.get() || !vulcanBypass.get() || player == null || mc.level == null) {
             return;
         }
 
@@ -162,7 +165,7 @@ public final class Sprint extends Module {
     }
 
     public CombatStrikeController.SprintResetMode resolveCombatResetMode() {
-        return switch (effDefaultResetMode()) {
+        return switch (defaultResetMode.get()) {
             case LEGIT -> CombatStrikeController.SprintResetMode.LEGIT;
             case PACKET -> CombatStrikeController.SprintResetMode.PACKET;
             case FORCE -> CombatStrikeController.SprintResetMode.NONE;
@@ -170,7 +173,7 @@ public final class Sprint extends Module {
     }
 
     public boolean isLegitResetMode() {
-        return effDefaultResetMode() == ResetMode.LEGIT;
+        return defaultResetMode.get() == ResetMode.LEGIT;
     }
 
     public boolean shouldAllowDirectionalSprint() {
@@ -194,7 +197,7 @@ public final class Sprint extends Module {
 
     private boolean shouldUseOmniDirectional(LocalPlayer player) {
         return isEnabled()
-                && effOmniDirectional()
+                && omniDirectional.get()
                 && canOperate(player)
                 && !shouldSuppressOmniDirectionalSprint(player)
                 && hasMovementInput(player);
@@ -202,7 +205,7 @@ public final class Sprint extends Module {
 
     private boolean shouldHardSuppressSprint() {
         return isEnabled()
-                && effOmniDirectional()
+                && omniDirectional.get()
                 && vulcanBypass.get()
                 && (shouldSuppressScaffoldDirectionalSprint()
                 || vulcanSprintSuppressTicks > 0);
@@ -218,7 +221,7 @@ public final class Sprint extends Module {
     }
 
     private void updateVulcanSprintAGuard(LocalPlayer player) {
-        if (!isEnabled() || !effOmniDirectional() || !vulcanBypass.get() || !canOperate(player)) {
+        if (!isEnabled() || !omniDirectional.get() || !vulcanBypass.get() || !canOperate(player)) {
             resetVulcanSprintAGuard();
             return;
         }
@@ -257,7 +260,7 @@ public final class Sprint extends Module {
     }
 
     private void updateVulcanExternalSprintSuppress(LocalPlayer player) {
-        if (!isEnabled() || !effOmniDirectional() || !vulcanBypass.get() || !canOperate(player)) {
+        if (!isEnabled() || !omniDirectional.get() || !vulcanBypass.get() || !canOperate(player)) {
             vulcanExternalSprintSuppressTicks = 0;
             return;
         }
@@ -326,7 +329,7 @@ public final class Sprint extends Module {
     }
 
     private void markVulcanSprintAJumpWindow() {
-        if (!isEnabled() || !effOmniDirectional() || !vulcanBypass.get()) {
+        if (!isEnabled() || !omniDirectional.get() || !vulcanBypass.get()) {
             return;
         }
 
@@ -392,18 +395,6 @@ public final class Sprint extends Module {
         vulcanSprintJumpGraceTicks = 0;
         vulcanExternalSprintSuppressTicks = 0;
         vulcanSprintABuffer = 0.0;
-    }
-
-    private boolean effOmniDirectional() {
-        return anticheat.get().pick(omniDirectional.get(), false, omniDirectional.get());
-    }
-
-    private ResetMode effDefaultResetMode() {
-        ResetMode chosen = defaultResetMode.get();
-        if (anticheat.get() == AntiCheatPreset.GRIM && chosen == ResetMode.FORCE) {
-            return ResetMode.LEGIT;
-        }
-        return chosen;
     }
 
     private boolean isGrimSprintBlocked(LocalPlayer player) {

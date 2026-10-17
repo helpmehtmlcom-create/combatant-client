@@ -9,6 +9,7 @@ package combatant.client.features.module.modules.player;
 
 import combatant.client.config.common.CommonSettingSchemas;
 import combatant.client.util.anticheat.AntiCheatPreset;
+import combatant.client.util.anticheat.PresetRules;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -100,9 +101,10 @@ public final class NoDelay extends Module {
                             FastBreakMode.values()
                     ),
                     () -> types.get(TYPE_FAST_BREAK));
-    private final NumberValue<Float> fastBreakProgress =
+    private final NumberValue<Float> fastBreakProgress = presetBound(
             visibleWhen(num("noDelayFastBreakProgress", SETTING_FAST_BREAK_PROGRESS, 0.5f, 0.1f, 1.0f),
-                    () -> types.get(TYPE_FAST_BREAK));
+                    () -> types.get(TYPE_FAST_BREAK)),
+            anticheat, PresetRules.Num.fixed(1.0), PresetRules.Num.fixed(0.7));
 
     private final Minecraft mc = Minecraft.getInstance();
 
@@ -301,11 +303,7 @@ public final class NoDelay extends Module {
     }
 
     private float effFastBreakProgress() {
-        return anticheat.get().pick(
-                fastBreakProgress.get(),
-                1.0f,
-                0.7f
-        );
+        return fastBreakProgress.get();
     }
 
     private Direction resolveBreakingDirection(BlockPos breakingPos) {

@@ -23,6 +23,7 @@ import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.helpers.PlacementPreviewRenderer;
 import combatant.client.util.aiming.features.MovementCorrection;
 import combatant.client.util.anticheat.AntiCheatPreset;
+import combatant.client.util.anticheat.PresetRules;
 import combatant.client.util.block.placer.BlockPlacer;
 import combatant.client.util.target.TargetingUtil;
 import net.minecraft.client.Minecraft;
@@ -70,18 +71,22 @@ public final class AutoTrap extends Module {
     // custom = the settings below as set; grim = place range <= 4.5, wall range 0, rotation NORMAL, 1 block/tick;
     // vanilla = 5.5 range/wall range, NO_ROTATION.
     private final EnumValue<AntiCheatPreset> anticheat = enumMode("anticheat_mode", AntiCheatPreset.CUSTOM);
-    private final NumberValue<Double> range = numCommon(
-            "autoTrapRange", "range", CommonSettingSchemas.COMBAT_RANGE, 4.5D, 1.0D, 6.0D);
-    private final NumberValue<Double> wallRange = numCommon(
-            "autoTrapWallRange", "wall_range", CommonSettingSchemas.COMBAT_WALL_RANGE, 3.0D, 0.0D, 6.0D);
+    private final NumberValue<Double> range = presetBound(numCommon(
+            "autoTrapRange", "range", CommonSettingSchemas.COMBAT_RANGE, 4.5D, 1.0D, 6.0D),
+            anticheat, AntiCheatPreset.GRIM_BLOCK_RANGE, AntiCheatPreset.VANILLA_BLOCK_RANGE);
+    private final NumberValue<Double> wallRange = presetBound(numCommon(
+            "autoTrapWallRange", "wall_range", CommonSettingSchemas.COMBAT_WALL_RANGE, 3.0D, 0.0D, 6.0D),
+            anticheat, PresetRules.Num.fixed(0.0), PresetRules.Num.fixed(AntiCheatPreset.VANILLA_BLOCK_RANGE));
     private final NumberValue<Double> enemyRange = num("autoTrapEnemyRange", "enemy_range", 5.0D, 2.0D, 10.0D);
     private final BooleanMapValue targetFilters = groupCommon(
             "autoTrapTargets", "targets", "target", targetDefaults());
     private final EnumValue<TrapMode> mode = enumSetting("autoTrapMode", "mode", TrapMode.FULL, TrapMode.values());
     private final NumberValue<Double> predictTicks = num("autoTrapPredictTicks", "predict_ticks", 0.5D, 0.0D, 3.0D);
     private final BooleanValue autoDisable = bool("autoTrapAutoDisable", "auto_disable", false);
-    private final EnumValue<BlockPlacer.RotationMode> rotation = enumSetting(
-            "autoTrapRotation", "rotation", BlockPlacer.RotationMode.NORMAL, BlockPlacer.RotationMode.values());
+    private final EnumValue<BlockPlacer.RotationMode> rotation = presetBound(enumSetting(
+            "autoTrapRotation", "rotation", BlockPlacer.RotationMode.NORMAL, BlockPlacer.RotationMode.values()),
+            anticheat, PresetRules.Opt.fixed(BlockPlacer.RotationMode.NORMAL),
+            PresetRules.Opt.fixed(BlockPlacer.RotationMode.NO_ROTATION));
     private final EnumValue<MovementCorrection> movementCorrection = enumSetting(
             "autoTrapMovementCorrection", "movement_correction", MovementCorrection.SILENT, MovementCorrection.values());
     private final NumberValue<Integer> delay = num("autoTrapDelay", "delay", 0, 0, 10);
@@ -94,8 +99,8 @@ public final class AutoTrap extends Module {
     private final BlockPlacer blockPlacer = new BlockPlacer(
             this, this, 10,
             this::findPlacementSlot,
-            this::effPlaceRange,
-            this::effWallRange,
+            range::get,
+            wallRange::get,
             delay::get,
             delay::get,
             () -> 0,
@@ -104,7 +109,7 @@ public final class AutoTrap extends Module {
             this::effConstructFailResult,
             () -> true,
             () -> false,
-            this::effRotation,
+            rotation::get,
             movementCorrection::get
     );
     private final List<BlockPos> currentTargets = new ArrayList<>();
@@ -198,20 +203,8 @@ public final class AutoTrap extends Module {
         return null;
     }
 
-    private double effPlaceRange() {
-        return anticheat.get().limit(range.get(), AntiCheatPreset.GRIM_BLOCK_RANGE, AntiCheatPreset.VANILLA_BLOCK_RANGE);
-    }
-
-    private double effWallRange() {
-        return anticheat.get().limit(wallRange.get(), 0.0D, AntiCheatPreset.VANILLA_BLOCK_RANGE);
-    }
-
-    private BlockPlacer.RotationMode effRotation() {
-        return anticheat.get().pick(rotation.get(), BlockPlacer.RotationMode.NORMAL, BlockPlacer.RotationMode.NO_ROTATION);
-    }
-
     private boolean effConstructFailResult() {
-        return effRotation() == BlockPlacer.RotationMode.NO_ROTATION;
+        return rotation.get() == BlockPlacer.RotationMode.NO_ROTATION;
     }
 
     private static boolean isTargetBlock(ItemStack stack) {

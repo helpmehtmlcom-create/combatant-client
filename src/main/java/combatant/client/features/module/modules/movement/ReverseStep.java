@@ -131,6 +131,10 @@ public final class ReverseStep extends Module {
             visibleWhen(num("reverseStepVulcan297StepCMargin", "vulcan297_stepc_margin", 0.004f, 0.0f, 0.05f), () -> mode.get() == Mode.VULCAN_297);
     private final BooleanMapValue vulcan297StepCExempts =
             visibleWhen(group("reverseStepVulcan297StepCExempts", "vulcan297_stepc_exempts", vulcan297StepCExemptDefaults()), () -> mode.get() == Mode.VULCAN_297);
+
+    {
+        presetDisables(anticheat, AntiCheatPreset.GRIM);
+    }
     private boolean initiatedJump;
     private int vulcan297FallTicks;
     private boolean vulcan297Jumped;

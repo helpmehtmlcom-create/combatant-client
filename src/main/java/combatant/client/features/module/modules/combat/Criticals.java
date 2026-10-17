@@ -39,6 +39,7 @@ import combatant.client.features.module.modules.movement.Flight;
 import combatant.client.features.module.modules.movement.Timer;
 import combatant.client.mixins.accessors.ServerboundMovePlayerPacketAccessor;
 import combatant.client.util.anticheat.AntiCheatPreset;
+import combatant.client.util.anticheat.PresetRules;
 import combatant.client.util.click.ClickScheduler;
 import combatant.client.util.target.TargetManager;
 
@@ -50,6 +51,8 @@ import combatant.client.util.target.TargetManager;
 public final class Criticals extends Module {
 
     private static final float VANILLA_JUMP_MOTION = 0.42f;
+    private static final PresetRules.Opt<Mode> GRIM_MODES =
+            PresetRules.Opt.except(Mode.JUMP, Mode.PACKET, Mode.NO_GROUND, Mode.VULCAN_297);
     private static final int JUMP_CRIT_LEAD_TICKS = 4;
     private static final int VULCAN_297_JUMP_RECOVERY_TICKS = 8;
     private static final int VULCAN_297_LANDING_RECOVERY_TICKS = 2;
@@ -60,12 +63,13 @@ public final class Criticals extends Module {
     // crit is a real one, so the packet modes turn into Jump; Jump and Timer stay as chosen. A jump_height below the
     // stock 0.42 is a Simulation flag on every jump (x129 in 200 ticks), so the preset jumps at the stock height.
     private final EnumValue<AntiCheatPreset> anticheat = enumMode("anticheat_mode", AntiCheatPreset.CUSTOM);
-    private final EnumValue<Mode> mode =
+    private final EnumValue<Mode> mode = presetBound(
             enumMode(
                     "mode",
                     Mode.JUMP,
                     Mode.values()
-            );
+            ),
+            anticheat, GRIM_MODES, PresetRules.Opt.any());
     private final EnumValue<SelectionMode> selectionMode =
             enumCommon(
                     "selection_mode",
@@ -89,14 +93,15 @@ public final class Criticals extends Module {
                     StopSprintingMode.LEGIT,
                     StopSprintingMode.values()
             ), whenSprinting::get);
-    private final NumberValue<Float> jumpHeight =
+    private final NumberValue<Float> jumpHeight = presetBound(
             visibleWhen(num(
                     "jump_height",
                     "jump_height",
                     0.42f,
                     0.1f,
                     0.42f
-            ), () -> mode.get() == Mode.JUMP);
+            ), () -> mode.get() == Mode.JUMP),
+            anticheat, PresetRules.Num.fixed(VANILLA_JUMP_MOTION), PresetRules.Num.FREE);
     private final NumberValue<Float> jumpRange =
             visibleWhen(numCommon(
                     "jump_range",
@@ -232,7 +237,7 @@ public final class Criticals extends Module {
         if (!isEnabled() || getMode() != Mode.JUMP) return;
 
         if (adjustNextJump && Math.abs(event.getMotion() - VANILLA_JUMP_MOTION) < 1.0E-4f) {
-            event.setMotion(anticheat.get().pick(jumpHeight.get(), VANILLA_JUMP_MOTION, jumpHeight.get()));
+            event.setMotion(jumpHeight.get());
         }
         adjustNextJump = false;
     }
@@ -590,16 +595,13 @@ public final class Criticals extends Module {
     }
 
     private Mode getMode() {
-        Mode chosen = killAuraModeOverride != null ? killAuraModeOverride : mode.get();
-        return anticheat.get() == AntiCheatPreset.GRIM ? grimSafeMode(chosen) : chosen;
+        if (killAuraModeOverride == null) return mode.get();
+        return anticheat.get() == AntiCheatPreset.GRIM ? grimSafeMode(killAuraModeOverride) : killAuraModeOverride;
     }
 
-    /** The mode GrimAC tolerates in place of {@code chosen}. */
+    /** The mode GrimAC tolerates in place of {@code chosen}; also applied to KillAura's mode override, which skips the setting. */
     static Mode grimSafeMode(Mode chosen) {
-        return switch (chosen) {
-            case PACKET, NO_GROUND, VULCAN_297 -> Mode.JUMP;
-            default -> chosen;
-        };
+        return GRIM_MODES.options().contains(chosen) ? chosen : GRIM_MODES.fallback();
     }
 
     private SelectionMode getSelectionMode() {

@@ -32,6 +32,8 @@ import combatant.client.runtime.RuntimeGate;
 import combatant.client.runtime.error.ErrorHandler;
 import combatant.client.input.CombatantInput;
 import combatant.client.input.InputScope;
+import combatant.client.util.anticheat.AntiCheatPreset;
+import combatant.client.util.anticheat.PresetRules;
 import combatant.client.util.logging.DebugLog;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.client.Minecraft;
@@ -725,6 +727,78 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
             def.availableWhen(supplier, reasonWhenUnavailable);
         }
         return value;
+    }
+
+    // ---- Anticheat preset bounds: declared once at the setting, seen by the GUI, config apply and the module ----
+
+    /**
+     * Binds a number to the module's anticheat preset. While the preset is GRIM/VANILLA the slider range narrows per
+     * the rules and {@code get()} returns the stored value clamped into it; the stored value is still what gets
+     * saved. A rule that pins one value shows the setting locked.
+     */
+    protected final <N extends Number> NumberValue<N> presetBound(NumberValue<N> value,
+                                                                  EnumValue<AntiCheatPreset> preset,
+                                                                  PresetRules.Num grim,
+                                                                  PresetRules.Num vanilla) {
+        PresetRules.bind(value, preset::get, grim, vanilla);
+        lockWhenForced(value, preset, value::isForced);
+        return value;
+    }
+
+    /** GRIM never above {@code grimMax}; VANILLA pinned to {@code vanillaValue}. */
+    protected final <N extends Number> NumberValue<N> presetBound(NumberValue<N> value,
+                                                                  EnumValue<AntiCheatPreset> preset,
+                                                                  double grimMax,
+                                                                  double vanillaValue) {
+        return presetBound(value, preset, PresetRules.Num.max(grimMax), PresetRules.Num.fixed(vanillaValue));
+    }
+
+    /**
+     * Binds an enum to the preset: only the allowed options are offered, a stored option that is not allowed reads
+     * as the rule's fallback, and a single remaining option shows the setting locked.
+     */
+    protected final <E extends Enum<E>> EnumValue<E> presetBound(EnumValue<E> value,
+                                                                 EnumValue<AntiCheatPreset> preset,
+                                                                 PresetRules.Opt<E> grim,
+                                                                 PresetRules.Opt<E> vanilla) {
+        PresetRules.bind(value, preset::get, grim, vanilla);
+        lockWhenForced(value, preset, value::isForced);
+        return value;
+    }
+
+    /** Binds a toggle to the preset: a forced value reads as that value and shows the setting locked. */
+    protected final BooleanValue presetBound(BooleanValue value,
+                                             EnumValue<AntiCheatPreset> preset,
+                                             PresetRules.Flag grim,
+                                             PresetRules.Flag vanilla) {
+        PresetRules.bind(value, preset::get, grim, vanilla);
+        lockWhenForced(value, preset, value::isForced);
+        return value;
+    }
+
+    /**
+     * Marks every setting of this module except the preset selector itself as not applied while {@code preset} is
+     * {@code whenPreset}, for modules that do nothing under that preset. Call once, after all settings are declared.
+     */
+    protected final void presetDisables(EnumValue<AntiCheatPreset> preset, AntiCheatPreset whenPreset) {
+        SettingDef presetDef = declaredSettingDefsByValue.get(preset);
+        for (SettingDef def : declaredSettingDefs) {
+            if (def == presetDef || def.value() == null) continue;
+            def.alsoUnavailableWhen(() -> preset.get() == whenPreset, () -> presetReason(whenPreset, "disabled"));
+        }
+    }
+
+    private void lockWhenForced(ConfigValue<?> value, EnumValue<AntiCheatPreset> preset, Supplier<Boolean> forced) {
+        SettingDef def = declaredSettingDefsByValue.get(value);
+        if (def != null) {
+            def.alsoUnavailableWhen(forced, () -> presetReason(preset.get(), "locked"));
+        }
+    }
+
+    private static String presetReason(AntiCheatPreset preset, String kind) {
+        String key = "setting.common.anticheat." + kind + "." + preset.getId();
+        String translated = I18n.get(key);
+        return translated.equals(key) ? kind + " (" + preset.getId() + ")" : translated;
     }
 
     private void declare(ConfigValue<?> value, SettingDef def) {

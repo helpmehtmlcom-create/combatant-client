@@ -8,6 +8,7 @@
 package combatant.client.features.module.modules.combat;
 
 import combatant.client.util.anticheat.AntiCheatPreset;
+import combatant.client.util.anticheat.PresetRules;
 import combatant.client.render.engine.text.BuiltinFontCatalog;
 import combatant.client.config.values.*;
 import combatant.client.features.module.modules.combat.autocrystal.*;
@@ -133,19 +134,21 @@ public class AutoCrystal extends Module {
     // Acting on the spawn/remove packet instead of the next tick saves up to a tick per crystal.
     // Both only fire when the last rotation sent already points at the crystal or base block, so
     // they never add a rotation the server did not see.
-    private final BooleanValue instantBreak =
-            visibleWhen(bool("autocrystalInstantBreak", "instant_break", true), breakEnabled::get);
-    private final BooleanValue instantPlace =
-            visibleWhen(bool("autocrystalInstantPlace", "instant_place", true), placeEnabled::get);
+    private final BooleanValue instantBreak = presetBound(
+            visibleWhen(bool("autocrystalInstantBreak", "instant_break", true), breakEnabled::get),
+            anticheat, PresetRules.Flag.OFF, PresetRules.Flag.ON);
+    private final BooleanValue instantPlace = presetBound(
+            visibleWhen(bool("autocrystalInstantPlace", "instant_place", true), placeEnabled::get),
+            anticheat, PresetRules.Flag.OFF, PresetRules.Flag.ON);
     private final NumberValue<Float> placeRange =
-            numCommon(
+            presetBound(numCommon(
                     "autocrystalPlaceRange",
                     "place_range",
                     CommonSettingSchemas.PLACEMENT_RANGE,
                     5.0f,
                     1.0f,
                     6.0f
-            );
+            ), anticheat, AntiCheatPreset.GRIM_BLOCK_RANGE, AntiCheatPreset.VANILLA_BLOCK_RANGE);
     private final EnumValue<AutoCrystalPlacementMode> placementMode =
             visibleWhen(enumCommon(
                     "autocrystalPlacementMode",
@@ -155,32 +158,32 @@ public class AutoCrystal extends Module {
                     AutoCrystalPlacementMode.values()
             ), placeEnabled::get);
     private final NumberValue<Float> wallRange =
-            visibleWhen(numCommon(
+            presetBound(visibleWhen(numCommon(
                     "autocrystalWallRange",
                     "wall_range",
                     CommonSettingSchemas.PLACEMENT_WALL_RANGE,
                     5.0f,
                     0.0f,
                     6.0f
-            ), () -> placeEnabled.get() && placementMode.get() == AutoCrystalPlacementMode.DEFAULT);
+            ), () -> placeEnabled.get() && placementMode.get() == AutoCrystalPlacementMode.DEFAULT), anticheat, 3.0, AntiCheatPreset.VANILLA_BLOCK_RANGE);
     private final NumberValue<Float> breakRange =
-            numCommon(
+            presetBound(numCommon(
                     "autocrystalBreakRange",
                     "break_range",
                     CommonSettingSchemas.PLACEMENT_BREAK_RANGE,
                     5.0f,
                     1.0f,
                     6.0f
-            );
+            ), anticheat, AntiCheatPreset.GRIM_ENTITY_RANGE, AntiCheatPreset.VANILLA_ENTITY_RANGE);
     private final NumberValue<Float> breakWallRange =
-            numCommon(
+            presetBound(numCommon(
                     "autocrystalBreakWallRange",
                     "break_wall_range",
                     CommonSettingSchemas.PLACEMENT_BREAK_WALL_RANGE,
                     5.0f,
                     0.0f,
                     6.0f
-            );
+            ), anticheat, 3.0, AntiCheatPreset.VANILLA_ENTITY_RANGE);
     private final BooleanMapValue targetToggles = groupCommon(
             "autocrystalTargets",
             "targets",
@@ -346,34 +349,12 @@ public class AutoCrystal extends Module {
         // }
     }
 
-    private float effPlaceRange() {
-        return anticheat.get().limit(placeRange.get(), (float) AntiCheatPreset.GRIM_BLOCK_RANGE, (float) AntiCheatPreset.VANILLA_BLOCK_RANGE);
-    }
-
-    private float effWallRange() {
-        return anticheat.get().limit(wallRange.get(), 3.0f, (float) AntiCheatPreset.VANILLA_BLOCK_RANGE);
-    }
-
-    private float effBreakRange() {
-        return anticheat.get().limit(breakRange.get(), (float) AntiCheatPreset.GRIM_ENTITY_RANGE, (float) AntiCheatPreset.VANILLA_ENTITY_RANGE);
-    }
-
-    private float effBreakWallRange() {
-        return anticheat.get().limit(breakWallRange.get(), (float) AntiCheatPreset.GRIM_ENTITY_RANGE, (float) AntiCheatPreset.VANILLA_ENTITY_RANGE);
-    }
-
     // The instant paths run from AutoCrystalPacketMixin whenever the client applies a crystal spawn or removal, which
     // is between two ticks: the attack or placement leaves after the previous tick's movement packet and ahead of a
     // pong. GrimAC's Post check flags that order, and RotationPlace judges the placement against the next tick's
     // rotation rather than the one the rotation check above used. The tick loop does the same job a tick later from
-    // the rotation action, ahead of the movement packet, so the grim preset leaves it to the loop.
-    private boolean effInstantBreak() {
-        return anticheat.get().pick(instantBreak.get(), false, true);
-    }
-
-    private boolean effInstantPlace() {
-        return anticheat.get().pick(instantPlace.get(), false, true);
-    }
+    // the rotation action, ahead of the movement packet, so the grim preset forces instantBreak/instantPlace off
+    // (presetBound on the settings) and leaves it to the loop.
 
     @Override
     public WorldPhase getWorldPhase() {
@@ -766,7 +747,7 @@ public class AutoCrystal extends Module {
                 placementContext,
                 target,
                 mc.player.position(),
-                Mth.ceil(effPlaceRange())
+                Mth.ceil(placeRange.get())
         );
         lastPlaceCandidateCount = result.scannedCandidates();
         lastPlaceSelfDamageRejectCount = result.selfDamageRejects();
@@ -808,7 +789,7 @@ public class AutoCrystal extends Module {
                 baseContext,
                 target,
                 List.of(target.position()),
-                Mth.ceil(effPlaceRange()),
+                Mth.ceil(placeRange.get()),
                 baseMinDamageDelta.get()
         );
         lastBaseScannedCount = basePlanner.lastScanned();
@@ -950,8 +931,8 @@ public class AutoCrystal extends Module {
         RotationWithVector rotation = RotationRaytrace.raytraceBox(
                 mc.player.getEyePosition(),
                 crystal.getBoundingBox(),
-                effBreakRange(),
-                effBreakWallRange()
+                breakRange.get(),
+                breakWallRange.get()
         );
         if (rotation == null) {
             rotation = new RotationWithVector(
@@ -1127,19 +1108,19 @@ public class AutoCrystal extends Module {
     public void onCrystalSpawned(EndCrystal crystal) {
         if (!isEnabled() || mc.player == null || mc.level == null || crystal == null) return;
         crystalTracker.removeAwaitingPositionsNear(crystal);
-        if (!breakEnabled.get() || !effInstantBreak() || target == null) return;
+        if (!breakEnabled.get() || !instantBreak.get() || target == null) return;
         if (isDeadCrystal(crystal.getId())) return;
-        if (usesRotationSettings() && !serverRotationHits(crystal.getBoundingBox(), effBreakRange())) return;
+        if (usesRotationSettings() && !serverRotationHits(crystal.getBoundingBox(), breakRange.get())) return;
         // attackCrystal re-checks delay, range, min damage and self damage.
         attackCrystal(crystal, null);
     }
 
     /** Main thread, right after the client removes a crystal: the spot is free again, place into it now. */
     public void onCrystalsRemoved() {
-        if (!isEnabled() || !placeEnabled.get() || !effInstantPlace() || mc.player == null || mc.level == null) return;
+        if (!isEnabled() || !placeEnabled.get() || !instantPlace.get() || mc.player == null || mc.level == null) return;
         AutoCrystalPlaceData candidate = bestCandidate;
         if (candidate == null || target == null || findCrystalHand(mc.player) == null) return;
-        if (usesRotationSettings() && !serverRotationHits(new AABB(candidate.pos()), effPlaceRange())) return;
+        if (usesRotationSettings() && !serverRotationHits(new AABB(candidate.pos()), placeRange.get())) return;
         // tryPlaceCrystal re-validates the spot and damage against the world as it is now.
         tryPlaceCrystal(candidate.pos());
     }
@@ -1153,7 +1134,7 @@ public class AutoCrystal extends Module {
         if (server == null || hit == null || mc.player == null) return false;
         return AutoCrystalInteractionUtil.rayEntersFace(
                 mc.player.getEyePosition(), server.directionVector(), hit.getBlockPos(), hit.getDirection(),
-                effPlaceRange() + 1.0);
+                placeRange.get() + 1.0);
     }
 
     private boolean serverRotationHits(AABB box, double range) {
@@ -1182,8 +1163,8 @@ public class AutoCrystal extends Module {
                 pos,
                 crystalVec,
                 placementMode.get(),
-                effPlaceRange(),
-                effWallRange()
+                placeRange.get(),
+                wallRange.get()
         );
     }
 
@@ -1526,7 +1507,7 @@ public class AutoCrystal extends Module {
 
         @Override
         public float placeRange() {
-            return effPlaceRange();
+            return placeRange.get();
         }
 
         @Override
@@ -1618,12 +1599,12 @@ public class AutoCrystal extends Module {
 
         @Override
         public float breakRange() {
-            return effBreakRange();
+            return breakRange.get();
         }
 
         @Override
         public float breakWallRange() {
-            return effBreakWallRange();
+            return breakWallRange.get();
         }
 
         @Override

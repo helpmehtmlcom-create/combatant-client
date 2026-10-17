@@ -22,6 +22,7 @@ import combatant.client.features.module.WorldPhase;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.util.aiming.features.MovementCorrection;
 import combatant.client.util.anticheat.AntiCheatPreset;
+import combatant.client.util.anticheat.PresetRules;
 import combatant.client.util.block.placer.BlockPlacer;
 import combatant.client.util.target.TargetingUtil;
 import net.minecraft.client.Minecraft;
@@ -69,10 +70,12 @@ public final class HoleFill extends Module {
     // custom = the settings below as set; grim = place range <= 4.5, wall range 0, rotation NORMAL, 1 block/tick;
     // vanilla = 5.5 range/wall range, NO_ROTATION.
     private final EnumValue<AntiCheatPreset> anticheat = enumMode("anticheat_mode", AntiCheatPreset.CUSTOM);
-    private final NumberValue<Double> range = numCommon(
-            "holeFillRange", "range", CommonSettingSchemas.COMBAT_RANGE, 4.5D, 1.0D, 6.0D);
-    private final NumberValue<Double> wallRange = numCommon(
-            "holeFillWallRange", "wall_range", CommonSettingSchemas.COMBAT_WALL_RANGE, 3.0D, 0.0D, 6.0D);
+    private final NumberValue<Double> range = presetBound(numCommon(
+            "holeFillRange", "range", CommonSettingSchemas.COMBAT_RANGE, 4.5D, 1.0D, 6.0D),
+            anticheat, AntiCheatPreset.GRIM_BLOCK_RANGE, AntiCheatPreset.VANILLA_BLOCK_RANGE);
+    private final NumberValue<Double> wallRange = presetBound(numCommon(
+            "holeFillWallRange", "wall_range", CommonSettingSchemas.COMBAT_WALL_RANGE, 3.0D, 0.0D, 6.0D),
+            anticheat, PresetRules.Num.fixed(0.0), PresetRules.Num.fixed(AntiCheatPreset.VANILLA_BLOCK_RANGE));
     private final NumberValue<Double> enemyRange = num("holeFillEnemyRange", "enemy_range", 6.0D, 2.0D, 12.0D);
     private final BooleanMapValue targetFilters = groupCommon(
             "holeFillTargets", "targets", "target", targetDefaults());
@@ -81,8 +84,10 @@ public final class HoleFill extends Module {
     private final NumberValue<Integer> maxHoles = num("holeFillMaxHoles", "max_holes", 8, 1, 32);
     private final NumberValue<Integer> scanInterval = num("holeFillScanInterval", "scan_interval_ticks", 2, 1, 10);
     private final BooleanValue autoDisable = bool("holeFillAutoDisable", "auto_disable", false);
-    private final EnumValue<BlockPlacer.RotationMode> rotation = enumSetting(
-            "holeFillRotation", "rotation", BlockPlacer.RotationMode.NORMAL, BlockPlacer.RotationMode.values());
+    private final EnumValue<BlockPlacer.RotationMode> rotation = presetBound(enumSetting(
+            "holeFillRotation", "rotation", BlockPlacer.RotationMode.NORMAL, BlockPlacer.RotationMode.values()),
+            anticheat, PresetRules.Opt.fixed(BlockPlacer.RotationMode.NORMAL),
+            PresetRules.Opt.fixed(BlockPlacer.RotationMode.NO_ROTATION));
     private final NumberValue<Integer> delay = num("holeFillDelay", "delay", 0, 0, 10);
     private final BooleanValue render = bool("holeFillRender", "render", true);
     private final RGBAColorValue fillColor = color("holeFillFillColor", "fill_color", "#285A9C44");
@@ -93,8 +98,8 @@ public final class HoleFill extends Module {
     private final BlockPlacer blockPlacer = new BlockPlacer(
             this, this, 10,
             this::findPlacementSlot,
-            this::effPlaceRange,
-            this::effWallRange,
+            range::get,
+            wallRange::get,
             delay::get,
             delay::get,
             () -> 0,
@@ -103,7 +108,7 @@ public final class HoleFill extends Module {
             this::effConstructFailResult,
             () -> true,
             () -> false,
-            this::effRotation,
+            rotation::get,
             () -> MovementCorrection.SILENT
     );
     private final List<BlockPos> currentTargets = new ArrayList<>();
@@ -155,8 +160,8 @@ public final class HoleFill extends Module {
         }
 
         BlockPos origin = player.blockPosition();
-        int radius = (int) Math.ceil(effPlaceRange());
-        double placementRangeSq = effPlaceRange() * effPlaceRange();
+        int radius = (int) Math.ceil(range.get());
+        double placementRangeSq = range.get() * range.get();
         double enemyRangeSq = enemyRange.get() * enemyRange.get();
         List<HoleCandidate> candidates = new ArrayList<>();
 
@@ -190,7 +195,7 @@ public final class HoleFill extends Module {
     }
 
     private List<Player> findOpponents() {
-        double searchRange = enemyRange.get() + effPlaceRange();
+        double searchRange = enemyRange.get() + range.get();
         List<LivingEntity> targets = TargetingUtil.findTargets(mc, new TargetingUtil.TargetingSettings(
                 searchRange,
                 180.0F,
@@ -236,20 +241,8 @@ public final class HoleFill extends Module {
         return null;
     }
 
-    private double effPlaceRange() {
-        return anticheat.get().limit(range.get(), AntiCheatPreset.GRIM_BLOCK_RANGE, AntiCheatPreset.VANILLA_BLOCK_RANGE);
-    }
-
-    private double effWallRange() {
-        return anticheat.get().limit(wallRange.get(), 0.0D, AntiCheatPreset.VANILLA_BLOCK_RANGE);
-    }
-
-    private BlockPlacer.RotationMode effRotation() {
-        return anticheat.get().pick(rotation.get(), BlockPlacer.RotationMode.NORMAL, BlockPlacer.RotationMode.NO_ROTATION);
-    }
-
     private boolean effConstructFailResult() {
-        return effRotation() == BlockPlacer.RotationMode.NO_ROTATION;
+        return rotation.get() == BlockPlacer.RotationMode.NO_ROTATION;
     }
 
     private boolean isTargetItem(ItemStack stack) {

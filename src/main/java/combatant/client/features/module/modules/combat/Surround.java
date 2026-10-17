@@ -29,6 +29,7 @@ import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.helpers.PlacementPreviewRenderer;
 import combatant.client.util.aiming.features.MovementCorrection;
 import combatant.client.util.anticheat.AntiCheatPreset;
+import combatant.client.util.anticheat.PresetRules;
 import combatant.client.util.block.placer.BlockPlacer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -66,8 +67,9 @@ public final class Surround extends Module {
     private final EnumValue<BlockPriority> blockPriority = enumCommon(
             "surroundBlockPriority", "block_priority",
             CommonSettingSchemas.SHELL_BLOCK_PRIORITY, BlockPriority.ANY, BlockPriority.values());
-    private final NumberValue<Integer> blocksPerTick = numCommon(
-            "surroundBlocksPerTick", "blocks_per_tick", CommonSettingSchemas.SHELL_BLOCKS_PER_TICK, 4, 1, 8);
+    private final NumberValue<Integer> blocksPerTick = presetBound(numCommon(
+            "surroundBlocksPerTick", "blocks_per_tick", CommonSettingSchemas.SHELL_BLOCKS_PER_TICK, 4, 1, 8),
+            anticheat, PresetRules.Num.fixed(1), PresetRules.Num.fixed(8));
     private final BooleanValue dynamicHitbox = boolCommon(
             "surroundDynamicHitbox", "dynamic_hitbox", CommonSettingSchemas.SHELL_DYNAMIC_HITBOX, true);
     private final BooleanValue support = boolCommon("surroundSupport", "support", CommonSettingSchemas.SHELL_SUPPORT, true);
@@ -89,14 +91,18 @@ public final class Surround extends Module {
     private final BooleanValue autoDisable = bool("surroundAutoDisable", "auto_disable", false);
     private final BooleanValue warnNoBlocks = boolCommon(
             "surroundWarnNoBlocks", "warn_no_blocks", CommonSettingSchemas.SHELL_WARN_NO_BLOCKS, true);
-    private final EnumValue<BlockPlacer.RotationMode> rotation = enumSetting(
-            "surroundRotation", "rotation", BlockPlacer.RotationMode.NORMAL, BlockPlacer.RotationMode.values());
+    private final EnumValue<BlockPlacer.RotationMode> rotation = presetBound(enumSetting(
+            "surroundRotation", "rotation", BlockPlacer.RotationMode.NORMAL, BlockPlacer.RotationMode.values()),
+            anticheat, PresetRules.Opt.fixed(BlockPlacer.RotationMode.NORMAL),
+            PresetRules.Opt.fixed(BlockPlacer.RotationMode.NO_ROTATION));
     private final EnumValue<MovementCorrection> movementCorrection = enumSetting(
             "surroundMovementCorrection", "movement_correction", MovementCorrection.SILENT, MovementCorrection.values());
-    private final NumberValue<Double> range = numCommon(
-            "surroundRange", "range", CommonSettingSchemas.COMBAT_RANGE, 4.5D, 1.0D, 6.0D);
-    private final NumberValue<Double> wallRange = numCommon(
-            "surroundWallRange", "wall_range", CommonSettingSchemas.COMBAT_WALL_RANGE, 3.0D, 0.0D, 6.0D);
+    private final NumberValue<Double> range = presetBound(numCommon(
+            "surroundRange", "range", CommonSettingSchemas.COMBAT_RANGE, 4.5D, 1.0D, 6.0D),
+            anticheat, AntiCheatPreset.GRIM_BLOCK_RANGE, AntiCheatPreset.VANILLA_BLOCK_RANGE);
+    private final NumberValue<Double> wallRange = presetBound(numCommon(
+            "surroundWallRange", "wall_range", CommonSettingSchemas.COMBAT_WALL_RANGE, 3.0D, 0.0D, 6.0D),
+            anticheat, PresetRules.Num.fixed(0.0), PresetRules.Num.fixed(AntiCheatPreset.VANILLA_BLOCK_RANGE));
     private final NumberValue<Integer> delay = num("surroundDelay", "delay", 0, 0, 10);
     private final BooleanValue render = bool("surroundRender", "render", true);
     private final RGBAColorValue fillColor = color("surroundFillColor", "fill_color", "#285A9C44");
@@ -107,8 +113,8 @@ public final class Surround extends Module {
     private final BlockPlacer blockPlacer = new BlockPlacer(
             this, this, 10,
             this::findPlacementSlot,
-            this::effPlaceRange,
-            this::effWallRange,
+            range::get,
+            wallRange::get,
             delay::get,
             delay::get,
             swapBackDelay::get,
@@ -118,8 +124,8 @@ public final class Surround extends Module {
             () -> true,
             placeWhileUsing::get,
             () -> false,
-            this::effBlocksPerTick,
-            this::effRotation,
+            blocksPerTick::get,
+            rotation::get,
             movementCorrection::get
     );
     private final CrystalClearer crystalClearer = new CrystalClearer();
@@ -289,28 +295,13 @@ public final class Surround extends Module {
         return player == null ? null : ShellBlocks.find(player, blockPriority.get());
     }
 
-    private double effPlaceRange() {
-        return anticheat.get().limit(range.get(), AntiCheatPreset.GRIM_BLOCK_RANGE, AntiCheatPreset.VANILLA_BLOCK_RANGE);
-    }
-
-    private double effWallRange() {
-        return anticheat.get().limit(wallRange.get(), 0.0D, AntiCheatPreset.VANILLA_BLOCK_RANGE);
-    }
-
+    /** Crystal clearing is an entity interaction, so it has its own limit on the one {@code range} setting. */
     private double effCrystalRange() {
         return anticheat.get().limit(range.get(), AntiCheatPreset.GRIM_ENTITY_RANGE, AntiCheatPreset.VANILLA_ENTITY_RANGE);
     }
 
-    private BlockPlacer.RotationMode effRotation() {
-        return anticheat.get().pick(rotation.get(), BlockPlacer.RotationMode.NORMAL, BlockPlacer.RotationMode.NO_ROTATION);
-    }
-
     private boolean effConstructFailResult() {
-        return effRotation() == BlockPlacer.RotationMode.NO_ROTATION;
-    }
-
-    private int effBlocksPerTick() {
-        return anticheat.get().limit(blocksPerTick.get(), 1, blocksPerTick.getMax());
+        return rotation.get() == BlockPlacer.RotationMode.NO_ROTATION;
     }
 
     @Override

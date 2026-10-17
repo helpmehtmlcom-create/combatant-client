@@ -43,6 +43,10 @@ public class AirJump extends Module {
     private final EnumValue<AntiCheatPreset> anticheat = enumMode("anticheat_mode", AntiCheatPreset.CUSTOM);
     private final EnumValue<Mode> mode =
             enumMode("mode", Mode.NORMAL, Mode.values());
+
+    {
+        presetDisables(anticheat, AntiCheatPreset.GRIM);
+    }
     private int level;
     private boolean maintainLevelReady;
 

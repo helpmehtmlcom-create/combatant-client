@@ -28,6 +28,7 @@ import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.modules.movement.speed.BhopInput;
 import combatant.client.mixins.accessors.ServerboundMovePlayerPacketAccessor;
 import combatant.client.util.anticheat.AntiCheatPreset;
+import combatant.client.util.anticheat.PresetRules;
 import combatant.client.util.player.MovementUtil;
 
 @ModuleInfo(
@@ -43,7 +44,9 @@ public final class Speed extends Module {
     // custom = the mode below as set; grim = bhop (every other mode writes velocities GrimAC's movement prediction
     // does not allow); vanilla = the mode as set, there is no faster server-side limit to switch to.
     private final EnumValue<AntiCheatPreset> anticheat = enumMode("anticheat_mode", AntiCheatPreset.CUSTOM);
-    private final EnumValue<Mode> mode = enumMode("mode", Mode.NCP);
+    private final EnumValue<Mode> mode = presetBound(
+            enumMode("mode", Mode.NCP),
+            anticheat, PresetRules.Opt.fixed(Mode.BHOP), PresetRules.Opt.any());
     private boolean lastOnGround = true;
     private int airTicks;
 
@@ -65,7 +68,7 @@ public final class Speed extends Module {
         LocalPlayer player = mc.player;
         updateAirTicks(player);
 
-        switch (effectiveMode()) {
+        switch (mode.get()) {
             case NCP -> handleNcp(player);
             case VULCAN_286 -> handleVulcan286(player);
             case VULCAN_288 -> handleVulcan288(player);
@@ -82,7 +85,7 @@ public final class Speed extends Module {
      */
     @EventHandler
     private void onMovementInput(MovementInputEvent event) {
-        if (!isEnabled() || effectiveMode() != Mode.BHOP) return;
+        if (!isEnabled() || mode.get() != Mode.BHOP) return;
 
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc == null ? null : mc.player;
@@ -99,7 +102,7 @@ public final class Speed extends Module {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.player == null) return;
         if (event.getType() != MoverType.SELF) return;
-        if (effectiveMode() != Mode.NCP) return;
+        if (mode.get() != Mode.NCP) return;
 
         LocalPlayer player = mc.player;
         if (!canSpeed(player) || !MovementUtil.isMoving() || player.onGround()) return;
@@ -120,7 +123,7 @@ public final class Speed extends Module {
         LocalPlayer player = mc.player;
         if (!canSpeed(player)) return;
 
-        switch (effectiveMode()) {
+        switch (mode.get()) {
             case VULCAN_288 -> {
                 if (player.getDeltaMovement().y < 0.0) {
                     ((ServerboundMovePlayerPacketAccessor) packet).combatant$setOnGround(true);
@@ -313,10 +316,6 @@ public final class Speed extends Module {
         }
 
         return false;
-    }
-
-    private Mode effectiveMode() {
-        return anticheat.get().pick(mode.get(), Mode.BHOP, mode.get());
     }
 
     private void resetState() {

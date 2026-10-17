@@ -8,6 +8,7 @@
 package combatant.client.features.module.modules.combat;
 
 import combatant.client.util.anticheat.AntiCheatPreset;
+import combatant.client.util.anticheat.PresetRules;
 import combatant.client.config.values.*;
 import combatant.client.util.combat.*;
 import lombok.Getter;
@@ -73,7 +74,7 @@ public class KillAura extends Module {
     // custom = the settings below as set; grim = attack reach at most 3.0 and a legit sprint reset;
     // vanilla = full 6.0 reach, for servers with no anticheat.
     private final EnumValue<AntiCheatPreset> anticheat = enumCommon("anticheat_mode", CommonSettingSchemas.ANTICHEAT_MODE, AntiCheatPreset.CUSTOM);
-    private final NumberValue<Double> range =
+    private final NumberValue<Double> range = presetBound(
             numCommon(
                     "killauraRange",
                     "range",
@@ -81,7 +82,9 @@ public class KillAura extends Module {
                     3.2,
                     1.0,
                     6.0
-            );
+            ),
+            anticheat, AntiCheatPreset.GRIM_ENTITY_RANGE, AntiCheatPreset.VANILLA_ENTITY_RANGE
+    );
     private final EnumValue<Reach.Mode> reachMode =
             enumCommon(
                     "killauraReachMode",
@@ -196,14 +199,19 @@ public class KillAura extends Module {
                     "protocol_heuristics",
                     CommonSettingSchemas.COMBAT_PROTOCOL_HEURISTICS
             ), () -> protocolMode.get() == ProtocolMode.AUTO);
-    private final EnumValue<SprintResetMode> sprintResetMode =
+    /** GrimAC flags TimerLimit for the default and none resets while the player moves; legit and packet stay clean. */
+    private final EnumValue<SprintResetMode> sprintResetMode = presetBound(
             enumCommon(
                     "killauraSprintResetMode",
                     "sprint_reset_mode",
                     CommonSettingSchemas.COMBAT_SPRINT_RESET,
                     SprintResetMode.DEFAULT,
                     SprintResetMode.values()
-            );
+            ),
+            anticheat,
+            PresetRules.Opt.except(SprintResetMode.LEGIT, SprintResetMode.DEFAULT, SprintResetMode.NONE),
+            PresetRules.Opt.any()
+    );
     private final EnumValue<Criticals.SelectionMode> criticalsSelection =
             visibleWhen(enumCommon(
                     "killauraCriticals",
@@ -1156,11 +1164,11 @@ public class KillAura extends Module {
     }
 
     public double getRange() {
-        return effectiveRange();
+        return range.get();
     }
 
     public double getAcquireRange() {
-        return effectiveRange() + Math.max(0.0, acquireRangeIncrement.get());
+        return range.get() + Math.max(0.0, acquireRangeIncrement.get());
     }
 
     public boolean usesDynamicReach() {
@@ -1172,7 +1180,7 @@ public class KillAura extends Module {
     }
 
     private double getEffectiveAttackRange(Entity target) {
-        return resolveDynamicReach(target, effectiveRange());
+        return resolveDynamicReach(target, range.get());
     }
 
     private double getEffectiveAcquireRange(Entity target) {
@@ -1221,21 +1229,8 @@ public class KillAura extends Module {
         return smooth.calculateTicks(base, rotation);
     }
 
-    private double effectiveRange() {
-        return anticheat.get().limit(range.get(), AntiCheatPreset.GRIM_ENTITY_RANGE, AntiCheatPreset.VANILLA_ENTITY_RANGE);
-    }
-
-    /** GrimAC flags TimerLimit for the default and none resets while the player moves; legit and packet stay clean. */
-    private SprintResetMode effectiveSprintReset() {
-        SprintResetMode chosen = sprintResetMode.get();
-        if (anticheat.get() == AntiCheatPreset.GRIM && (chosen == SprintResetMode.DEFAULT || chosen == SprintResetMode.NONE)) {
-            return SprintResetMode.LEGIT;
-        }
-        return chosen;
-    }
-
     private CombatStrikeController.SprintResetMode resolveStrikeResetMode() {
-        return switch (effectiveSprintReset()) {
+        return switch (sprintResetMode.get()) {
             case DEFAULT -> CombatStrikeController.SprintResetMode.DEFAULT;
             case LEGIT -> CombatStrikeController.SprintResetMode.LEGIT;
             case PACKET -> CombatStrikeController.SprintResetMode.PACKET;

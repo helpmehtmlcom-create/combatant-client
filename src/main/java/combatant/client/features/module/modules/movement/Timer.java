@@ -26,6 +26,7 @@ import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.input.CombatantInput;
 import combatant.client.input.InputScope;
 import combatant.client.util.anticheat.AntiCheatPreset;
+import combatant.client.util.anticheat.PresetRules;
 import combatant.client.util.player.MovementUtil;
 
 @ModuleInfo(
@@ -79,12 +80,15 @@ public class Timer extends Module {
     // cannot see how much of the balance is left, so the preset never runs faster than 1x and never holds pings
     // back. Slowing down is left alone (0.5x and 0.8x for 240 ticks drew no flag).
     private final EnumValue<AntiCheatPreset> anticheat = enumMode("anticheat_mode", AntiCheatPreset.CUSTOM);
-    private final EnumValue<Mode> mode =
-            enumMode("mode", Mode.NORMAL, Mode.values());
+    private final EnumValue<Mode> mode = presetBound(
+            enumMode("mode", Mode.NORMAL, Mode.values()),
+            anticheat, PresetRules.Opt.except(Mode.NORMAL, Mode.SHIFT, Mode.GRIM, Mode.GRIM_CONCEPT),
+            PresetRules.Opt.any());
     private final BooleanValue old =
             visibleWhen(bool("old", false), () -> mode.get() == Mode.MATRIX);
-    private final NumberValue<Double> speed =
-            visibleWhen(num("speed", 2.0, 0.1, 10.0), () -> mode.get() != Mode.SHIFT);
+    private final NumberValue<Double> speed = presetBound(
+            visibleWhen(num("speed", 2.0, 0.1, 10.0), () -> mode.get() != Mode.SHIFT),
+            anticheat, PresetRules.Num.max(1.0), PresetRules.Num.FREE);
     private final NumberValue<Integer> shiftTicks =
             visibleWhen(num("shift_ticks", 10, 1, 40), () -> mode.get() == Mode.SHIFT);
     private final KeyBindValue boostKey =
@@ -162,11 +166,6 @@ public class Timer extends Module {
     @Override
     public void onTick() {
         tickModes();
-        if (grimPreset()) tickTimer = Math.min(tickTimer, 1f);
-    }
-
-    private boolean grimPreset() {
-        return anticheat.get() == AntiCheatPreset.GRIM;
     }
 
     private void tickModes() {
@@ -254,7 +253,7 @@ public class Timer extends Module {
 
     @EventHandler
     public void onPacketReceive(PacketEvent.Receive e) {
-        if (mode.get() == Mode.GRIM && !grimPreset()) {
+        if (mode.get() == Mode.GRIM) {
             if (e.getPacket() instanceof ClientboundPingPacket && getSetbackAge() > 2000L) {
                 if (System.currentTimeMillis() - cancelTime > 25000L) {
                     cancelTime = System.currentTimeMillis();
@@ -269,7 +268,7 @@ public class Timer extends Module {
                 e.cancel();
             }
         }
-        if (mode.get() == Mode.GRIM_CONCEPT && !grimPreset()) {
+        if (mode.get() == Mode.GRIM_CONCEPT) {
             if (e.getPacket() instanceof ClientboundPingPacket && getSetbackAge() > 2000L) {
                 long now = System.currentTimeMillis();
                 if (now - cancelTime > 25000L) {
@@ -342,8 +341,7 @@ public class Timer extends Module {
     public void onPostPlayerUpdate(PostPlayerUpdateEvent event) {
         if (mode.get() != Mode.SHIFT) return;
 
-        // the shifted ticks are tick packets Grim counts against one 50 ms of wall clock
-        if (grimPreset() || energy < 0.9f) {
+        if (energy < 0.9f) {
             setEnabled(false);
             return;
         }

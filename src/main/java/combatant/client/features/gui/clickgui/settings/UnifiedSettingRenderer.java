@@ -1001,7 +1001,7 @@ enum UnifiedSettingRenderer {
     private static void layoutMode(ModeSetting setting) {
         ModeSetting.UiState ui = setting.ui();
         float width = ui.baseW > 0f ? ui.baseW : m(160f, 115f);
-        int count = setting.optionIds().size();
+        int count = setting.optionIds().hashCode(); // content hash: presets can swap the offered options at runtime
         if (Float.isFinite(ui.lastLayoutW) && Math.abs(ui.lastLayoutW - width) <= 0.5f && ui.layoutOptionCount == count)
             return;
         ui.optionLayouts.clear();

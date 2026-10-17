@@ -311,6 +311,22 @@ public final class SettingDef {
         return this;
     }
 
+    /**
+     * Like {@link #unavailableWhen(Supplier, Supplier)} but keeps an earlier reason: the earlier one wins while it
+     * reports a reason, this one only applies otherwise.
+     */
+    public SettingDef alsoUnavailableWhen(Supplier<Boolean> supplier, Supplier<String> reason) {
+        Supplier<String> earlier = this.unavailableReason;
+        unavailableWhen(supplier, reason);
+        Supplier<String> mine = this.unavailableReason;
+        if (earlier == null) return this;
+        this.unavailableReason = () -> {
+            String first = earlier.get();
+            return first != null && !first.isBlank() ? first : mine.get();
+        };
+        return this;
+    }
+
     public SettingDef availableWhen(Supplier<Boolean> supplier, String reasonWhenUnavailable) {
         return availableWhen(supplier, () -> reasonWhenUnavailable);
     }
