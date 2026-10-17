@@ -59,4 +59,26 @@ public abstract class ConfigValue<T> {
     public String toDisplay() {
         return String.valueOf(value);
     }
+
+    private Object defaultJson;
+    private boolean defaultCaptured;
+
+    /** Snapshots the current value as the default. Idempotent: only the first call records. */
+    public final void captureDefault() {
+        if (defaultCaptured) return;
+        defaultJson = toJson();
+        defaultCaptured = true;
+    }
+
+    /** True when a default was captured and the current value differs from it. */
+    public final boolean isChangedFromDefault() {
+        return defaultCaptured && combatant.client.config.SettingDefaults.isChanged(defaultJson, toJson());
+    }
+
+    /** Restores the captured default; returns false when none was captured. */
+    public final boolean resetToDefault() {
+        if (!defaultCaptured) return false;
+        fromJson(defaultJson);
+        return true;
+    }
 }

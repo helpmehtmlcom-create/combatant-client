@@ -186,6 +186,9 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
     public final void postInit() {
         SettingDef.applyI18nAnnotations(this, declaredSettingDefs);
         settings.addAll(SettingFactory.fromDefs(declaredSettingDefs));
+        for (Setting s : settings) {
+            if (s.getConfigValue() != null) s.getConfigValue().captureDefault();
+        }
         loadSettings(settings);
 
         // attach parent for settings so they can request saves
