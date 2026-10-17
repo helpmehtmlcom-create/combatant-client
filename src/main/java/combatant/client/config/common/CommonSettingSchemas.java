@@ -36,7 +36,6 @@ public enum CommonSettingSchemas {
     public static final CommonSettingSchema FACEPLACE_HEALTH = key("faceplace_health");
     public static final CommonSettingSchema MAX_SELF_DAMAGE = key("max_self_damage");
     public static final CommonSettingSchema SELF_PREDICT_TICKS = key("self_predict_ticks");
-    public static final CommonSettingSchema UNSAFE_DIMENSION_ONLY = key("unsafe_dimension_only");
     public static final CommonSettingSchema PAUSE_MINING = key("pause_mining");
     public static final CommonSettingSchema PAUSE_EATING = key("pause_eating");
     public static final CommonSettingSchema RENDER_SELF_DAMAGE = key("render_self_damage");

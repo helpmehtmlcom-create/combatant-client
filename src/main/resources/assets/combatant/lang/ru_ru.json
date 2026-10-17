@@ -2123,7 +2123,6 @@
   "setting.common.faceplace_health": "HP для faceplace",
   "setting.common.max_self_damage": "Макс. урон себе",
   "setting.common.self_predict_ticks": "Тики self-предикта",
-  "setting.common.unsafe_dimension_only": "Только опасные измерения",
   "setting.common.pause_mining": "Пауза при копании",
   "setting.common.pause_eating": "Пауза при еде",
   "setting.common.render_self_damage": "Рендер урона себе",

@@ -12,7 +12,6 @@ import combatant.client.util.player.inventory.InventorySwapVisibility;
 import combatant.client.util.combat.CombatBlockUseUtil;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.level.block.RespawnAnchorBlock;
 import net.minecraft.world.phys.BlockHitResult;
 
 public final class AutoAnchorActionUtil {
@@ -20,36 +19,14 @@ public final class AutoAnchorActionUtil {
     }
 
     public static boolean placeAnchor(Minecraft mc,
-                                      Object owner,
                                       BlockHitResult hitResult,
                                       InventorySearchScope scope,
                                       InventorySwapVisibility visibility,
                                       boolean restore) {
-        if (mc == null || owner == null || hitResult == null || mc.player == null || mc.gameMode == null) return false;
+        if (mc == null || hitResult == null || mc.player == null || mc.gameMode == null) return false;
         InteractionHand held = AutoAnchorInteractionUtil.heldAnchorHand(mc.player);
         return CombatBlockUseUtil.useHeldOrSwap(mc, held, AutoAnchorInteractionUtil::isAnchor,
                 hitResult, scope, visibility, restore);
-    }
-
-    public static boolean explodeAnchor(Minecraft mc,
-                                        Object owner,
-                                        BlockHitResult hitResult,
-                                        InventorySearchScope scope,
-                                        InventorySwapVisibility visibility,
-                                        boolean restore) {
-        if (mc == null || owner == null || hitResult == null || mc.player == null || mc.level == null || mc.gameMode == null) return false;
-
-        int charges = 0;
-        var state = mc.level.getBlockState(hitResult.getBlockPos());
-        if (state.hasProperty(RespawnAnchorBlock.CHARGE)) {
-            charges = state.getValue(RespawnAnchorBlock.CHARGE);
-        }
-
-        if (charges <= 0) {
-            return chargeAnchor(mc, hitResult, scope, visibility, restore);
-        }
-
-        return detonateAnchor(mc, hitResult, scope, visibility, restore);
     }
 
     public static boolean chargeAnchor(Minecraft mc,
@@ -63,15 +40,24 @@ public final class AutoAnchorActionUtil {
                 hitResult, scope, visibility, restore);
     }
 
+    /** Uses a non-glowstone hand on the anchor; false when glowstone in the offhand has to charge the anchor first. */
     public static boolean detonateAnchor(Minecraft mc,
                                          BlockHitResult hitResult,
                                          InventorySearchScope scope,
                                          InventorySwapVisibility visibility,
                                          boolean restore) {
-        if (mc == null || hitResult == null || mc.player == null || mc.gameMode == null) return false;
-        InteractionHand held = AutoAnchorInteractionUtil.heldDetonatorHand(mc.player);
+        if (mc == null || hitResult == null || mc.player == null || mc.level == null || mc.gameMode == null) return false;
+        int charges = AutoAnchorInteractionUtil.anchorCharges(mc.level.getBlockState(hitResult.getBlockPos()));
+        InteractionHand held = AutoAnchorInteractionUtil.detonatorHand(mc.player, charges);
+        if (held == null) return false;
         return CombatBlockUseUtil.useHeldOrSwap(mc, held, AutoAnchorInteractionUtil::isDetonator,
                 hitResult, scope, visibility, restore);
+    }
+
+    /** Glowstone in the offhand charges a part-charged anchor instead of letting a main-hand use detonate it. */
+    public static boolean mustTopUpBeforeDetonating(Minecraft mc, int charges) {
+        return mc != null && mc.player != null
+                && AutoAnchorInteractionUtil.detonatorHand(mc.player, charges) == null;
     }
 
     public static boolean hasAnchor(Minecraft mc, InventorySearchScope scope) {

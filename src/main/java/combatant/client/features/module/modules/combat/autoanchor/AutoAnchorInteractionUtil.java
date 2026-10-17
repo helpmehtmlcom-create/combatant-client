@@ -15,12 +15,19 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.RespawnAnchorBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.List;
+
 public final class AutoAnchorInteractionUtil {
+    private static final AABB UNIT_CUBE = new AABB(0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+
     private AutoAnchorInteractionUtil() {
     }
 
@@ -40,6 +47,39 @@ public final class AutoAnchorInteractionUtil {
             }
         }
         return false;
+    }
+
+    /**
+     * The click on the block at {@code pos} that a ray from {@code eye} towards {@code aim} makes: the face the ray
+     * enters through and the point on it. Null when the eye is inside the block or the ray stops short of it.
+     */
+    public static BlockHitResult clipBlock(Vec3 eye, Vec3 aim, BlockPos pos) {
+        if (eye == null || aim == null || pos == null) return null;
+        BlockHitResult hit = AABB.clip(List.of(UNIT_CUBE), eye, aim, pos);
+        return hit == null ? null : new BlockHitResult(hit.getLocation(), hit.getDirection(), pos, false);
+    }
+
+    /**
+     * Whether a ray from {@code eye} along {@code direction} enters the unit cube at {@code pos} through
+     * {@code face}. This is the test GrimAC's RotationPlace runs against the rotation the server last saw.
+     */
+    public static boolean rayEntersFace(Vec3 eye, Vec3 direction, BlockPos pos, Direction face, double range) {
+        if (eye == null || direction == null || pos == null || face == null) return false;
+        BlockHitResult hit = AABB.clip(List.of(UNIT_CUBE), eye, eye.add(direction.scale(range)), pos);
+        return hit != null && hit.getDirection() == face;
+    }
+
+    /** Whether {@code eye} is on the outer side of {@code face} of the block at {@code pos}. */
+    public static boolean isFaceFacingEye(Vec3 eye, BlockPos pos, Direction face) {
+        if (eye == null || pos == null || face == null) return false;
+        return switch (face) {
+            case DOWN -> eye.y <= pos.getY();
+            case UP -> eye.y >= pos.getY() + 1.0;
+            case NORTH -> eye.z <= pos.getZ();
+            case SOUTH -> eye.z >= pos.getZ() + 1.0;
+            case WEST -> eye.x <= pos.getX();
+            case EAST -> eye.x >= pos.getX() + 1.0;
+        };
     }
 
     public static BlockHitResult getInteractResult(
@@ -75,6 +115,7 @@ public final class AutoAnchorInteractionUtil {
         return getDefaultAnchorInteract(level, player, pos, range, wallRange);
     }
 
+    /** Aims at the middle of the block and clicks the face that ray enters through. */
     public static BlockHitResult getDefaultAnchorInteract(Level level,
                                                           LocalPlayer player,
                                                           BlockPos pos,
@@ -82,19 +123,12 @@ public final class AutoAnchorInteractionUtil {
                                                           float wallRange) {
         if (level == null || player == null || pos == null) return null;
 
-        Vec3 vec = Vec3.atCenterOf(pos);
         Vec3 eyes = player.getEyePosition();
-        double distanceSq = eyes.distanceToSqr(vec);
-        if (distanceSq > range * range) return null;
-
-        if (!isVisibleOrWithinWallRange(level, player, eyes, vec, pos, distanceSq, wallRange)) {
-            return null;
-        }
-
-        Direction side = player.getEyeY() >= pos.getY() + 0.5 ? Direction.UP : Direction.DOWN;
-        return new BlockHitResult(vec, side, pos, false);
+        BlockHitResult hit = clipBlock(eyes, Vec3.atCenterOf(pos), pos);
+        return acceptable(level, player, eyes, hit, pos, range, wallRange) ? hit : null;
     }
 
+    /** The centre of the nearest block face that looks at the eye. */
     public static BlockHitResult getStrictAnchorInteract(Level level,
                                                          LocalPlayer player,
                                                          BlockPos pos,
@@ -107,21 +141,22 @@ public final class AutoAnchorInteractionUtil {
         BlockHitResult best = null;
 
         for (Direction direction : Direction.values()) {
+            if (!isFaceFacingEye(eyes, pos, direction)) continue;
             Vec3 normal = Vec3.atLowerCornerOf(direction.getUnitVec3i());
             Vec3 sample = Vec3.atCenterOf(pos).add(normal.scale(0.5));
             double distanceSq = eyes.distanceToSqr(sample);
-            if (distanceSq > range * range) continue;
-            if (!isVisibleOrWithinWallRange(level, player, eyes, sample, pos, distanceSq, wallRange)) continue;
+            if (distanceSq >= bestDistance) continue;
+            BlockHitResult hit = new BlockHitResult(sample, direction, pos, false);
+            if (!acceptable(level, player, eyes, hit, pos, range, wallRange)) continue;
 
-            if (distanceSq < bestDistance) {
-                bestDistance = distanceSq;
-                best = new BlockHitResult(sample, direction, pos, false);
-            }
+            bestDistance = distanceSq;
+            best = hit;
         }
 
         return best;
     }
 
+    /** The nearest of a grid of points inside the block, clicked through whichever face the ray to it enters. */
     public static BlockHitResult getLegitAnchorInteract(Level level,
                                                         LocalPlayer player,
                                                         BlockPos pos,
@@ -136,29 +171,18 @@ public final class AutoAnchorInteractionUtil {
             for (float y = 0.1f; y <= 0.9f; y += 0.2f) {
                 for (float z = 0.1f; z <= 0.9f; z += 0.2f) {
                     Vec3 point = new Vec3(pos.getX() + x, pos.getY() + y, pos.getZ() + z);
-                    double distanceSq = eyes.distanceToSqr(point);
-                    if (distanceSq > range * range) continue;
-                    if (!isVisibleOrWithinWallRange(level, player, eyes, point, pos, distanceSq, wallRange)) continue;
+                    BlockHitResult hit = clipBlock(eyes, point, pos);
+                    if (hit == null) continue;
+                    double distanceSq = eyes.distanceToSqr(hit.getLocation());
+                    if (distanceSq >= bestDistance) continue;
+                    if (!acceptable(level, player, eyes, hit, pos, range, wallRange)) continue;
 
-                    if (distanceSq < bestDistance) {
-                        bestDistance = distanceSq;
-                        best = new BlockHitResult(point, Direction.UP, pos, false);
-                    }
+                    bestDistance = distanceSq;
+                    best = hit;
                 }
             }
         }
         return best;
-    }
-
-
-    public static BlockHitResult getSyntheticAnchorInteractResult(LocalPlayer player,
-                                                                  BlockPos pos,
-                                                                  float range) {
-        if (player == null || pos == null) return null;
-        Vec3 vec = Vec3.atCenterOf(pos);
-        if (player.getEyePosition().distanceToSqr(vec) > range * range) return null;
-        Direction side = player.getEyeY() >= pos.getY() + 0.5 ? Direction.UP : Direction.DOWN;
-        return new BlockHitResult(vec, side, pos, false);
     }
 
     public static BlockHitResult getPlaceSupportInteract(Level level,
@@ -182,6 +206,7 @@ public final class AutoAnchorInteractionUtil {
             }
 
             Direction face = direction.getOpposite();
+            if (!isFaceFacingEye(eyes, support, face)) continue;
             BlockHitResult candidate = mode == AutoAnchorPlacementMode.LEGIT
                     ? getBestSupportFacePoint(level, player, support, face, range, wallRange)
                     : getSupportFaceCenter(level, player, support, face, range, wallRange);
@@ -205,10 +230,8 @@ public final class AutoAnchorInteractionUtil {
         Vec3 eyes = player.getEyePosition();
         Vec3 normal = Vec3.atLowerCornerOf(face.getUnitVec3i());
         Vec3 hitVec = Vec3.atCenterOf(support).add(normal.scale(0.5));
-        double distanceSq = eyes.distanceToSqr(hitVec);
-        if (distanceSq > range * range) return null;
-        if (!isVisibleOrWithinWallRange(level, player, eyes, hitVec, support, distanceSq, wallRange)) return null;
-        return new BlockHitResult(hitVec, face, support, false);
+        BlockHitResult hit = new BlockHitResult(hitVec, face, support, false);
+        return acceptable(level, player, eyes, hit, support, range, wallRange) ? hit : null;
     }
 
     private static BlockHitResult getBestSupportFacePoint(Level level,
@@ -225,12 +248,11 @@ public final class AutoAnchorInteractionUtil {
             for (float b = 0.2f; b <= 0.8f; b += 0.3f) {
                 Vec3 point = pointOnFace(support, face, a, b);
                 double distanceSq = eyes.distanceToSqr(point);
-                if (distanceSq > range * range) continue;
-                if (!isVisibleOrWithinWallRange(level, player, eyes, point, support, distanceSq, wallRange)) continue;
-                if (distanceSq < bestDistance) {
-                    bestDistance = distanceSq;
-                    bestPoint = point;
-                }
+                if (distanceSq >= bestDistance) continue;
+                if (!acceptable(level, player, eyes, new BlockHitResult(point, face, support, false), support,
+                        range, wallRange)) continue;
+                bestDistance = distanceSq;
+                bestPoint = point;
             }
         }
 
@@ -251,13 +273,19 @@ public final class AutoAnchorInteractionUtil {
         };
     }
 
-    private static boolean isVisibleOrWithinWallRange(Level level,
-                                                      LocalPlayer player,
-                                                      Vec3 eyes,
-                                                      Vec3 point,
-                                                      BlockPos expectedBlock,
-                                                      double distanceSq,
-                                                      float wallRange) {
+    /** In reach, and either in plain sight or close enough for the wall range. */
+    private static boolean acceptable(Level level,
+                                      LocalPlayer player,
+                                      Vec3 eyes,
+                                      BlockHitResult hit,
+                                      BlockPos expectedBlock,
+                                      float range,
+                                      float wallRange) {
+        if (hit == null) return false;
+        Vec3 point = hit.getLocation();
+        double distanceSq = eyes.distanceToSqr(point);
+        if (distanceSq > (double) range * range) return false;
+
         BlockHitResult wall = level.clip(new ClipContext(
                 eyes,
                 point,
@@ -268,7 +296,16 @@ public final class AutoAnchorInteractionUtil {
         if (wall == null || wall.getType() != HitResult.Type.BLOCK || expectedBlock.equals(wall.getBlockPos())) {
             return true;
         }
-        return distanceSq <= wallRange * wallRange;
+        return distanceSq <= (double) wallRange * wallRange;
+    }
+
+    public static int anchorCharges(BlockState state) {
+        if (state == null || !state.is(Blocks.RESPAWN_ANCHOR)) return 0;
+        return state.getValue(RespawnAnchorBlock.CHARGE);
+    }
+
+    public static boolean isFullyCharged(int charges) {
+        return charges >= RespawnAnchorBlock.MAX_CHARGES;
     }
 
     public static InteractionHand heldAnchorHand(LocalPlayer player) {
@@ -285,11 +322,18 @@ public final class AutoAnchorInteractionUtil {
         return null;
     }
 
-    public static InteractionHand heldDetonatorHand(LocalPlayer player) {
+    /**
+     * The hand that detonates an anchor with {@code charges} charges, or null when none can: glowstone in the
+     * offhand makes the anchor's main-hand use pass to it, and the offhand then only recharges an anchor that is not
+     * yet full. A hand holding glowstone charges instead of detonating, so the other hand is used.
+     */
+    public static InteractionHand detonatorHand(LocalPlayer player, int charges) {
         if (player == null) return null;
+        if (isGlowstone(player.getOffhandItem())) {
+            return isFullyCharged(charges) ? InteractionHand.OFF_HAND : null;
+        }
         if (!isGlowstone(player.getMainHandItem())) return InteractionHand.MAIN_HAND;
-        if (!isGlowstone(player.getOffhandItem())) return InteractionHand.OFF_HAND;
-        return null;
+        return InteractionHand.OFF_HAND;
     }
 
     public static boolean isAnchor(ItemStack stack) {

@@ -2112,7 +2112,6 @@
   "setting.common.faceplace_health": "Faceplace health",
   "setting.common.max_self_damage": "Max self damage",
   "setting.common.self_predict_ticks": "Self predict ticks",
-  "setting.common.unsafe_dimension_only": "Unsafe dimensions only",
   "setting.common.pause_mining": "Pause while mining",
   "setting.common.pause_eating": "Pause while eating",
   "setting.common.render_self_damage": "Render self damage",

@@ -426,6 +426,10 @@ public enum ExplosionDamageUtil {
             var fluidState = ghostBlock
                     ? Fluids.EMPTY.defaultFluidState()
                     : mc.level.getFluidState(blockPos);
+            if (state.is(net.minecraft.world.level.block.Blocks.RESPAWN_ANCHOR) && blockPos.equals(BlockPos.containing(context.getTo()))) {
+                // A respawn anchor removes itself before it explodes, so it does not shield from its own blast.
+                state = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
+            }
             if (maxBlastResistance != null && state.getBlock().getExplosionResistance() < maxBlastResistance) {
                 state = net.minecraft.world.level.block.Blocks.VOID_AIR.defaultBlockState();
             }

@@ -48,7 +48,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
@@ -76,6 +75,7 @@ public class AutoAnchor extends Module {
     private static final long PENDING_ANCHOR_PLACE_CONFIRM_TIMEOUT_MS = 2500L;
     private static final long PENDING_ANCHOR_ACTION_CONFIRM_TIMEOUT_MS = 750L;
     private static final double TEXT_Y_OFFSET = 0.10;
+    private static final long PENDING_ANCHOR_STALL_TIMEOUT_MS = 3000L;
     private static final double TEXT_WORLD_SCALE = 0.025;
     private static final double TEXT_SCALE = 1.0;
     private static final double TEXT_GAP_SCALE = 1.0;
@@ -162,7 +162,6 @@ public class AutoAnchor extends Module {
             20
     );
     private final NumberValue<Integer> selfPredictTicks = numCommon("autoanchorSelfPredictTicks", "self_predict_ticks", CommonSettingSchemas.SELF_PREDICT_TICKS, 3, 0, 20);
-    private final BooleanValue unsafeDimensionOnly = boolCommon("autoanchorUnsafeDimensionOnly", "unsafe_dimension_only", CommonSettingSchemas.UNSAFE_DIMENSION_ONLY, true);
     private final BooleanValue pauseMining = boolCommon("autoanchorPauseMining", "pause_mining", CommonSettingSchemas.PAUSE_MINING, true);
     private final BooleanValue pauseEating = boolCommon("autoanchorPauseEating", "pause_eating", CommonSettingSchemas.PAUSE_EATING, true);
     private final NumberValue<Float> pauseHealth = numCommon(
@@ -278,6 +277,7 @@ public class AutoAnchor extends Module {
     private AutoAnchorData pendingAnchorData;
     private PendingAnchorPhase pendingAnchorPhase;
     private long pendingAnchorActionMs;
+    private long pendingAnchorProgressMs;
     private int lastInteractionTick = Integer.MIN_VALUE;
     private float renderDamage;
     private float renderSelfDamageValue;
@@ -408,7 +408,8 @@ public class AutoAnchor extends Module {
             return;
         }
 
-        if (explodeEnabled.get() && bestExplode != null && hasExplodeDelayElapsed()) {
+        if (explodeEnabled.get() && bestExplode != null && hasExplodeDelayElapsed()
+                && (bestExplode.charges() > 0 || AutoAnchorActionUtil.hasGlowstone(mc, swapScope.get()))) {
             beginPendingAnchor(bestExplode, bestExplode.charges() > 0
                     ? PendingAnchorPhase.DETONATING
                     : PendingAnchorPhase.CHARGING);
@@ -416,7 +417,9 @@ public class AutoAnchor extends Module {
             return;
         }
 
-        if (placeEnabled.get() && bestPlace != null && hasPlaceDelayElapsed()) {
+        if (placeEnabled.get() && bestPlace != null && hasPlaceDelayElapsed()
+                && AutoAnchorActionUtil.hasAnchor(mc, swapScope.get())
+                && AutoAnchorActionUtil.hasGlowstone(mc, swapScope.get())) {
             beginPendingAnchor(bestPlace, PendingAnchorPhase.PLACING);
             continuePendingAnchorCycle();
             return;
@@ -470,17 +473,9 @@ public class AutoAnchor extends Module {
             return;
         }
 
-        if (anticheat.get() == AntiCheatPreset.GRIM) {
-            if (mc.player != null && lastInteractionTick == mc.player.tickCount) return;
-            BlockHitResult hit = refreshed.hitResult();
-            if (hit != null) {
-                if (!serverRotationHits(new AABB(hit.getBlockPos()), effPlaceRange())) return;
-                if (!isFaceFacingEye(mc.player.getEyePosition(), hit.getBlockPos(), hit.getDirection())) return;
-            }
-        }
+        if (!canClickNow(refreshed.hitResult())) return;
         boolean placed = AutoAnchorActionUtil.placeAnchor(
                 mc,
-                this,
                 refreshed.hitResult(),
                 swapScope.get(),
                 swapVisibility.get(),
@@ -492,6 +487,7 @@ public class AutoAnchor extends Module {
         long now = System.currentTimeMillis();
         lastPlaceMs = now;
         pendingAnchorActionMs = now;
+        pendingAnchorProgressMs = now;
         pendingAnchorData = refreshed;
         pendingAnchorPhase = PendingAnchorPhase.WAITING_FOR_ANCHOR;
         markPlaced(refreshed);
@@ -511,6 +507,11 @@ public class AutoAnchor extends Module {
         }
 
         long now = System.currentTimeMillis();
+        if (now - pendingAnchorProgressMs > PENDING_ANCHOR_STALL_TIMEOUT_MS) {
+            // Nothing went out for a while (no glowstone, unreachable, rotation never settled): free the module.
+            clearPendingAnchor();
+            return false;
+        }
         BlockState state = mc.level.getBlockState(pendingAnchorPos);
         boolean anchorPresent = state.is(Blocks.RESPAWN_ANCHOR);
         int charges = anchorPresent ? getAnchorCharges(state) : 0;
@@ -562,7 +563,7 @@ public class AutoAnchor extends Module {
                     clearPendingAnchor();
                     return false;
                 }
-                AutoAnchorData data = resolvePendingAnchorData(pendingAnchorPos, state);
+                AutoAnchorData data = resolvePendingAnchorData(pendingAnchorPos);
                 if (data == null) {
                     RotationManager.INSTANCE.clear(this);
                     return true;
@@ -603,7 +604,7 @@ public class AutoAnchor extends Module {
                     clearPendingAnchor();
                     return false;
                 }
-                AutoAnchorData data = resolvePendingAnchorData(pendingAnchorPos, state);
+                AutoAnchorData data = resolvePendingAnchorData(pendingAnchorPos);
                 if (data == null) {
                     RotationManager.INSTANCE.clear(this);
                     return true;
@@ -651,38 +652,17 @@ public class AutoAnchor extends Module {
                 : null;
     }
 
-    private AutoAnchorData resolvePendingAnchorData(BlockPos pos, BlockState state) {
-        if (pos == null || state == null || mc.player == null || mc.level == null) {
+    /** The anchor as it is now, or null (and the pending cycle dropped) when it is no longer worth or safe to use. */
+    private AutoAnchorData resolvePendingAnchorData(BlockPos pos) {
+        if (pos == null || mc.player == null || mc.level == null || target == null) {
             return null;
         }
-
-        AutoAnchorData evaluated = target != null ? planner.evaluate(plannerContext, pos, target) : null;
-        if (evaluated != null && evaluated.existingAnchor()) {
-            return evaluated;
-        }
-
-        BlockHitResult hit = AutoAnchorInteractionUtil.getAnchorInteractResult(
-                mc.level,
-                mc.player,
-                pos,
-                placementMode.get(),
-                effPlaceRange(),
-                effWallRange()
-        );
-        if (hit == null) {
+        AutoAnchorData evaluated = planner.evaluate(plannerContext, pos, target);
+        if (evaluated == null || !evaluated.existingAnchor()) {
+            clearPendingAnchor();
             return null;
         }
-
-        AutoAnchorData fallback = pendingAnchorData != null && pos.equals(pendingAnchorData.pos()) ? pendingAnchorData : null;
-        return new AutoAnchorData(
-                pos,
-                hit,
-                fallback != null ? fallback.damage() : renderDamage,
-                fallback != null ? fallback.selfDamage() : renderSelfDamageValue,
-                fallback != null && fallback.overrideDamage(),
-                true,
-                getAnchorCharges(state)
-        );
+        return evaluated;
     }
 
     private void chargeReservedAnchor(AutoAnchorData data) {
@@ -699,11 +679,7 @@ public class AutoAnchor extends Module {
         );
         if (anchorHit == null) return;
 
-        if (anticheat.get() == AntiCheatPreset.GRIM) {
-            if (mc.player != null && lastInteractionTick == mc.player.tickCount) return;
-            if (!serverRotationHits(new AABB(anchorHit.getBlockPos()), effPlaceRange())) return;
-            if (!isFaceFacingEye(mc.player.getEyePosition(), anchorHit.getBlockPos(), anchorHit.getDirection())) return;
-        }
+        if (!canClickNow(anchorHit)) return;
         boolean charged = AutoAnchorActionUtil.chargeAnchor(
                 mc,
                 anchorHit,
@@ -717,6 +693,7 @@ public class AutoAnchor extends Module {
         long now = System.currentTimeMillis();
         lastExplodeMs = now;
         pendingAnchorActionMs = now;
+        pendingAnchorProgressMs = now;
         pendingAnchorPhase = PendingAnchorPhase.WAITING_FOR_CHARGE;
         pendingAnchorData = new AutoAnchorData(
                 data.pos(),
@@ -744,23 +721,22 @@ public class AutoAnchor extends Module {
         );
         if (anchorHit == null) return;
 
-        if (anticheat.get() == AntiCheatPreset.GRIM) {
-            if (mc.player != null && lastInteractionTick == mc.player.tickCount) return;
-            if (!serverRotationHits(new AABB(anchorHit.getBlockPos()), effPlaceRange())) return;
-            if (!isFaceFacingEye(mc.player.getEyePosition(), anchorHit.getBlockPos(), anchorHit.getDirection())) return;
-        }
-        boolean detonated = AutoAnchorActionUtil.detonateAnchor(
-                mc,
-                anchorHit,
-                swapScope.get(),
-                swapVisibility.get(),
-                restoreItem.get()
-        );
-        if (!detonated) return;
+        if (!canClickNow(anchorHit)) return;
+        boolean topUp = AutoAnchorActionUtil.mustTopUpBeforeDetonating(
+                mc, getAnchorCharges(mc.level.getBlockState(data.pos())));
+        boolean acted = topUp
+                ? AutoAnchorActionUtil.chargeAnchor(mc, anchorHit, swapScope.get(), swapVisibility.get(), restoreItem.get())
+                : AutoAnchorActionUtil.detonateAnchor(mc, anchorHit, swapScope.get(), swapVisibility.get(), restoreItem.get());
+        if (!acted) return;
         if (mc.player != null) lastInteractionTick = mc.player.tickCount;
 
         long now = System.currentTimeMillis();
         lastExplodeMs = now;
+        pendingAnchorProgressMs = now;
+        if (topUp) {
+            // The offhand glowstone charged it a step further; the anchor stays in the detonating phase.
+            return;
+        }
         pendingAnchorActionMs = now;
         pendingAnchorPhase = PendingAnchorPhase.WAITING_FOR_DETONATION;
         pendingAnchorData = data;
@@ -774,6 +750,7 @@ public class AutoAnchor extends Module {
         }
         if (pendingAnchorPos == null) {
             pendingAnchorActionMs = 0L;
+            pendingAnchorProgressMs = System.currentTimeMillis();
         }
         pendingAnchorPos = data.pos();
         pendingAnchorData = data;
@@ -797,13 +774,18 @@ public class AutoAnchor extends Module {
 
     private boolean shouldPause() {
         if (mc.player == null || mc.level == null || mc.gameMode == null) return true;
-        if (unsafeDimensionOnly.get() && mc.level.dimension() == Level.NETHER) return true;
+        if (!anchorsExplodeHere()) return true;
         if (pauseMining.get() && mc.gameMode.isDestroying()) return true;
         if (pauseEating.get()
                 && mc.player.isUsingItem()
                 && FoodUtil.isFood(mc.player.getUseItem())
                 && !RubberHandUseUtil.canBypassCurrentUse(mc)) return true;
         return mc.player.getHealth() + mc.player.getAbsorptionAmount() < pauseHealth.get();
+    }
+
+    /** Respawn anchors only explode where they cannot set a spawn; in the Nether they would just set one. */
+    private boolean anchorsExplodeHere() {
+        return mc.level != null && mc.level.dimension() != Level.NETHER;
     }
 
     private boolean hasPlaceDelayElapsed() {
@@ -1078,23 +1060,17 @@ public class AutoAnchor extends Module {
         return effUsesRotations();
     }
 
-    private boolean serverRotationHits(AABB box, double range) {
+    // GrimAC's RotationPlace raytraces each use of a block from the rotation the server saw before it, and its
+    // MultiPlace flags a second interaction in the same tick. Under the grim preset a click therefore waits until the
+    // last sent rotation already enters the clicked face, and one interaction goes out per tick.
+    private boolean canClickNow(BlockHitResult hit) {
+        if (anticheat.get() != AntiCheatPreset.GRIM) return true;
+        if (mc.player == null || hit == null || lastInteractionTick == mc.player.tickCount) return false;
         Rotation server = RotationManager.INSTANCE.getServerRotation();
         if (server == null) return false;
-        Vec3 eye = mc.player.getEyePosition();
-        return box.contains(eye) || box.clip(eye, eye.add(server.directionVector().scale(range))).isPresent();
-    }
-
-    private static boolean isFaceFacingEye(Vec3 eye, BlockPos pos, Direction face) {
-        if (face == null) return true;
-        return switch (face) {
-            case DOWN -> eye.y <= pos.getY();
-            case UP -> eye.y >= pos.getY() + 1.0;
-            case NORTH -> eye.z <= pos.getZ();
-            case SOUTH -> eye.z >= pos.getZ() + 1.0;
-            case WEST -> eye.x <= pos.getX();
-            case EAST -> eye.x >= pos.getX() + 1.0;
-        };
+        return AutoAnchorInteractionUtil.rayEntersFace(
+                mc.player.getEyePosition(), server.directionVector(), hit.getBlockPos(), hit.getDirection(),
+                effPlaceRange() + 1.0);
     }
 
     private String buildDamageText() {
