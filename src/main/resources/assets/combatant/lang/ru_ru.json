@@ -1707,6 +1707,7 @@
   "setting.main_config.taaFxaa": "FXAA после TAA",
   "setting.main_config.taaSharpen": "Повышение резкости",
   "setting.main_config.taaSharpeningIntensity": "Интенсивность резкости",
+  "setting.main_config.clickGuiScale": "Размер ClickGUI",
   "setting.main_config.msaa3d.iris_blocked": "Шейдерпак Iris активен",
   "setting.main_config.msaa3d.option.off": "Выкл.",
   "setting.main_config.msaa3d.option.2x": "2x",

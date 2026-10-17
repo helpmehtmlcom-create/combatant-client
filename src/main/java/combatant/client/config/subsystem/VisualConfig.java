@@ -34,6 +34,7 @@ public final class VisualConfig extends SubsystemConfig {
             number("taaSharpeningIntensity", 0.50, 0.0, 1.0);
     private final BooleanValue clickGuiModulesHints = bool("clickGuiModulesHints", true);
     private final BooleanValue clickGuiHudEditorHints = bool("clickGuiHudEditorHints", true);
+    private final NumberValue<Double> clickGuiScale = number("clickGuiScale", 1.0, 0.6, 1.0);
     private final BooleanValue modernSodiumGui = bool("modernSodiumGui", true);
     private final BooleanValue modernIrisGui = bool("modernIrisGui", true);
 
@@ -129,6 +130,11 @@ public final class VisualConfig extends SubsystemConfig {
         saveConfig();
     }
 
+    /** ClickGUI size preference: 1.0 fills the window, lower shrinks the module panels. */
+    public float getClickGuiScale() {
+        return clickGuiScale.get().floatValue();
+    }
+
     public boolean isModernSodiumGuiEnabled() {
         return modernSodiumGui.get();
     }
@@ -160,6 +166,7 @@ public final class VisualConfig extends SubsystemConfig {
                 SettingDef.bool(combatantMainMenu),
                 SettingDef.mode(menuBackground).visibleWhen(combatantMainMenu::get),
                 SettingDef.bool(menuClockShowSeconds),
+                SettingDef.number(clickGuiScale),
                 SettingDef.bool(modernSodiumGui),
                 SettingDef.bool(modernIrisGui)
         );

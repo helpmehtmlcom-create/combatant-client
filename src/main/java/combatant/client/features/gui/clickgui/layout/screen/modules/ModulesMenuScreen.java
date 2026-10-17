@@ -14,6 +14,7 @@ import net.minecraft.client.Minecraft;
 import org.lwjgl.glfw.GLFW;
 import combatant.client.features.gui.clickgui.ClickGuiRenderer;
 import combatant.client.features.gui.clickgui.ClickGuiSearch;
+import combatant.client.features.gui.clickgui.nav.ClickGuiScaling;
 import combatant.client.features.gui.clickgui.nav.ModuleSearch;
 import combatant.client.features.gui.clickgui.layout.screen.settings.implement.module.ModuleComponent;
 import combatant.client.features.gui.clickgui.layout.screen.settings.render.LayoutRender2D;
@@ -125,15 +126,10 @@ public final class ModulesMenuScreen {
     }
 
     private static float computePortScale(float areaW, float areaH) {
-        float designW = PANEL_W * ModulesMenuCategory.values().length + PANEL_GAP * (ModulesMenuCategory.values().length - 1);
-        float sideMargin = Math.max(28.0f, areaW * 0.03f);
-        float verticalReserve = Math.max(56.0f, areaH * 0.10f);
-
-        float fitX = Math.max(1.0f, (areaW - sideMargin * 2.0f) / designW);
-        float fitY = Math.max(1.0f, (areaH - verticalReserve) / (PANEL_H + 30.0f));
-        float fit = Math.min(fitX, fitY);
-
-        return AnimationUtility.clamp(Math.min(LIQUID_GLASS_LOGICAL_SCALE, fit), 2.55f, LIQUID_GLASS_LOGICAL_SCALE);
+        float designW = PANEL_W * ModulesMenuCategory.values().length
+                + PANEL_GAP * (ModulesMenuCategory.values().length - 1);
+        return ClickGuiScaling.resolve(areaW, areaH, designW, PANEL_H + 30.0f,
+                combatant.client.config.subsystem.VisualConfig.get().getClickGuiScale());
     }
 
     static boolean isModuleListEditHeld() {
