@@ -47,8 +47,9 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
-
 import java.util.LinkedHashMap;
+import combatant.client.util.player.inventory.manager.InventoryManager;
+import combatant.client.util.player.inventory.manager.InventoryPriority;
 import java.util.function.Predicate;
 
 @ModuleInfo(

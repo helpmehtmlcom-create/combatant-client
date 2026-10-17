@@ -75,23 +75,23 @@ public final class RuntimeCleanupReport {
             this.reason = reason == null || reason.isBlank() ? "unspecified" : reason;
         }
 
-        void increment(String key, int amount) {
+        synchronized void increment(String key, int amount) {
             if (key == null || key.isBlank() || amount == 0) return;
             counters.merge(key, amount, Integer::sum);
         }
 
-        void stopped(String subsystem) {
+        synchronized void stopped(String subsystem) {
             if (subsystem != null && !subsystem.isBlank()) {
                 stoppedSubsystems.add(subsystem);
             }
         }
 
-        void failed(String subsystem, Throwable error) {
+        synchronized void failed(String subsystem, Throwable error) {
             String name = subsystem == null || subsystem.isBlank() ? "<unknown>" : subsystem;
             failedSubsystems.add(error == null ? name : name + ": " + error.getClass().getSimpleName());
         }
 
-        RuntimeCleanupReport build() {
+        synchronized RuntimeCleanupReport build() {
             return new RuntimeCleanupReport(state, reason, counters, stoppedSubsystems, failedSubsystems);
         }
     }

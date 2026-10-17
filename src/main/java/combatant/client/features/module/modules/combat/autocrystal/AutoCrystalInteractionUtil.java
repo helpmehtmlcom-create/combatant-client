@@ -69,7 +69,7 @@ public final class AutoCrystalInteractionUtil {
     }
 
     public static BlockHitResult getStrictInteract(Level level, LocalPlayer player, BlockPos pos, float placeRange) {
-        if (player == null || level == null || pos == null) {
+        if (player == null || level == null || pos == null || !level.isInWorldBounds(pos)) {
             return null;
         }
 
@@ -127,8 +127,11 @@ public final class AutoCrystalInteractionUtil {
             float placeRange,
             float wallRange
     ) {
-        if (player == null || level == null || pos == null) {
+        if (player == null || level == null || pos == null || !level.isInWorldBounds(pos)) {
             return null;
+        }
+        if (crystalVec == null) {
+            crystalVec = crystalVec(pos);
         }
 
         double distanceSq = player.getEyePosition().distanceToSqr(crystalVec);
@@ -162,7 +165,7 @@ public final class AutoCrystalInteractionUtil {
     }
 
     public static BlockHitResult getObsidianInteractResult(Level level, LocalPlayer player, BlockPos pos, float placeRange) {
-        if (player == null || level == null || pos == null) {
+        if (player == null || level == null || pos == null || !level.isInWorldBounds(pos)) {
             return null;
         }
 

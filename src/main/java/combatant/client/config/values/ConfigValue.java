@@ -13,7 +13,7 @@ package combatant.client.config.values;
 public abstract class ConfigValue<T> {
 
     private final String name; // <---- ЭТО ТЕБЕ НУЖНО
-    protected T value;
+    protected volatile T value;
 
     public ConfigValue(String name, T def) {
         this.name = name;

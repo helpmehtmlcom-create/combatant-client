@@ -40,6 +40,7 @@ import combatant.client.mixins.accessors.PlayerInventoryAccessor;
 import combatant.client.util.player.BreakSpeedUtil;
 import combatant.client.util.player.ToolSelection;
 import combatant.client.util.player.inventory.InventorySwap;
+import combatant.client.util.block.mining.MiningDamageCalculator;
 
 import java.util.function.BiConsumer;
 
@@ -88,6 +89,7 @@ public class AutoTool extends Module {
 
     @Override
     public void onDisable() {
+        InventorySwap.INSTANCE.releaseHotbar(this);
         if (mc != null && mc.player != null && originalSlot >= 0) {
             InventorySwap.INSTANCE.selectHotbar(originalSlot);
         }
@@ -222,6 +224,7 @@ public class AutoTool extends Module {
     }
 
     private void resetState() {
+        InventorySwap.INSTANCE.releaseHotbar(this);
         originalSlot = -1;
         lastBreakMs = 0L;
     }

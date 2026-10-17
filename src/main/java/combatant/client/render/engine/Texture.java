@@ -64,14 +64,23 @@ public class Texture extends AbstractTexture {
     }
 
     public void upload(ByteBuffer buffer) {
-        var image = getImage();
+        try (var image = getImage()) {
+            buffer.rewind();
+            MemoryUtil.memCopy(MemoryUtil.memAddress(buffer), image.getPointer(), buffer.remaining());
 
-        buffer.rewind();
-        MemoryUtil.memCopy(MemoryUtil.memAddress(buffer), image.getPointer(), buffer.remaining());
+            RenderSystem.getDevice().createCommandEncoder().writeToTexture(texture, image);
+        }
+    }
 
-        RenderSystem.getDevice().createCommandEncoder().writeToTexture(texture, image);
-
-        image.close();
+    @Override
+    public void close() {
+        if (textureView != null && !textureView.isClosed()) {
+            textureView.close();
+        }
+        if (texture != null && !texture.isClosed()) {
+            texture.close();
+        }
+        super.close();
     }
 
     public boolean isReady() {

@@ -22,8 +22,10 @@ import combatant.client.util.logging.DebugLog;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -720,14 +722,43 @@ public enum ConfigSerializer {
         }
     }
 
+    public static void flushAllPending() {
+        Map<Path, String> toFlush;
+        synchronized (SAVE_LOCK) {
+            for (ScheduledFuture<?> task : PENDING_TASKS.values()) {
+                if (task != null) task.cancel(false);
+            }
+            toFlush = new HashMap<>(PENDING_TEXT);
+            PENDING_TEXT.clear();
+            PENDING_TOKENS.clear();
+            PENDING_TASKS.clear();
+        }
+        for (Map.Entry<Path, String> entry : toFlush.entrySet()) {
+            writeConfig(entry.getKey(), entry.getValue());
+        }
+    }
+
     private static void writeConfig(Path out, String text) {
+        Path tmp = null;
         try {
             Path parent = out.getParent();
             Files.createDirectories(parent != null ? parent : CONFIG_DIR);
-            Files.writeString(out, text);
+            tmp = out.resolveSibling(out.getFileName() + ".tmp");
+            Files.writeString(tmp, text);
+            try {
+                Files.move(tmp, out, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tmp, out, StandardCopyOption.REPLACE_EXISTING);
+            }
             DebugLog.config("Config saved: %s", out.toAbsolutePath());
         } catch (IOException e) {
             DebugLog.error("Failed to save config %s", e, out.toAbsolutePath());
+            if (tmp != null) {
+                try {
+                    Files.deleteIfExists(tmp);
+                } catch (IOException ignored) {
+                }
+            }
         }
     }
 

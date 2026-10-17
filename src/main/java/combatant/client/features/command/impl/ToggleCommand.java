@@ -25,9 +25,14 @@ import java.util.Locale;
 public final class ToggleCommand implements ClientCommand {
     @Override
     public boolean execute(CommandContext ctx) {
-        Module module = CommandUtils.findModule(ctx.arg(0));
+        String name = ctx.arg(0);
+        if (name == null || name.isBlank()) {
+            CommandOutput.warning("Usage: " + metadata().usage());
+            return true;
+        }
+        Module module = CommandUtils.findModule(name);
         if (module == null) {
-            CommandOutput.error(ctx.arg(0) == null ? "Usage: " + metadata().usage() : "Module not found: " + ctx.arg(0));
+            CommandOutput.error("Module not found: " + name);
             return true;
         }
         String stateArg = ctx.arg(1);

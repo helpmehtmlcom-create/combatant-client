@@ -22,11 +22,24 @@ public final class AutoCrystalSelectionUtil {
             float minDamage,
             float faceplaceHealth
     ) {
+        if (candidates == null || candidates.isEmpty()) {
+            return null;
+        }
+
         T bestData = null;
         float bestVal = 0.0f;
 
         for (T data : candidates) {
-            if (!(AutoCrystalDamageRules.shouldOverrideMinDamage(target, data.damage(), faceplaceHealth) || data.damage() > minDamage)) {
+            if (data == null) {
+                continue;
+            }
+            float damage = data.damage();
+            float selfDamage = data.selfDamage();
+            if (Float.isNaN(damage) || Float.isNaN(selfDamage) || Float.isInfinite(damage) || Float.isInfinite(selfDamage)) {
+                continue;
+            }
+
+            if (!(AutoCrystalDamageRules.shouldOverrideMinDamage(target, damage, faceplaceHealth) || damage > minDamage)) {
                 continue;
             }
 
@@ -34,28 +47,28 @@ public final class AutoCrystalSelectionUtil {
                     && data.overrideDamage()
                     && target != null
                     && target.getAbsorptionAmount() + target.getHealth() < bestData.damage()
-                    && bestData.selfDamage() < data.selfDamage()) {
+                    && bestData.selfDamage() < selfDamage) {
                 continue;
             }
 
             boolean shouldStopOverride = bestData != null
                     && bestData.overrideDamage()
                     && target != null
-                    && data.damage() > target.getHealth() + target.getAbsorptionAmount()
-                    && data.selfDamage() < bestData.selfDamage();
+                    && damage > target.getHealth() + target.getAbsorptionAmount()
+                    && selfDamage < bestData.selfDamage();
 
             float safetyComparatorDelta = shouldStopOverride ? 10.0f : 1.0f;
 
             if (bestData != null
-                    && Math.abs(bestData.damage() - data.damage()) < safetyComparatorDelta
-                    && Math.abs(bestData.selfDamage() - data.selfDamage()) > 1.0f) {
-                if (bestData.selfDamage() >= data.selfDamage()) {
+                    && Math.abs(bestData.damage() - damage) < safetyComparatorDelta
+                    && Math.abs(bestData.selfDamage() - selfDamage) > 1.0f) {
+                if (bestData.selfDamage() >= selfDamage) {
                     bestData = data;
-                    bestVal = data.damage();
+                    bestVal = damage;
                 }
-            } else if (bestVal < data.damage()) {
+            } else if (bestData == null || bestVal < damage) {
                 bestData = data;
-                bestVal = data.damage();
+                bestVal = damage;
             }
         }
 

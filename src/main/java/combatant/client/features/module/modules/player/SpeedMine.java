@@ -21,6 +21,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.block.Blocks;
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.EnumValue;
 import combatant.client.config.values.NumberValue;
@@ -581,6 +582,22 @@ public final class SpeedMine extends Module {
 
     public float mineRange() {
         return rangeNow();
+    }
+
+    /** Estimated break progress (0..1) of {@code pos} while SpeedMine is mining it, otherwise 0. */
+    public float progressOf(BlockPos pos) {
+        MineTask task = primary != null && primary.pos.equals(pos) ? primary
+                : delayed != null && delayed.pos.equals(pos) ? delayed : null;
+        if (task == null) return 0.0f;
+        return Math.max(0.0f, Math.min(1.0f, task.progress));
+    }
+
+    /** Cancels the block currently being dug on the primary slot, if its STOP has not gone out yet. */
+    public void abortPrimary() {
+        if (primary != null && !primary.stopSent) {
+            sendAction(ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK, primary);
+        }
+        primary = null;
     }
 
     /**

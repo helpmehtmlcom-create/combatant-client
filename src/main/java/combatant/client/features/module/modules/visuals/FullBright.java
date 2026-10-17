@@ -40,4 +40,9 @@ public class FullBright extends Module {
         if (!isEnabled()) return;
         event.raiseMinimumLight(getMinLightStrength());
     }
+
+    @Override
+    public void onDisable() {
+        combatant.client.render.engine.light.LightmapState.reset();
+    }
 }

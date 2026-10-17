@@ -19,7 +19,11 @@ import combatant.client.config.values.NumberValue;
 import combatant.client.events.EventHandler;
 import combatant.client.events.impl.GameTickEvent;
 import combatant.client.events.impl.LightmapModifyEvent;
+import combatant.client.events.impl.PacketEvent;
 import combatant.client.features.module.Module;
+import net.minecraft.network.protocol.game.ClientboundDamageEventPacket;
+import net.minecraft.network.protocol.game.ClientboundExplodePacket;
+import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.ModuleSubcategory;
@@ -36,6 +40,8 @@ public class Freecam extends Module {
     private static final String SETTING_HORIZONTAL_SPEED = "horizontal_speed";
     private static final String SETTING_VERTICAL_SPEED = "vertical_speed";
     private static final String SETTING_TOGGLE_INPUT = "toggle_input";
+    private static final String SETTING_GRIM_SAFE = "grim_safe";
+    public final BooleanValue grimSafe = bool("grimSafe", SETTING_GRIM_SAFE, true);
     private final BooleanMapValue toggles = group(
             "freecamToggles",
             SETTING_TOGGLES,
@@ -102,16 +108,37 @@ public class Freecam extends Module {
     public void onDisable() {
         Minecraft mc = Minecraft.getInstance();
         if (prevPerspective != null) {
-            mc.options.setCameraType(prevPerspective);
+            if (mc.options != null) {
+                mc.options.setCameraType(prevPerspective);
+            }
+            prevPerspective = null;
         }
-        if (mc.player != null && mc.getCameraEntity() == camEntity) {
+        if (mc.getCameraEntity() == camEntity) {
             mc.setCameraEntity(mc.player);
         }
         camEntity = null;
+        camPos = Vec3.ZERO;
+        camPosPrev = Vec3.ZERO;
+        cameraInput = true;
     }
 
     @EventHandler
     private void onGameTick(GameTickEvent event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null || mc.player.isDeadOrDying()) {
+            if (isEnabled()) {
+                toggle();
+            }
+            return;
+        }
+        if (disableOnDamage() && mc.player != null) {
+            if (mc.player.hurtTime > 0 || mc.player.hurtDuration > 0) {
+                if (isEnabled()) {
+                    toggle();
+                    return;
+                }
+            }
+        }
         if (isActionPressedOnce(SETTING_TOGGLE_INPUT)) {
             cameraInput = !cameraInput;
             notifyInputMode(cameraInput);
@@ -119,6 +146,26 @@ public class Freecam extends Module {
         tickCameraMovement();
     }
 
+    @EventHandler
+    private void onPacketReceive(PacketEvent.Receive event) {
+        if (!isEnabled() || !disableOnDamage()) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) return;
+
+        var packet = event.getPacket();
+        if (packet instanceof ClientboundDamageEventPacket damage && damage.entityId() == mc.player.getId()) {
+            toggle();
+            return;
+        }
+        if (packet instanceof ClientboundSetEntityMotionPacket motion && motion.id() == mc.player.getId()) {
+            toggle();
+            return;
+        }
+        if (packet instanceof ClientboundExplodePacket explosion && explosion.playerKnockback().isPresent()) {
+            toggle();
+            return;
+        }
+    }
     private void notifyInputMode(boolean cameraInput) {
         String msg = cameraInput
                 ? "Freecam input: Camera"
@@ -127,12 +174,29 @@ public class Freecam extends Module {
         Notifier.info(msg);
     }
 
+    public boolean isGrimSafe() {
+        return grimSafe.get();
+    }
+
     public boolean freezePlayer() {
-        return isEnabled() && toggles.get("Freeze player");
+        if (!isEnabled() || !toggles.get("Freeze player")) {
+            return false;
+        }
+        if (isGrimSafe()) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player != null && !mc.player.onGround()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public boolean allowInteract() {
-        return isEnabled() && toggles.get("Allow interact");
+        if (!isEnabled()) return false;
+        if (isGrimSafe()) {
+            return false;
+        }
+        return toggles.get("Allow interact");
     }
 
     public boolean renderHand() {
@@ -140,9 +204,11 @@ public class Freecam extends Module {
     }
 
     public boolean disableOnDamage() {
+        if (isGrimSafe()) {
+            return true;
+        }
         return toggles.get("Disable on damage");
     }
-
     public boolean useFullBright() {
         return isEnabled() && toggles.get("Use FullBright");
     }

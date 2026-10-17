@@ -22,6 +22,10 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.item.ItemStack;
+import combatant.client.util.player.inventory.manager.InventoryManager;
+import combatant.client.util.player.inventory.manager.InventoryPriority;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
 
 import java.util.Arrays;
 

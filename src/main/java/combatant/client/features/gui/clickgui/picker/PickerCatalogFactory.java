@@ -37,8 +37,8 @@ import java.util.concurrent.Executors;
 public enum PickerCatalogFactory {
     ;
     private static final Comparator<PickerEntryData> ENTRY_ORDER = Comparator
-            .comparing(PickerEntryData::label, String.CASE_INSENSITIVE_ORDER)
-            .thenComparing(PickerEntryData::id, String.CASE_INSENSITIVE_ORDER);
+            .comparing((PickerEntryData e) -> e == null || e.label() == null ? "" : e.label(), String.CASE_INSENSITIVE_ORDER)
+            .thenComparing((PickerEntryData e) -> e == null || e.id() == null ? "" : e.id(), String.CASE_INSENSITIVE_ORDER);
     // PARTICLES is intentionally dynamic: ParticleClassCatalog learns implementations from
     // ParticleEngine.add(), so caching its first (usually startup-empty) snapshot loses all later observations.
     private static final EnumSet<TextListSetting.PickerMode> ASYNC_MODES = EnumSet.of(
@@ -54,7 +54,7 @@ public enum PickerCatalogFactory {
     );
     private static final Map<TextListSetting.PickerMode, CompletableFuture<List<PickerEntryData>>> ASYNC_CACHE =
             new ConcurrentHashMap<>();
-    private static final ExecutorService CATALOG_EXECUTOR = Executors.newFixedThreadPool(2, runnable -> {
+    private static final ExecutorService CATALOG_EXECUTOR = Executors.newFixedThreadPool(4, runnable -> {
         Thread thread = new Thread(runnable, "Combatant-PickerCatalog");
         thread.setDaemon(true);
         return thread;
@@ -167,7 +167,12 @@ public enum PickerCatalogFactory {
             return base;
         }
         if (mode != TextListSetting.PickerMode.PARTICLES || owner == null) return base;
-        Set<String> selected = Set.copyOf(owner.getValueSet());
+        Set<String> rawSelected = owner.getValueSet();
+        if (rawSelected == null || rawSelected.isEmpty()) return base;
+        Set<String> selected = new LinkedHashSet<>();
+        for (String s : rawSelected) {
+            if (s != null && !s.isBlank()) selected.add(s);
+        }
         if (selected.isEmpty()) return base;
         return base.thenApply(entries -> mergeParticleSelections(entries, selected));
     }
@@ -222,7 +227,8 @@ public enum PickerCatalogFactory {
     }
 
     private static List<PickerEntryData> screenEntries(TextListSetting owner) {
-        Set<String> selected = owner == null ? Set.of() : owner.getValueSet();
+        Set<String> rawSelected = owner == null ? null : owner.getValueSet();
+        Set<String> selected = rawSelected == null ? Set.of() : rawSelected;
         List<PickerEntryData> out = new ArrayList<>();
         for (ScreenCatalog.Entry entry : ScreenCatalog.entries(selected)) {
             out.add(new PickerEntryData(entry.getId(), entry.label(), ItemStack.EMPTY));
@@ -412,7 +418,8 @@ public enum PickerCatalogFactory {
     }
 
     private static List<PickerEntryData> particleEntries(TextListSetting owner) {
-        Set<String> selected = owner == null ? Set.of() : owner.getValueSet();
+        Set<String> rawSelected = owner == null ? null : owner.getValueSet();
+        Set<String> selected = rawSelected == null ? Set.of() : rawSelected;
         List<PickerEntryData> out = new ArrayList<>();
         for (ParticleClassCatalog.Entry entry : ParticleClassCatalog.entries(selected)) {
             out.add(new PickerEntryData(entry.id(), entry.label(), ItemStack.EMPTY));

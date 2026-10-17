@@ -31,6 +31,7 @@ import combatant.client.util.item.FoodUtil;
         displayName = "NoSlow",
         category = ModuleCategory.MOVEMENT,
         subcategory = ModuleSubcategory.BASIC,
+        aliases = {"noslowdown"},
         description = "module.noslow.description"
 )
 public final class NoSlow extends Module {
@@ -54,6 +55,10 @@ public final class NoSlow extends Module {
     private final BooleanValue shield = bool("shield", true);
     private final BooleanValue trident = bool("trident", true);
     private final BooleanValue other = bool("other", true);
+
+    // Terrain/web slowdowns are separate from item use; Grim simulates them, so the grim preset leaves them vanilla.
+    private final BooleanValue webs = bool("webs", true);
+    private final BooleanValue terrain = bool("terrain", true);
 
     private final BooleanValue onlyOnGround = bool("only_on_ground", false);
     private final BooleanValue allowSprint = bool("sprint", true);
@@ -151,5 +156,36 @@ public final class NoSlow extends Module {
     /** CUSTOM's per-axis multipliers on the movement input. */
     public Vec2 getModifiedInput(Vec2 input, LocalPlayer player) {
         return new Vec2(input.x * strafeMultiplier.get(), input.y * forwardMultiplier.get());
+    }
+
+    public WebMode getWebMode() {
+        if (!isEnabled() || anticheat.get() == AntiCheatPreset.GRIM) return WebMode.VANILLA;
+        return webs.get() ? WebMode.FAST : WebMode.VANILLA;
+    }
+
+    private boolean cancelsTerrain() {
+        return isEnabled() && terrain.get() && anticheat.get() != AntiCheatPreset.GRIM;
+    }
+
+    public boolean shouldCancelSoulSand() {
+        return cancelsTerrain();
+    }
+
+    public boolean shouldCancelHoney() {
+        return cancelsTerrain();
+    }
+
+    public boolean shouldCancelSlime() {
+        return cancelsTerrain();
+    }
+
+    public boolean shouldCancelBerryBush() {
+        return cancelsTerrain();
+    }
+
+    public enum WebMode {
+        VANILLA,
+        OFF,
+        FAST
     }
 }

@@ -31,11 +31,14 @@ import combatant.client.events.impl.AttackEntityEvent;
 import combatant.client.events.impl.BlinkPacketEvent;
 import combatant.client.events.impl.EventTargetChanged;
 import combatant.client.events.impl.GameTickEvent;
+import combatant.client.util.player.NetworkStatsUtil;
 import combatant.client.util.target.TargetManager;
 import combatant.client.util.target.TargetingUtil;
 
+import java.util.List;
+import java.util.Deque;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ThreadLocalRandom;
-
 /**
  * Headless incoming-packet backtrack controller adapted from LiquidBounce's Backtrack module.
  */
@@ -45,6 +48,7 @@ public final class BacktrackController {
     private volatile boolean enabled;
     private Config config = Config.defaults();
     private Entity target;
+    private final Deque<HitboxSample> hitboxHistory = new ConcurrentLinkedDeque<>();
     private int currentDelayMs = randomBetween(config.minDelayMs(), config.maxDelayMs());
     private int currentChance = ThreadLocalRandom.current().nextInt(0, 100);
     private long nextAllowedBacktrackMs;
@@ -52,10 +56,10 @@ public final class BacktrackController {
     private long lastAttackMs;
     private boolean shouldPause;
 
-    private BacktrackController() {
-    }
+    public record HitboxSample(long timestamp, Vec3 position, AABB boundingBox) {}
 
     private static boolean shouldAlwaysPass(Packet<?> packet) {
+        if (packet == null) return false;
         return packet instanceof ServerboundChatPacket
                 || packet instanceof ServerboundChatCommandPacket
                 || packet instanceof ClientboundPingPacket
@@ -65,15 +69,26 @@ public final class BacktrackController {
     }
 
     private static boolean isPlayerHurtSound(Packet<?> packet) {
-        return packet instanceof ClientboundSoundPacket sound && sound.getSound().value() == SoundEvents.PLAYER_HURT
-                || packet instanceof ClientboundSoundEntityPacket entitySound
-                && entitySound.getSound().value() == SoundEvents.PLAYER_HURT;
+        if (packet == null) return false;
+        try {
+            return packet instanceof ClientboundSoundPacket sound && sound.getSound() != null && sound.getSound().value() == SoundEvents.PLAYER_HURT
+                    || packet instanceof ClientboundSoundEntityPacket entitySound
+                    && entitySound.getSound() != null
+                    && entitySound.getSound().value() == SoundEvents.PLAYER_HURT;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private static boolean shouldClearOnSafetyPacket(Packet<?> packet) {
-        return packet instanceof ClientboundPlayerPositionPacket
-                || packet instanceof ClientboundDisconnectPacket
-                || packet instanceof ClientboundSetHealthPacket health && health.getHealth() <= 0.0f;
+        if (packet == null) return false;
+        try {
+            return packet instanceof ClientboundPlayerPositionPacket
+                    || packet instanceof ClientboundDisconnectPacket
+                    || packet instanceof ClientboundSetHealthPacket health && health.getHealth() <= 0.0f;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private static boolean isTargetEntityPacket(ClientboundMoveEntityPacket packet, Entity target, Minecraft mc) {
@@ -158,10 +173,139 @@ public final class BacktrackController {
         return target;
     }
 
+    public Deque<HitboxSample> getHitboxHistory() {
+        return hitboxHistory;
+    }
+
+    public Vec3 getInterpolatedPosition(long targetTimeMs) {
+        if (hitboxHistory.isEmpty()) {
+            return target != null ? target.position() : delayedPosition.getBase();
+        }
+        HitboxSample before = null;
+        HitboxSample after = null;
+        for (HitboxSample sample : hitboxHistory) {
+            if (sample.timestamp() <= targetTimeMs) {
+                if (before == null || sample.timestamp() > before.timestamp()) {
+                    before = sample;
+                }
+            }
+            if (sample.timestamp() >= targetTimeMs) {
+                if (after == null || sample.timestamp() < after.timestamp()) {
+                    after = sample;
+                }
+            }
+        }
+        if (before == null && after == null) return target != null ? target.position() : delayedPosition.getBase();
+        if (before == null) return after.position();
+        if (after == null) return before.position();
+        if (before.timestamp() == after.timestamp()) return before.position();
+
+        double factor = (double) (targetTimeMs - before.timestamp()) / (after.timestamp() - before.timestamp());
+        factor = Math.max(0.0, Math.min(1.0, factor));
+        return before.position().lerp(after.position(), factor);
+    }
+
+    /**
+     * Finds the sample in hitboxHistory closest in time to targetTimeMs.
+     *
+     * @param targetTimeMs target time in milliseconds
+     * @return the closest HitboxSample, or null if history is empty
+     */
+    public HitboxSample getClosestSample(long targetTimeMs) {
+        if (hitboxHistory.isEmpty()) {
+            return null;
+        }
+        HitboxSample closest = null;
+        long minDiff = Long.MAX_VALUE;
+        for (HitboxSample sample : hitboxHistory) {
+            long diff = Math.abs(sample.timestamp() - targetTimeMs);
+            if (diff < minDiff) {
+                minDiff = diff;
+                closest = sample;
+            }
+        }
+        return closest;
+    }
+
+    /**
+     * Linearly interpolates min/max coordinates between the two samples bracketing targetTimeMs,
+     * or falls back to closest sample.
+     *
+     * @param targetTimeMs target time in milliseconds
+     * @return interpolated or fallback AABB bounding box
+     */
+    public AABB getInterpolatedHitbox(long targetTimeMs) {
+        if (hitboxHistory.isEmpty()) {
+            if (target != null) {
+                return target.getBoundingBox();
+            }
+            Vec3 pos = delayedPosition.getBase();
+            return new AABB(pos, pos);
+        }
+
+        HitboxSample before = null;
+        HitboxSample after = null;
+        for (HitboxSample sample : hitboxHistory) {
+            if (sample.timestamp() <= targetTimeMs) {
+                if (before == null || sample.timestamp() > before.timestamp()) {
+                    before = sample;
+                }
+            }
+            if (sample.timestamp() >= targetTimeMs) {
+                if (after == null || sample.timestamp() < after.timestamp()) {
+                    after = sample;
+                }
+            }
+        }
+
+        if (before != null && after != null) {
+            if (before == after || before.timestamp() == after.timestamp()) {
+                return before.boundingBox();
+            }
+            double factor = (double) (targetTimeMs - before.timestamp()) / (after.timestamp() - before.timestamp());
+            factor = Math.clamp(factor, 0.0, 1.0);
+            AABB b1 = before.boundingBox();
+            AABB b2 = after.boundingBox();
+            double minX = b1.minX + (b2.minX - b1.minX) * factor;
+            double minY = b1.minY + (b2.minY - b1.minY) * factor;
+            double minZ = b1.minZ + (b2.minZ - b1.minZ) * factor;
+            double maxX = b1.maxX + (b2.maxX - b1.maxX) * factor;
+            double maxY = b1.maxY + (b2.maxY - b1.maxY) * factor;
+            double maxZ = b1.maxZ + (b2.maxZ - b1.maxZ) * factor;
+            return new AABB(minX, minY, minZ, maxX, maxY, maxZ);
+        }
+
+        HitboxSample closest = getClosestSample(targetTimeMs);
+        if (closest != null) {
+            return closest.boundingBox();
+        }
+
+        if (target != null) {
+            return target.getBoundingBox();
+        }
+        Vec3 pos = delayedPosition.getBase();
+        return new AABB(pos, pos);
+    }
+
+    /**
+     * Returns an unmodifiable snapshot list of the current hitbox history.
+     *
+     * @return unmodifiable list snapshot of hitboxHistory
+     */
+    public List<HitboxSample> getHitboxHistorySnapshot() {
+        return List.copyOf(hitboxHistory);
+    }
+
+    public AABB getPingInterpolatedHitbox() {
+        Minecraft mc = Minecraft.getInstance();
+        int ping = NetworkStatsUtil.getPing(mc);
+        int delay = ping > 0 ? ping : currentDelayMs;
+        return getInterpolatedHitbox(System.currentTimeMillis() - delay);
+    }
+
     public void setTarget(Entity target) {
         processTarget(target);
     }
-
     public boolean shouldRenderTrackedBody() {
         Entity currentTarget = target;
         if (!enabled
@@ -178,13 +322,15 @@ public final class BacktrackController {
 
     @EventHandler
     public void onAttack(AttackEntityEvent event) {
-        if (!enabled || config.targetMode() != TargetMode.ATTACK || event == null) {
+        if (!enabled || event == null) {
             return;
         }
 
         lastAttackMs = System.currentTimeMillis();
         currentChance = ThreadLocalRandom.current().nextInt(0, 100);
-        processTarget(event.getTarget());
+        if (event.getTarget() instanceof LivingEntity living && TargetingUtil.isValidCombatTarget(living)) {
+            processTarget(living);
+        }
     }
 
     @EventHandler
@@ -192,13 +338,11 @@ public final class BacktrackController {
         if (!enabled) {
             return;
         }
-        if (config.targetMode() != TargetMode.ATTACK) {
-            return;
-        }
-        if (event.currentSource == TargetManager.Source.ATTACK && event.current != null) {
+        if (event.current != null && TargetingUtil.isValidCombatTarget(event.current)) {
             lastAttackMs = System.currentTimeMillis();
-            currentChance = ThreadLocalRandom.current().nextInt(0, 100);
             processTarget(event.current);
+        } else if (event.current == null && (target != null || hasQueuedIncoming())) {
+            clear(true);
         }
     }
 
@@ -209,18 +353,36 @@ public final class BacktrackController {
         }
 
         Minecraft mc = Minecraft.getInstance();
-        if (mc == null || mc.level == null || mc.player == null) {
+        if (mc == null || mc.level == null || mc.player == null || mc.player.isDeadOrDying()) {
             clear(true);
             return;
         }
 
-        if (config.targetMode() == TargetMode.RANGE) {
-            LivingEntity enemy = findEnemy(mc, config.minRange(), config.maxRange());
-            if (enemy != null) {
-                processTarget(enemy);
-            } else if (target != null || hasQueuedIncoming()) {
-                clear(true);
+        // Integrate with TargetManager: only backtrack active enemy combat targets
+        LivingEntity enemy = TargetManager.getTarget();
+        if (enemy == null || !TargetingUtil.isValidCombatTarget(enemy) || enemy.isDeadOrDying()) {
+            enemy = TargetManager.resolveTarget(mc.player, mc.level, config.maxRange(), TargetingUtil.TargetPriority.DISTANCE);
+        }
+
+        if (enemy != null && TargetingUtil.isValidCombatTarget(enemy) && !enemy.isDeadOrDying()) {
+            processTarget(enemy);
+        } else if (target != null || hasQueuedIncoming()) {
+            clear(true);
+        }
+
+        // Accurately calculate target hitbox history and ping interpolation
+        if (target instanceof LivingEntity living && living.isAlive()) {
+            long now = System.currentTimeMillis();
+            Vec3 pos = delayedPosition.getBase() != null && !delayedPosition.getBase().equals(Vec3.ZERO)
+                    ? delayedPosition.getBase()
+                    : target.position();
+            AABB box = target.getDimensions(target.getPose()).makeBoundingBox(pos);
+            hitboxHistory.addLast(new HitboxSample(now, pos, box));
+            while (hitboxHistory.size() > 50 || (!hitboxHistory.isEmpty() && now - hitboxHistory.peekFirst().timestamp() > 1000L)) {
+                hitboxHistory.pollFirst();
             }
+        } else {
+            hitboxHistory.clear();
         }
 
         boolean hadQueuedIncoming = hasQueuedIncoming();
@@ -309,9 +471,9 @@ public final class BacktrackController {
 
         target = null;
         delayedPosition.setBase(Vec3.ZERO);
+        hitboxHistory.clear();
         shouldPause = false;
     }
-
     private void processTarget(Entity enemy) {
         if (!(enemy instanceof LivingEntity living)) {
             return;
@@ -372,30 +534,45 @@ public final class BacktrackController {
             return null;
         }
 
-        if (packet instanceof ClientboundMoveEntityPacket entityPacket && isTargetEntityPacket(entityPacket, target, mc) && entityPacket.hasPosition()) {
+        if (packet instanceof ClientboundMoveEntityPacket entityPacket && isTargetEntityPacket(entityPacket, target, mc)) {
             Vec3 pos = delayedPosition.decode(
                     entityPacket.getXa(),
                     entityPacket.getYa(),
                     entityPacket.getZa()
             );
-            delayedPosition.setBase(pos);
-            return pos;
+            if (pos != null && Double.isFinite(pos.x) && Double.isFinite(pos.y) && Double.isFinite(pos.z)) {
+                delayedPosition.setBase(pos);
+                return pos;
+            }
+            return null;
         }
         if (packet instanceof ClientboundTeleportEntityPacket positionPacket && positionPacket.id() == target.getId()) {
+            Vec3 currentBase = delayedPosition.getBase();
+            if (currentBase == null || !Double.isFinite(currentBase.x) || !Double.isFinite(currentBase.y) || !Double.isFinite(currentBase.z)) {
+                currentBase = target.position();
+            }
             PositionMoveRotation current = new PositionMoveRotation(
-                    delayedPosition.getBase(),
+                    currentBase,
                     target.getDeltaMovement(),
                     target.getYRot(),
                     target.getXRot()
             );
             Vec3 pos = PositionMoveRotation.calculateAbsolute(current, positionPacket.change(), positionPacket.relatives()).position();
-            delayedPosition.setBase(pos);
-            return pos;
+            if (pos != null && Double.isFinite(pos.x) && Double.isFinite(pos.y) && Double.isFinite(pos.z)) {
+                delayedPosition.setBase(pos);
+                return pos;
+            }
+            return null;
         }
         if (packet instanceof ClientboundEntityPositionSyncPacket syncPacket && syncPacket.id() == target.getId()) {
-            Vec3 pos = syncPacket.values().position();
-            delayedPosition.setBase(pos);
-            return pos;
+            if (syncPacket.values() != null) {
+                Vec3 pos = syncPacket.values().position();
+                if (pos != null && Double.isFinite(pos.x) && Double.isFinite(pos.y) && Double.isFinite(pos.z)) {
+                    delayedPosition.setBase(pos);
+                    return pos;
+                }
+            }
+            return null;
         }
         return null;
     }
@@ -417,27 +594,45 @@ public final class BacktrackController {
     }
 
     public record Config(
-            double minRange,
             double maxRange,
             int minDelayMs,
-            int maxDelayMs,
-            int minNextBacktrackDelayMs,
-            int maxNextBacktrackDelayMs,
-            int trackingBufferMs,
-            int chancePercent,
-            boolean pauseOnHurtTime,
-            int pauseHurtTime,
-            int lastAttackTimeToWorkMs,
-            TargetMode targetMode
+            int maxDelayMs
     ) {
         public Config {
-            if (targetMode == null) {
-                targetMode = TargetMode.ATTACK;
-            }
+            maxRange = Math.max(1.0, maxRange);
+            minDelayMs = Math.max(0, minDelayMs);
+            maxDelayMs = Math.max(minDelayMs, maxDelayMs);
         }
 
         public static Config defaults() {
-            return new Config(0.0, 3.0, 100, 150, 0, 10, 500, 100, false, 3, 1000, TargetMode.ATTACK);
+            return new Config(3.5, 100, 150);
         }
+
+        public Config(
+                double minRange,
+                double maxRange,
+                int minDelayMs,
+                int maxDelayMs,
+                int minNextBacktrackDelayMs,
+                int maxNextBacktrackDelayMs,
+                int trackingBufferMs,
+                int chancePercent,
+                boolean pauseOnHurtTime,
+                int pauseHurtTime,
+                int lastAttackTimeToWorkMs,
+                TargetMode targetMode
+        ) {
+            this(maxRange, minDelayMs, maxDelayMs);
+        }
+
+        public double minRange() { return 0.0; }
+        public int minNextBacktrackDelayMs() { return 0; }
+        public int maxNextBacktrackDelayMs() { return 10; }
+        public int trackingBufferMs() { return 500; }
+        public int chancePercent() { return 100; }
+        public boolean pauseOnHurtTime() { return false; }
+        public int pauseHurtTime() { return 3; }
+        public int lastAttackTimeToWorkMs() { return 1000; }
+        public TargetMode targetMode() { return TargetMode.ATTACK; }
     }
 }

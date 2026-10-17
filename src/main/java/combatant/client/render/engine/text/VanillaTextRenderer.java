@@ -248,7 +248,11 @@ public class VanillaTextRenderer implements TextRenderer {
             return;
         }
         if (!textSubmits.getSubmitsPerOrder().isEmpty()) {
-            getFeatureDispatcher().renderAllFeatures(textSubmits);
+            try {
+                getFeatureDispatcher().renderAllFeatures(textSubmits);
+            } catch (NullPointerException ignored) {
+                // ModelManager blockStateModelSet might not be initialized yet during early reload frames
+            }
             textSubmits = new SubmitNodeStorage();
         }
         drawing = false;

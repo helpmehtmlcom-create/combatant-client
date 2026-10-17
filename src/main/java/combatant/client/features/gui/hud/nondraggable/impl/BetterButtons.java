@@ -158,20 +158,30 @@ public final class BetterButtons extends AbstractHudElement {
 
     public static void flush() {
         if (QUEUE.isEmpty()) return;
+        if (!RuntimeGate.canRunRender()) {
+            QUEUE.clear();
+            return;
+        }
         GuiGraphicsExtractor ctx = LAST_CTX;
         if (ctx == null) {
             QUEUE.clear();
             return;
         }
-        for (RenderCall call : QUEUE) {
-            ScissorRect scissor = extractScissor(call);
-            boolean pushed = pushScissor(scissor);
-            call.render(ctx);
-            if (pushed) {
-                popScissor();
+        try {
+            for (RenderCall call : QUEUE) {
+                ScissorRect scissor = extractScissor(call);
+                boolean pushed = pushScissor(scissor);
+                try {
+                    call.render(ctx);
+                } finally {
+                    if (pushed) {
+                        popScissor();
+                    }
+                }
             }
+        } finally {
+            QUEUE.clear();
         }
-        QUEUE.clear();
     }
 
     private static ScissorRect extractScissor(RenderCall call) {
@@ -203,6 +213,7 @@ public final class BetterButtons extends AbstractHudElement {
                                      float hover,
                                      boolean enabled,
                                      boolean focused) {
+        if (!RuntimeGate.canRunRender()) return;
         QUEUE.add(new ButtonCall(widget, text, hover, enabled, focused, currentScissor()));
     }
 
@@ -210,6 +221,7 @@ public final class BetterButtons extends AbstractHudElement {
                                      float value,
                                      boolean dragging,
                                      float hover) {
+        if (!RuntimeGate.canRunRender()) return;
         QUEUE.add(new SliderCall(widget, value, dragging, hover, currentScissor()));
     }
 
@@ -218,6 +230,7 @@ public final class BetterButtons extends AbstractHudElement {
                                              float hover,
                                              boolean enabled,
                                              boolean focused) {
+        if (!RuntimeGate.canRunRender()) return;
         QUEUE.add(new TextIconCall(widget, iconOnly, hover, enabled, focused, currentScissor()));
     }
 
@@ -227,6 +240,7 @@ public final class BetterButtons extends AbstractHudElement {
                                             float hover,
                                             boolean enabled,
                                             boolean focused) {
+        if (!RuntimeGate.canRunRender()) return;
         QUEUE.add(new CyclingCall(widget, icon, showLabel, hover, enabled, focused, currentScissor()));
     }
 

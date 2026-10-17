@@ -38,6 +38,7 @@ public class TPSSync extends Module {
         if (mc == null || mc.level == null) return 1.0f;
 
         float tps = NetworkStatsUtil.getTps(mc);
+        if (Float.isNaN(tps) || Float.isInfinite(tps) || tps <= 0.0f) return 1.0f;
         if (tps >= startTps.get()) return 1.0f;
 
         return Math.max(minScale.get(), Math.max(0.0f, tps / 20.0f));

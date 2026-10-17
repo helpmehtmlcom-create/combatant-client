@@ -12,6 +12,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import combatant.client.features.module.Modules;
 import combatant.client.features.module.modules.movement.NoStun;
+import combatant.client.features.module.modules.movement.NoSlow;
 
 public enum EnvironmentMovementController {
     ;
@@ -25,6 +26,16 @@ public enum EnvironmentMovementController {
         if (block == null) {
             return null;
         }
+        NoSlow noSlow = Modules.get(NoSlow.class);
+        if (noSlow != null && noSlow.isEnabled()) {
+            if (noSlow.shouldCancelHoney() && block == Blocks.HONEY_BLOCK) {
+                return DEFAULT_SLIPPERINESS;
+            }
+            if (noSlow.shouldCancelSlime() && block == Blocks.SLIME_BLOCK) {
+                return DEFAULT_SLIPPERINESS;
+            }
+        }
+
 
         NoStun noStun = Modules.get(NoStun.class);
         if (noStun != null) {
@@ -41,6 +52,16 @@ public enum EnvironmentMovementController {
         if (block == null) {
             return null;
         }
+        NoSlow noSlow = Modules.get(NoSlow.class);
+        if (noSlow != null && noSlow.isEnabled()) {
+            if (noSlow.shouldCancelSoulSand() && block == Blocks.SOUL_SAND) {
+                return DEFAULT_VELOCITY_MULTIPLIER;
+            }
+            if (noSlow.shouldCancelHoney() && block == Blocks.HONEY_BLOCK) {
+                return DEFAULT_VELOCITY_MULTIPLIER;
+            }
+        }
+
 
         NoStun noStun = Modules.get(NoStun.class);
         if (noStun != null) {
@@ -54,6 +75,11 @@ public enum EnvironmentMovementController {
     }
 
     public static boolean shouldPreserveHoneySlide(Entity entity) {
+        NoSlow noSlow = Modules.get(NoSlow.class);
+        if (noSlow != null && noSlow.shouldCancelHoney()) {
+            return true;
+        }
+
         if (isNoStunHoneyEnabled()) {
             return true;
         }

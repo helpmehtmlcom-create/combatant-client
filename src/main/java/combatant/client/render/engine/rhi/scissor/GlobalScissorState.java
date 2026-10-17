@@ -31,22 +31,22 @@ public final class GlobalScissorState {
 
     public static void push(int x, int y, int width, int height) {
         if (set) {
-            throw new IllegalStateException("Global scissor already set");
+            pop();
         }
-        if (x < 0 || y < 0 || width <= 0 || height <= 0) {
-            throw new IllegalArgumentException("Invalid global scissor: x=" + x + ", y=" + y
-                    + ", width=" + width + ", height=" + height);
-        }
-        GlobalScissorState.x = x;
-        GlobalScissorState.y = y;
-        GlobalScissorState.width = width;
-        GlobalScissorState.height = height;
+        int x1 = Math.max(0, x);
+        int x2 = Math.max(0, x + Math.max(0, width));
+        int y1 = Math.max(0, y);
+        int y2 = Math.max(0, y + Math.max(0, height));
+        GlobalScissorState.x = x1;
+        GlobalScissorState.y = y1;
+        GlobalScissorState.width = Math.max(0, x2 - x1);
+        GlobalScissorState.height = Math.max(0, y2 - y1);
         set = true;
     }
 
     public static void pop() {
         if (!set) {
-            throw new IllegalStateException("No global scissor set");
+            return;
         }
         set = false;
     }
@@ -71,18 +71,15 @@ public final class GlobalScissorState {
 
         int ax1 = renderArea.x();
         int ay1 = renderArea.y();
-        int ax2 = ax1 + renderArea.width();
-        int ay2 = ay1 + renderArea.height();
+        int ax2 = ax1 + Math.max(0, renderArea.width());
+        int ay2 = ay1 + Math.max(0, renderArea.height());
 
         int sx1 = Math.max(x, ax1);
         int sy1 = Math.max(y, ay1);
-        int sx2 = Math.min(x + width, ax2);
-        int sy2 = Math.min(y + height, ay2);
-        int sw = sx2 - sx1;
-        int sh = sy2 - sy1;
-        if (sw <= 0 || sh <= 0) {
-            return false;
-        }
+        int sx2 = Math.min(x + Math.max(0, width), ax2);
+        int sy2 = Math.min(y + Math.max(0, height), ay2);
+        int sw = Math.max(0, sx2 - sx1);
+        int sh = Math.max(0, sy2 - sy1);
 
         pass.enableScissor(sx1, sy1, sw, sh);
         return true;

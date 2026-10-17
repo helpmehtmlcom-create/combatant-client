@@ -54,7 +54,8 @@ public enum SettingFactory {
             setting.setCommonI18nKeys(def.commonI18nKeys());
             setting.setI18nEnabled(def.i18nNameEnabled(), def.i18nOptionsEnabled());
             setting.unavailableReason(def.unavailableReason());
-
+            setting.setDescription(def.description());
+            setting.setTooltip(def.tooltip());
             if (def.visibility() != null) {
                 setting.visibleWhen(def.visibility());
             }

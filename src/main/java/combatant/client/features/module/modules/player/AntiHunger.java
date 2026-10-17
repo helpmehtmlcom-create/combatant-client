@@ -17,6 +17,7 @@ import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.mixins.accessors.ServerboundMovePlayerPacketAccessor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.protocol.Packet;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
 

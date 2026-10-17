@@ -304,7 +304,6 @@ public abstract class LocalPlayerMixin implements ILocalPlayer {
             }
         }
     }
-
     @Inject(method = "aiStep", at = @At("HEAD"))
     private void combatant$elytraFlyVanilla(CallbackInfo ci) {
         LocalPlayer player = (LocalPlayer) (Object) this;
@@ -327,10 +326,22 @@ public abstract class LocalPlayerMixin implements ILocalPlayer {
     @Shadow
     protected abstract void sendPosition();
 
+    @Inject(method = "isControlledCamera", at = @At("HEAD"), cancellable = true)
+    private void freecam$isControlledCamera(CallbackInfoReturnable<Boolean> cir) {
+        Freecam fc = Modules.get(Freecam.class);
+        if (fc != null && fc.isEnabled()) {
+            cir.setReturnValue(true);
+        }
+    }
+
     @Inject(method = "applyInput", at = @At("HEAD"), cancellable = true)
     private void freecam$blockWASD(CallbackInfo ci) {
         Freecam fc = Modules.get(Freecam.class);
         if (fc != null && fc.isEnabled() && fc.isCameraInput()) {
+            LocalPlayer self = (LocalPlayer) (Object) this;
+            self.xxa = 0.0f;
+            self.zza = 0.0f;
+            self.setJumping(false);
             ci.cancel();
         }
     }
@@ -349,15 +360,13 @@ public abstract class LocalPlayerMixin implements ILocalPlayer {
 
         ((InputAccessor) this.input).setMovementVector(Vec2.ZERO);
 
-        boolean sneak = false;
-        boolean sprint = this.input.keyPresses.sprint();
-
         this.input.keyPresses = new Input(
                 false, false, false, false,
                 false,
-                sneak,
-                sprint
+                false,
+                false
         );
+        ((LocalPlayer) (Object) this).setSprinting(false);
     }
 
     @Inject(
@@ -370,6 +379,10 @@ public abstract class LocalPlayerMixin implements ILocalPlayer {
     )
     private void combatant$afterInputTickSprint(CallbackInfo ci) {
         if (this.input == null) return;
+        Freecam fc = Modules.get(Freecam.class);
+        if (fc != null && fc.isEnabled() && fc.isCameraInput()) {
+            return;
+        }
 
         Input original = this.input.keyPresses;
         if (original == null) return;
@@ -495,10 +508,15 @@ public abstract class LocalPlayerMixin implements ILocalPlayer {
 
     @Unique
     private boolean shouldFreezeNow() {
-        boolean freezeModule = Modules.enabled(Freeze.class);
+        if (Modules.enabled(Freeze.class)) return true;
         Freecam freecam = Modules.get(Freecam.class);
-        boolean freecamFreeze = freecam != null && freecam.freezePlayer() && freecam.isCameraInput();
-        return freezeModule || freecamFreeze;
+        if (freecam != null && freecam.freezePlayer() && freecam.isCameraInput()) {
+            if (freecam.isGrimSafe()) {
+                return false;
+            }
+            return true;
+        }
+        return false;
     }
 
     @Inject(method = "sendPosition", at = @At("HEAD"), cancellable = true)

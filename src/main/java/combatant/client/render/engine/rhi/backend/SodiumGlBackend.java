@@ -350,20 +350,22 @@ public final class SodiumGlBackend implements CombatantRhi {
     private BindingCounts bindDrawState(RenderPass pass, RhiDrawCommand command, boolean bindPipeline, PassBindingCache bindings) {
         GpuBufferSlice meshData = null;
         if (requiresMeshData(command.pipelineSpec)) {
+            int width = Math.max(1, command.colorAttachment.getWidth(0));
+            int height = Math.max(1, command.colorAttachment.getHeight(0));
             MeshUniforms.update(
                     MeshRenderer.copyProjection(projectionScratch),
                     meshModelView(command),
-                    command.colorAttachment.getWidth(0),
-                    command.colorAttachment.getHeight(0)
+                    width,
+                    height
             );
             meshData = MeshUniforms.get();
         }
         GpuBufferSlice uiBatch = null;
         if (requiresUiBatch(command.pipelineSpec) && !command.hasUniform("UIBatch")) {
             ViewportContext viewport = ViewportContext.current();
-            UIBatchUniforms.update(
-                    viewport != null ? viewport.framebufferWidth() : command.colorAttachment.getWidth(0),
-                    viewport != null ? viewport.framebufferHeight() : command.colorAttachment.getHeight(0));
+            int width = viewport != null ? Math.max(1, viewport.framebufferWidth()) : Math.max(1, command.colorAttachment.getWidth(0));
+            int height = viewport != null ? Math.max(1, viewport.framebufferHeight()) : Math.max(1, command.colorAttachment.getHeight(0));
+            UIBatchUniforms.update(width, height);
             uiBatch = UIBatchUniforms.get();
         }
 
@@ -525,18 +527,20 @@ public final class SodiumGlBackend implements CombatantRhi {
             // blit as if it were world geometry (shrinking/offsetting lighting, post and debug
             // presentation). MeshData remains bound for legacy fullscreen vertex shaders, but its
             // transforms must be identity; only the viewport payload is meaningful here.
+            int width = Math.max(1, command.colorAttachment != null ? command.colorAttachment.getWidth(0) : 1);
+            int height = Math.max(1, command.colorAttachment != null ? command.colorAttachment.getHeight(0) : 1);
             MeshUniforms.update(
                     projectionScratch.identity(),
                     modelViewScratch.identity(),
-                    command.colorAttachment != null ? command.colorAttachment.getWidth(0) : 1.0f,
-                    command.colorAttachment != null ? command.colorAttachment.getHeight(0) : 1.0f
+                    width,
+                    height
             );
             GpuBufferSlice meshData = MeshUniforms.get();
 
             RenderPassDescriptor descriptor = RenderPassDescriptor.create(() -> command.label)
                     .withColorAttachment(command.colorAttachment, clearColor(command.clearColor))
                     .withRenderArea(new RenderPass.RenderArea(
-                            0, 0, command.colorAttachment.getWidth(0), command.colorAttachment.getHeight(0)
+                            0, 0, width, height
                     ));
             if (command.depthAttachment != null) {
                 descriptor.withDepthAttachment(command.depthAttachment, command.clearDepth);
@@ -610,7 +614,7 @@ public final class SodiumGlBackend implements CombatantRhi {
         if (width <= 0 || height <= 0) {
             throw new IllegalArgumentException("Render pass requires at least one non-empty attachment: " + label);
         }
-        descriptor.withRenderArea(new RenderPass.RenderArea(0, 0, width, height));
+        descriptor.withRenderArea(new RenderPass.RenderArea(0, 0, Math.max(1, width), Math.max(1, height)));
         return encoder.createRenderPass(descriptor);
     }
 

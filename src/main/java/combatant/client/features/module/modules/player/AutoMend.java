@@ -37,15 +37,29 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.Input;
+import net.minecraft.network.protocol.game.ServerboundSwingPacket;
+import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
-
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Predicate;
+import combatant.client.config.values.BooleanValue;
+import combatant.client.config.values.EnumValue;
+import combatant.client.config.values.NumberValue;
+import combatant.client.events.EventHandler;
+import combatant.client.events.impl.GameTickEvent;
+import combatant.client.features.module.Module;
+import combatant.client.features.module.ModuleCategory;
+import combatant.client.features.module.ModuleInfo;
+import combatant.client.util.aiming.RotationManager;
+import combatant.client.util.aiming.data.Rotation;
+import combatant.client.util.player.InteractionUtil;
+import combatant.client.util.player.inventory.InventorySwap;
+import combatant.client.util.player.inventory.SlotResult;
 
 @ModuleInfo(
         id = "automend",

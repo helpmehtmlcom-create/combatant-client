@@ -11,6 +11,7 @@ import combatant.client.config.common.CommonSettingSchema;
 import combatant.client.config.values.*;
 import combatant.client.features.gui.clickgui.settings.TextListSetting;
 
+import combatant.client.util.logging.DebugLog;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -33,6 +34,8 @@ public final class SettingDef {
     private final List<String> commonI18nKeys = new ArrayList<>();
     private boolean i18nNameEnabled = true;
     private boolean i18nOptionsEnabled = true;
+    private String description;
+    private String tooltip;
     private SettingDef(Kind kind, String id, ConfigValue<?> value) {
         this(kind, id, value, null, null);
     }
@@ -278,6 +281,23 @@ public final class SettingDef {
         return i18nOptionsEnabled;
     }
 
+    public SettingDef description(String description) {
+        this.description = description;
+        return this;
+    }
+
+    public String description() {
+        return description;
+    }
+
+    public SettingDef tooltip(String tooltip) {
+        this.tooltip = tooltip;
+        return this;
+    }
+
+    public String tooltip() {
+        return tooltip != null ? tooltip : description;
+    }
     public SettingDef visibleWhen(Supplier<Boolean> supplier) {
         this.visibility = supplier;
         return this;
@@ -296,7 +316,8 @@ public final class SettingDef {
             boolean unavailable;
             try {
                 unavailable = supplier.get();
-            } catch (Exception ignored) {
+            } catch (Exception t) {
+                DebugLog.warnOnChange("setting-avail-" + id, "Error evaluating availability for setting %s: %s", id, t.getMessage());
                 unavailable = false;
             }
             if (!unavailable) {

@@ -49,3 +49,4 @@ export_cache/
 /gradle/.idea/vcs.xml
 /fabric.mod.json
 /test server with grim/
+/.omx/

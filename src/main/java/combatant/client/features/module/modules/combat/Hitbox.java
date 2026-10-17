@@ -102,6 +102,13 @@ public class Hitbox extends Module {
         addAction(ACTION_SUPPRESS_HITBOX, "MOUSE3", BindMode.HOLD);
     }
 
+
+    @Override
+    public void onDisable() {
+        precomputedBoxes.clear();
+        precomputedEntities.clear();
+        hitFlashMs.clear();
+    }
     private static Map<String, Boolean> ignoreCategoryDefaults() {
         return Map.of(
                 "friends", false,

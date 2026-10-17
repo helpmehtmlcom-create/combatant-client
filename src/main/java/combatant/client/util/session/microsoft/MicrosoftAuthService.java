@@ -68,6 +68,10 @@ public final class MicrosoftAuthService {
     private MicrosoftAuthService() {
     }
 
+    public static void shutdown() {
+        EXECUTOR.shutdownNow();
+    }
+
     public static CompletableFuture<MicrosoftDeviceCode> requestDeviceCode() {
         String payload = "client_id=" + CLIENT_ID + "&scope=XboxLive.signin%20XboxLive.offline_access";
         HttpRequest request = formPost("https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode", payload);

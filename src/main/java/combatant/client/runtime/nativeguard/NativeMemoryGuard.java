@@ -22,13 +22,16 @@ public final class NativeMemoryGuard {
     private static volatile Status status = new Status(false, false, 0, "not initialized");
     private static volatile boolean nativeLoaded;
     private static volatile boolean shutDown;
-
+    private static volatile Path tempDirectory;
+    private static volatile Path tempLibrary;
+    private static volatile boolean shutdownHookRegistered;
     private NativeMemoryGuard() {
     }
 
     public static synchronized Status initialize() {
+        if (shutDown) return new Status(true, false, 0, "guard is already shut down");
+        ensureShutdownHookRegistered();
         if (status.attempted()) return status;
-
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         String architecture = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
         String resource = resourceFor(os, architecture);
@@ -46,14 +49,23 @@ public final class NativeMemoryGuard {
                 return status;
             }
 
+            cleanupStaleTempDirectories();
+
             Path directory = Files.createTempDirectory("combatant-guard-");
             Path library = directory.resolve(libraryName);
+            tempDirectory = directory;
+            tempLibrary = library;
             Files.copy(input, library, StandardCopyOption.REPLACE_EXISTING);
-            library.toFile().deleteOnExit();
-            directory.toFile().deleteOnExit();
+            try {
+                library.toFile().deleteOnExit();
+            } catch (SecurityException ignored) {
+            }
+            try {
+                directory.toFile().deleteOnExit();
+            } catch (SecurityException ignored) {
+            }
             System.load(library.toAbsolutePath().toString());
             nativeLoaded = true;
-
             int mask = nativeApply();
             int expected = os.contains("win")
                     ? WINDOWS_PROCESS_DACL
@@ -63,10 +75,12 @@ public final class NativeMemoryGuard {
             status = new Status(true, true, mask,
                     error == null || error.isBlank() ? (active ? "active" : "partially active") : error);
         } catch (IOException | LinkageError | SecurityException exception) {
+            if (!nativeLoaded) {
+                cleanupTempFiles();
+            }
             status = new Status(true, true, 0,
                     exception.getClass().getSimpleName() + ": " + String.valueOf(exception.getMessage()));
         }
-
         return status;
     }
 
@@ -87,10 +101,12 @@ public final class NativeMemoryGuard {
         try {
             nativeShutdown();
             status = new Status(true, true, 0, "inactive");
-        } catch (LinkageError | SecurityException exception) {
+        } catch (Throwable exception) {
             status = new Status(true, true, status.protectionMask(),
                     "shutdown failed: " + exception.getClass().getSimpleName() + ": "
                             + String.valueOf(exception.getMessage()));
+        } finally {
+            cleanupTempFiles();
         }
     }
 
@@ -118,6 +134,76 @@ public final class NativeMemoryGuard {
             case "linux-x86_64" -> "/combatant/nativeguard/linux-x86_64/libcombatant_memory_guard.so";
             default -> null;
         };
+    }
+
+    private static void cleanupStaleTempDirectories() {
+        String tmpDir;
+        try {
+            tmpDir = System.getProperty("java.io.tmpdir");
+        } catch (SecurityException ignored) {
+            return;
+        }
+        if (tmpDir == null || tmpDir.isBlank()) return;
+        Path currentDir = tempDirectory;
+        try (var stream = Files.newDirectoryStream(Path.of(tmpDir), "combatant-guard-*")) {
+            for (Path stale : stream) {
+                if (currentDir != null && stale.equals(currentDir)) continue;
+                deleteRecursively(stale);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void cleanupTempFiles() {
+        Path lib = tempLibrary;
+        Path dir = tempDirectory;
+        tempLibrary = null;
+        tempDirectory = null;
+        if (lib != null) {
+            try {
+                Files.deleteIfExists(lib);
+            } catch (Throwable ignored) {
+                // On Windows, the loaded DLL remains locked until JVM exit; deleteOnExit handles fallback.
+            }
+        }
+        if (dir != null) {
+            try {
+                Files.deleteIfExists(dir);
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    private static void ensureShutdownHookRegistered() {
+        if (shutdownHookRegistered) return;
+        synchronized (NativeMemoryGuard.class) {
+            if (shutdownHookRegistered) return;
+            try {
+                Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                    try {
+                        shutdown();
+                    } catch (Throwable ignored) {
+                    }
+                    cleanupTempFiles();
+                }, "Combatant-NativeMemoryGuard-Cleanup"));
+                shutdownHookRegistered = true;
+            } catch (SecurityException | IllegalStateException ignored) {
+            }
+        }
+    }
+    private static void deleteRecursively(Path root) {
+        try {
+            if (Files.isDirectory(root)) {
+                try (var children = Files.newDirectoryStream(root)) {
+                    for (Path child : children) {
+                        deleteRecursively(child);
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+            Files.deleteIfExists(root);
+        } catch (Throwable ignored) {
+        }
     }
 
     private static native int nativeApply();

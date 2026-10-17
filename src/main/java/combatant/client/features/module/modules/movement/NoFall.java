@@ -177,17 +177,20 @@ public class NoFall extends Module {
 
         if (effectiveMode() != Mode.MLG) {
             currentMlgPlan = null;
+            RotationManager.INSTANCE.clear(this);
             return;
         }
 
         Minecraft client = Minecraft.getInstance();
-        if (client == null || client.player == null || client.gameMode == null) {
+        if (client == null || client.player == null || client.gameMode == null || client.player.isDeadOrDying()) {
             currentMlgPlan = null;
+            RotationManager.INSTANCE.clear(this);
             return;
         }
 
         currentMlgPlan = getCurrentGoal(client.player);
         if (currentMlgPlan == null || mlgNoRotations.get()) {
+            RotationManager.INSTANCE.clear(this);
             return;
         }
 
@@ -303,6 +306,7 @@ public class NoFall extends Module {
         mlgSneakTicks = 0;
         lastWaterPlacements.clear();
         InventorySwap.INSTANCE.releaseHotbar(this);
+        RotationManager.INSTANCE.clear(this);
     }
 
     private void tickMlg(Minecraft client, LocalPlayer player) {

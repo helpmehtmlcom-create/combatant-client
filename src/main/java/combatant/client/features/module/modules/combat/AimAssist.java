@@ -34,6 +34,9 @@ import combatant.client.util.aiming.point.PointInsideBox;
 import combatant.client.util.aiming.point.PointTracker;
 import combatant.client.util.screen.ClientScreen;
 import combatant.client.util.target.TargetingUtil;
+import combatant.client.events.EventHandler;
+import combatant.client.events.impl.GameTickEvent;
+import combatant.client.features.relations.CategoryService;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.tags.ItemTags;
@@ -55,6 +58,7 @@ import java.util.concurrent.ThreadLocalRandom;
 @ModuleInfo(
         id = "aimassist",
         displayName = "AimAssist",
+        aliases = {"smoothaim", "legitaim", "aimhelper"},
         category = ModuleCategory.COMBAT, subcategory = ModuleSubcategory.LEGIT,
         description = "module.aimassist.description")
 public final class AimAssist extends Module {

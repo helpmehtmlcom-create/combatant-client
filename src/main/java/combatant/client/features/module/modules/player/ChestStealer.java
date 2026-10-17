@@ -31,9 +31,23 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
-
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
+import combatant.client.events.EventHandler;
+import combatant.client.events.impl.GameTickEvent;
+import net.minecraft.client.gui.screens.inventory.ShulkerBoxScreen;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.world.inventory.ShulkerBoxMenu;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.equipment.Equippable;
+import net.minecraft.world.level.block.ShulkerBoxBlock;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 
 @ModuleInfo(
         id = "cheststealer",

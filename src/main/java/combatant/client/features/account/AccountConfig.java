@@ -446,23 +446,27 @@ public final class AccountConfig implements JsonConfigObject, ConfigNameProvider
             if (json instanceof Iterable<?> iterable) {
                 int fallbackIndex = 0;
                 for (Object item : iterable) {
-                    if (!(item instanceof Map<?, ?> row)) {
-                        continue;
-                    }
+                    try {
+                        if (!(item instanceof Map<?, ?> row)) {
+                            continue;
+                        }
 
-                    String name = stringValue(row.get("name"));
-                    if (name.isBlank()) {
-                        continue;
-                    }
+                        String name = stringValue(row.get("name"));
+                        if (name.isBlank()) {
+                            continue;
+                        }
 
-                    String date = stringValue(row.get("date"));
-                    Identifier skin = parseIdentifier(stringValue(row.get("skin")));
-                    boolean pinned = boolValue(row.get("pinned"));
-                    int originalIndex = intValue(row.get("originalIndex"), fallbackIndex);
-                    AccountAuthType authType = AccountAuthType.byId(stringValue(row.get("authType")));
-                    UUID onlineUuid = parseUuid(stringValue(row.get("onlineUuid")));
-                    loaded.add(new AccountEntry(name, date, skin, pinned, originalIndex, authType, onlineUuid, ""));
-                    fallbackIndex++;
+                        String date = stringValue(row.get("date"));
+                        Identifier skin = parseIdentifier(stringValue(row.get("skin")));
+                        boolean pinned = boolValue(row.get("pinned"));
+                        int originalIndex = intValue(row.get("originalIndex"), fallbackIndex);
+                        AccountAuthType authType = AccountAuthType.byId(stringValue(row.get("authType")));
+                        UUID onlineUuid = parseUuid(stringValue(row.get("onlineUuid")));
+                        loaded.add(new AccountEntry(name, date, skin, pinned, originalIndex, authType, onlineUuid, ""));
+                        fallbackIndex++;
+                    } catch (Exception e) {
+                        DebugLog.error("[AccountConfig] Failed to deserialize account row: %s", e.getMessage());
+                    }
                 }
             }
 

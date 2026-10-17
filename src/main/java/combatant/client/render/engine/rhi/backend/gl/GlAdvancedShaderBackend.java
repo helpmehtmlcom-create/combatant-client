@@ -399,8 +399,9 @@ public final class GlAdvancedShaderBackend implements AdvancedShaderBackend {
 
         boolean scissorWasEnabled = GL11C.glIsEnabled(GL11C.GL_SCISSOR_TEST);
         try {
-            GlStateManager._glBindFramebuffer(GL30C.GL_FRAMEBUFFER, fbo);
-            GlStateManager._viewport(0, 0, color0.getWidth(0), color0.getHeight(0));
+            int vpWidth = Math.max(1, color0.getWidth(0));
+            int vpHeight = Math.max(1, color0.getHeight(0));
+            GlStateManager._viewport(0, 0, vpWidth, vpHeight);
             // Native patch submission bypasses Blaze3D's ordinary render-pass setup. A stale
             // scissor from any prior pass would otherwise clip tessellated world geometry at the
             // framebuffer edge. Patch draws in this backend are full-target draws.

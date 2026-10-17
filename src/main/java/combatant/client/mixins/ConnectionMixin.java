@@ -12,90 +12,276 @@ import net.minecraft.network.Connection;
 import net.minecraft.network.PacketListener;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundBundlePacket;
-import net.minecraft.server.RunningOnDifferentThreadException;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import combatant.client.events.Events;
 import combatant.client.events.impl.PacketEvent;
+import combatant.client.util.logging.DebugLog;
 import combatant.client.util.network.BlinkManager;
 import combatant.client.util.proxy.ProxyNettyInstaller;
 
+import java.util.Arrays;
+import java.util.List;
+import java.util.RandomAccess;
 @Mixin(Connection.class)
 public class ConnectionMixin {
 
-    @Shadow
-    private static <T extends PacketListener> void genericsFtw(Packet<T> packet, PacketListener listener) {
-        throw new AssertionError();
-    }
+    @Unique
+    private static final int MAX_BUNDLE_DEPTH = 5;
 
-    @Inject(method = "genericsFtw", at = @At("HEAD"), cancellable = true)
-    private static <T extends PacketListener> void combatant$onHandlePacket(Packet<T> packet, PacketListener listener, CallbackInfo ci) {
-        if (BlinkManager.isSilentlyHandlingPackets()) return;
-        if (!Events.BUS.hasListeners(PacketEvent.Receive.class)) return;
-        if (packet instanceof ClientboundBundlePacket packs) {
-            ci.cancel();
-            for (Packet<?> p : packs.subPackets()) {
-                try {
-                    combatant$handlePacketUnchecked(p, listener);
-                } catch (RunningOnDifferentThreadException ignored) {
+    @Unique
+    private static final class IdentityPacketList {
+        private final boolean isPooled;
+        private Packet<?>[] elements = new Packet<?>[32];
+        private int size = 0;
+        private boolean inUse = false;
+
+        IdentityPacketList(boolean isPooled) {
+            this.isPooled = isPooled;
+        }
+
+        public boolean add(Packet<?> packet) {
+            final Packet<?>[] array = this.elements;
+            final int count = this.size;
+            for (int i = 0; i < count; i++) {
+                if (array[i] == packet) {
+                    return false;
                 }
             }
-        } else {
-            PacketEvent.Receive event = new PacketEvent.Receive(packet);
-            Events.BUS.post(event);
-            if (event.isCancelled()) {
-                ci.cancel();
+            if (count == array.length) {
+                this.elements = Arrays.copyOf(array, array.length << 1);
+            }
+            this.elements[count] = packet;
+            this.size = count + 1;
+            return true;
+        }
+
+        public void clear() {
+            if (this.elements.length > 256) {
+                this.elements = new Packet<?>[32];
+                this.size = 0;
+            } else if (this.size != 0) {
+                Arrays.fill(this.elements, 0, this.size, null);
+                this.size = 0;
             }
         }
     }
 
     @Unique
-    @SuppressWarnings({"rawtypes", "unchecked"})
-    private static void combatant$handlePacketUnchecked(Packet<?> packet, PacketListener listener) {
-        ConnectionMixin.genericsFtw((Packet) packet, listener);
+    private static final ThreadLocal<IdentityPacketList> COMBATANT$SEEN_PACKETS =
+            ThreadLocal.withInitial(() -> new IdentityPacketList(true));
+
+    @Unique
+    private static IdentityPacketList combatant$acquireSeenList() {
+        IdentityPacketList seen = COMBATANT$SEEN_PACKETS.get();
+        if (seen.inUse) {
+            return new IdentityPacketList(false);
+        }
+        seen.inUse = true;
+        return seen;
+    }
+
+    @Unique
+    private static void combatant$releaseSeenList(IdentityPacketList seen) {
+        seen.clear();
+        if (seen.isPooled) {
+            seen.inUse = false;
+        }
+    }
+    @Inject(method = "genericsFtw", at = @At("HEAD"), cancellable = true)
+    private static <T extends PacketListener> void combatant$onHandlePacket(Packet<T> packet, PacketListener listener, CallbackInfo ci) {
+        if (packet == null) {
+            DebugLog.warn("Received null packet in genericsFtw");
+            ci.cancel();
+            return;
+        }
+        if (BlinkManager.isSilentlyHandlingPackets()) return;
+        if (!Events.BUS.hasListeners(PacketEvent.Receive.class) && !Events.BUS.hasListeners(PacketEvent.class)) return;
+
+        try {
+            PacketEvent.Receive event = new PacketEvent.Receive(packet);
+            Events.BUS.post(event);
+            if (event.isCancelled()) {
+                ci.cancel();
+                return;
+            }
+
+            if (packet instanceof ClientboundBundlePacket packs) {
+                IdentityPacketList seen = combatant$acquireSeenList();
+                try {
+                    seen.add(packs);
+                    combatant$unpackBundle(packs, seen, 0);
+                } finally {
+                    combatant$releaseSeenList(seen);
+                }
+            }
+        } catch (Throwable t) {
+            DebugLog.error("Error intercepting incoming packet: %s", t, packet.getClass().getSimpleName());
+        }
+    }
+
+    @Unique
+    private static void combatant$unpackBundle(ClientboundBundlePacket bundle, IdentityPacketList seen, int depth) {
+        if (depth > MAX_BUNDLE_DEPTH) {
+            DebugLog.warn("Exceeded max bundle packet nesting depth (%d)", depth);
+            return;
+        }
+        Iterable<Packet<?>> subPackets;
+        try {
+            subPackets = (Iterable) bundle.subPackets();
+        } catch (Throwable t) {
+            DebugLog.error("Failed to read subpackets from bundle packet", t);
+            return;
+        }
+        if (subPackets == null) return;
+
+        if (subPackets instanceof List<?> list && subPackets instanceof RandomAccess) {
+            int size = list.size();
+            for (int i = 0; i < size; i++) {
+                Object item = list.get(i);
+                if (item instanceof Packet<?> sub) {
+                    combatant$processSubPacket(sub, seen, depth);
+                }
+            }
+        } else {
+            for (Packet<?> sub : subPackets) {
+                if (sub == null) continue;
+                combatant$processSubPacket(sub, seen, depth);
+            }
+        }
+    }
+
+    @Unique
+    private static void combatant$processSubPacket(Packet<?> sub, IdentityPacketList seen, int depth) {
+        if (!seen.add(sub)) {
+            DebugLog.warn("Duplicate/circular packet detected in bundle: %s", sub.getClass().getSimpleName());
+            return;
+        }
+        try {
+            PacketEvent.Receive subEvent = new PacketEvent.Receive(sub, false);
+            Events.BUS.post(subEvent);
+            if (sub instanceof ClientboundBundlePacket nestedBundle) {
+                combatant$unpackBundle(nestedBundle, seen, depth + 1);
+            }
+        } catch (Throwable t) {
+            DebugLog.error("Error processing unpacked packet: %s", t, sub.getClass().getSimpleName());
+        }
     }
 
     @Inject(method = "genericsFtw", at = @At("TAIL"))
     private static <T extends PacketListener> void combatant$onHandlePacketPost(Packet<T> packet, PacketListener listener, CallbackInfo ci) {
+        if (packet == null) return;
         if (BlinkManager.isSilentlyHandlingPackets()) return;
-        if (!Events.BUS.hasListeners(PacketEvent.ReceivePost.class)) return;
-        if (packet instanceof ClientboundBundlePacket packs) {
-            for (Packet<?> p : packs.subPackets()) {
-                PacketEvent.ReceivePost event = new PacketEvent.ReceivePost(p);
-                Events.BUS.post(event);
-            }
-        } else {
+        if (!Events.BUS.hasListeners(PacketEvent.ReceivePost.class) && !Events.BUS.hasListeners(PacketEvent.class)) return;
+
+        try {
             PacketEvent.ReceivePost event = new PacketEvent.ReceivePost(packet);
             Events.BUS.post(event);
+            if (packet instanceof ClientboundBundlePacket packs) {
+                IdentityPacketList seen = combatant$acquireSeenList();
+                try {
+                    seen.add(packs);
+                    combatant$unpackBundlePost(packs, seen, 0);
+                } finally {
+                    combatant$releaseSeenList(seen);
+                }
+            }
+        } catch (Throwable t) {
+            DebugLog.error("Error intercepting incoming packet post: %s", t, packet.getClass().getSimpleName());
+        }
+    }
+
+    @Unique
+    private static void combatant$unpackBundlePost(ClientboundBundlePacket bundle, IdentityPacketList seen, int depth) {
+        if (depth > MAX_BUNDLE_DEPTH) {
+            DebugLog.warn("Exceeded max bundle packet nesting depth in ReceivePost (%d)", depth);
+            return;
+        }
+        Iterable<Packet<?>> subPackets;
+        try {
+            subPackets = (Iterable) bundle.subPackets();
+        } catch (Throwable t) {
+            DebugLog.error("Failed to read subpackets from bundle packet in ReceivePost", t);
+            return;
+        }
+        if (subPackets == null) return;
+
+        if (subPackets instanceof List<?> list && subPackets instanceof RandomAccess) {
+            int size = list.size();
+            for (int i = 0; i < size; i++) {
+                Object item = list.get(i);
+                if (item instanceof Packet<?> sub) {
+                    combatant$processSubPacketPost(sub, seen, depth);
+                }
+            }
+        } else {
+            for (Packet<?> sub : subPackets) {
+                if (sub == null) continue;
+                combatant$processSubPacketPost(sub, seen, depth);
+            }
+        }
+    }
+
+    @Unique
+    private static void combatant$processSubPacketPost(Packet<?> sub, IdentityPacketList seen, int depth) {
+        if (!seen.add(sub)) {
+            return;
+        }
+        try {
+            PacketEvent.ReceivePost subEvent = new PacketEvent.ReceivePost(sub, false);
+            Events.BUS.post(subEvent);
+            if (sub instanceof ClientboundBundlePacket nestedBundle) {
+                combatant$unpackBundlePost(nestedBundle, seen, depth + 1);
+            }
+        } catch (Throwable t) {
+            DebugLog.error("Error processing unpacked packet in ReceivePost: %s", t, sub.getClass().getSimpleName());
         }
     }
 
     @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;)V", at = @At("HEAD"), cancellable = true)
     private void combatant$onSendPacketPre(Packet<?> packet, CallbackInfo ci) {
-        if (BlinkManager.isSilentlyHandlingPackets()) return;
-        if (!Events.BUS.hasListeners(PacketEvent.Send.class)) return;
-        PacketEvent.Send event = new PacketEvent.Send(packet);
-        Events.BUS.post(event);
-        if (event.isCancelled()) {
+        if (packet == null) {
+            DebugLog.warn("Attempted to send null packet");
             ci.cancel();
+            return;
+        }
+        if (BlinkManager.isSilentlyHandlingPackets()) return;
+        if (!Events.BUS.hasListeners(PacketEvent.Send.class) && !Events.BUS.hasListeners(PacketEvent.class)) return;
+        try {
+            PacketEvent.Send event = new PacketEvent.Send(packet);
+            Events.BUS.post(event);
+            if (event.isCancelled()) {
+                ci.cancel();
+            }
+        } catch (Throwable t) {
+            DebugLog.error("Error intercepting outgoing packet pre: %s", t, packet.getClass().getSimpleName());
         }
     }
 
     @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;)V", at = @At("RETURN"))
     private void combatant$onSendPacketPost(Packet<?> packet, CallbackInfo ci) {
+        if (packet == null) return;
         if (BlinkManager.isSilentlyHandlingPackets()) return;
-        if (!Events.BUS.hasListeners(PacketEvent.SendPost.class)) return;
-        PacketEvent.SendPost event = new PacketEvent.SendPost(packet);
-        Events.BUS.post(event);
+        if (!Events.BUS.hasListeners(PacketEvent.SendPost.class) && !Events.BUS.hasListeners(PacketEvent.class)) return;
+        try {
+            PacketEvent.SendPost event = new PacketEvent.SendPost(packet);
+            Events.BUS.post(event);
+        } catch (Throwable t) {
+            DebugLog.error("Error intercepting outgoing packet post: %s", t, packet.getClass().getSimpleName());
+        }
     }
 
     @Inject(method = "configurePacketHandler", at = @At("HEAD"))
     private void combatant$installProxyHandler(ChannelPipeline pipeline, CallbackInfo ci) {
-        ProxyNettyInstaller.install(pipeline);
+        if (pipeline == null) return;
+        try {
+            ProxyNettyInstaller.install(pipeline);
+        } catch (Throwable t) {
+            DebugLog.error("Failed to install proxy handler", t);
+        }
     }
 
 

@@ -10,6 +10,7 @@ package combatant.client.features.module.modules.player;
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.NumberValue;
 import combatant.client.events.EventHandler;
+import combatant.client.events.impl.GameTickEvent;
 import combatant.client.events.impl.PacketEvent;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
@@ -20,6 +21,11 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ServerboundAcceptTeleportationPacket;
+import combatant.client.mixins.accessors.EntityAccessor;
+import combatant.client.mixins.accessors.LocalPlayerAccessor;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
+import net.minecraft.world.entity.PortalProcessor;
 import net.minecraft.world.level.block.Blocks;
 
 @ModuleInfo(

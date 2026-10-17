@@ -66,39 +66,44 @@ public enum WorldWideLineMeshCompiler {
 
         int lineCount = source.getIndicesCount() / 2;
         MeshBuilder out = new MeshBuilder(pipeline);
-        out.beginWorld(new net.minecraft.world.phys.Vec3(source.cameraAnchorX(), 0.0, source.cameraAnchorZ()));
-        out.reserve(Math.max(4, lineCount * 4), Math.max(6, lineCount * 6));
+        try {
+            out.beginWorld(new net.minecraft.world.phys.Vec3(source.cameraAnchorX(), 0.0, source.cameraAnchorZ()));
+            out.reserve(Math.max(4, lineCount * 4), Math.max(6, lineCount * 6));
 
-        ByteBuffer vertices = source.vertexBufferView();
-        ByteBuffer indices = source.indexBufferView();
-        int stride = source.getVertexStride();
-        if (stride < MIN_POSITION_COLOR_STRIDE) {
-            out.close();
-            return null;
-        }
-
-        long vertexBase = memAddress0(vertices);
-        long indexBase = memAddress0(indices);
-        int vertexCount = source.getVertexCount();
-        float width = Math.max(1.0f, command.lineWidth());
-        int validLines = 0;
-        for (int i = 0; i + 1 < source.getIndicesCount(); i += 2) {
-            int a = memGetInt(indexBase + (long) i * Integer.BYTES);
-            int b = memGetInt(indexBase + (long) (i + 1) * Integer.BYTES);
-            if (!validIndex(a, vertexCount) || !validIndex(b, vertexCount)) {
-                continue;
+            ByteBuffer vertices = source.vertexBufferView();
+            ByteBuffer indices = source.indexBufferView();
+            int stride = source.getVertexStride();
+            if (stride < MIN_POSITION_COLOR_STRIDE) {
+                out.close();
+                return null;
             }
-            appendLine(out, vertexBase, stride, source.cameraAnchorX(), source.cameraAnchorZ(), a, b, width);
-            validLines++;
-        }
 
-        if (validLines <= 0) {
+            long vertexBase = memAddress0(vertices);
+            long indexBase = memAddress0(indices);
+            int vertexCount = source.getVertexCount();
+            float width = Math.max(1.0f, command.lineWidth());
+            int validLines = 0;
+            for (int i = 0; i + 1 < source.getIndicesCount(); i += 2) {
+                int a = memGetInt(indexBase + (long) i * Integer.BYTES);
+                int b = memGetInt(indexBase + (long) (i + 1) * Integer.BYTES);
+                if (!validIndex(a, vertexCount) || !validIndex(b, vertexCount)) {
+                    continue;
+                }
+                appendLine(out, vertexBase, stride, source.cameraAnchorX(), source.cameraAnchorZ(), a, b, width);
+                validLines++;
+            }
+
+            if (validLines <= 0) {
+                out.close();
+                return null;
+            }
+
+            out.end();
+            return out;
+        } catch (Throwable failure) {
             out.close();
-            return null;
+            throw failure;
         }
-
-        out.end();
-        return out;
     }
 
     private static void appendLine(MeshBuilder out,

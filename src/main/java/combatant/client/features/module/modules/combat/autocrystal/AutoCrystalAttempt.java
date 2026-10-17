@@ -26,6 +26,9 @@ public final class AutoCrystalAttempt {
     public AutoCrystalAttempt incremented(LocalPlayer player) {
         return new AutoCrystalAttempt(player, time, attempts + 1, pos);
     }
+    public long time() {
+        return time;
+    }
 
     public boolean shouldRemove(LocalPlayer player) {
         return player == null || pos == null || Math.abs(distanceSq - (float) player.distanceToSqr(pos)) >= 1.0f;

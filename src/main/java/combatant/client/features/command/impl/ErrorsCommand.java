@@ -31,19 +31,41 @@ public final class ErrorsCommand implements ClientCommand {
     public boolean execute(CommandContext ctx) {
         String action = ctx.arg(0);
         if ("show".equalsIgnoreCase(action)) {
-            Failure failure = byId(ctx.arg(1));
+            String idArg = ctx.arg(1);
+            if (idArg == null || idArg.isBlank()) {
+                CommandOutput.warning("Usage: @errors show <id>");
+                return true;
+            }
+            Failure failure = byId(idArg);
+            if (failure == null) {
+                CommandOutput.error("Error not found with ID: " + idArg);
+                return true;
+            }
             FailureDiagnostics.show(failure);
             return true;
         }
         if ("retry".equalsIgnoreCase(action)) {
-            Module module = ModuleManager.get(ctx.arg(1));
-            if (module == null || ErrorHandler.failure(module) == null) {
-                CommandOutput.warning(FailureText.tr("command.no_module"));
+            String moduleArg = ctx.arg(1);
+            if (moduleArg == null || moduleArg.isBlank()) {
+                CommandOutput.warning("Usage: @errors retry <module>");
+                return true;
+            }
+            Module module = ModuleManager.get(moduleArg);
+            if (module == null) {
+                CommandOutput.error("Module not found: " + moduleArg);
+                return true;
+            }
+            if (ErrorHandler.failure(module) == null) {
+                CommandOutput.info("Module " + module.getDisplayName() + " has no recorded errors.");
                 return true;
             }
             boolean recovered = FailureIsolation.retryModule(module);
             if (!recovered) CommandOutput.warning(FailureText.tr("recovery.still_unavailable", module.getDisplayName()));
             else CommandOutput.success(FailureText.tr("recovery.success", module.getDisplayName()));
+            return true;
+        }
+        if (action != null && !action.isBlank() && !"list".equalsIgnoreCase(action)) {
+            CommandOutput.warning("Unknown action '" + action + "'. Usage: " + metadata().usage());
             return true;
         }
         List<Failure> history = ErrorHandler.history();

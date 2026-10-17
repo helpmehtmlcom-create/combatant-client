@@ -42,7 +42,16 @@ public final class GlTextureBlitter implements TextureBlitter {
         RhiCopyRequest.Region src = request.sourceRegion();
         RhiCopyRequest.Region dst = request.destinationRegion();
         if (src == null || dst == null || request.scales()) return false;
-
+        if (src.width() <= 0 || src.height() <= 0 || dst.width() <= 0 || dst.height() <= 0) return false;
+        if (src.width() != dst.width() || src.height() != dst.height()) return false;
+        int srcMip = request.source().baseMipLevel();
+        int dstMip = request.destination().baseMipLevel();
+        int srcW = Math.max(1, source.getWidth(srcMip));
+        int srcH = Math.max(1, source.getHeight(srcMip));
+        int dstW = Math.max(1, destination.getWidth(dstMip));
+        int dstH = Math.max(1, destination.getHeight(dstMip));
+        if (src.x() < 0 || src.y() < 0 || src.x() + src.width() > srcW) return false;
+        if (dst.x() < 0 || dst.y() < 0 || dst.x() + dst.width() > dstW) return false;
         if (GlValidation.errorsEnabled()) GlStateManager.clearGlErrors();
         GL43C.glCopyImageSubData(
                 sourceGl.glId(), GL11C.GL_TEXTURE_2D, request.source().baseMipLevel(), src.x(), src.y(), 0,

@@ -25,6 +25,10 @@ Combatant is already usable, but it is not feature-complete. Some areas still ne
 - [`Configs and HUD Guide`](CONFIGS_AND_HUD.md) - config profiles, `.cbcfg` files, loading profiles, and HUD element setup.
 - [`Client Commands`](CLIENT_COMMANDS.md) - command syntax, aliases, descriptions, and optional mod requirements.
 - [`Changelog`](CHANGELOG.md) - history of client updates, anticheat presets, modules, and performance improvements.
+- [`Documentation Maintenance`](DOCUMENTATION.md) - documentation index, version source of truth, and no-emoji writing rules.
+- [`Building Guidelines`](BUILDING_GUIDELINES.md) - source builds, development builds, native assets, and publishing commands.
+- [`Shaderpack Patches`](SHADERPACK_PATCHES.md) - Iris shaderpack patch targets and validation workflow.
+- [`Sound System`](SOUND_SYSTEM.md) - bundled sound replacement and sound registry notes.
 
 ## Logo wanted
 

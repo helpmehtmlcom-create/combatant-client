@@ -12,18 +12,15 @@ import combatant.client.runtime.error.FailureIsolation;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import combatant.client.config.*;
-import combatant.client.events.impl.RenderPrewarmCollectEvent;
+import combatant.client.config.common.CommonBooleanGroupSchema;
+import combatant.client.config.common.CommonSettingSchema;
 import combatant.client.config.values.*;
+import combatant.client.events.impl.RenderPrewarmCollectEvent;
 import combatant.client.addon.ModuleExtensionManager;
 import combatant.client.features.gui.clickgui.settings.*;
 import combatant.client.features.gui.hud.HudRenderSpace;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.renderer.SubmitNodeCollector;
-import combatant.client.config.*;
-import combatant.client.config.common.CommonBooleanGroupSchema;
-import combatant.client.config.common.CommonSettingSchema;
-import combatant.client.config.values.*;
-import combatant.client.features.gui.clickgui.settings.*;
 import combatant.client.render.engine.renderer.Renderer2D;
 import combatant.client.render.engine.renderer.Renderer3D;
 import combatant.client.render.engine.text.FontInfo;
@@ -725,6 +722,22 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
         }
         return value;
     }
+    protected final <V extends ConfigValue<?>> V description(V value, String description) {
+        SettingDef def = declaredSettingDefsByValue.get(value);
+        if (def != null) {
+            def.description(description);
+        }
+        return value;
+    }
+
+    protected final <V extends ConfigValue<?>> V tooltip(V value, String tooltip) {
+        SettingDef def = declaredSettingDefsByValue.get(value);
+        if (def != null) {
+            def.tooltip(tooltip);
+        }
+        return value;
+    }
+
 
     private void declare(ConfigValue<?> value, SettingDef def) {
         declaredSettingDefs.add(def);
@@ -787,9 +800,13 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
 
     public ConfigValue<?> getConfigValue(String configName) {
         if (configName == null || configName.isBlank()) return null;
-        for (ConfigValue<?> value : getConfigValues()) {
-            if (value != null && configName.equals(value.getName())) {
-                return value;
+        if (enabledValue.getName().equals(configName)) return enabledValue;
+        if (activationSourceValue.getName().equals(configName)) return activationSourceValue;
+        if (moduleListVisibleValue.getName().equals(configName)) return moduleListVisibleValue;
+        for (Setting s : settings) {
+            ConfigValue<?> v = s.getConfigValue();
+            if (v != null && configName.equals(v.getName())) {
+                return v;
             }
         }
         return null;
@@ -920,7 +937,7 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
     }
 
     public String getDisplayName() {
-        return translateFirst(displayName, "module." + name(), "module." + name() + ".name");
+        return translateFirst(displayName, "module." + name, "module." + name + ".name");
     }
 
     public List<String> getAliases() {
@@ -930,11 +947,34 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
     public String getDescription() {
         if (description == null || description.isBlank()) return "";
         String translated = I18n.get(description);
-        return translated.equals(description) ? "" : translated;
+        if (!translated.equals(description)) return translated;
+        // Literal (non-key) descriptions are shown as-is; unresolved lang keys stay hidden.
+        return description.startsWith("module.") ? "" : description;
     }
 
     public ModuleCategory getCategory() {
         return category;
+    }
+
+
+    private static String translateFirst(String fallback, String key1, String key2) {
+        if (key1 != null && !key1.isBlank()) {
+            String t1 = I18n.get(key1);
+            if (!t1.equals(key1)) return t1;
+        }
+        if (key2 != null && !key2.isBlank()) {
+            String t2 = I18n.get(key2);
+            if (!t2.equals(key2)) return t2;
+        }
+        return fallback == null ? "" : fallback;
+    }
+
+    private static String translateFirst(String fallback, String key) {
+        if (key != null && !key.isBlank()) {
+            String t = I18n.get(key);
+            if (!t.equals(key)) return t;
+        }
+        return fallback == null ? "" : fallback;
     }
 
     public ModuleSubcategory getSubcategory() {
@@ -1112,7 +1152,6 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
                 .font("OnestBold", FontInfo.Type.Regular)
                 .font("Inter", FontInfo.Type.Regular)
                 .font("Inter", FontInfo.Type.Bold)
-                .font("OnestMedium", FontInfo.Type.Regular)
                 .font("Iosevka", FontInfo.Type.Regular)
                 .font("Iosevka", FontInfo.Type.Bold);
     }
@@ -1199,20 +1238,24 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
 
     @Override
     public List<ConfigValue<?>> getConfigValues() {
-        Map<String, ConfigValue<?>> map = new LinkedHashMap<>();
+        List<ConfigValue<?>> values = new ArrayList<>(settings.size() + 3);
+        values.add(enabledValue);
+        values.add(activationSourceValue);
+        values.add(moduleListVisibleValue);
 
-        map.put(enabledValue.getName(), enabledValue);
-        map.put(activationSourceValue.getName(), activationSourceValue);
-        map.put(moduleListVisibleValue.getName(), moduleListVisibleValue);
+        Set<String> seen = new HashSet<>(settings.size() + 3);
+        seen.add(enabledValue.getName());
+        seen.add(activationSourceValue.getName());
+        seen.add(moduleListVisibleValue.getName());
 
         for (Setting s : settings) {
             ConfigValue<?> v = s.getConfigValue();
-            if (v != null) {
-                map.put(v.getName(), v);
+            if (v != null && seen.add(v.getName())) {
+                values.add(v);
             }
         }
 
-        return new ArrayList<>(map.values());
+        return values;
     }
 
     /**
@@ -1240,7 +1283,7 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
             return;
         }
         for (Setting s : settings) {
-            if (s.getId().equals(id)) {
+            if (id.equals(s.getId())) {
                 s.load(data);
                 break;
             }

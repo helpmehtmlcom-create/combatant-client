@@ -19,6 +19,9 @@ import combatant.client.render.engine.light.LightmapState;
 
 @Mixin(LightmapRenderStateExtractor.class)
 public abstract class LightmapRenderStateExtractorMixin {
+    @org.spongepowered.asm.mixin.Unique
+    private static boolean combatant$wasModified = false;
+
     @Inject(method = "extract", at = @At("TAIL"))
     private void combatant$modifyLightmapState(LightmapRenderState state, float tickDelta, CallbackInfo ci) {
         if (state == null) return;
@@ -28,7 +31,14 @@ public abstract class LightmapRenderStateExtractorMixin {
 
         if (event.isModified()) {
             state.needsUpdate = true;
+            combatant$wasModified = true;
             LightmapState.setAmbient(event.originalBrightness(), state.brightness);
+        } else {
+            if (combatant$wasModified) {
+                state.needsUpdate = true;
+                combatant$wasModified = false;
+            }
+            LightmapState.setAmbient(event.originalBrightness(), event.originalBrightness());
         }
     }
 }

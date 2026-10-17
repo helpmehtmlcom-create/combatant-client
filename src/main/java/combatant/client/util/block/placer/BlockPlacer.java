@@ -567,6 +567,125 @@ public final class BlockPlacer {
         clear();
     }
 
+    private static final net.minecraft.core.Direction[] HORIZONTALS = {
+            net.minecraft.core.Direction.NORTH,
+            net.minecraft.core.Direction.SOUTH,
+            net.minecraft.core.Direction.EAST,
+            net.minecraft.core.Direction.WEST
+    };
+
+    /** Finds the best horizontal-neighbour placement face for {@code targetPos} using strict, visible hit vectors. */
+    public static BlockHitResult findOptimalPlacementHit(net.minecraft.world.level.Level level, LocalPlayer player,
+                                                         BlockPos targetPos, double maxRange) {
+        if (level == null || player == null || targetPos == null) return null;
+
+        Vec3 eyes = player.getEyePosition();
+        double maxRangeSq = maxRange * maxRange;
+        BlockHitResult bestHit = null;
+        double bestDistSq = Double.MAX_VALUE;
+
+        for (net.minecraft.core.Direction dir : HORIZONTALS) {
+            BlockPos neighbor = targetPos.relative(dir);
+            if (!level.isInWorldBounds(neighbor)) continue;
+
+            BlockState state = level.getBlockState(neighbor);
+            if (state.isAir() || state.canBeReplaced() || state.getCollisionShape(level, neighbor).isEmpty()) {
+                continue;
+            }
+
+            net.minecraft.core.Direction clickFace = dir.getOpposite();
+            Vec3 hitVec = calculateStrictHitVec(neighbor, clickFace, eyes);
+            double distSq = eyes.distanceToSqr(hitVec);
+            if (distSq > maxRangeSq) continue;
+
+            HitResult clip = level.clip(new ClipContext(
+                    eyes, hitVec, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player));
+            if (clip.getType() == HitResult.Type.BLOCK && !neighbor.equals(((BlockHitResult) clip).getBlockPos())) {
+                continue;
+            }
+
+            if (distSq < bestDistSq) {
+                bestDistSq = distSq;
+                bestHit = new BlockHitResult(hitVec, clickFace, neighbor, false);
+            }
+        }
+        return bestHit;
+    }
+
+    /** A hit vector on {@code side} of {@code pos}, slightly off-centre towards the eye line. */
+    public static Vec3 calculateStrictHitVec(BlockPos pos, net.minecraft.core.Direction side, Vec3 eyes) {
+        Vec3 center = Vec3.atCenterOf(pos);
+        double faceCenterX = center.x + side.getStepX() * 0.5;
+        double faceCenterY = center.y + side.getStepY() * 0.5;
+        double faceCenterZ = center.z + side.getStepZ() * 0.5;
+
+        double margin = 0.38;
+        double dx = Math.max(-margin, Math.min(margin, (eyes.x - faceCenterX) * 0.25));
+        double dy = Math.max(-margin, Math.min(margin, (eyes.y - faceCenterY) * 0.25));
+        double dz = Math.max(-margin, Math.min(margin, (eyes.z - faceCenterZ) * 0.25));
+
+        if (side.getAxis() == net.minecraft.core.Direction.Axis.X) dx = 0.0;
+        if (side.getAxis() == net.minecraft.core.Direction.Axis.Y) dy = 0.0;
+        if (side.getAxis() == net.minecraft.core.Direction.Axis.Z) dz = 0.0;
+        return new Vec3(faceCenterX + dx, faceCenterY + dy, faceCenterZ + dz);
+    }
+
+    /** Immediate, single-shot placement for modules that drive their own timing. */
+    public static boolean placeBlock(Object owner, BlockHitResult hitResult, InteractionHand hand,
+                                     int hotbarSlot, boolean rotate, SwingMode swingMode) {
+        Minecraft client = Minecraft.getInstance();
+        LocalPlayer player = client.player;
+        if (player == null || client.getConnection() == null || client.gameMode == null || hitResult == null) {
+            return false;
+        }
+
+        if (rotate) {
+            Rotation rot = Rotation.lookingAt(hitResult.getLocation(), player.getEyePosition()).normalize();
+            RotationManager.INSTANCE.snapServerRotation(rot, 50, owner, 2);
+        }
+
+        boolean leased = false;
+        if (hand == InteractionHand.MAIN_HAND && hotbarSlot >= 0 && hotbarSlot < 9) {
+            leased = InventorySwap.INSTANCE.leaseHotbar(owner, hotbarSlot, 1);
+            if (!leased) return false;
+        }
+
+        try {
+            InteractionResult result = client.gameMode.useItemOn(player, hand, hitResult);
+            boolean success = result != null && result.consumesAction();
+            if (result == null) {
+                combatant.client.util.player.InteractionUtil.sendSequencedPacket(sequence ->
+                        new net.minecraft.network.protocol.game.ServerboundUseItemOnPacket(hand, hitResult, sequence));
+            }
+            performSwing(player, hand, swingMode != null ? swingMode : SwingMode.CLIENT_AND_SERVER);
+            return success || result != InteractionResult.FAIL;
+        } finally {
+            if (leased) {
+                InventorySwap.INSTANCE.releaseHotbar(owner);
+            }
+        }
+    }
+
+    public static void performSwing(LocalPlayer player, InteractionHand hand, SwingMode swingMode) {
+        if (player == null || hand == null || swingMode == SwingMode.NONE) return;
+
+        Minecraft client = Minecraft.getInstance();
+        if (swingMode == SwingMode.CLIENT || swingMode == SwingMode.CLIENT_AND_SERVER) {
+            player.swing(hand, false);
+        }
+        if ((swingMode == SwingMode.SERVER || swingMode == SwingMode.CLIENT_AND_SERVER)
+                && client.getConnection() != null) {
+            client.getConnection().send(new net.minecraft.network.protocol.game.ServerboundSwingPacket(hand));
+        }
+    }
+
+    public enum SwingMode {
+        CLIENT,
+        SERVER,
+        CLIENT_AND_SERVER,
+        NONE
+    }
+
     public enum RotationMode {
         NORMAL,
         NO_ROTATION

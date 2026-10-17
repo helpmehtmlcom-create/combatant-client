@@ -33,13 +33,16 @@ public final class ConfigProfileStorage {
         StringBuilder out = new StringBuilder(base.length());
         for (int i = 0; i < base.length(); i++) {
             char c = base.charAt(i);
-            if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.') {
+            if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-') {
                 out.append(c);
             } else {
                 out.append('_');
             }
         }
-        return out.length() == 0 ? "config" : out.toString();
+        String res = out.toString().replaceAll("_+", "_");
+        if (res.startsWith("_")) res = res.substring(1);
+        if (res.endsWith("_")) res = res.substring(0, res.length() - 1);
+        return res.isEmpty() ? "config" : res;
     }
 
     public Path root() {
@@ -47,9 +50,19 @@ public final class ConfigProfileStorage {
     }
 
     public Path directory(ConfigProfileType type) {
+        if (type == null) throw new IllegalArgumentException("profile type is null");
         return ROOT.resolve(type.folderName());
     }
 
+    public Path validateProfilePath(Path path, ConfigProfileType type) throws IOException {
+        if (path == null) throw new IllegalArgumentException("profile path is null");
+        Path dir = directory(type).toAbsolutePath().normalize();
+        Path normalized = path.toAbsolutePath().normalize();
+        if (!normalized.startsWith(dir)) {
+            throw new SecurityException("Profile path escapes type directory: " + path);
+        }
+        return normalized;
+    }
     public List<ConfigProfileMeta> list(ConfigProfileType type) {
         normalizeLooseProfiles();
         List<ConfigProfileMeta> out = new ArrayList<>();
@@ -98,7 +111,21 @@ public final class ConfigProfileStorage {
     }
 
     public ConfigProfileSnapshot read(ConfigProfileType type, String idOrName) throws IOException {
-        Path path = file(type, idOrName);
+        if (type == null) throw new IllegalArgumentException("profile type is null");
+        if (idOrName == null || idOrName.isBlank()) throw new IllegalArgumentException("profile id is blank");
+        Path path = validateProfilePath(file(type, idOrName), type);
+        if (!Files.exists(path)) {
+            throw new java.nio.file.NoSuchFileException(path.toString());
+        }
+        if (!Files.isRegularFile(path)) {
+            throw new IOException("Profile path is not a regular file: " + path);
+        }
+        if (!Files.isReadable(path)) {
+            throw new IOException("Profile path is not readable: " + path);
+        }
+        if (Files.size(path) == 0) {
+            throw new IOException("Profile file is empty: " + path);
+        }
         return codec.read(Files.readAllBytes(path));
     }
 
@@ -109,14 +136,32 @@ public final class ConfigProfileStorage {
 
     public void save(ConfigProfileSnapshot snapshot) throws IOException {
         if (snapshot == null) throw new IllegalArgumentException("snapshot is null");
-        Files.createDirectories(directory(snapshot.meta().type()));
-        Path path = file(snapshot.meta().type(), snapshot.meta().getId());
-        Files.write(path, codec.write(snapshot));
+        if (snapshot.meta() == null) throw new IllegalArgumentException("snapshot meta is null");
+        ConfigProfileType type = snapshot.meta().type();
+        if (type == null) throw new IllegalArgumentException("snapshot profile type is null");
+        Path dir = directory(type);
+        Files.createDirectories(dir);
+        Path path = validateProfilePath(file(type, snapshot.meta().getId()), type);
+
+        byte[] data = codec.write(snapshot);
+        Path tmp = dir.resolve(path.getFileName().toString() + ".tmp");
+        try {
+            Files.write(tmp, data);
+            try {
+                Files.move(tmp, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
         DebugLog.config("Config profile saved: %s", path.toAbsolutePath());
     }
 
     public boolean delete(ConfigProfileType type, String idOrName) throws IOException {
-        Path path = file(type, idOrName);
+        if (type == null) throw new IllegalArgumentException("profile type is null");
+        if (idOrName == null || idOrName.isBlank()) throw new IllegalArgumentException("profile id is blank");
+        Path path = validateProfilePath(file(type, idOrName), type);
         return Files.deleteIfExists(path);
     }
 
@@ -141,6 +186,7 @@ public final class ConfigProfileStorage {
     }
 
     public Path file(ConfigProfileType type, String idOrName) {
+        if (type == null) throw new IllegalArgumentException("profile type is null");
         String id = sanitizeFileName(idOrName);
         if (!id.endsWith(EXTENSION)) id += EXTENSION;
         return directory(type).resolve(id);

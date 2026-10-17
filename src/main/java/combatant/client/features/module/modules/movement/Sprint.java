@@ -21,13 +21,24 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.MoverType;
+import combatant.client.config.values.NumberValue;
+import combatant.client.events.impl.PlayerMoveEvent;
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.EnumValue;
 import combatant.client.events.EventHandler;
+import combatant.client.events.impl.EventSync;
 import combatant.client.events.impl.GameTickEvent;
 import combatant.client.events.impl.PacketEvent;
 import combatant.client.events.impl.PlayerJumpEvent;
+import combatant.client.events.impl.PlayerVelocityStrafe;
 import combatant.client.events.impl.SprintControlEvent;
+import combatant.client.mixins.accessors.EntityInvoker;
+import combatant.client.util.aiming.RotationManager;
+import combatant.client.util.aiming.RotationTarget;
+import combatant.client.util.aiming.RotationUtil;
+import combatant.client.util.aiming.features.MovementCorrection;
 import combatant.client.features.module.Module;
 import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
@@ -62,10 +73,19 @@ public final class Sprint extends Module {
             enumMode("default_reset_mode", ResetMode.LEGIT, ResetMode.values());
     private final BooleanValue omniDirectional =
             bool("omni_directional", false);
+    private final BooleanValue strafe =
+            bool("strafe", false);
+    private final NumberValue<Float> groundSpeed =
+            description(visibleWhen(num("ground_speed", 0.2873f, 0.1f, 1.0f), strafe::get),
+                    "Movement speed on ground when strafing");
+    private final EnumValue<StrafeMode> strafeMode =
+            visibleWhen(enumMode("strafe_mode", StrafeMode.NCP, StrafeMode.values()), strafe::get);
     private final BooleanValue vulcanBypass =
-            visibleWhen(bool("omni_directional_vulcan_bypass", true), omniDirectional::get);
+            visibleWhen(bool("omni_directional_vulcan_bypass", true), this::isOmniOrStrafe);
     private final BooleanValue avoidSwimStartForce =
             bool("avoid_swim_start_force", true);
+    private final BooleanValue autoResume =
+            bool("auto_resume", true);
     private final Minecraft mc = Minecraft.getInstance();
     private int vulcanSprintSuppressTicks;
     private int vulcanSprintDirectionTicks;
@@ -93,6 +113,18 @@ public final class Sprint extends Module {
 
         updateVulcanExternalSprintSuppress(player);
         updateVulcanSprintAGuard(player);
+
+        if (autoResume.get() && canOperate(player) && hasMovementInput(player)) {
+            if (!shouldHardSuppressSprint() && !shouldSuppressExternalVulcanSprint(player)) {
+                if (!shouldAvoidForceSprintForSwimStart(player)) {
+                    if (player.getFoodData().getFoodLevel() > 6.0f || player.getAbilities().mayfly) {
+                        if (!player.isSprinting()) {
+                            player.setSprinting(true);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     @EventHandler
@@ -144,7 +176,7 @@ public final class Sprint extends Module {
         boolean noSlowAllow = noSlow != null && noSlow.shouldAllowSprint(player);
 
         boolean allow = shouldUseOmniDirectional(player)
-                || (isEnabled() && canOperate(player) && !shouldSuppressExternalVulcanSprint(player) && event.getForward() > 1.0E-5F)
+                || (autoResume.get() && isEnabled() && canOperate(player) && !shouldSuppressExternalVulcanSprint(player) && event.getForward() > 1.0E-5F)
                 || (noSlowAllow && event.getForward() > 1.0E-5F && event.shouldSprint());
         if (!allow) {
             return;
@@ -159,6 +191,156 @@ public final class Sprint extends Module {
         }
 
         event.setSprint(true);
+    }
+    @EventHandler(priority = 50)
+    private void onVelocityStrafe(PlayerVelocityStrafe event) {
+        if (!isEnabled() || !strafe.get()) {
+            return;
+        }
+
+        LocalPlayer player = mc.player;
+        if (!canStrafe(player)) {
+            return;
+        }
+
+        StrafeMode mode = strafeMode.get();
+
+        if (mode == StrafeMode.VANILLA) {
+            // Vanilla: use the real movement input vector and the actual player yaw unchanged.
+            // This makes A/D/W/S all produce correct strafing without rotating the yaw.
+            Vec3 input = event.getMovementInput();
+            double lenSq = input.lengthSqr();
+            if (lenSq < 1.0E-7) return;
+            Vec3 velocity = EntityInvoker.combatant$movementInputToVelocity(
+                    input,
+                    event.getSpeed(),
+                    player.getYRot()
+            );
+            event.setVelocity(velocity);
+        } else {
+            // NCP: redirect all input onto the movement-direction yaw as pure forward,
+            // so the server sees sprint-forward regardless of held keys.
+            float moveYaw = getMovementYaw(player, player.getYRot());
+            Vec3 forwardInput = new Vec3(0.0, 0.0, 1.0);
+            Vec3 velocity = EntityInvoker.combatant$movementInputToVelocity(
+                    forwardInput,
+                    event.getSpeed(),
+                    moveYaw
+            );
+            event.setVelocity(velocity);
+        }
+    }
+
+    @EventHandler(priority = 50)
+    private void onMove(PlayerMoveEvent event) {
+        if (event == null || event.getMovement() == null) return;
+        if (event.getType() != MoverType.SELF) return;
+        LocalPlayer player = mc.player;
+        if (!canStrafe(player)) return;
+
+        double speedLevel = getSpeedAmplifier(player);
+        if (player.onGround()) {
+            double groundSpd = MovementUtil.applySpeedPotionEffects(player, (double) groundSpeed.get());
+            Vec3 strafed = withStrafe(event.getMovement(), player, groundSpd, 1.0);
+            event.setMovement(strafed);
+            player.setDeltaMovement(strafed.x, player.getDeltaMovement().y, strafed.z);
+        } else {
+            // Full air strafe like Speed module
+            double airMin = 0.2 + 0.199999999 * speedLevel;
+            double currentSpeed = Math.max(horizontalSpeed(player.getDeltaMovement()), horizontalSpeed(event.getMovement()));
+            double useSpeed = Math.max(currentSpeed, airMin);
+            if (Double.isFinite(useSpeed) && useSpeed > 0.0) {
+                Vec3 strafed = withStrafe(event.getMovement(), player, useSpeed, 1.0);
+                event.setMovement(strafed);
+                player.setDeltaMovement(strafed.x, player.getDeltaMovement().y, strafed.z);
+            }
+        }
+    }
+
+    private boolean canStrafe(LocalPlayer player) {
+        if (!isEnabled() || !strafe.get() || player == null || mc.level == null) {
+            return false;
+        }
+        if (!canOperate(player) || !hasMovementInput(player)) {
+            return false;
+        }
+        if (shouldHardSuppressSprint() || shouldSuppressExternalVulcanSprint(player)) {
+            return false;
+        }
+        RotationTarget active = RotationManager.INSTANCE.getActiveRotationTarget();
+        if (active != null && active.movementCorrection != MovementCorrection.OFF) {
+            return false;
+        }
+        if (player.isShiftKeyDown() || player.isInWater() || player.isInLava() || player.onClimbable() || player.isPassenger() || player.isFallFlying()) {
+            return false;
+        }
+        if (Modules.get(Speed.class) != null && Modules.get(Speed.class).isEnabled()) {
+            return false;
+        }
+        return true;
+    }
+
+    private Vec3 withStrafe(Vec3 currentVelocity, LocalPlayer player, double speed, double strength) {
+        if (player == null || player.input == null) return currentVelocity;
+
+        Vec2 input = player.input.getMoveVector();
+        Vec3 movementInput = new Vec3(input.x, 0.0, input.y);
+        return MovementUtil.withStrafe(currentVelocity, movementInput, player.getYRot(), speed, strength);
+    }
+
+    private double getSpeedAmplifier(LocalPlayer player) {
+        if (player == null) return 0.0;
+        var effect = player.getEffect(MobEffects.SPEED);
+        return effect == null ? 0.0 : effect.getAmplifier();
+    }
+
+    private double horizontalSpeed(Vec3 velocity) {
+        return velocity == null ? 0.0 : Math.hypot(velocity.x, velocity.z);
+    }
+
+    @EventHandler(priority = -50)
+    private void onSync(EventSync event) {
+        if (!isEnabled() || !strafe.get() || strafeMode.get() != StrafeMode.NCP) {
+            return;
+        }
+
+        LocalPlayer player = mc.player;
+        if (!canOperate(player) || !player.isSprinting() || !hasMovementInput(player)) {
+            return;
+        }
+
+        if (shouldHardSuppressSprint() || shouldSuppressExternalVulcanSprint(player)) {
+            return;
+        }
+
+        if ((player.isInWater() && !player.isSwimming()) || player.isInLava()) {
+            return;
+        }
+
+        // Allow sync rotation even when a rotation target is active, as long as
+        // it has movement correction OFF (e.g. silent aim that doesn't redirect movement).
+        RotationTarget active = RotationManager.INSTANCE.getActiveRotationTarget();
+        if (active != null && active.movementCorrection != MovementCorrection.OFF) {
+            return;
+        }
+
+        if (isAttacking(player)) {
+            return;
+        }
+
+        float moveYaw = getMovementYaw(player, player.getYRot());
+        float diff = Math.abs(RotationUtil.angleDifference(player.getYRot(), moveYaw));
+        if (diff > 15.0f) {
+            event.setRotation(moveYaw, player.getXRot(), true);
+        }
+    }
+
+    private boolean isAttacking(LocalPlayer player) {
+        return player.attackAnim > 0 || player.swinging;
+    }
+
+    public boolean isOmniOrStrafe() {
+        return omniDirectional.get() || strafe.get();
     }
 
     public CombatStrikeController.SprintResetMode resolveCombatResetMode() {
@@ -207,7 +389,6 @@ public final class Sprint extends Module {
                 && (shouldSuppressScaffoldDirectionalSprint()
                 || vulcanSprintSuppressTicks > 0);
     }
-
     private boolean shouldSuppressOmniDirectionalSprint(LocalPlayer player) {
         return shouldHardSuppressSprint() || shouldSuppressExternalVulcanSprint(player);
     }
@@ -395,7 +576,7 @@ public final class Sprint extends Module {
     }
 
     private boolean effOmniDirectional() {
-        return anticheat.get().pick(omniDirectional.get(), false, omniDirectional.get());
+        return anticheat.get().pick(isOmniOrStrafe(), false, isOmniOrStrafe());
     }
 
     private ResetMode effDefaultResetMode() {
@@ -472,5 +653,20 @@ public final class Sprint extends Module {
         LEGIT,
         PACKET,
         FORCE
+    }
+    public enum StrafeMode implements EnumValue.IdProvider {
+        NCP("ncp"),
+        VANILLA("vanilla");
+
+        private final String id;
+
+        StrafeMode(String id) {
+            this.id = id;
+        }
+
+        @Override
+        public String id() {
+            return id;
+        }
     }
 }

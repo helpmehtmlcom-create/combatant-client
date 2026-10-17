@@ -33,7 +33,6 @@ import combatant.client.util.player.PlayerSpeedUtil;
 
 import static combatant.client.features.theme.Theme.theme;
 
-//todo Description
 @HudElementInfo(
         id = "speed_bps",
         displayName = "Speed BPS",

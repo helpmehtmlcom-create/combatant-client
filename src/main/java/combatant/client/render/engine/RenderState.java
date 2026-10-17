@@ -33,6 +33,11 @@ public enum RenderState {
     public static Vec3 cameraLook = Vec3.ZERO;
     public static FogType cameraSubmersion = FogType.NONE;
     public static boolean worldTranslucent = false;
+    public static Vec3 tracerOrigin() {
+        Vec3 pos = cameraPos != null ? cameraPos : Vec3.ZERO;
+        Vec3 look = cameraLook != null ? cameraLook : Vec3.ZERO;
+        return pos.add(look.scale(0.5));
+    }
     public static @Nullable Frustum frustum;
     public static float lineWidth = 1.0f;
     // Active world frame id (set on begin).

@@ -7,10 +7,12 @@
 
 package combatant.client.util.pvp.client;
 
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.util.Util;
 import net.minecraft.world.item.Item;
-import combatant.client.config.MainConfig;
 import combatant.client.config.values.ItemCooldownRulesValue;
+import combatant.client.config.MainConfig;
 import combatant.client.util.pvp.ItemCooldownSnapshot;
 import combatant.client.util.pvp.ItemUseCooldowns;
 
@@ -88,5 +90,54 @@ public class CooldownManager {
 
     public boolean isPredicted(Item item) {
         return false;
+    }
+
+    /**
+     * Returns the attack strength scale (0.0 to 1.0) of the local player for weapon swings.
+     *
+     * @param adjustTicks tick adjustment offset
+     * @return current attack cooldown progress, or {@code 1.0f} if player is null
+     */
+    public float getAttackStrengthScale(float adjustTicks) {
+        LocalPlayer player = Minecraft.getInstance().player;
+        return player != null ? player.getAttackStrengthScale(adjustTicks) : 1.0f;
+    }
+
+    /**
+     * Returns whether the player's weapon swing cooldown is fully recharged.
+     *
+     * @return {@code true} if attack strength scale is >= 1.0
+     */
+    public boolean isAttackReady() {
+        return getAttackStrengthScale(0.0f) >= 1.0f;
+    }
+
+    /**
+     * Returns whether the given item is currently on vanilla item cooldown for the local player.
+     *
+     * @param item the item to query
+     * @return {@code true} if on cooldown, {@code false} if not or if player/item is null
+     */
+    public boolean isItemOnVanillaCooldown(Item item) {
+        if (item == null) {
+            return false;
+        }
+        LocalPlayer player = Minecraft.getInstance().player;
+        return player != null && player.getCooldowns().isOnCooldown(item.getDefaultInstance());
+    }
+
+    /**
+     * Returns the vanilla item cooldown progress percentage (0.0 to 1.0) for the given item.
+     *
+     * @param item         the item to query
+     * @param partialTicks render partial ticks
+     * @return cooldown percentage remaining, or {@code 0.0f} if not on cooldown or player/item is null
+     */
+    public float getVanillaCooldownPercent(Item item, float partialTicks) {
+        if (item == null) {
+            return 0.0f;
+        }
+        LocalPlayer player = Minecraft.getInstance().player;
+        return player != null ? player.getCooldowns().getCooldownPercent(item.getDefaultInstance(), partialTicks) : 0.0f;
     }
 }

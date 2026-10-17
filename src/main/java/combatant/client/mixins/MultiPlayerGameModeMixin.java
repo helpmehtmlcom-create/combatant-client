@@ -12,6 +12,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
@@ -20,6 +21,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -35,6 +37,7 @@ import combatant.client.features.module.modules.combat.Criticals;
 import combatant.client.features.module.modules.combat.Hitbox;
 import combatant.client.features.module.modules.combat.PvpCooldowns;
 import combatant.client.features.module.modules.misc.HitSounds;
+import combatant.client.features.module.modules.player.SpeedMine;
 import combatant.client.features.module.modules.visuals.Freecam;
 import combatant.client.features.module.modules.visuals.HitEffect;
 import combatant.client.mixins.accessors.WorldAccessor;
@@ -44,10 +47,14 @@ import combatant.client.util.target.TargetManager;
 @Mixin(MultiPlayerGameMode.class)
 public class MultiPlayerGameModeMixin {
 
+    @Shadow
+    private int destroyDelay;
+
     @Inject(method = "tick", at = @At("HEAD"), cancellable = true)
     private void combatant$skipTickWithoutPlayer(CallbackInfo ci) {
         if (Minecraft.getInstance().player == null) {
             ci.cancel();
+            return;
         }
     }
 
@@ -67,6 +74,39 @@ public class MultiPlayerGameModeMixin {
     )
     private int combatant$hookSilentSelectedSlot(int original) {
         return InventorySwap.INSTANCE.effectiveSelectedSlot();
+    }
+
+    @Inject(method = "startDestroyBlock", at = @At("HEAD"), cancellable = true)
+    private void combatant$startDestroyBlock(BlockPos pos, Direction direction, CallbackInfoReturnable<Boolean> cir) {
+        Freecam fc = Modules.get(Freecam.class);
+        if (fc != null && fc.isEnabled()) {
+            Minecraft mc = Minecraft.getInstance();
+            if (!fc.allowInteract() || (mc.player != null && mc.player.getEyePosition().distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > 36.0)) {
+                cir.setReturnValue(false);
+                cir.cancel();
+                return;
+            }
+        }
+    }
+
+    @Inject(method = "continueDestroyBlock", at = @At("HEAD"), cancellable = true)
+    private void freecam$continueDestroyBlock(BlockPos pos, Direction direction, CallbackInfoReturnable<Boolean> cir) {
+        Freecam fc = Modules.get(Freecam.class);
+        if (fc != null && fc.isEnabled()) {
+            Minecraft mc = Minecraft.getInstance();
+            if (!fc.allowInteract() || (mc.player != null && mc.player.getEyePosition().distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > 36.0)) {
+                cir.setReturnValue(false);
+                cir.cancel();
+            }
+        }
+    }
+
+    @Inject(method = "stopDestroyBlock", at = @At("HEAD"), cancellable = true)
+    private void freecam$stopDestroyBlock(CallbackInfo ci) {
+        Freecam fc = Modules.get(Freecam.class);
+        if (fc != null && fc.isEnabled() && !fc.allowInteract()) {
+            ci.cancel();
+        }
     }
 
     @Inject(method = "destroyBlock", at = @At("RETURN"))
@@ -118,9 +158,11 @@ public class MultiPlayerGameModeMixin {
     private void freecam$block(LocalPlayer player, InteractionHand hand, BlockHitResult hit,
                                CallbackInfoReturnable<InteractionResult> cir) {
         Freecam fc = Modules.get(Freecam.class);
-        if (fc != null && fc.isEnabled() && !fc.allowInteract()) {
-            cir.setReturnValue(InteractionResult.PASS);
-            cir.cancel();
+        if (fc != null && fc.isEnabled()) {
+            if (!fc.allowInteract() || player.getEyePosition().distanceToSqr(hit.getLocation()) > 36.0) {
+                cir.setReturnValue(InteractionResult.PASS);
+                cir.cancel();
+            }
         }
     }
 
@@ -137,16 +179,26 @@ public class MultiPlayerGameModeMixin {
     private void freecam$entity(Player player, Entity entity, EntityHitResult hit, InteractionHand hand,
                                 CallbackInfoReturnable<InteractionResult> cir) {
         Freecam fc = Modules.get(Freecam.class);
-        if (fc != null && fc.isEnabled() && !fc.allowInteract()) {
-            cir.setReturnValue(InteractionResult.PASS);
-            cir.cancel();
+        if (fc != null && fc.isEnabled()) {
+            if (!fc.allowInteract() || player.getEyePosition().distanceToSqr(entity.position()) > 36.0) {
+                cir.setReturnValue(InteractionResult.PASS);
+                cir.cancel();
+            }
         }
     }
 
     @Inject(method = "attack(Lnet/minecraft/world/entity/player/Player;Lnet/minecraft/world/entity/Entity;)V",
-            at = @At("HEAD"))
+            at = @At("HEAD"), cancellable = true)
     private void onAttackEntity(Player player, Entity target, CallbackInfo ci) {
         if (!((WorldAccessor) player.level()).combatant$isClient()) return;
+
+        Freecam fc = Modules.get(Freecam.class);
+        if (fc != null && fc.isEnabled()) {
+            if (!fc.allowInteract() || player.getEyePosition().distanceToSqr(target.position()) > 36.0) {
+                ci.cancel();
+                return;
+            }
+        }
 
         if (player instanceof LocalPlayer clientPlayer) {
             Criticals criticals = Modules.get(Criticals.class);

@@ -43,10 +43,18 @@ public enum RenderWarpStack {
     public static void pop() {
         State state = STATE.get();
         if (state.depth <= 0) {
-            throw new IllegalStateException("Render warp stack underflow");
+            return;
         }
         state.stack[--state.depth] = null;
         TOTAL_DEPTH.decrementAndGet();
+    }
+
+    public static void reset() {
+        State state = STATE.get();
+        for (int i = 0; i < state.depth; i++) {
+            state.stack[i] = null;
+        }
+        state.depth = 0;
     }
 
     private static final class State {
@@ -65,8 +73,9 @@ public enum RenderWarpStack {
         @Override
         public void close() {
             if (closed) return;
+            closed = true;
             if (state.depth <= 0) {
-                throw new IllegalStateException("Render warp scope closed after stack was emptied");
+                return;
             }
             state.stack[--state.depth] = null;
             TOTAL_DEPTH.decrementAndGet();

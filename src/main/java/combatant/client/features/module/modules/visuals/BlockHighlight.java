@@ -285,6 +285,7 @@ public class BlockHighlight extends Module {
     }
 
     private void renderShapeLines(Renderer3D renderer, VoxelShape worldShape) {
+        if (RenderState.cameraPos == null) return;
         MeshBuilder mesh = renderer.batch(
                 outlineDepthTest.get()
                         ? WorldRenderPipelines.WORLD_COLORED_COPLANAR_DEPTH
@@ -333,11 +334,12 @@ public class BlockHighlight extends Module {
             return;
         }
 
+        if (RenderState.cameraPos == null) return;
         double toCamX = RenderState.cameraPos.x - mx;
         double toCamY = RenderState.cameraPos.y - my;
         double toCamZ = RenderState.cameraPos.z - mz;
         double toCamLenSq = toCamX * toCamX + toCamY * toCamY + toCamZ * toCamZ;
-        if (toCamLenSq <= 1.0e-10) {
+        if (toCamLenSq <= 1.0e-10 || !Double.isFinite(toCamLenSq)) {
             return;
         }
 
@@ -345,10 +347,9 @@ public class BlockHighlight extends Module {
         double sideY = ez * toCamX - ex * toCamZ;
         double sideZ = ex * toCamY - ey * toCamX;
         double sideLenSq = sideX * sideX + sideY * sideY + sideZ * sideZ;
-        if (sideLenSq <= 1.0e-10) {
+        if (sideLenSq <= 1.0e-10 || !Double.isFinite(sideLenSq)) {
             return;
         }
-
         double sideInv = 1.0 / Math.sqrt(sideLenSq);
         double halfWidth = computeRibbonHalfWidth(mx, my, mz);
 
@@ -371,10 +372,12 @@ public class BlockHighlight extends Module {
     }
 
     private double computeRibbonHalfWidth(double x, double y, double z) {
+        if (RenderState.cameraPos == null) return 0.003;
         double dx = RenderState.cameraPos.x - x;
         double dy = RenderState.cameraPos.y - y;
         double dz = RenderState.cameraPos.z - z;
         double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (!Double.isFinite(dist)) return 0.003;
 
         return 0.003 + outlineThickness.get() * (0.0025 + dist * 0.00018);
     }

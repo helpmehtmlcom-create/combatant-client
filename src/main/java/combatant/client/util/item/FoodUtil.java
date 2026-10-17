@@ -7,19 +7,21 @@
 
 package combatant.client.util.item;
 
+import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectCategory;
 import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.food.FoodData;
 import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.Consumable;
 import net.minecraft.world.item.consume_effects.ApplyStatusEffectsConsumeEffect;
 import net.minecraft.world.item.consume_effects.ConsumeEffect;
 
-import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.List;
 
@@ -45,28 +47,28 @@ public enum FoodUtil {
         return hungerManager.getSaturationLevel();
     }
 
+    /**
+     * Returns the nutrition value of the given food stack, or 0 if not food.
+     */
     public static int getNutrition(ItemStack stack) {
-        Object food = getFoodComponent(stack);
-        if (food instanceof FoodProperties fc) {
-            return fc.nutrition();
-        }
-        return food == null ? 0 : readInt(food, "nutrition", "getNutrition");
+        FoodProperties fc = getFoodComponent(stack);
+        return fc != null ? fc.nutrition() : 0;
     }
 
+    /**
+     * Returns the saturation modifier of the given food stack, or 0.0 if not food.
+     */
     public static float getSaturation(ItemStack stack) {
-        Object food = getFoodComponent(stack);
-        if (food instanceof FoodProperties fc) {
-            return fc.saturation();
-        }
-        return food == null ? 0f : readFloat(food, "saturation", "getSaturation", "getSaturationModifier", "saturationModifier");
+        FoodProperties fc = getFoodComponent(stack);
+        return fc != null ? fc.saturation() : 0f;
     }
 
+    /**
+     * Returns whether the food stack can be consumed even when the player is not hungry.
+     */
     public static boolean canAlwaysEat(ItemStack stack) {
-        Object food = getFoodComponent(stack);
-        if (food instanceof FoodProperties fc) {
-            return readBoolean(fc, "canAlwaysEat", "isAlwaysEdible");
-        }
-        return food != null && readBoolean(food, "canAlwaysEat", "isAlwaysEdible");
+        FoodProperties fc = getFoodComponent(stack);
+        return fc != null && fc.canAlwaysEat();
     }
 
     public static float scoreFood(ItemStack stack) {
@@ -94,109 +96,76 @@ public enum FoodUtil {
     }
 
     private static float scoreEffects(ItemStack stack) {
-        Object food = getFoodComponent(stack);
-        if (food == null) return 0f;
-        List<?> effects = readList(food, "effects", "getEffects", "getStatusEffects");
+        List<MobEffectInstance> effects = getFoodEffects(stack);
         if (effects.isEmpty()) return 0f;
 
         float score = 0f;
-        for (Object entry : effects) {
-            if (entry == null) continue;
-            float chance = readFloat(entry, "probability", "getProbability", "getChance");
-            if (chance <= 0f) chance = 1f;
+        for (MobEffectInstance inst : effects) {
+            if (inst == null) continue;
+            Holder<MobEffect> holder = inst.getEffect();
+            if (holder == null) continue;
 
-            MobEffect effect = extractStatusEffect(entry);
-            if (effect == null) {
-                score += 2.0f * chance;
+            int amp = inst.getAmplifier() + 1;
+            if (holder.equals(MobEffects.POISON) || holder.value() == MobEffects.POISON.value()
+                    || holder.equals(MobEffects.WITHER) || holder.value() == MobEffects.WITHER.value()
+                    || holder.equals(MobEffects.SLOWNESS) || holder.value() == MobEffects.SLOWNESS.value()
+                    || holder.equals(MobEffects.HUNGER) || holder.value() == MobEffects.HUNGER.value()) {
+                score -= 40.0f * amp;
                 continue;
             }
 
-            MobEffectCategory cat = effect.getCategory();
-            float add = switch (cat) {
-                case BENEFICIAL -> 6.0f;
-                case HARMFUL -> -6.0f;
-                default -> 2.0f;
-            };
-            score += add * chance;
+            MobEffect effect = holder.value();
+            if (effect != null) {
+                MobEffectCategory cat = effect.getCategory();
+                float add = switch (cat) {
+                    case BENEFICIAL -> 15.0f * amp;
+                    case HARMFUL -> -30.0f * amp;
+                    default -> 2.0f;
+                };
+                score += add;
+            } else {
+                score += 2.0f;
+            }
         }
         return score;
     }
 
-    private static MobEffect extractStatusEffect(Object effectEntry) {
-        Object obj = readObject(effectEntry, "effect", "getEffect", "getFirst", "getLeft");
-        if (obj instanceof MobEffectInstance inst) {
-            Object type = inst.getEffect();
-            if (type instanceof MobEffect effect) return effect;
-            if (type instanceof net.minecraft.core.Holder<?> regEntry) {
-                Object v = regEntry.value();
-                if (v instanceof MobEffect effect) return effect;
+    /**
+     * Returns the eat duration in ticks for the specified stack.
+     * <p>
+     * If the stack has {@link DataComponents#CONSUMABLE}, reads {@link Consumable#consumeSeconds()}
+     * and converts it to ticks. Falls back to 32 ticks (standard food duration) if not consumable
+     * or non-positive.
+     */
+    public static int getEatDuration(ItemStack stack) {
+        if (stack != null && !stack.isEmpty()) {
+            Consumable consumable = stack.get(DataComponents.CONSUMABLE);
+            if (consumable != null) {
+                float seconds = consumable.consumeSeconds();
+                if (seconds > 0.0f) {
+                    return (int) Math.ceil(seconds * 20.0f);
+                }
             }
         }
-
-        if (obj instanceof MobEffect effect) {
-            return effect;
-        }
-
-        if (obj instanceof net.minecraft.core.Holder<?> regEntry) {
-            Object v = regEntry.value();
-            if (v instanceof MobEffect effect) {
-                return effect;
-            }
-        }
-
-        Object fromInstance = readObject(obj, "getEffectType", "getEffect");
-        if (fromInstance instanceof MobEffect effect) {
-            return effect;
-        }
-
-        Object value = readObject(obj, "value");
-        if (value instanceof MobEffect effect) {
-            return effect;
-        }
-
-        return null;
+        return 32;
     }
 
-    private static Object getFoodComponent(ItemStack stack) {
+    /**
+     * Returns whether the given stack is a regular or enchanted golden apple.
+     */
+    public static boolean isGoldenApple(ItemStack stack) {
+        return stack != null && (stack.is(Items.GOLDEN_APPLE) || stack.is(Items.ENCHANTED_GOLDEN_APPLE));
+    }
+
+    /**
+     * Returns whether the given stack is an enchanted golden apple.
+     */
+    public static boolean isEnchantedGoldenApple(ItemStack stack) {
+        return stack != null && stack.is(Items.ENCHANTED_GOLDEN_APPLE);
+    }
+
+    private static FoodProperties getFoodComponent(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return null;
         return stack.get(DataComponents.FOOD);
-    }
-
-    private static int readInt(Object target, String... methods) {
-        Number n = readNumber(target, methods);
-        return n == null ? 0 : n.intValue();
-    }
-
-    private static float readFloat(Object target, String... methods) {
-        Number n = readNumber(target, methods);
-        return n == null ? 0f : n.floatValue();
-    }
-
-    private static boolean readBoolean(Object target, String... methods) {
-        Object v = readObject(target, methods);
-        return v instanceof Boolean b && b;
-    }
-
-    private static Number readNumber(Object target, String... methods) {
-        Object v = readObject(target, methods);
-        return v instanceof Number ? (Number) v : null;
-    }
-
-    private static List<?> readList(Object target, String... methods) {
-        Object v = readObject(target, methods);
-        if (v instanceof List<?> list) return list;
-        return Collections.emptyList();
-    }
-
-    private static Object readObject(Object target, String... methods) {
-        if (target == null) return null;
-        for (String name : methods) {
-            try {
-                Method m = target.getClass().getMethod(name);
-                return m.invoke(target);
-            } catch (ReflectiveOperationException ignored) {
-            }
-        }
-        return null;
     }
 }

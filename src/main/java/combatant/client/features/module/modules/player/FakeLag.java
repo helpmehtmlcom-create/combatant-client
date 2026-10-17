@@ -14,8 +14,6 @@
 package combatant.client.features.module.modules.player;
 
 import combatant.client.config.common.CommonSettingSchemas;
-import combatant.client.config.common.impl.FakeLagFlushOn;
-import combatant.client.config.values.BooleanMapValue;
 import combatant.client.config.values.EnumValue;
 import combatant.client.config.values.NumberValue;
 import combatant.client.features.module.Module;
@@ -24,8 +22,6 @@ import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.ModuleManager;
 import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.util.network.FakeLagController;
-
-import java.util.EnumSet;
 
 /**
  * FakeLag module front-end for the shared BlinkManager-backed controller.
@@ -36,48 +32,12 @@ import java.util.EnumSet;
         category = ModuleCategory.PLAYER, subcategory = ModuleSubcategory.EXPLOIT,
         description = "module.fakelag.description")
 public final class FakeLag extends Module {
-    private final NumberValue<Float> minRange = numCommon(
-            "fakeLagMinRange",
-            "min_range",
-            CommonSettingSchemas.PLAYER_FAKELAG_RANGE_MIN,
-            2.0f,
-            0.0f,
-            10.0f
-    );
-
-    private final NumberValue<Float> maxRange = numCommon(
-            "fakeLagMaxRange",
-            "max_range",
-            CommonSettingSchemas.PLAYER_FAKELAG_RANGE_MAX,
-            5.0f,
-            0.0f,
-            10.0f
-    );
-
-    private final NumberValue<Integer> minDelay = numCommon(
-            "fakeLagMinDelay",
-            "delay_min",
-            CommonSettingSchemas.PLAYER_FAKELAG_DELAY_MIN,
-            300,
-            0,
-            1000
-    );
-
-    private final NumberValue<Integer> maxDelay = numCommon(
-            "fakeLagMaxDelay",
-            "delay_max",
+    private final NumberValue<Integer> latency = numCommon(
+            "fakeLagLatency",
+            "latency",
             CommonSettingSchemas.PLAYER_FAKELAG_DELAY_MAX,
-            600,
-            0,
-            1000
-    );
-
-    private final NumberValue<Integer> recoilTime = numCommon(
-            "fakeLagRecoilTime",
-            "recoil_time",
-            CommonSettingSchemas.PLAYER_FAKELAG_RECOIL_TIME,
-            250,
-            0,
+            200,
+            20,
             1000
     );
 
@@ -88,13 +48,6 @@ public final class FakeLag extends Module {
             FakeLagController.Mode.DYNAMIC,
             FakeLagController.Mode.class
     );
-
-    private final BooleanMapValue flushOn = groupCommon(
-            "fakeLagFlushOn",
-            "flush_on",
-            CommonSettingSchemas.PLAYER_FAKELAG_FLUSH_ON
-    );
-
     private FakeLagController.Config appliedConfig;
 
     @Override
@@ -130,32 +83,6 @@ public final class FakeLag extends Module {
     }
 
     private FakeLagController.Config buildConfig() {
-        float min = minRange.get();
-        float max = maxRange.get();
-        int minMs = minDelay.get();
-        int maxMs = maxDelay.get();
-        return new FakeLagController.Config(
-                Math.min(min, max),
-                Math.max(min, max),
-                Math.min(minMs, maxMs),
-                Math.max(minMs, maxMs),
-                recoilTime.get(),
-                mode.get(),
-                selectedFlushOn()
-        );
-    }
-
-    private EnumSet<FakeLagController.FlushOn> selectedFlushOn() {
-        EnumSet<FakeLagController.FlushOn> selected = EnumSet.noneOf(FakeLagController.FlushOn.class);
-        if (flushOn.get(FakeLagFlushOn.ENTITY_INTERACT)) {
-            selected.add(FakeLagController.FlushOn.ENTITY_INTERACT);
-        }
-        if (flushOn.get(FakeLagFlushOn.BLOCK_INTERACT)) {
-            selected.add(FakeLagController.FlushOn.BLOCK_INTERACT);
-        }
-        if (flushOn.get(FakeLagFlushOn.ACTION)) {
-            selected.add(FakeLagController.FlushOn.ACTION);
-        }
-        return selected;
+        return new FakeLagController.Config(latency.get(), mode.get());
     }
 }

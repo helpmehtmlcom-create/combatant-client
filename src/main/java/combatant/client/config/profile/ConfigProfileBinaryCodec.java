@@ -55,6 +55,7 @@ public final class ConfigProfileBinaryCodec {
     }
 
     public ConfigProfileMeta readMeta(byte[] bytes) throws IOException {
+        if (bytes == null || bytes.length < 24) throw new IOException("Profile data too short or null");
         try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(bytes))) {
             Header header = readHeader(in);
             return header.meta();
@@ -62,8 +63,12 @@ public final class ConfigProfileBinaryCodec {
     }
 
     public ConfigProfileSnapshot read(byte[] bytes) throws IOException {
+        if (bytes == null || bytes.length < 24) throw new IOException("Profile data too short or null");
         try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(bytes))) {
             Header header = readHeader(in);
+            if (header.payloadLength() > bytes.length) {
+                throw new IOException("Payload length exceeds file length: " + header.payloadLength());
+            }
             byte[] payload = new byte[header.payloadLength()];
             in.readFully(payload);
             int expectedCrc = in.readInt();
@@ -94,7 +99,9 @@ public final class ConfigProfileBinaryCodec {
         String name = ConfigProfileValueCodec.readString(in);
         String id = ConfigProfileValueCodec.readString(in);
         int payloadLength = ConfigProfileValueCodec.readVarInt(in);
-        if (payloadLength < 0) throw new IOException("Negative payload length");
+        if (payloadLength < 0 || payloadLength > 50_000_000) {
+            throw new IOException("Invalid payload length: " + payloadLength);
+        }
         ConfigProfileMeta meta = new ConfigProfileMeta(id, name, type, author, createdAt, updatedAt, version);
         return new Header(meta, flags, payloadLength);
     }
@@ -114,11 +121,17 @@ public final class ConfigProfileBinaryCodec {
 
     private List<ConfigProfileEntry> readPayload(DataInputStream in) throws IOException {
         int entryCount = ConfigProfileValueCodec.readVarInt(in);
-        List<ConfigProfileEntry> entries = new ArrayList<>(Math.max(0, entryCount));
+        if (entryCount < 0 || entryCount > 100_000) {
+            throw new IOException("Invalid entry count in profile payload: " + entryCount);
+        }
+        List<ConfigProfileEntry> entries = new ArrayList<>(Math.max(0, Math.min(entryCount, 10_000)));
         for (int i = 0; i < entryCount; i++) {
             String ownerId = ConfigProfileValueCodec.readString(in);
             String displayName = ConfigProfileValueCodec.readString(in);
             int valueCount = ConfigProfileValueCodec.readVarInt(in);
+            if (valueCount < 0 || valueCount > 100_000) {
+                throw new IOException("Invalid value count in profile payload: " + valueCount);
+            }
             java.util.Map<String, Object> values = new java.util.LinkedHashMap<>();
             for (int j = 0; j < valueCount; j++) {
                 values.put(ConfigProfileValueCodec.readString(in), ConfigProfileValueCodec.readValue(in));

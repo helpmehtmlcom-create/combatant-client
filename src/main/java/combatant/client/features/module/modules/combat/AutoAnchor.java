@@ -35,6 +35,7 @@ import combatant.client.util.combat.CombatRotationModeUtil;
 import combatant.client.util.combat.CombatEntityQuery;
 import combatant.client.util.combat.ExplosionDamageRules;
 import combatant.client.util.combat.ExplosionRenderUtil;
+import combatant.client.util.world.ExplosionDamageUtil;
 import combatant.client.util.combat.RubberHandUseUtil;
 import combatant.client.util.item.FoodUtil;
 import combatant.client.util.entity.simulation.PositionExtrapolation;
@@ -197,7 +198,8 @@ public class AutoAnchor extends Module {
             "autoanchorAttackMode",
             "attack_mode",
             CommonSettingSchemas.COMBAT_ATTACK_MODE,
-            CombatRotationModeUtil.MODE_ROTATIONS,
+            CombatRotationModeUtil.MODE_SILENT,
+            CombatRotationModeUtil.MODE_SILENT,
             CombatRotationModeUtil.MODE_ROTATIONS,
             CombatRotationModeUtil.MODE_NO_ROTATIONS
     );
@@ -384,6 +386,10 @@ public class AutoAnchor extends Module {
         lastSelfDamageRejects = result.selfDamageRejects();
 
         AutoAnchorData renderData = bestExplode != null ? bestExplode : bestPlace;
+        if (bestPlace != null && target != null && ExplosionDamageUtil.willPopTotem(bestPlace.damage(), target)) {
+            // Prefer lethal/pop anchor placement when available
+            renderData = bestPlace;
+        }
         if (renderData != null) {
             setRenderCandidate(renderData);
             lowDamageMode = !ExplosionDamageRules.shouldOverrideMinDamage(target, renderData.damage(), faceplaceHealth.get())
@@ -392,7 +398,6 @@ public class AutoAnchor extends Module {
             bestPosition = null;
         }
     }
-
     private void runCombatCycle() {
         if (mc.player == null || mc.level == null || shouldPause()) {
             RotationManager.INSTANCE.clear(this);
@@ -444,6 +449,10 @@ public class AutoAnchor extends Module {
                 new RestrictedSingleUseAction(action)
         );
         RotationManager.INSTANCE.setRotationTarget(rotationTarget, ROTATION_PRIORITY, this);
+        if (CombatRotationModeUtil.isVisualRotations(attackMode) && mc.player != null) {
+            mc.player.setYRot(rotationTarget.rotation.yaw());
+            mc.player.setXRot(rotationTarget.rotation.pitch());
+        }
     }
 
     private void placeReservedAnchor(AutoAnchorData data) {
@@ -1030,7 +1039,17 @@ public class AutoAnchor extends Module {
         return PositionExtrapolation.getBestForEntity(entity).getPositionInTicks(ticks);
     }
 
+    public float calculateAnchorDamage(BlockPos pos, LivingEntity target) {
+        return ExplosionDamageUtil.calculateAnchorDamage(pos, target);
+    }
+
     private boolean shouldOverrideMaxSelfDamage(float damage, float selfDamage) {
+        if (mc.player != null) {
+            float playerHealth = mc.player.getHealth() + mc.player.getAbsorptionAmount();
+            if (selfDamage + 0.5f >= playerHealth) {
+                return false;
+            }
+        }
         return ExplosionDamageRules.shouldOverrideMaxSelfDamage(
                 mc.player,
                 target,
@@ -1041,9 +1060,14 @@ public class AutoAnchor extends Module {
     }
 
     private boolean isSafe(float damage, float selfDamage, boolean overrideDamage) {
+        if (mc.player != null && !overrideDamage) {
+            float playerHealth = mc.player.getHealth() + mc.player.getAbsorptionAmount();
+            if (selfDamage + 0.5f >= playerHealth) {
+                return false;
+            }
+        }
         return ExplosionDamageRules.isSafe(mc.player, selfDamage, overrideDamage);
     }
-
     private BlockHitResult getInteractResult(BlockPos pos, boolean existingAnchor) {
         return AutoAnchorInteractionUtil.getInteractResult(
                 mc.level,

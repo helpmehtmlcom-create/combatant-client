@@ -45,6 +45,16 @@ public enum ModulesMenuCategory {
     public String icon() {
         return icon;
     }
+    public ModuleCategory toModuleCategory() {
+        return switch (this) {
+            case COMBAT -> ModuleCategory.COMBAT;
+            case MOVEMENT -> ModuleCategory.MOVEMENT;
+            case PLAYER -> ModuleCategory.PLAYER;
+            case VISUALS -> ModuleCategory.VISUALS;
+            case OTHER -> ModuleCategory.MISC;
+        };
+    }
+
 
     public List<ModuleSubcategoryDefinition> subcategories() {
         return ModuleSubcategoryRegistry.forCategory(moduleCategory);

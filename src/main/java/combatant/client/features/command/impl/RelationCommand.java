@@ -104,8 +104,9 @@ public abstract class RelationCommand implements ClientCommand {
             return;
         }
         List<String> sorted = values.stream().sorted(String.CASE_INSENSITIVE_ORDER).toList();
-        CommandOutput.send(Character.toUpperCase(singular().charAt(0)) + singular().substring(1) + " (" + sorted.size() + "): "
-                + String.join(", ", sorted));
+        String sing = singular();
+        String title = (sing == null || sing.isEmpty()) ? "" : Character.toUpperCase(sing.charAt(0)) + (sing.length() > 1 ? sing.substring(1) : "");
+        CommandOutput.send(title + " (" + sorted.size() + "): " + String.join(", ", sorted));
     }
 
     private static String find(Set<String> entries, String query) {

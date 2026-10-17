@@ -36,8 +36,11 @@ import combatant.client.features.module.ModuleCategory;
 import combatant.client.features.module.ModuleInfo;
 import combatant.client.features.module.ModuleSubcategory;
 import combatant.client.features.module.modules.player.autoarmor.ProtectionFocus;
+import combatant.client.features.module.Modules;
+import combatant.client.features.module.modules.movement.ElytraFly;
 import combatant.client.util.player.inventory.InventorySwap;
 
+import java.util.List;
 import java.util.Set;
 
 @ModuleInfo(
@@ -49,6 +52,7 @@ public class AutoArmor extends Module {
 
     private static final String SETTING_MODE = "mode";
     private static final String SETTING_ARMOR_ITEMS = "armor_items";
+    private static final String SETTING_ELYTRA = "elytra";
     private final EnumValue<Mode> mode =
             enumSetting("autoArmorMode", SETTING_MODE, Mode.AUTO, Mode.values());
     private final ItemIdSetValue armorItems =
@@ -63,6 +67,8 @@ public class AutoArmor extends Module {
     private final BooleanValue unequipBroken = bool("autoArmorUnequipBroken", "unequip_broken", true);
     private final NumberValue<Integer> delayTicks = num("autoArmorDelayTicks", "delay_ticks", 0, 0, 20);
     private final BooleanValue inventoryOnly = bool("autoArmorInventoryOnly", "inventory_only", false);
+    private final EnumValue<ElytraMode> elytra =
+            enumSetting("autoArmorElytra", SETTING_ELYTRA, ElytraMode.NONE, ElytraMode.values());
     private final Minecraft mc = Minecraft.getInstance();
     private int cooldown;
 
@@ -74,6 +80,7 @@ public class AutoArmor extends Module {
     @Override
     public void onTick() {
         if (!isEnabled() || mc.player == null || mc.gameMode == null || mc.level == null) return;
+        if (mc.player.isSpectator() || !mc.player.isAlive()) return;
         if (ClientScreen.current() != null && !(ClientScreen.current() instanceof InventoryScreen))
             return;
         if (inventoryOnly.get() && !(ClientScreen.current() instanceof InventoryScreen)) return;
@@ -84,11 +91,30 @@ public class AutoArmor extends Module {
         }
 
         int syncId = mc.player.inventoryMenu.containerId;
+        boolean shouldElytra = shouldEquipElytra();
         for (EquipmentSlot slot : EquipmentSlot.values()) {
             if (slot.getType() != EquipmentSlot.Type.HUMANOID_ARMOR) continue;
 
             ItemStack equipped = mc.player.getItemBySlot(slot);
-            if (slot == EquipmentSlot.CHEST && equipped.is(Items.ELYTRA)) continue;
+            if (slot == EquipmentSlot.CHEST) {
+                if (shouldElytra) {
+                    if (equipped.is(Items.ELYTRA) && !isBroken(equipped)) {
+                        continue;
+                    }
+                    Candidate bestElytra = findBestElytra();
+                    if (bestElytra != null) {
+                        int from = InventorySwap.mapInventoryToScreenSlot(bestElytra.invSlot);
+                        int to = armorScreenSlot(slot);
+                        InventorySwap.INSTANCE.swapScreenSlots(from, to);
+                        return;
+                    }
+                    if (equipped.is(Items.ELYTRA) && !isBroken(equipped)) {
+                        continue;
+                    }
+                } else if (elytra.get() == ElytraMode.NONE && equipped.is(Items.ELYTRA)) {
+                    continue;
+                }
+            }
 
             Candidate best = findBestCandidate(slot);
             if (best != null && isBetter(best.stack, equipped, slot)) {
@@ -126,6 +152,7 @@ public class AutoArmor extends Module {
         for (int i = 0; i < 36; i++) {
             ItemStack stack = mc.player.getInventory().getItem(i);
             if (stack == null || stack.isEmpty()) continue;
+            if (slot == EquipmentSlot.CHEST && stack.is(Items.ELYTRA)) continue;
             if (!isEquippableForSlot(stack, slot)) continue;
             if (isBroken(stack)) continue;
             if (hasCurseOfBinding(stack)) continue;
@@ -156,9 +183,11 @@ public class AutoArmor extends Module {
         if (candidate == null || candidate.isEmpty()) return false;
         if (current == null || current.isEmpty()) return true;
         if (hasCurseOfBinding(current)) return false;
+        if (slot == EquipmentSlot.CHEST && current.is(Items.ELYTRA)) {
+            return true;
+        }
         return scoreArmor(candidate, slot) > scoreArmor(current, slot) + minImprovement.get() * ProtectionFocus.ARMOR_WEIGHT;
     }
-
     private double scoreArmor(ItemStack stack, EquipmentSlot slot) {
         if (stack == null || stack.isEmpty()) return Double.NEGATIVE_INFINITY;
 
@@ -205,9 +234,13 @@ public class AutoArmor extends Module {
 
     private boolean isBroken(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
+        if (stack.is(Items.ELYTRA)) {
+            int max = stack.getMaxDamage();
+            if (max <= 0) return false;
+            return (max - stack.getDamageValue()) <= 1 || (double) stack.getDamageValue() / max > 0.98;
+        }
         return ProtectionFocus.isWorn(stack.getDamageValue(), stack.getMaxDamage(), brokenPercent.get());
     }
-
     private boolean hasInventorySpace() {
         if (mc.player == null) return false;
         for (int i = 0; i < 36; i++) {
@@ -226,6 +259,91 @@ public class AutoArmor extends Module {
             case FEET -> 8;
             default -> -1;
         };
+    }
+    private boolean shouldEquipElytra() {
+        if (mc.player == null) return false;
+        return switch (elytra.get()) {
+            case NONE -> false;
+            case ELYTRA_FLY -> isElytraFlyEnabled();
+            case IN_AIR -> isInAir();
+            case BOTH -> isElytraFlyEnabled() || isInAir();
+        };
+    }
+
+    private boolean isElytraFlyEnabled() {
+        return Modules.enabled(ElytraFly.class);
+    }
+
+    private boolean isInAir() {
+        if (mc.player == null || mc.player.isSpectator()) return false;
+        if (mc.player.isFallFlying()) return true;
+        if (mc.player.getAbilities().flying) return true;
+        return !mc.player.onGround()
+                && !mc.player.isInWater()
+                && !mc.player.isInLava()
+                && !mc.player.onClimbable()
+                && !mc.player.isPassenger();
+    }
+
+    private Candidate findBestElytra() {
+        if (mc.player == null) return null;
+        int bestSlot = -1;
+        double bestScore = Double.NEGATIVE_INFINITY;
+
+        for (int i = 0; i < 36; i++) {
+            ItemStack stack = mc.player.getInventory().getItem(i);
+            if (stack == null || stack.isEmpty() || !stack.is(Items.ELYTRA)) continue;
+            if (isBroken(stack)) continue;
+            if (hasCurseOfBinding(stack)) continue;
+
+            double score = scoreElytra(stack);
+            if (score > bestScore) {
+                bestScore = score;
+                bestSlot = i;
+            }
+        }
+
+        return bestSlot >= 0 ? new Candidate(bestSlot, mc.player.getInventory().getItem(bestSlot).copy()) : null;
+    }
+
+    private double scoreElytra(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return Double.NEGATIVE_INFINITY;
+        int unbreaking = getEnchantmentLevel(Enchantments.UNBREAKING, stack);
+        int mending = getEnchantmentLevel(Enchantments.MENDING, stack);
+        double durabilityRatio = stack.isDamageableItem() && stack.getMaxDamage() > 0
+                ? 1.0 - ((double) stack.getDamageValue() / stack.getMaxDamage())
+                : 1.0;
+        return durabilityRatio * 10.0 + unbreaking * 2.0 + mending * 3.0;
+    }
+
+    public enum ElytraMode implements EnumValue.IdProvider, EnumValue.AliasProvider {
+        NONE("none", List.of("off", "false")),
+        ELYTRA_FLY("elytrafly", List.of("elytra_fly", "fly")),
+        IN_AIR("in_air", List.of("air")),
+        BOTH("both", List.of("fly_or_air", "all", "true"));
+
+        private final String id;
+        private final List<String> aliases;
+
+        ElytraMode(String id, List<String> aliases) {
+            this.id = id;
+            this.aliases = aliases;
+        }
+
+        @Override
+        public String id() {
+            return id;
+        }
+
+        @Override
+        public String getId() {
+            return id;
+        }
+
+        @Override
+        public List<String> aliases() {
+            return aliases;
+        }
     }
 
     public enum Mode {

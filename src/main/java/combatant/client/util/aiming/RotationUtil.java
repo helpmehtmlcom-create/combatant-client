@@ -14,12 +14,20 @@
 package combatant.client.util.aiming;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Input;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
+import combatant.client.util.aiming.data.Rotation;
 
 /**
  * Small rotation helpers (yaw/pitch).
@@ -36,15 +44,193 @@ public enum RotationUtil {
         return f * f * f * 8.0 * 0.15;
     }
 
-    public static float[] getRotations(Vec3 from, Vec3 to) {
+    /**
+     * Converts the angular difference between current and target angles to discrete mouse delta ticks
+     * quantized by sensitivity GCD.
+     */
+    public static int angleToMouseDelta(float currentAngle, float targetAngle) {
+        double gcd = gcd();
+        if (gcd <= 0.0) return 0;
+        float diff = angleDifference(targetAngle, currentAngle);
+        return (int) Math.round(diff / gcd);
+    }
+
+    /**
+     * Converts discrete mouse delta ticks into angular delta in degrees using sensitivity GCD.
+     */
+    public static float mouseDeltaToAngle(int delta) {
+        return (float) (delta * gcd());
+    }
+
+    /**
+     * Computes spherical angular distance in degrees between two rotation pairs (yaw1, pitch1) and (yaw2, pitch2).
+     */
+    public static float getAngleDifference(float yaw1, float pitch1, float yaw2, float pitch2) {
+        Vec3 v1 = getRotationVector(pitch1, yaw1);
+        Vec3 v2 = getRotationVector(pitch2, yaw2);
+        double dot = Mth.clamp(v1.dot(v2), -1.0, 1.0);
+        return (float) Math.toDegrees(Math.acos(dot));
+    }
+
+    /**
+     * Computes spherical angular distance in degrees between two {@link Rotation} instances.
+     */
+    public static float getAngleDifference(Rotation from, Rotation to) {
+        if (from == null || to == null) return 0.0f;
+        return getAngleDifference(from.yaw(), from.pitch(), to.yaw(), to.pitch());
+    }
+
+    /**
+     * Scans multiple key points on target's AABB (eyes, head, chest, center, feet)
+     * to find the point with line of sight or closest unobstructed trajectory from eyePos.
+     */
+    public static Vec3 getBestTargetPoint(Vec3 eyePos, Entity target) {
+        if (target == null) return null;
+        if (eyePos == null) return target.position().add(0.0, target.getBbHeight() * 0.5, 0.0);
+
+        AABB bb = target.getBoundingBox();
+        Vec3 eyes = target.getEyePosition();
+        Vec3 head = new Vec3(target.getX(), bb.maxY - 0.1, target.getZ());
+        Vec3 chest = new Vec3(target.getX(), bb.minY + (bb.maxY - bb.minY) * 0.75, target.getZ());
+        Vec3 center = new Vec3(target.getX(), bb.minY + (bb.maxY - bb.minY) * 0.5, target.getZ());
+        Vec3 feet = new Vec3(target.getX(), bb.minY + 0.15, target.getZ());
+
+        Vec3[] points = { eyes, head, chest, center, feet };
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.level == null) {
+            return eyes;
+        }
+
+        Vec3 bestVisible = null;
+        double minVisibleDistSq = Double.MAX_VALUE;
+        Vec3 closestFallback = null;
+        double minFallbackDistSq = Double.MAX_VALUE;
+
+        for (Vec3 point : points) {
+            HitResult hit = mc.level.clip(new ClipContext(
+                    eyePos,
+                    point,
+                    ClipContext.Block.COLLIDER,
+                    ClipContext.Fluid.NONE,
+                    mc.player
+            ));
+
+            double distSq = eyePos.distanceToSqr(point);
+            if (distSq < minFallbackDistSq) {
+                minFallbackDistSq = distSq;
+                closestFallback = point;
+            }
+
+            if (hit == null || hit.getType() == HitResult.Type.MISS) {
+                if (distSq < minVisibleDistSq) {
+                    minVisibleDistSq = distSq;
+                    bestVisible = point;
+                }
+            }
+        }
+
+        return bestVisible != null ? bestVisible : (closestFallback != null ? closestFallback : eyes);
+    }
+
+    /**
+     * Accurate yaw/pitch calculation between two 3D points.
+     */
+    public static float[] calculateRotations(Vec3 from, Vec3 to) {
+        if (from == null || to == null) return new float[]{0.0f, 0.0f};
         double dx = to.x - from.x;
         double dy = to.y - from.y;
         double dz = to.z - from.z;
+        if (Double.isNaN(dx) || Double.isNaN(dy) || Double.isNaN(dz)) {
+            return new float[]{0.0f, 0.0f};
+        }
         double distXZ = Math.sqrt(dx * dx + dz * dz);
+        if (distXZ < 1.0E-7 && Math.abs(dy) < 1.0E-7) {
+            return new float[]{0.0f, 0.0f};
+        }
 
         float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
         float pitch = (float) (-Math.toDegrees(Math.atan2(dy, distXZ)));
         return new float[]{wrapDegrees(yaw), Mth.clamp(wrapDegrees(pitch), -90.0f, 90.0f)};
+    }
+
+    public static float[] getRotations(Vec3 from, Vec3 to) {
+        return calculateRotations(from, to);
+    }
+
+    /**
+     * Accurate yaw/pitch calculation towards a block position or block face.
+     */
+    public static float[] calculateRotations(Vec3 from, BlockPos pos, Direction face) {
+        if (pos == null) return new float[]{0.0f, 0.0f};
+        Vec3 target;
+        if (face == null) {
+            target = new Vec3(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+        } else {
+            target = new Vec3(
+                    pos.getX() + 0.5 + face.getStepX() * 0.5,
+                    pos.getY() + 0.5 + face.getStepY() * 0.5,
+                    pos.getZ() + 0.5 + face.getStepZ() * 0.5
+            );
+        }
+        return calculateRotations(from, target);
+    }
+
+    public static float[] calculateRotations(Vec3 from, BlockPos pos) {
+        return calculateRotations(from, pos, null);
+    }
+
+    /**
+     * Interpolates rotation angles smoothly towards a target with a maximum turn delta.
+     */
+    public static float[] smoothRotation(float[] current, float[] target, float maxDelta) {
+        if (current == null || target == null) return target != null ? target : new float[]{0.0f, 0.0f};
+        if (maxDelta <= 0.0f) return current;
+
+        float yawDiff = angleDifference(target[0], current[0]);
+        float pitchDiff = angleDifference(target[1], current[1]);
+
+        float deltaYaw = Math.abs(yawDiff) > maxDelta ? Math.signum(yawDiff) * maxDelta : yawDiff;
+        float deltaPitch = Math.abs(pitchDiff) > maxDelta ? Math.signum(pitchDiff) * maxDelta : pitchDiff;
+
+        float newYaw = wrapDegrees(current[0] + deltaYaw);
+        float newPitch = Mth.clamp(current[1] + deltaPitch, -90.0f, 90.0f);
+
+        return new float[]{newYaw, newPitch};
+    }
+
+    public static float[] smoothRotation(float currentYaw, float currentPitch,
+                                         float targetYaw, float targetPitch,
+                                         float maxDelta) {
+        return smoothRotation(new float[]{currentYaw, currentPitch}, new float[]{targetYaw, targetPitch}, maxDelta);
+    }
+
+    /**
+     * Raytrace angle validation checking if player's gaze is pointing towards point within maxAngleDiff degrees.
+     */
+    public static boolean isLookingAt(Player player, Vec3 point, double maxAngleDiff) {
+        if (player == null || point == null) return false;
+        Vec3 eyes = player.getEyePosition();
+        Vec3 dir = point.subtract(eyes);
+        double len = dir.length();
+        if (len < 1.0E-6) return true;
+        dir = dir.scale(1.0 / len);
+
+        Vec3 look;
+        if (player instanceof LocalPlayer && RotationManager.INSTANCE != null) {
+            var rot = RotationManager.INSTANCE.getCurrentRotation();
+            if (rot != null) {
+                look = getRotationVector(rot.pitch(), rot.yaw()).normalize();
+            } else {
+                look = player.getViewVector(1.0f);
+            }
+        } else {
+            look = player.getViewVector(1.0f);
+        }
+
+        double dot = Mth.clamp(look.dot(dir), -1.0, 1.0);
+        double angle = Math.toDegrees(Math.acos(dot));
+        return angle <= maxAngleDiff;
     }
 
     public static float[] getRotationsToEntity(Entity from, Entity target) {

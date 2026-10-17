@@ -45,7 +45,8 @@ public abstract class Setting {
     private final List<String> commonI18nKeys = new ArrayList<>();
     private boolean i18nNameEnabled = true;
     private boolean i18nOptionsEnabled = true;
-
+    private String description;
+    private String tooltip;
     public Setting(String name, ConfigValue<?> value) {
         this.name = name;
         this.value = value;
@@ -153,8 +154,24 @@ public abstract class Setting {
             }
         }
 
-        if (LANG_READY) cachedDisplayName = name;
-        return name;
+        String fallback = formatFallbackDisplayName(name);
+        if (LANG_READY) cachedDisplayName = fallback;
+        return fallback;
+    }
+
+    public static String formatFallbackDisplayName(String raw) {
+        if (raw == null || raw.isBlank()) return raw;
+        String[] parts = raw.split("[_\\s]+");
+        StringBuilder sb = new StringBuilder();
+        for (String part : parts) {
+            if (part.isEmpty()) continue;
+            if (!sb.isEmpty()) sb.append(' ');
+            sb.append(Character.toUpperCase(part.charAt(0)));
+            if (part.length() > 1) {
+                sb.append(part.substring(1));
+            }
+        }
+        return sb.toString();
     }
 
     public String getOptionDisplayName(String optionId) {
@@ -172,8 +189,7 @@ public abstract class Setting {
         java.util.List<String> optionKeys = optionTranslationKeys(optionId);
 
         String translated = resolveFirstTranslation(optionKeys, true);
-        String resolved = translated != null ? translated : optionId;
-
+        String resolved = translated != null ? translated : formatFallbackDisplayName(optionId);
         if (LANG_READY) {
             cachedOptionDisplayNames.put(optionId, resolved);
         }
@@ -494,6 +510,40 @@ public abstract class Setting {
         return value;
     }
 
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setTooltip(String tooltip) {
+        this.tooltip = tooltip;
+    }
+
+    public String getTooltip() {
+        return tooltip != null ? tooltip : description;
+    }
+
+    public String getResolvedTooltip() {
+        if (tooltip != null && !tooltip.isBlank()) {
+            return tooltip;
+        }
+        if (description != null && !description.isBlank()) {
+            return description;
+        }
+        String key = getTranslationKey();
+        if (key != null && !key.isBlank()) {
+            String descKey = key + ".desc";
+            String translated = I18n.get(descKey);
+            if (!translated.equals(descKey)) {
+                return translated;
+            }
+        }
+        return null;
+    }
+
     // ======================================================
     //      Visibility
     // ======================================================
@@ -503,12 +553,12 @@ public abstract class Setting {
     }
 
     public boolean isVisible() {
-        if (ErrorHandler.blocked(this)) return true;
+        if (ErrorHandler.blocked(this)) return false;
         try {
             return visibility.get();
         } catch (RuntimeException e) {
             FailureIsolation.reportSetting(this, "visibility", e);
-            return true;
+            return false;
         }
     }
 

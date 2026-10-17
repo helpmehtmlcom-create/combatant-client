@@ -23,6 +23,7 @@ final class OggAudioDecoder implements AudioDecoder {
     public PcmAudioData decode(InputStream input) throws IOException {
         byte[] compressed = input.readAllBytes();
         if (compressed.length == 0) throw new IOException("Empty OGG stream");
+        if (compressed.length > 64 * 1024 * 1024) throw new IOException("OGG stream exceeds maximum allowed size (64MB)");
 
         ByteBuffer encoded = BufferUtils.createByteBuffer(compressed.length);
         encoded.put(compressed).flip();

@@ -38,40 +38,44 @@ import combatant.client.util.input.KeyManager;
 import combatant.client.util.logging.DebugLog;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.function.BooleanSupplier;
 
 public enum ModuleManager {
     ;
 
     private static final List<Module> modules = new ArrayList<>();
-    private static final List<Module> modulesView = Collections.unmodifiableList(modules);
-    private static final Map<String, Module> byId = new LinkedHashMap<>();
-    private static final Map<Class<? extends Module>, Module> byType = new IdentityHashMap<>();
+    private static final Map<String, Module> byId = new ConcurrentHashMap<>();
+    private static final Map<String, Module> byAlias = new ConcurrentHashMap<>();
+    private static final Map<Class<? extends Module>, Module> byType = new ConcurrentHashMap<>();
     private static final EnumMap<HudPhase, List<Module>> HUD_PHASE_MODULES = new EnumMap<>(HudPhase.class);
-    private static final EnumMap<HudPhase, Module[]> HUD_PHASE_SNAPSHOTS = new EnumMap<>(HudPhase.class);
+    private static final AtomicReferenceArray<Module[]> HUD_PHASE_SNAPSHOTS =
+            new AtomicReferenceArray<>(HudPhase.values().length);
     private static final EnumMap<WorldPhase, List<Module>> WORLD_PHASE_MODULES = new EnumMap<>(WorldPhase.class);
-    private static final EnumMap<WorldPhase, Module[]> WORLD_PHASE_SNAPSHOTS = new EnumMap<>(WorldPhase.class);
+    private static final AtomicReferenceArray<Module[]> WORLD_PHASE_SNAPSHOTS =
+            new AtomicReferenceArray<>(WorldPhase.values().length);
     private static final List<ModuleStateListener> listeners = new ArrayList<>();
-    private static Module[] modulesSnapshot = new Module[0];
-    private static ModuleStateListener[] listenerSnapshot = new ModuleStateListener[0];
-    private static boolean suppressToggleSound = false;
+    private static volatile Module[] modulesSnapshot = new Module[0];
+    private static volatile ModuleStateListener[] listenerSnapshot = new ModuleStateListener[0];
+    private static volatile boolean suppressToggleSound = false;
     @Setter
-    private static boolean suppressToggleNotifications = false;
-    private static List<String> softPanicEnabledModules = Collections.emptyList();
-    private static boolean runtimeReleased = false;
+    private static volatile boolean suppressToggleNotifications = false;
+    private static volatile List<String> softPanicEnabledModules = Collections.emptyList();
+    private static volatile boolean runtimeReleased = false;
 
     static {
         for (HudPhase phase : HudPhase.values()) {
             HUD_PHASE_MODULES.put(phase, new ArrayList<>());
-            HUD_PHASE_SNAPSHOTS.put(phase, new Module[0]);
+            HUD_PHASE_SNAPSHOTS.set(phase.ordinal(), new Module[0]);
         }
         for (WorldPhase phase : WorldPhase.values()) {
             WORLD_PHASE_MODULES.put(phase, new ArrayList<>());
-            WORLD_PHASE_SNAPSHOTS.put(phase, new Module[0]);
+            WORLD_PHASE_SNAPSHOTS.set(phase.ordinal(), new Module[0]);
         }
     }
 
-    public static void register(Module module) {
+    public static synchronized void register(Module module) {
         if (runtimeReleased || RuntimeGate.isJarReplacementMode()) return;
         if (module == null) {
             DebugLog.error("Skipping null module registration");
@@ -112,10 +116,46 @@ public enum ModuleManager {
         modules.add(module);
         byId.put(normalizedId, module);
         byType.put(type, module);
+        for (String alias : module.getAliases()) {
+            if (alias != null && !alias.isBlank()) {
+                byAlias.putIfAbsent(normalizeName(alias), module);
+            }
+        }
         cacheHudPhase(module);
         cacheWorldPhase(module);
         rebuildSnapshots();
         Events.BUS.register(module);
+    }
+
+    public static synchronized void unregister(Module module) {
+        if (module == null) return;
+        if (!modules.remove(module)) return;
+
+        String id = module.name();
+        if (id != null && !id.isBlank()) {
+            byId.remove(normalizeName(id));
+        }
+        for (String alias : module.getAliases()) {
+            if (alias != null && !alias.isBlank()) {
+                byAlias.remove(normalizeName(alias), module);
+            }
+        }
+        byType.remove(module.getClass());
+
+        HudPhase hudPhase = module.getHudPhase();
+        if (hudPhase != null && hudPhase != HudPhase.NONE) {
+            List<Module> hudList = HUD_PHASE_MODULES.get(hudPhase);
+            if (hudList != null) hudList.remove(module);
+        }
+
+        WorldPhase worldPhase = module.getWorldPhase();
+        if (worldPhase != null && worldPhase != WorldPhase.NONE) {
+            List<Module> worldList = WORLD_PHASE_MODULES.get(worldPhase);
+            if (worldList != null) worldList.remove(module);
+        }
+
+        rebuildSnapshots();
+        Events.BUS.unregister(module);
     }
 
     private static boolean hasModuleMetadata(Class<? extends Module> type) {
@@ -141,19 +181,23 @@ public enum ModuleManager {
 
         for (HudPhase phase : HudPhase.values()) {
             List<Module> list = HUD_PHASE_MODULES.get(phase);
-            HUD_PHASE_SNAPSHOTS.put(phase, list == null || list.isEmpty() ? new Module[0] : list.toArray(Module[]::new));
+            HUD_PHASE_SNAPSHOTS.set(phase.ordinal(), list == null || list.isEmpty() ? new Module[0] : list.toArray(Module[]::new));
         }
 
         for (WorldPhase phase : WorldPhase.values()) {
             List<Module> list = WORLD_PHASE_MODULES.get(phase);
-            WORLD_PHASE_SNAPSHOTS.put(phase, list == null || list.isEmpty() ? new Module[0] : list.toArray(Module[]::new));
+            WORLD_PHASE_SNAPSHOTS.set(phase.ordinal(), list == null || list.isEmpty() ? new Module[0] : list.toArray(Module[]::new));
         }
     }
 
     public static Module get(String name) {
         if (runtimeReleased || RuntimeGate.isJarReplacementMode()) return null;
         if (name == null || name.isBlank()) return null;
-        Module module = byId.get(normalizeName(name));
+        String normalized = normalizeName(name);
+        Module module = byId.get(normalized);
+        if (module == null) {
+            module = byAlias.get(normalized);
+        }
         if (module != null && !RuntimeGate.canRunModules() && !(module instanceof RuntimeControlModule)) return null;
         return module;
     }
@@ -210,17 +254,23 @@ public enum ModuleManager {
         FailureDiagnostics.drain();
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || !RuntimeGate.canRunModules()) return;
+        Module[] snapshot = modulesSnapshot;
+        if (snapshot.length == 0) return;
         if (!ProfilerPhase.isActive()) {
-            for (Module m : modulesSnapshot) runModule(m, "tick", () -> {
-                if (ModuleExtensionManager.beforeTick(m)) {
-                    m.onTick();
-                    ModuleExtensionManager.afterTick(m);
-                }
-            });
+            for (int i = 0; i < snapshot.length; i++) {
+                Module m = snapshot[i];
+                runModule(m, "tick", () -> {
+                    if (ModuleExtensionManager.beforeTick(m)) {
+                        m.onTick();
+                        ModuleExtensionManager.afterTick(m);
+                    }
+                });
+            }
             return;
         }
         try (ProfilerPhase.Scope ignored = ProfilerPhase.scope("modules:tick")) {
-            for (Module m : modulesSnapshot) {
+            for (int i = 0; i < snapshot.length; i++) {
+                Module m = snapshot[i];
                 if (!m.isEnabled()) continue;
                 try (ProfilerPhase.Scope scope = moduleScope("module:tick:", m)) {
                     runModule(m, "tick", () -> {
@@ -238,17 +288,23 @@ public enum ModuleManager {
         FailureIsolation.drain();
         FailureDiagnostics.drain();
         if (!RuntimeGate.canRunModules()) return;
+        Module[] snapshot = modulesSnapshot;
+        if (snapshot.length == 0) return;
         if (!ProfilerPhase.isActive()) {
-            for (Module m : modulesSnapshot) runModule(m, "frame", () -> {
-                if (ModuleExtensionManager.beforeFrame(m, frameDeltaTicks)) {
-                    m.onFrame(frameDeltaTicks);
-                    ModuleExtensionManager.afterFrame(m, frameDeltaTicks);
-                }
-            });
+            for (int i = 0; i < snapshot.length; i++) {
+                Module m = snapshot[i];
+                runModule(m, "frame", () -> {
+                    if (ModuleExtensionManager.beforeFrame(m, frameDeltaTicks)) {
+                        m.onFrame(frameDeltaTicks);
+                        ModuleExtensionManager.afterFrame(m, frameDeltaTicks);
+                    }
+                });
+            }
             return;
         }
         try (ProfilerPhase.Scope ignored = ProfilerPhase.scope("modules:frame")) {
-            for (Module m : modulesSnapshot) {
+            for (int i = 0; i < snapshot.length; i++) {
+                Module m = snapshot[i];
                 if (!m.isEnabled()) continue;
                 try (ProfilerPhase.Scope scope = moduleScope("module:frame:", m)) {
                     runModule(m, "frame", () -> {
@@ -263,17 +319,19 @@ public enum ModuleManager {
     }
 
     public static void renderHud(HudPhase phase, GuiGraphicsExtractor ctx, float tickDelta) {
-        if (!RuntimeGate.canRunHud()) return;
-        Module[] phaseModules = HUD_PHASE_SNAPSHOTS.get(phase);
-        if (phaseModules == null) return;
+        if (!RuntimeGate.canRunHud() || phase == null) return;
+        Module[] phaseModules = HUD_PHASE_SNAPSHOTS.get(phase.ordinal());
+        if (phaseModules == null || phaseModules.length == 0) return;
         if (!ProfilerPhase.isActive()) {
-            for (Module m : phaseModules) {
+            for (int i = 0; i < phaseModules.length; i++) {
+                Module m = phaseModules[i];
                 runModule(m, "hud", () -> m.onRender2D(ctx, tickDelta));
             }
             return;
         }
         try (ProfilerPhase.Scope phaseScope = ProfilerPhase.scope("modules:hud_legacy:" + phase.name().toLowerCase(Locale.ROOT))) {
-            for (Module m : phaseModules) {
+            for (int i = 0; i < phaseModules.length; i++) {
+                Module m = phaseModules[i];
                 if (!m.isEnabled()) continue;
                 try (ProfilerPhase.Scope moduleScope = moduleScope("module:hud_legacy:", m)) {
                     runModule(m, "hud", () -> m.onRender2D(ctx, tickDelta));
@@ -283,10 +341,11 @@ public enum ModuleManager {
     }
 
     public static void renderHudEngine(HudPhase phase, HudRenderSpace space, Renderer2D renderer, TextRenderer textRenderer, GuiGraphicsExtractor ctx, float tickDelta) {
-        if (!RuntimeGate.canRunHud()) return;
-        Module[] phaseModules = HUD_PHASE_SNAPSHOTS.get(phase);
-        if (phaseModules == null) return;
-        for (Module m : phaseModules) {
+        if (!RuntimeGate.canRunHud() || phase == null) return;
+        Module[] phaseModules = HUD_PHASE_SNAPSHOTS.get(phase.ordinal());
+        if (phaseModules == null || phaseModules.length == 0) return;
+        for (int i = 0; i < phaseModules.length; i++) {
+            Module m = phaseModules[i];
             if (m.isEnabled() && m.getHudRenderSpace() == space) {
                 try (ProfilerPhase.Scope scope = moduleScope("module:hud:", m);
                      RenderProfiler2D.Section ignored = RenderProfiler2D.section(PROFILER_2D ? "module:" + m.name() : null)) {
@@ -306,10 +365,11 @@ public enum ModuleManager {
     }
 
     public static void renderHudEngineForeground(HudPhase phase, HudRenderSpace space, Renderer2D renderer, TextRenderer textRenderer, GuiGraphicsExtractor ctx, float tickDelta) {
-        if (!RuntimeGate.canRunHud()) return;
-        Module[] phaseModules = HUD_PHASE_SNAPSHOTS.get(phase);
-        if (phaseModules == null) return;
-        for (Module m : phaseModules) {
+        if (!RuntimeGate.canRunHud() || phase == null) return;
+        Module[] phaseModules = HUD_PHASE_SNAPSHOTS.get(phase.ordinal());
+        if (phaseModules == null || phaseModules.length == 0) return;
+        for (int i = 0; i < phaseModules.length; i++) {
+            Module m = phaseModules[i];
             if (m.isEnabled() && m.getHudRenderSpace() == space) {
                 try (ProfilerPhase.Scope scope = moduleScope("module:hud_fg:", m);
                      RenderProfiler2D.Section ignored = RenderProfiler2D.section(PROFILER_2D ? "module_fg:" + m.name() : null)) {
@@ -324,11 +384,12 @@ public enum ModuleManager {
     }
 
     private static boolean hasEnabledHudPhaseModule(HudPhase phase, HudRenderSpace space) {
-        if (!RuntimeGate.canRunHud()) return false;
-        Module[] phaseModules = HUD_PHASE_SNAPSHOTS.get(phase);
-        if (phaseModules == null) return false;
+        if (!RuntimeGate.canRunHud() || phase == null) return false;
+        Module[] phaseModules = HUD_PHASE_SNAPSHOTS.get(phase.ordinal());
+        if (phaseModules == null || phaseModules.length == 0) return false;
 
-        for (Module m : phaseModules) {
+        for (int i = 0; i < phaseModules.length; i++) {
+            Module m = phaseModules[i];
             if (m.isEnabled() && m.getHudRenderSpace() == space) return true;
         }
         return false;
@@ -339,17 +400,19 @@ public enum ModuleManager {
     // ---------------------------
 
     public static void renderWorld(WorldPhase phase, PoseStack matrices, SubmitNodeCollector consumers, float tickDelta) {
-        if (!RuntimeGate.canRunRender()) return;
-        Module[] phaseModules = WORLD_PHASE_SNAPSHOTS.get(phase);
-        if (phaseModules == null) return;
+        if (!RuntimeGate.canRunRender() || phase == null) return;
+        Module[] phaseModules = WORLD_PHASE_SNAPSHOTS.get(phase.ordinal());
+        if (phaseModules == null || phaseModules.length == 0) return;
         if (!ProfilerPhase.isActive()) {
-            for (Module m : phaseModules) {
+            for (int i = 0; i < phaseModules.length; i++) {
+                Module m = phaseModules[i];
                 runModule(m, "world legacy", () -> m.onRenderWorld(matrices, consumers, tickDelta));
             }
             return;
         }
         try (ProfilerPhase.Scope phaseScope = ProfilerPhase.scope("modules:world_legacy:" + phase.name().toLowerCase(Locale.ROOT))) {
-            for (Module m : phaseModules) {
+            for (int i = 0; i < phaseModules.length; i++) {
+                Module m = phaseModules[i];
                 if (!m.isEnabled()) continue;
                 try (ProfilerPhase.Scope moduleScope = moduleScope("module:world_legacy:", m)) {
                     runModule(m, "world legacy", () -> m.onRenderWorld(matrices, consumers, tickDelta));
@@ -359,11 +422,12 @@ public enum ModuleManager {
     }
 
     public static void renderWorldEngine(WorldPhase phase, Renderer3D renderer, Renderer3D depthRenderer, float tickDelta) {
-        if (!RuntimeGate.canRunRender()) return;
-        Module[] phaseModules = WORLD_PHASE_SNAPSHOTS.get(phase);
-        if (phaseModules == null) return;
+        if (!RuntimeGate.canRunRender() || phase == null) return;
+        Module[] phaseModules = WORLD_PHASE_SNAPSHOTS.get(phase.ordinal());
+        if (phaseModules == null || phaseModules.length == 0) return;
         try {
-            for (Module m : phaseModules) {
+            for (int i = 0; i < phaseModules.length; i++) {
+                Module m = phaseModules[i];
                 if (!m.isEnabled()) continue;
                 try (ProfilerPhase.Scope scope = moduleScope("module:world:", m);
                      RenderProfiler3D.Section ignored = RenderProfiler3D.section(PROFILER_3D ? "module:" + m.name() : null)) {
@@ -417,7 +481,8 @@ public enum ModuleManager {
         boolean soundSuppressedThisPass = previousSuppression;
         try {
             Module[] snapshot = modulesSnapshot;
-            for (Module m : snapshot) {
+            for (int i = 0; i < snapshot.length; i++) {
+                Module m = snapshot[i];
                 if (m instanceof RuntimeControlModule) continue;
                 if (KeyManager.wasPressed(m.name())) {
                     setSuppressToggleSound(soundSuppressedThisPass);
@@ -433,7 +498,8 @@ public enum ModuleManager {
 
     public static void tickRuntimeControllers() {
         Module[] snapshot = modulesSnapshot;
-        for (Module module : snapshot) {
+        for (int i = 0; i < snapshot.length; i++) {
+            Module module = snapshot[i];
             if (module instanceof RuntimeControlModule controller) {
                 try { controller.onRuntimeControlTick(); }
                 catch (RuntimeException e) { FailureIsolation.reportModule(module, "runtime control", e); }
@@ -466,7 +532,7 @@ public enum ModuleManager {
      */
     public static List<Module> getModules() {
         if (runtimeReleased || RuntimeGate.isJarReplacementMode()) return List.of();
-        return modulesView;
+        return List.of(modulesSnapshot);
     }
 
     public static void setEnabledModules(List<String> names) {
@@ -486,7 +552,7 @@ public enum ModuleManager {
             Module[] snapshot = modulesSnapshot;
             for (int i = 0; i < snapshot.length; i++) {
                 Module m = snapshot[i];
-                boolean shouldEnable = enabledNames.contains(normalizeName(m.name()));
+                boolean shouldEnable = enabledNames.contains(m.name());
                 if (m.isEnabled() != shouldEnable) {
                     m.setEnabled(shouldEnable, ModuleActivationSource.INTERNAL);
                 }
@@ -535,28 +601,36 @@ public enum ModuleManager {
      * ClickGUI expects list of module names
      */
     public static List<String> getAllModules() {
-        List<String> out = new ArrayList<>();
         Module[] snapshot = modulesSnapshot;
+        List<String> out = new ArrayList<>(snapshot.length);
         for (int i = 0; i < snapshot.length; i++) {
             out.add(snapshot[i].name());
         }
         return out;
     }
 
-    public static void addListener(ModuleStateListener listener) {
+    public static synchronized void addListener(ModuleStateListener listener) {
         if (listener == null) return;
         listeners.add(listener);
         listenerSnapshot = listeners.toArray(ModuleStateListener[]::new);
+    }
+
+    public static synchronized void removeListener(ModuleStateListener listener) {
+        if (listener == null) return;
+        if (listeners.remove(listener)) {
+            listenerSnapshot = listeners.toArray(ModuleStateListener[]::new);
+        }
     }
 
     public static void notifyListeners(String name, boolean enabled) {
         if (suppressToggleNotifications) {
             return;
         }
-        ModuleStateListener[] snapshot = listenerSnapshot;
-        for (int i = 0; i < snapshot.length; i++) {
+        ModuleStateListener[] listeners = listenerSnapshot;
+        for (int i = 0; i < listeners.length; i++) {
+            ModuleStateListener listener = listeners[i];
             try {
-                snapshot[i].onModuleStateChanged(name, enabled);
+                listener.onModuleStateChanged(name, enabled);
             } catch (RuntimeException e) {
                 FailureBoundary.requireRecoverable(e);
                 DebugLog.error("Module state listener failed: {}", e, name);
@@ -663,7 +737,8 @@ public enum ModuleManager {
         boolean prevNotifications = suppressToggleNotifications;
         suppressToggleNotifications = true;
         try {
-            for (Module module : snapshot) {
+            for (int i = 0; i < snapshot.length; i++) {
+                Module module = snapshot[i];
                 if (module == null) continue;
                 if (module.isEnabled()) {
                     enabled.add(module.name());
@@ -699,9 +774,11 @@ public enum ModuleManager {
         boolean prevNotifications = suppressToggleNotifications;
         suppressToggleNotifications = true;
         try {
-            for (Module module : modulesSnapshot) {
+            Module[] snapshot = modulesSnapshot;
+            for (int i = 0; i < snapshot.length; i++) {
+                Module module = snapshot[i];
                 if (module == null || module instanceof RuntimeControlModule) continue;
-                if (enabledNames.contains(normalizeName(module.name()))) {
+                if (enabledNames.contains(module.name())) {
                     module.setRuntimeEnabledTransient(true);
                 }
             }
@@ -710,7 +787,7 @@ public enum ModuleManager {
         }
     }
 
-    private static void releaseRuntimeReferences(RuntimeShutdownContext context) {
+    private static synchronized void releaseRuntimeReferences(RuntimeShutdownContext context) {
         runtimeReleased = true;
         FailureIsolation.drain();
         FailureDiagnostics.drain();
@@ -724,11 +801,11 @@ public enum ModuleManager {
         byType.clear();
         for (HudPhase phase : HudPhase.values()) {
             HUD_PHASE_MODULES.get(phase).clear();
-            HUD_PHASE_SNAPSHOTS.put(phase, new Module[0]);
+            HUD_PHASE_SNAPSHOTS.set(phase.ordinal(), new Module[0]);
         }
         for (WorldPhase phase : WorldPhase.values()) {
             WORLD_PHASE_MODULES.get(phase).clear();
-            WORLD_PHASE_SNAPSHOTS.put(phase, new Module[0]);
+            WORLD_PHASE_SNAPSHOTS.set(phase.ordinal(), new Module[0]);
         }
         listeners.clear();
         listenerSnapshot = new ModuleStateListener[0];

@@ -21,7 +21,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.NumberValue;
+import combatant.client.util.player.inventory.InventorySwap;
 import combatant.client.events.EventHandler;
 import combatant.client.events.impl.PacketEvent;
 import combatant.client.features.module.Module;
@@ -42,6 +44,18 @@ public final class MaceKill extends Module {
     private final Minecraft mc = Minecraft.getInstance();
     private final NumberValue<Integer> fallHeight =
             num("height", 22, 1, 170);
+    private final BooleanValue silentSwitch =
+            bool("macekill_silent_switch", "silent_switch", true);
+    @Override
+    public void onEnable() {
+        cancelCrit = false;
+    }
+
+    @Override
+    public void onDisable() {
+        cancelCrit = false;
+        InventorySwap.INSTANCE.releaseHotbar(this);
+    }
 
     @EventHandler
     public void onPacketSend(PacketEvent.Send event) {
@@ -49,15 +63,35 @@ public final class MaceKill extends Module {
         if (!(event.getPacket() instanceof ServerboundAttackPacket packet)) return;
 
         Entity ent = getEntity(packet);
-        if (ent == null || cancelCrit) return;
+        if (ent == null || !ent.isAlive() || ent.isRemoved() || cancelCrit) return;
+        if (mc.player == null || mc.player.isDeadOrDying()) return;
 
-        if (!isHoldingMace()) return;
+        boolean holdingMace = isHoldingMace();
+        if (!holdingMace && silentSwitch.get()) {
+            int maceSlot = findMaceSlot();
+            if (maceSlot != -1) {
+                InventorySwap.INSTANCE.leaseHotbar(this, maceSlot, 2);
+                holdingMace = true;
+            }
+        }
+
+        if (!holdingMace) return;
 
         doCrit();
     }
 
+    private int findMaceSlot() {
+        if (mc.player == null) return -1;
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = mc.player.getInventory().getItem(i);
+            if (stack.is(Items.MACE)) {
+                return i;
+            }
+        }
+        return -1;
+    }
     private void doCrit() {
-        if (mc == null || mc.player == null || mc.level == null) return;
+        if (mc == null || mc.player == null || mc.level == null || mc.getConnection() == null || mc.player.isDeadOrDying()) return;
         int height = determineHeight();
         if (height <= 0) return;
 
@@ -89,6 +123,7 @@ public final class MaceKill extends Module {
 
     private void sendPosition(double x, double y, double z, boolean onGround) {
         if (mc == null || mc.player == null || mc.getConnection() == null) return;
+        if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) return;
         mc.getConnection().send(
                 new ServerboundMovePlayerPacket.Pos(
                         x, y, z, onGround, mc.player.horizontalCollision
