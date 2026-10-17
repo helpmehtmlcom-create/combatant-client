@@ -32,6 +32,12 @@ final class ModulesMenuPanel {
     final Map<String, Float> subcategoryHoverAnim = new HashMap<>();
     final Map<String, Float> hoverAnim = new HashMap<>();
     final List<Setting> selectedSettings = new ArrayList<>();
+    final ModulesSettingsView view = new ModulesSettingsView();
+
+    /** Scrolls the open module's settings page to the named setting, expanding its section and highlighting it. */
+    void revealSetting(String settingName) {
+        view.revealSetting(settingName);
+    }
 
     float x;
     float y;
@@ -269,6 +275,8 @@ final class ModulesMenuPanel {
                     && ModulesMenuScreen.inside(mx, my, previewX, previewY, previewW, previewH)) {
                 return ModulesMenuResolver.openPreview(selected);
             }
+            if (view.mousePressed(this, mx, my, button)) return true;
+
 
             try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.MODULES, ModulesMenuScreen.computePortScale())) {
                 SettingHit target = null;
@@ -411,6 +419,8 @@ final class ModulesMenuPanel {
             return false;
         }
 
+        if (view.keyPressed(keyCode)) return true;
+
         try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.MODULES, ModulesMenuScreen.computePortScale())) {
             for (Setting setting : selectedSettings) {
                 if (setting.keyPressedSafely(keyCode, scanCode, modifiers)) return true;
@@ -437,6 +447,7 @@ final class ModulesMenuPanel {
 
     boolean charTyped(char chr, int modifiers) {
         if (selected == null) return false;
+        if (view.charTyped(chr)) return true;
         try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.MODULES, ModulesMenuScreen.computePortScale())) {
             for (Setting setting : selectedSettings) {
                 if (setting.charTypedSafely(chr, modifiers)) return true;

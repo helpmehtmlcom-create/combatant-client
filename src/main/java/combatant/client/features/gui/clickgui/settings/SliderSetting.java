@@ -107,6 +107,11 @@ public class SliderSetting<N extends Number> extends Setting {
     }
 
     @Override
+    public boolean mouseScrolled(double mx, double my, double amount) {
+        return UnifiedSettingRenderer.mouseScrolled(this, mx, my, amount);
+    }
+
+    @Override
     public float getHeight() {
         return SettingRendererBridge.getHeight(this);
     }

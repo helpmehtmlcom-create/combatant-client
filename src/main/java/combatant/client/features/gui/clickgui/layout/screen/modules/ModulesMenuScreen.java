@@ -1357,7 +1357,7 @@ public final class ModulesMenuScreen {
         float clipY = settingsTop + BASE_HEADER_H * scale;
         float clipH = panel.h - BASE_HEADER_H * 2.0f * scale - SEPARATOR_H * scale - 0.5f * scale - 5.0f * scale;
 
-        boolean clipped = ScissorFunction.pushRaw(settingsX, clipY, settingsW, clipH);
+        boolean clipped = ScissorFunction.pushRaw(settingsX - 5.0f * scale, clipY, settingsW + 5.0f * scale, clipH);
         try {
 
         float y = clipY - panel.settingsSmoothScroll;
@@ -1409,34 +1409,8 @@ public final class ModulesMenuScreen {
                 panel.selectedSettings.addAll(desired);
             }
         }
-        try (SettingRenderContext.Scope ignored = SettingRenderContext.push(SettingRenderSurface.MODULES, scale)) {
-            for (Setting setting : panel.selectedSettings) {
-                float vis = setting.updateVisibilitySafely();
-                if (!setting.isVisibilityTargetVisibleSafely() && vis <= 0.01f) continue;
-
-                float baseH = setting.getHeightSafely();
-                float h = baseH * vis;
-
-                if (h > 0.5f) {
-                    panel.settingHits.add(new ModulesMenuPanel.SettingHit(setting, settingsX, y, settingsW, h));
-
-                    if (y + h >= clipY && y <= clipY + clipH) {
-                        float slide = (-baseH + baseH * vis) * 0.5f;
-
-                        boolean settingClipped = ScissorFunction.pushRaw(settingsX, y, settingsW, h);
-
-                        try {
-                            setting.renderSafely(settingsX, y + slide, settingsW, mouseX, mouseY);
-                        } finally {
-                            if (settingClipped) ScissorFunction.pop();
-                        }
-                    }
-                }
-
-                y += h;
-                total += h;
-            }
-        }
+        total += panel.view.renderRows(panel, settingsX, y, settingsW, clipY, clipH, mouseX, mouseY, alpha, scale,
+                regular, medium);
 
         panel.maxSettingsScroll = Math.max(0.0f, total - clipH);
         panel.settingsScroll = AnimationUtility.clamp(panel.settingsScroll, 0.0f, panel.maxSettingsScroll);
@@ -1447,6 +1421,7 @@ public final class ModulesMenuScreen {
 
         renderScrollbar(panel, panel.settingsSmoothScroll, panel.maxSettingsScroll, clipY, clipH, alpha, mouseX, mouseY);
         } finally { if (pageClip) ScissorFunction.pop(); }
+        panel.view.renderTooltip(areaX, areaY, areaW, areaH, alpha, scale, regular);
     }
 
     private void renderSearch(float mouseX, float mouseY) {

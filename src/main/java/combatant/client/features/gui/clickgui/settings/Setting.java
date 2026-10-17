@@ -157,6 +157,39 @@ public abstract class Setting {
         return name;
     }
 
+    private String cachedDescription;
+
+    /** Hover description ("<translation key>.desc"), or empty when none is translated. */
+    public String getDescription() {
+        if (LANG_READY && cachedDescription != null) return cachedDescription;
+        String found = "";
+        for (String key : getTranslationKeys()) {
+            if (key == null || key.isBlank()) continue;
+            String dk = key + ".desc";
+            String translated = I18n.get(dk);
+            if (!translated.equals(dk) && !translated.startsWith("Format error:")) {
+                found = translated;
+                break;
+            }
+        }
+        if (found.isEmpty() && value != null) found = ConfigLang.getDesc(value);
+        if (LANG_READY) cachedDescription = found;
+        return found;
+    }
+
+    /** True when this setting's value differs from the default captured at module init. */
+    public boolean isChangedFromDefault() {
+        return value != null && value.isChangedFromDefault();
+    }
+
+    /** Restores the default and persists; returns true when something was reset. */
+    public boolean resetToDefault() {
+        if (value == null || !value.isChangedFromDefault()) return false;
+        value.resetToDefault();
+        if (parent != null) parent.saveConfig();
+        return true;
+    }
+
     public String getOptionDisplayName(String optionId) {
         if (optionId == null || optionId.isBlank()) return optionId;
 
@@ -563,6 +596,7 @@ public abstract class Setting {
     }
 
     private void invalidateNameCaches() {
+        cachedDescription = null;
         cachedDisplayName = null;
         cachedTranslationKey = null;
         cachedTranslationOwner = null;

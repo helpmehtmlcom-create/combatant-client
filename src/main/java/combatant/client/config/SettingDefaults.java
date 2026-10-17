@@ -88,4 +88,16 @@ public final class SettingDefaults {
         double next = current + stepSize * steps;
         return Math.max(min, Math.min(max, next));
     }
+
+    /** Fine-adjust step for a range: 1 for integers, otherwise a power of ten near range/100 (at least 0.001). */
+    public static double niceStep(double min, double max, boolean integer) {
+        if (integer) return 1.0;
+        double range = Math.abs(max - min);
+        if (!(range > 0) || !Double.isFinite(range)) return 0.1;
+        double raw = range / 100.0;
+        double step = Math.pow(10, Math.floor(Math.log10(raw)));
+        if (raw / step >= 5) step *= 5;
+        else if (raw / step >= 2) step *= 2;
+        return Math.max(0.001, step);
+    }
 }

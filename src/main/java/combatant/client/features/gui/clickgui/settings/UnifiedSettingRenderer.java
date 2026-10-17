@@ -426,7 +426,14 @@ enum UnifiedSettingRenderer {
 
     static <N extends Number> boolean keyPressed(SliderSetting<N> setting, int keyCode, int scanCode, int modifiers) {
         SliderSetting.UiState ui = setting.ui();
-        if (!ui.editing) return false;
+        if (!ui.editing) {
+            if ((keyCode == GLFW.GLFW_KEY_LEFT || keyCode == GLFW.GLFW_KEY_RIGHT)
+                    && (ui.hoverAnim > 0.5f || ui.valueHoverAnim > 0.5f)) {
+                int mult = (modifiers & GLFW.GLFW_MOD_CONTROL) != 0 ? 10 : 1;
+                return nudgeSlider(setting, (keyCode == GLFW.GLFW_KEY_RIGHT ? 1 : -1) * mult);
+            }
+            return false;
+        }
         boolean ctrl = (modifiers & GLFW.GLFW_MOD_CONTROL) != 0;
         boolean shift = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0;
         if (ctrl && keyCode == GLFW.GLFW_KEY_A) {
@@ -522,6 +529,39 @@ enum UnifiedSettingRenderer {
             return true;
         }
         pulseSliderError(ui);
+        return true;
+    }
+
+    static <N extends Number> boolean mouseScrolled(SliderSetting<N> setting, double mx, double my, double amount) {
+        SliderSetting.UiState ui = setting.ui();
+        if (ui.editing || amount == 0.0) return false;
+        boolean overValue = UnifiedSettingsSkin.inside(mx, my, ui.valueX, ui.valueY, ui.valueW, ui.valueH);
+        boolean overTrack = UnifiedSettingsSkin.inside(mx, my, ui.trackX, ui.trackY - 7f, ui.trackW, ui.trackH + 14f)
+                && shiftDown();
+        if (!overValue && !overTrack) return false;
+        return nudgeSlider(setting, amount > 0 ? 1 : -1);
+    }
+
+    private static boolean shiftDown() {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc == null || mc.getWindow() == null) return false;
+        long h = mc.getWindow().handle();
+        return GLFW.glfwGetKey(h, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS
+                || GLFW.glfwGetKey(h, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS;
+    }
+
+    /** Moves the value by {@code steps} fine-adjust steps (negative = down), clamped, and saves. */
+    private static <N extends Number> boolean nudgeSlider(SliderSetting<N> setting, int steps) {
+        NumberValue<N> v = setting.value();
+        double min = v.getMin().doubleValue();
+        double max = v.getMax().doubleValue();
+        boolean integer = sliderInteger(setting);
+        double step = combatant.client.config.SettingDefaults.niceStep(min, max, integer);
+        double next = combatant.client.config.SettingDefaults.step(v.get().doubleValue(), step, steps, min, max);
+        next = integer ? Math.round(next) : Math.round(next / step) * step;
+        next = Math.max(min, Math.min(max, next));
+        v.set(v.castToType(next));
+        if (setting.getParent() != null) setting.getParent().saveConfig();
         return true;
     }
 
