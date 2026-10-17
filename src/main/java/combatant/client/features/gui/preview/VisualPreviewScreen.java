@@ -26,6 +26,7 @@ public final class VisualPreviewScreen extends Screen {
     private final Screen parent;
     private final VisualPreviewProvider provider;
     private final SettingsPanelComponent settingsPanel = new SettingsPanelComponent(SettingRenderSurface.MODULES);
+    private boolean settingsVisible = true;
     private final combatant.client.input.minecraft.CombatantTextInputTarget textInputTarget = text -> {
         if (!settingsVisible || text == null || text.isEmpty()) return false;
         boolean handled = false;
@@ -68,7 +69,6 @@ public final class VisualPreviewScreen extends Screen {
     private float dragMouseX;
     private float dragMouseY;
     private boolean closing;
-    private boolean settingsVisible = true;
 
     public VisualPreviewScreen(Screen parent, VisualPreviewProvider provider) {
         super(Component.literal(provider == null ? "Visual Preview" : provider.title()));

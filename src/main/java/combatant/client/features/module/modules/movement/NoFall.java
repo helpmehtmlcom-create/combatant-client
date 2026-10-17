@@ -618,7 +618,7 @@ public class NoFall extends Module {
         }
 
         if (success) {
-            player.swing(plan.hand());
+            player.swing(plan.hand(), player.getItemInHand(plan.hand()).getInteractAnimation(), false);
             if (plan.item() == Items.SCAFFOLDING) {
                 mlgSneakTicks = MLG_SCAFFOLDING_SNEAK_TICKS;
             }

@@ -578,7 +578,7 @@ public final class AutoPotion extends Module {
 
     private void usePotion(LocalPlayer player) {
         InteractionResult result = InventorySwap.INSTANCE.useItem(InteractionHand.MAIN_HAND);
-        if (result != null && result.consumesAction()) player.swing(InteractionHand.MAIN_HAND);
+        if (result != null && result.consumesAction()) player.swing(InteractionHand.MAIN_HAND, player.getItemInHand(InteractionHand.MAIN_HAND).getInteractAnimation(), false);
     }
 
     private String semiBindingName() {

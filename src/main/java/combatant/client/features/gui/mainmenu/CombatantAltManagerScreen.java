@@ -1249,7 +1249,7 @@ public final class CombatantAltManagerScreen extends Screen {
 
     private void openMicrosoftLoginSite() {
         String target = microsoftVerificationUrl.isBlank() ? "https://www.microsoft.com/link" : microsoftVerificationUrl;
-        Util.getPlatform().openUri(target);
+        com.mojang.blaze3d.Blaze3D.openUri(java.net.URI.create(target));
     }
 
     private void dispatchToClient(Runnable runnable) {

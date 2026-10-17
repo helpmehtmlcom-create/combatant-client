@@ -245,8 +245,8 @@ public enum ClickGuiRenderer {
         return onCharTyped(c);
     }
 
-    public static boolean onEditorKey(int key, int scancode, int action, int mods) {
-        return onKey(key, scancode, action, mods);
+    public static boolean onEditorKey(InputKey key, InputAction action, InputModifiers modifiers) {
+        return onKey(key, action, modifiers);
     }
 
     public static void closeGuiEditor() {

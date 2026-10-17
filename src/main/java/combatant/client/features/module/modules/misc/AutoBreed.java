@@ -87,7 +87,7 @@ public final class AutoBreed extends Module {
             if (hand == null) continue;
 
             mc.gameMode.interact(player, animal, new EntityHitResult(animal), hand);
-            player.swing(hand);
+            player.swing(hand, player.getItemInHand(hand).getInteractAnimation(), false);
             fedAt.put(animal.getId(), now);
             cooldown = delayTicks.get();
             return;

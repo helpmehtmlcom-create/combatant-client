@@ -11,7 +11,7 @@ import combatant.client.config.MainConfig;
 import com.llamalad7.mixinextras.sugar.Local;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
-import com.mojang.blaze3d.buffers.GpuBufferSlice;
+import com.mojang.renderpearl.api.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.framegraph.FrameGraphBuilder;
 import com.mojang.blaze3d.framegraph.FramePass;
 import com.mojang.blaze3d.pipeline.RenderTarget;
@@ -122,15 +122,15 @@ public abstract class LevelRendererMixin {
     @Inject(method = "render", at = @At("HEAD"))
     private void combatant$captureIrisModelView(
             GraphicsResourceAllocator allocator,
-            DeltaTracker tickCounter,
             boolean renderBlockOutline,
             net.minecraft.client.renderer.state.level.CameraRenderState cameraRenderState,
-            org.joml.Matrix4fc positionMatrix,
             GpuBufferSlice fogBuffer,
             org.joml.Vector4f fogColor,
             boolean renderSky,
+            boolean renderTerrain,
             CallbackInfo ci
     ) {
+        org.joml.Matrix4fc positionMatrix = cameraRenderState != null ? cameraRenderState.viewRotationMatrix : null;
         if (positionMatrix == null) {
             return;
         }
@@ -231,31 +231,23 @@ public abstract class LevelRendererMixin {
             return;
         }
 
-        ResourceHandle<RenderTarget> translucent = targets.translucent;
-        ResourceHandle<RenderTarget> itemEntity = targets.itemEntity;
-        ResourceHandle<RenderTarget> particles = targets.particles;
-        ResourceHandle<RenderTarget> weather = targets.weather;
-
+        // Minecraft 26.3 no longer exposes 26.2's separate itemEntity/particles/weather/translucent
+        // framegraph targets. Capture only actual available main depth. Never alias those old
+        // categories to OIT accumulate/transmittance (those are COLOR attachments).
         FramePass pass = frameGraphBuilder.addPass("combatant_scene_depth_capture");
         combatant$dependsOn(pass, main);
-        combatant$dependsOn(pass, translucent);
-        combatant$dependsOn(pass, itemEntity);
-        combatant$dependsOn(pass, particles);
-        combatant$dependsOn(pass, weather);
         pass.disableCulling();
         pass.executes(() -> {
             RenderTarget mainFramebuffer = combatant$getFramebuffer(main);
             Minecraft client = Minecraft.getInstance();
             RenderTarget fallbackFramebuffer = client != null ? client.gameRenderer.mainRenderTarget() : null;
-            int width = mainFramebuffer != null ? mainFramebuffer.width : fallbackFramebuffer != null ? fallbackFramebuffer.width : 1;
-            int height = mainFramebuffer != null ? mainFramebuffer.height : fallbackFramebuffer != null ? fallbackFramebuffer.height : 1;
-
-            WorldSceneDepth.beginFrame(width, height);
-            WorldSceneDepth.captureMain(mainFramebuffer);
-            WorldSceneDepth.captureTranslucent(combatant$getFramebuffer(translucent));
-            WorldSceneDepth.captureItemEntity(combatant$getFramebuffer(itemEntity));
-            WorldSceneDepth.captureParticles(combatant$getFramebuffer(particles));
-            WorldSceneDepth.captureWeather(combatant$getFramebuffer(weather));
+            RenderTarget source = mainFramebuffer != null ? mainFramebuffer : fallbackFramebuffer;
+            if (source == null) {
+                WorldSceneDepth.reset();
+                return;
+            }
+            WorldSceneDepth.beginFrame(source.width, source.height);
+            WorldSceneDepth.captureMain(source);
         });
     }
 

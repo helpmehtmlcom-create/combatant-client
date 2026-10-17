@@ -13,9 +13,9 @@
 
 package combatant.client.render.engine.pipeline;
 
-import com.mojang.blaze3d.pipeline.BlendFunction;
-import com.mojang.blaze3d.pipeline.RenderPipeline;
-import com.mojang.blaze3d.shaders.UniformType;
+import com.mojang.renderpearl.api.pipeline.BlendFunction;
+import com.mojang.renderpearl.api.pipeline.RenderPipeline;
+import com.mojang.renderpearl.api.pipeline.UniformType;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import combatant.client.render.engine.rhi.pipeline.PipelineDomain;
 import combatant.client.render.engine.vertex.CombatantVertexFormats;
@@ -39,7 +39,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_COLORED = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_colored"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_color.vert"))
             .withFragmentShader(shader("pos_color.frag"))
             .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
@@ -56,7 +56,7 @@ public final class WorldRenderPipelines {
     public static final RenderPipeline WORLD_BUBBLE_SURFACE = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_bubble_surface"))
             .withDomain(PipelineDomain.WORLD)
-            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("world_bubble_surface.vert"))
             .withFragmentShader(shader("world_bubble_surface.frag"))
             .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
@@ -70,7 +70,7 @@ public final class WorldRenderPipelines {
     public static final RenderPipeline WORLD_BUBBLE_SURFACE_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_bubble_surface_depth"))
             .withDomain(PipelineDomain.WORLD)
-            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("world_bubble_surface.vert"))
             .withFragmentShader(shader("world_bubble_surface.frag"))
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
@@ -84,7 +84,7 @@ public final class WorldRenderPipelines {
     public static final RenderPipeline WORLD_SURFACE_SHELL = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_surface_shell"))
             .withDomain(PipelineDomain.WORLD)
-            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("world_surface_shell.vert"))
             .withFragmentShader(shader("world_surface_shell.frag"))
             .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
@@ -98,7 +98,7 @@ public final class WorldRenderPipelines {
     public static final RenderPipeline WORLD_SURFACE_SHELL_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_surface_shell_depth"))
             .withDomain(PipelineDomain.WORLD)
-            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("world_surface_shell.vert"))
             .withFragmentShader(shader("world_surface_shell.frag"))
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
@@ -118,7 +118,7 @@ public final class WorldRenderPipelines {
     public static final RenderPipeline WORLD_COLORED_LINES = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLineSmooth()
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_colored_lines"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, com.mojang.blaze3d.PrimitiveTopology.DEBUG_LINES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.DEBUG_LINES)
             .withVertexShader(shader("pos_color.vert"))
             .withFragmentShader(shader("pos_color.frag"))
             .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
@@ -132,7 +132,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_WIDE_COLORED_LINES = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_wide_colored_lines"))
-            .withVertexFormat(CombatantVertexFormats.POS3_COLOR_LINE, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_COLOR_LINE, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("wide_line.vert"))
             .withFragmentShader(shader("pos_color.frag"))
             .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
@@ -147,7 +147,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_COLORED_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_colored_depth"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_color.vert"))
             .withFragmentShader(shader("pos_color.frag"))
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
@@ -160,7 +160,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_COLORED_COPLANAR_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_colored_coplanar_depth"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_color.vert"))
             .withFragmentShader(shader("pos_color.frag"))
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
@@ -175,7 +175,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_TEXTURED = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_textured"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_tex_color.vert"))
             .withFragmentShader(shader("pos_tex_color.frag"))
             .withSampler("u_Texture")
@@ -188,7 +188,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_TEXTURED_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_textured_depth"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_tex_color.vert"))
             .withFragmentShader(shader("pos_tex_color.frag"))
             .withSampler("u_Texture")
@@ -203,7 +203,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_TEXTURED_PREMULTIPLIED_ALPHA = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_textured_premultiplied_alpha"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_tex_color.vert"))
             .withFragmentShader(shader("pos_tex_color.frag"))
             .withSampler("u_Texture")
@@ -218,7 +218,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_COLORED_ADDITIVE_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_colored_additive_depth"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_color.vert"))
             .withFragmentShader(shader("pos_color.frag"))
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
@@ -232,7 +232,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_DECAL_SDF = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_decal_sdf"))
-            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_tex_color_params2.vert"))
             .withFragmentShader(shader("world_decal_sdf.frag"))
             .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
@@ -247,7 +247,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_AIM_DECAL = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_aim_decal"))
-            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_tex_color_params2.vert"))
             .withFragmentShader(shader("world_aim_decal.frag"))
             .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
@@ -260,7 +260,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_AIM_DECAL_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_aim_decal_depth"))
-            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_tex_color_params2.vert"))
             .withFragmentShader(shader("world_aim_decal.frag"))
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
@@ -276,7 +276,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_BILLBOARD_SDF = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_billboard_sdf"))
-            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_tex_color_params2.vert"))
             .withFragmentShader(shader("world_billboard_sdf.frag"))
             .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
@@ -290,7 +290,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_DECAL_SDF_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_decal_sdf_depth"))
-            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_tex_color_params2.vert"))
             .withFragmentShader(shader("world_decal_sdf.frag"))
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
@@ -305,7 +305,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_TEXT = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_text"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("text.vert"))
             .withFragmentShader(shader("text.frag"))
             .withSampler("u_Texture")
@@ -320,7 +320,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_TEXT_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_text_depth"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("text.vert"))
             .withFragmentShader(shader("text.frag"))
             .withSampler("u_Texture")
@@ -335,7 +335,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_TEXT_MSDF = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_text_msdf"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("text.vert"))
             .withFragmentShader(shader("text_msdf.frag"))
             .withSampler("u_Texture")
@@ -351,7 +351,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_TEXT_MSDF_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_text_msdf_depth"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("text.vert"))
             .withFragmentShader(shader("text_msdf.frag"))
             .withSampler("u_Texture")
@@ -367,7 +367,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_TEXTURED_ADDITIVE = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_textured_additive"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_tex_color.vert"))
             .withFragmentShader(shader("pos_tex_color.frag"))
             .withSampler("u_Texture")
@@ -382,7 +382,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_TEXTURED_TINT_ADDITIVE = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_textured_tint_additive"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_tex_color.vert"))
             .withFragmentShader(shader("pos_tex_color_tint.frag"))
             .withSampler("u_Texture")
@@ -398,7 +398,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_TEXTURED_ADDITIVE_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_textured_additive_depth"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_tex_color.vert"))
             .withFragmentShader(shader("pos_tex_color.frag"))
             .withSampler("u_Texture")
@@ -411,7 +411,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_POST_DISTORTION_MASK = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_post_distortion_mask"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_tex_color.vert"))
             .withFragmentShader(shader("world_post_distortion_mask.frag"))
             .withSampler("u_Texture")
@@ -424,7 +424,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_POST_DISTORTION_MASK_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_post_distortion_mask_depth"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_tex_color.vert"))
             .withFragmentShader(shader("world_post_distortion_mask.frag"))
             .withSampler("u_Texture")
@@ -437,7 +437,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_POST_DISTORTION_MASK_SAMPLED_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_post_distortion_mask_sampled_depth"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_tex_color.vert"))
             .withFragmentShader(shader("world_post_distortion_mask_sampled_depth.frag"))
             .withSampler("u_Texture")
@@ -452,7 +452,7 @@ public final class WorldRenderPipelines {
     public static final RenderPipeline WORLD_SPHERE_DISTORTION_MASK = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_sphere_distortion_mask"))
             .withDomain(PipelineDomain.WORLD)
-            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("world_totem_burst.vert"))
             .withFragmentShader(shader("world_sphere_distortion_mask.frag"))
             .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
@@ -465,7 +465,7 @@ public final class WorldRenderPipelines {
     public static final RenderPipeline WORLD_SPHERE_DISTORTION_MASK_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_sphere_distortion_mask_depth"))
             .withDomain(PipelineDomain.WORLD)
-            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("world_totem_burst.vert"))
             .withFragmentShader(shader("world_sphere_distortion_mask.frag"))
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
@@ -478,7 +478,7 @@ public final class WorldRenderPipelines {
     public static final RenderPipeline WORLD_SPHERE_DISTORTION_MASK_SAMPLED_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_sphere_distortion_mask_sampled_depth"))
             .withDomain(PipelineDomain.WORLD)
-            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("world_totem_burst.vert"))
             .withFragmentShader(shader("world_sphere_distortion_mask_sampled_depth.frag"))
             .withSampler("u_Depth")
@@ -492,7 +492,7 @@ public final class WorldRenderPipelines {
     public static final RenderPipeline WORLD_TOTEM_BURST = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_totem_burst"))
             .withDomain(PipelineDomain.WORLD)
-            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("world_totem_burst.vert"))
             .withFragmentShader(shader("world_totem_burst.frag"))
             .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
@@ -505,7 +505,7 @@ public final class WorldRenderPipelines {
     public static final RenderPipeline WORLD_TOTEM_BURST_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_totem_burst_depth"))
             .withDomain(PipelineDomain.WORLD)
-            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("world_totem_burst.vert"))
             .withFragmentShader(shader("world_totem_burst.frag"))
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
@@ -518,7 +518,7 @@ public final class WorldRenderPipelines {
     public static final RenderPipeline WORLD_TARGET_ORBIT_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_target_orbit_depth"))
             .withDomain(PipelineDomain.WORLD)
-            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("world_totem_burst.vert"))
             .withFragmentShader(shader("world_target_orbit.frag"))
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
@@ -531,7 +531,7 @@ public final class WorldRenderPipelines {
     public static final RenderPipeline WORLD_TARGET_RING_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_target_ring_depth"))
             .withDomain(PipelineDomain.WORLD)
-            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("world_totem_burst.vert"))
             .withFragmentShader(shader("world_target_ring.frag"))
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
@@ -544,7 +544,7 @@ public final class WorldRenderPipelines {
     public static final RenderPipeline WORLD_TARGET_GHOST_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_target_ghost_depth"))
             .withDomain(PipelineDomain.WORLD)
-            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("world_totem_burst.vert"))
             .withFragmentShader(shader("world_target_ghost.frag"))
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
@@ -561,7 +561,7 @@ public final class WorldRenderPipelines {
     public static final RenderPipeline WORLD_TARGET_CRYSTAL = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_target_crystal"))
             .withDomain(PipelineDomain.WORLD)
-            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("world_totem_burst.vert"))
             .withFragmentShader(shader("world_target_crystal.frag"))
             .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
@@ -574,7 +574,7 @@ public final class WorldRenderPipelines {
     public static final RenderPipeline WORLD_TARGET_CRYSTAL_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_target_crystal_depth"))
             .withDomain(PipelineDomain.WORLD)
-            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_TEXTURE_COLOR_PARAMS2, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("world_totem_burst.vert"))
             .withFragmentShader(shader("world_target_crystal.frag"))
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
@@ -587,7 +587,7 @@ public final class WorldRenderPipelines {
     public static final RenderPipeline WORLD_COLORED_LINES_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLineSmooth()
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_colored_lines_depth"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, com.mojang.blaze3d.PrimitiveTopology.DEBUG_LINES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.DEBUG_LINES)
             .withVertexShader(shader("pos_color.vert"))
             .withFragmentShader(shader("pos_color.frag"))
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
@@ -601,7 +601,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_WIDE_COLORED_LINES_DEPTH = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_wide_colored_lines_depth"))
-            .withVertexFormat(CombatantVertexFormats.POS3_COLOR_LINE, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_COLOR_LINE, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("wide_line.vert"))
             .withFragmentShader(shader("pos_color.frag"))
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
@@ -617,7 +617,7 @@ public final class WorldRenderPipelines {
     public static final RenderPipeline WORLD_COLORED_LINES_LIQUID_BLEND = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLineSmooth()
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_colored_lines_liquid_blend"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, com.mojang.blaze3d.PrimitiveTopology.DEBUG_LINES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.DEBUG_LINES)
             .withVertexShader(shader("pos_color.vert"))
             .withFragmentShader(shader("pos_color.frag"))
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
@@ -631,7 +631,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_WIDE_COLORED_LINES_LIQUID_BLEND = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_wide_colored_lines_liquid_blend"))
-            .withVertexFormat(CombatantVertexFormats.POS3_COLOR_LINE, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_COLOR_LINE, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("wide_line.vert"))
             .withFragmentShader(shader("pos_color.frag"))
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
@@ -646,7 +646,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_COLORED_LIQUID_IGNORE = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_colored_liquid_ignore"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_color.vert"))
             .withFragmentShader(shader("pos_color.frag"))
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
@@ -661,7 +661,7 @@ public final class WorldRenderPipelines {
     public static final RenderPipeline WORLD_COLORED_LINES_LIQUID_IGNORE = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLineSmooth()
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_colored_lines_liquid_ignore"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, com.mojang.blaze3d.PrimitiveTopology.DEBUG_LINES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.DEBUG_LINES)
             .withVertexShader(shader("pos_color.vert"))
             .withFragmentShader(shader("pos_color.frag"))
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
@@ -675,7 +675,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_WIDE_COLORED_LINES_LIQUID_IGNORE = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_wide_colored_lines_liquid_ignore"))
-            .withVertexFormat(CombatantVertexFormats.POS3_COLOR_LINE, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(CombatantVertexFormats.POS3_COLOR_LINE, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("wide_line.vert"))
             .withFragmentShader(shader("pos_color.frag"))
             .withDepthTestFunction(DepthTestFunction.GEQUAL_DEPTH_TEST)
@@ -690,7 +690,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_TEXTURED_ADDITIVE_LIQUID_IGNORE = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_textured_additive_liquid_ignore"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_tex_color.vert"))
             .withFragmentShader(shader("pos_tex_color.frag"))
             .withSampler("u_Texture")
@@ -705,7 +705,7 @@ public final class WorldRenderPipelines {
     @PipelineRegister
     public static final RenderPipeline WORLD_TEXTURED_TINT_ADDITIVE_LIQUID_IGNORE = new ExtendedRenderPipelineBuilder(MESH_UNIFORMS)
             .withLocation(Identifier.fromNamespaceAndPath("combatant", "pipeline/world_textured_tint_additive_liquid_ignore"))
-            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.blaze3d.PrimitiveTopology.TRIANGLES)
+            .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, com.mojang.renderpearl.api.pipeline.PrimitiveTopology.TRIANGLES)
             .withVertexShader(shader("pos_tex_color.vert"))
             .withFragmentShader(shader("pos_tex_color_tint.frag"))
             .withSampler("u_Texture")

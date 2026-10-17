@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public enum BetterChatSearch {
     ;
+    private static boolean active = false;
     private static final combatant.client.input.minecraft.CombatantTextInputTarget INPUT_TARGET = value -> {
         if (!active || value == null || value.isEmpty()) return false;
         append(value);
@@ -26,7 +27,6 @@ public enum BetterChatSearch {
     };
     private static final AtomicLong REQUEST = new AtomicLong(0);
     private static final int MAX_QUERY_CHARS = 256;
-    private static boolean active = false;
     private static String text = "";
     private static volatile boolean busy = false;
     private static volatile List<ChatLine> results = null;

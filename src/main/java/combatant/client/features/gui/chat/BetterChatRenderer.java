@@ -1840,13 +1840,15 @@ lastHoverWasOutsideSuggest = false;
         try {
             if (evt instanceof ClickEvent.OpenUrl || evt instanceof ClickEvent.OpenFile) {
                 Minecraft mc = Minecraft.getInstance();
+                java.net.URI uri = evt instanceof ClickEvent.OpenFile
+                        ? java.nio.file.Path.of(val).toUri() : java.net.URI.create(val);
                 if (ClientScreen.current() instanceof ChatScreen chat) {
                     ClientScreen.show(mc, new ConfirmLinkScreen(confirm -> {
-                        if (confirm) Util.getPlatform().openUri(val);
+                        if (confirm) com.mojang.blaze3d.Blaze3D.openUri(uri);
                         ClientScreen.show(mc, chat);
-                    }, val, false));
+                    }, uri, false));
                 } else {
-                    Util.getPlatform().openUri(val);
+                    com.mojang.blaze3d.Blaze3D.openUri(uri);
                 }
                 return true;
             } else if (evt instanceof ClickEvent.CopyToClipboard) {

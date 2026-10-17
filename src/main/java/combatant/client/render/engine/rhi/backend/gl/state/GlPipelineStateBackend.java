@@ -7,7 +7,7 @@
 
 package combatant.client.render.engine.rhi.backend.gl.state;
 
-import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.renderpearl.api.pipeline.RenderPipeline;
 import combatant.client.mixininterface.IRenderPipeline;
 import combatant.client.render.engine.rhi.clip.ShapeClipBackend;
 import combatant.client.render.engine.rhi.backend.gl.GlNativeStateTracker;
@@ -22,11 +22,11 @@ import combatant.client.render.engine.rhi.state.PipelineStateBackend;
  * <p>GL_LINE_SMOOTH, MSAA and shape-clip render-pass state are applied through RHI. The command
  * encoder mixin owns only the hook points, not the GL policy.</p>
  */
-public final class SodiumGlPipelineStateBackend implements PipelineStateBackend {
+public final class GlPipelineStateBackend implements PipelineStateBackend {
     private final MsaaControl msaa;
     private final ShapeClipBackend clip;
 
-    public SodiumGlPipelineStateBackend(MsaaControl msaa, ShapeClipBackend clip) {
+    public GlPipelineStateBackend(MsaaControl msaa, ShapeClipBackend clip) {
         this.msaa = msaa;
         this.clip = clip;
     }

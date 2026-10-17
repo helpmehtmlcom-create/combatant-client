@@ -60,6 +60,9 @@ def combatantVulkanDebugEnabled = providers.gradleProperty("combatantVulkanDebug
         .map { it.toBoolean() }
         .orElse(false)
 def combatantDevTaskRequested = gradle.startParameter.taskNames.any { it == "buildDev" || it.endsWith(":buildDev") }
+def mixinValidationEnabled = providers.gradleProperty("validateMixins")
+        .map { it.toBoolean() }
+        .orElse(false)
 def combatantDevEnabled = providers.gradleProperty("combatantDev")
         .orElse(providers.gradleProperty("dev"))
         .orElse(providers.gradleProperty("devBuild"))
@@ -108,6 +111,7 @@ configurations {
     bundledLibrary
     linuxBundledLibrary
     javetNativeBundle
+    mixinValidationProcessor
     modImplementation
     compileOnly.extendsFrom bundledLibrary, linuxBundledLibrary
     runtimeOnly.extendsFrom bundledLibrary, linuxBundledLibrary
@@ -141,6 +145,8 @@ dependencies {
     compileOnly 'org.projectlombok:lombok:1.18.46'
     annotationProcessor 'org.projectlombok:lombok:1.18.46'
     annotationProcessor project(':registry-processor')
+    mixinValidationProcessor 'org.projectlombok:lombok:1.18.46'
+    mixinValidationProcessor 'net.fabricmc:sponge-mixin:0.17.4+mixin.0.8.7'
     testCompileOnly 'org.projectlombok:lombok:1.18.46'
     testAnnotationProcessor 'org.projectlombok:lombok:1.18.46'
     testImplementation platform('org.junit:junit-bom:5.12.2')
@@ -417,6 +423,44 @@ tasks.named("compileJava") {
 
 tasks.named("compileJava") {
     dependsOn tasks.named("verifyUiApiContract")
+}
+
+def validateMixins = tasks.register("validateMixins", JavaCompile) {
+    group = "verification"
+    description = "Validates Mixin targets and hooks with the SpongePowered annotation processor."
+    source = sourceSets.main.java
+    classpath = sourceSets.main.compileClasspath
+    destinationDirectory = layout.buildDirectory.dir("mixin-validation/classes")
+    javaCompiler = javaToolchains.compilerFor {
+        languageVersion = JavaLanguageVersion.of(targetJavaVersion)
+    }
+    options.annotationProcessorPath = configurations.mixinValidationProcessor
+    options.incremental = false
+    options.compilerArgs.addAll([
+            "-proc:only",
+            "-Xmaxerrs", "1000",
+            "-Xmaxwarns", "1000",
+            "-AshowMessageTypes=true",
+            "-AMSG_NO_OBFDATA_FOR_ACCESSOR=note",
+            "-AMSG_NO_OBFDATA_FOR_CLASS=note",
+            "-AMSG_NO_OBFDATA_FOR_TARGET=note",
+            "-AMSG_NO_OBFDATA_FOR_CTOR=note",
+            "-AMSG_NO_OBFDATA_FOR_OVERWRITE=note",
+            "-AMSG_NO_OBFDATA_FOR_STATIC_OVERWRITE=note",
+            "-AMSG_NO_OBFDATA_FOR_FIELD=note",
+            "-AMSG_NO_OBFDATA_FOR_METHOD=note",
+            "-AMSG_NO_OBFDATA_FOR_SHADOW=note",
+            "-AMSG_NO_OBFDATA_FOR_SIMULATED_SHADOW=note",
+            "-AMSG_NO_OBFDATA_FOR_SOFT_IMPLEMENTS=note",
+            "-AMSG_TARGET_ELEMENT_NOT_FOUND=error",
+            "-AMSG_MISSING_INJECTOR_DESC_SINGLETARGET=error"
+    ])
+}
+
+tasks.named("check") {
+    if (mixinValidationEnabled.get()) {
+        dependsOn validateMixins
+    }
 }
 
 tasks.named("processResources") {

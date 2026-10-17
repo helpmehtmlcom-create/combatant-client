@@ -136,6 +136,7 @@ public final class MinecraftInputAdapter {
             platformTextOwner = nextTextOwner;
             if (platformTextOwner != null) CombatantInput.focus().claimText(platformTextOwner);
         }
+        CombatantInput.bindings().onFocusChanged(CombatantInput.focus().snapshot());
     }
 
     private static InputAction action(int action) {

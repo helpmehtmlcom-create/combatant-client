@@ -7,7 +7,9 @@
 
 package combatant.client.mixins.sodium;
 
-import com.mojang.blaze3d.textures.GpuSampler;
+import com.mojang.renderpearl.api.textures.GpuSampler;
+import com.mojang.renderpearl.api.commands.RenderPass;
+import net.minecraft.client.renderer.oit.OitStage;
 import combatant.client.render.engine.core.CombatantRenderSystem;
 import combatant.client.render.engine.core.CombatantWorldMatrices;
 import combatant.client.render.engine.postprocess.TemporalAntiAliasingPass;
@@ -35,7 +37,7 @@ public abstract class SodiumWorldRendererTerrainMixin {
      * exact effective projection already published to the vanilla path. Culling stays stable.
      */
     @ModifyVariable(
-            method = "renderLayer(Lnet/caffeinemc/mods/sodium/client/render/chunk/ChunkRenderMatrices;Lnet/caffeinemc/mods/sodium/client/render/chunk/terrain/TerrainRenderPass;DDDLnet/caffeinemc/mods/sodium/client/util/FogParameters;Lcom/mojang/blaze3d/textures/GpuSampler;)V",
+            method = "renderLayer(Lnet/caffeinemc/mods/sodium/client/render/chunk/ChunkRenderMatrices;Lnet/caffeinemc/mods/sodium/client/render/chunk/terrain/TerrainRenderPass;DDDLnet/caffeinemc/mods/sodium/client/util/FogParameters;Lcom/mojang/renderpearl/api/textures/GpuSampler;Lcom/mojang/renderpearl/api/commands/RenderPass;Lnet/minecraft/client/renderer/oit/OitStage;)V",
             at = @At("HEAD"),
             argsOnly = true,
             ordinal = 0,
@@ -53,7 +55,7 @@ public abstract class SodiumWorldRendererTerrainMixin {
         return new ChunkRenderMatrices(projection, matrices.modelView());
     }
 
-    @Inject(method = "renderLayer(Lnet/caffeinemc/mods/sodium/client/render/chunk/ChunkRenderMatrices;Lnet/caffeinemc/mods/sodium/client/render/chunk/terrain/TerrainRenderPass;DDDLnet/caffeinemc/mods/sodium/client/util/FogParameters;Lcom/mojang/blaze3d/textures/GpuSampler;)V", at = @At("HEAD"), remap = false)
+    @Inject(method = "renderLayer(Lnet/caffeinemc/mods/sodium/client/render/chunk/ChunkRenderMatrices;Lnet/caffeinemc/mods/sodium/client/render/chunk/terrain/TerrainRenderPass;DDDLnet/caffeinemc/mods/sodium/client/util/FogParameters;Lcom/mojang/renderpearl/api/textures/GpuSampler;Lcom/mojang/renderpearl/api/commands/RenderPass;Lnet/minecraft/client/renderer/oit/OitStage;)V", at = @At("HEAD"), remap = false)
     private void combatant$beforeTerrainLayer(ChunkRenderMatrices matrices,
                                               TerrainRenderPass pass,
                                               double cameraX,
@@ -61,12 +63,14 @@ public abstract class SodiumWorldRendererTerrainMixin {
                                               double cameraZ,
                                               FogParameters fog,
                                               GpuSampler sampler,
+                                              RenderPass renderPass,
+                                              OitStage oitStage,
                                               CallbackInfo ci) {
         CombatantRenderSystem.sodium().terrainInterop().beforeTerrainDraw(
                 matrices, pass, cameraX, cameraY, cameraZ, fog, sampler);
     }
 
-    @Inject(method = "renderLayer(Lnet/caffeinemc/mods/sodium/client/render/chunk/ChunkRenderMatrices;Lnet/caffeinemc/mods/sodium/client/render/chunk/terrain/TerrainRenderPass;DDDLnet/caffeinemc/mods/sodium/client/util/FogParameters;Lcom/mojang/blaze3d/textures/GpuSampler;)V", at = @At("RETURN"), remap = false)
+    @Inject(method = "renderLayer(Lnet/caffeinemc/mods/sodium/client/render/chunk/ChunkRenderMatrices;Lnet/caffeinemc/mods/sodium/client/render/chunk/terrain/TerrainRenderPass;DDDLnet/caffeinemc/mods/sodium/client/util/FogParameters;Lcom/mojang/renderpearl/api/textures/GpuSampler;Lcom/mojang/renderpearl/api/commands/RenderPass;Lnet/minecraft/client/renderer/oit/OitStage;)V", at = @At("RETURN"), remap = false)
     private void combatant$afterTerrainLayer(ChunkRenderMatrices matrices,
                                              TerrainRenderPass pass,
                                              double cameraX,
@@ -74,6 +78,8 @@ public abstract class SodiumWorldRendererTerrainMixin {
                                              double cameraZ,
                                              FogParameters fog,
                                              GpuSampler sampler,
+                                             RenderPass renderPass,
+                                             OitStage oitStage,
                                              CallbackInfo ci) {
         CombatantRenderSystem.sodium().terrainInterop().afterTerrainDraw(
                 matrices, pass, cameraX, cameraY, cameraZ, fog, sampler);

@@ -1,4 +1,5 @@
 #version 330 core
+#extension GL_ARB_separate_shader_objects : require
 
 /*
  * This file is part of the Combatant Client distribution.
@@ -17,7 +18,7 @@ layout (std140) uniform MeshData {
     vec4 u_Viewport; // width, height, 1 / width, 1 / height
 };
 
-out vec4 v_Color;
+layout(location = 2) out vec4 v_Color;
 
 void main() {
     vec4 currentClip = u_Proj * u_ModelView * Position;

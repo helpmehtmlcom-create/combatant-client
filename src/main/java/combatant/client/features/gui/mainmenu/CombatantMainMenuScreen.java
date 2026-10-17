@@ -573,7 +573,7 @@ public final class CombatantMainMenuScreen extends Screen {
             case 1 -> ClientScreen.show(minecraft, new JoinMultiplayerScreen(this));
             case 2 -> ClientScreen.show(minecraft, new CombatantAltManagerScreen(this));
             case 3 -> ClientScreen.show(minecraft, new CombatantAddonManagerScreen(this));
-            case 4 -> ClientScreen.show(minecraft, new OptionsScreen(this, minecraft.options, false));
+            case 4 -> ClientScreen.show(minecraft, new OptionsScreen(this, minecraft.options));
             case 5 -> minecraft.stop();
             default -> {
             }

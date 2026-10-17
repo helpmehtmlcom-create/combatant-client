@@ -824,7 +824,7 @@ public final class CombatantAddonManagerScreen extends Screen {
     private boolean openPath(Path path) {
         try {
             Files.createDirectories(path);
-            Util.getPlatform().openUri(path.toUri());
+            com.mojang.blaze3d.Blaze3D.openUri(path.toUri());
             return true;
         } catch (Throwable ignored) {
             setStatus(tr("screen.combatant.addon_manager.status.open_failed"));

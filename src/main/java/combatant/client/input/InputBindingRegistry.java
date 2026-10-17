@@ -23,6 +23,8 @@ public final class InputBindingRegistry {
 
     public synchronized void bind(String id, String serializedChord) {
         if (id == null || id.isBlank()) return;
+        // Invalid configuration must never degrade into a different, partial hotkey.
+        if (!InputKeyCatalog.isValidChord(serializedChord)) return;
         InputChord chord = InputKeyCatalog.parseChord(serializedChord);
         if (chord.isEmpty()) return;
         Binding binding = bindings.computeIfAbsent(id, ignored -> new Binding());
@@ -43,6 +45,10 @@ public final class InputBindingRegistry {
             if (binding.pendingGlobal == 0) return false;
             binding.pendingGlobal--;
             return true;
+        }
+        if (!CombatantInput.focus().snapshot().allowsGameBindings()) {
+            binding.pendingGame = 0;
+            return false;
         }
         if (binding.pendingGame == 0) return false;
         binding.pendingGame--;
@@ -70,7 +76,14 @@ public final class InputBindingRegistry {
         return false;
     }
 
+    public synchronized void onFocusChanged(InputFocus.Snapshot focus) {
+        if (focus.allowsGameBindings()) return;
+        // Presses queued in-game must not be replayed after opening/closing a screen.
+        for (Binding binding : bindings.values()) binding.pendingGame = 0;
+    }
+
     synchronized void onStateChanged(InputFocus.Snapshot focus) {
+        onFocusChanged(focus);
         for (Binding binding : bindings.values()) {
             boolean held = binding.isHeld(state);
             if (held && !binding.held) {

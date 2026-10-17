@@ -105,7 +105,6 @@ public final class CombatantMixinPlugin implements IMixinConfigPlugin {
             "combatant.client.mixins.xaero.lib.ClientConfigManagerMixin"
     );
     private static final Set<String> OPTIONAL_XAERO_WORLDMAP_MIXINS = Set.of(
-            "combatant.client.mixins.xaero.worldmap.WorldMapWaypointAccessor",
             "combatant.client.mixins.xaero.worldmap.WaypointRenderProviderMixin"
     );
     private static final Set<String> OPTIONAL_MORECULLING_MIXINS = Set.of(
