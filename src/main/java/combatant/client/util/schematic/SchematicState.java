@@ -33,6 +33,7 @@ public final class SchematicState {
     }
 
     private Schematic schematic;
+    private java.nio.file.Path source;
     private LayerStats stats;
     private SchematicPlacement placement;
     private SchematicDiff diff;
@@ -139,6 +140,7 @@ public final class SchematicState {
     /** {@code nextLayout} may be null or for another schematic; it is then built on first use. */
     public void setSchematic(Schematic next, LayerStats nextStats, SchematicDiff.Layout nextLayout) {
         schematic = next;
+        source = null;
         layout = nextLayout != null && nextLayout.schematic() == next ? nextLayout : null;
         stats = next == null ? null : (nextStats != null ? nextStats : LayerStats.compute(next));
         layer = 0;
@@ -151,6 +153,15 @@ public final class SchematicState {
 
     public void clear() {
         setSchematic(null, null);
+    }
+
+    /** The file the current schematic was read from, or null when unknown. */
+    public java.nio.file.Path source() {
+        return source;
+    }
+
+    public void setSource(java.nio.file.Path path) {
+        source = schematic == null ? null : path;
     }
 
     public void setPlacement(SchematicPlacement next) {
