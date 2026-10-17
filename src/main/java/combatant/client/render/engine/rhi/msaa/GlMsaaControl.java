@@ -7,14 +7,14 @@
 
 package combatant.client.render.engine.rhi.msaa;
 
-import com.mojang.blaze3d.GpuFormat;
-import com.mojang.blaze3d.GpuOutOfMemoryException;
-import com.mojang.blaze3d.opengl.GlConst;
-import com.mojang.blaze3d.opengl.GlStateManager;
-import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.renderpearl.api.GpuFormat;
+import com.mojang.renderpearl.api.device.GpuOutOfMemoryException;
+import com.mojang.renderpearl.backend.opengl.GlConst;
+import com.mojang.renderpearl.backend.opengl.GlStateManager;
+import com.mojang.renderpearl.api.pipeline.RenderPipeline;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.GpuTexture;
+import com.mojang.renderpearl.api.textures.GpuTexture;
 import net.minecraft.resources.Identifier;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL30;
@@ -39,7 +39,7 @@ import java.util.Map;
 
 /** GL/Sodium implementation of {@link MsaaControl}; owns GL-specific MSAA resources and blits. */
 @SuppressWarnings("deprecation")
-public final class SodiumGlMsaaControl implements MsaaControl {
+public final class GlMsaaControl implements MsaaControl {
     private static final Identifier ENTITY_SHADER_ID = Identifier.withDefaultNamespace("core/entity");
     private static final int GL_MAX_COLOR_TEXTURE_SAMPLES = 0x910E;
     private static final int GL_MAX_DEPTH_TEXTURE_SAMPLES = 0x910F;
@@ -416,7 +416,7 @@ public final class SodiumGlMsaaControl implements MsaaControl {
 
     @Override
     public void applyPipelineState(RenderPipeline pipeline) {
-        if (pipeline != null && MsaaWorldTarget.isActive() && ENTITY_SHADER_ID.equals(pipeline.getFragmentShader())) {
+        if (pipeline != null && MsaaWorldTarget.isActive() && ENTITY_SHADER_ID.equals(pipeline.getShaders().get(com.mojang.renderpearl.api.pipeline.ShaderType.FRAGMENT))) {
             GlNativeStateTracker.sampleAlphaToCoverage(true);
         } else {
             GlNativeStateTracker.sampleAlphaToCoverage(false);

@@ -37,7 +37,11 @@ import combatant.client.features.module.modules.visuals.Freecam;
 import combatant.client.features.module.modules.visuals.FreeLook;
 import combatant.client.features.module.modules.visuals.Zoom;
 import combatant.client.runtime.RuntimeGate;
-import combatant.client.util.input.KeyManager;
+import combatant.client.input.InputAction;
+import combatant.client.input.InputKeys;
+import combatant.client.input.event.MouseInputEvent;
+import combatant.client.input.event.ScrollInputEvent;
+import combatant.client.input.minecraft.MinecraftInputAdapter;
 import combatant.client.util.logging.DebugLog;
 
 @Mixin(MouseHandler.class)
@@ -60,6 +64,11 @@ public class MouseMixin {
     // ===== Mouse scroll for ClickGUI =====
     @Inject(method = "onScroll", at = @At("HEAD"), cancellable = true)
     public void onMouseScroll(long window, double horizontal, double vertical, CallbackInfo ci) {
+        ScrollInputEvent event = MinecraftInputAdapter.scroll(lastX, lastY, horizontal, vertical);
+        if (event.isCancelled()) {
+            ci.cancel();
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         if (RuntimeGate.canRunClientLogic()
                 && ModuleManager.isEnabled("clickgui")
@@ -89,13 +98,17 @@ public class MouseMixin {
 
     @Inject(method = "onButton", at = @At("HEAD"), cancellable = true)
     private void betterChat$mouseButton(long window, MouseButtonInfo input, int action, CallbackInfo ci) {
-        KeyManager.handleMouseButtonEvent(input.button(), action);
+        MouseInputEvent event = MinecraftInputAdapter.mouse(action, input, lastX, lastY);
+        if (event.isCancelled()) {
+            ci.cancel();
+            return;
+        }
 
         net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
         if (RuntimeGate.canRunHud() && mc != null) {
-            boolean pressed = action == 1;
-            int button = input.button();
-            if (pressed && button == 0 && ClientScreen.current() instanceof JoinMultiplayerScreen screen) {
+            boolean pressed = event.action().isDown();
+            int button = event.key().physicalKey();
+            if (pressed && button == InputKeys.MOUSE_LEFT && ClientScreen.current() instanceof JoinMultiplayerScreen screen) {
                 double scale = Math.max(1.0, mc.getWindow().getGuiScale());
                 float mx = (float) (mc.mouseHandler.xpos() / scale);
                 float my = (float) (mc.mouseHandler.ypos() / scale);
@@ -119,6 +132,17 @@ public class MouseMixin {
                 ci.cancel();
             }
         }
+        if (ci.isCancelled()) return;
+        if (RuntimeGate.canRunClientLogic()
+                && ModuleManager.isEnabled("clickgui")
+                && ClientScreen.current() == null) {
+            DebugLog.info("[CLICK] button=%d action=%d x=%.2f y=%.2f",
+                    event.key().physicalKey(), action, lastX, lastY);
+
+            ClickGuiRenderer.onMouseButton(lastX, lastY, event.key().physicalKey(), event.action().isDown());
+
+            ci.cancel();
+        }
     }
 
     @Unique
@@ -127,29 +151,6 @@ public class MouseMixin {
                 && mx <= COMBATANT_PROXY_BUTTON_X + COMBATANT_PROXY_BUTTON_W
                 && my >= COMBATANT_PROXY_BUTTON_Y
                 && my <= COMBATANT_PROXY_BUTTON_Y + COMBATANT_PROXY_BUTTON_H;
-    }
-
-    // ===== Mouse button for ClickGUI =====
-    @Inject(method = "onButton", at = @At("HEAD"), cancellable = true)
-    private void clickGuiMouseButton(long window, MouseButtonInfo input, int action, CallbackInfo ci) {
-        Minecraft mc = Minecraft.getInstance();
-        if (RuntimeGate.canRunClientLogic()
-                && ModuleManager.isEnabled("clickgui")
-                && ClientScreen.current() == null) {
-
-            // action == 1 — это "нажато" (см. оригинальный код: boolean bl = action == 1;)
-            boolean pressed = (action == 1);
-
-            // Кнопка теперь внутри MouseInput
-            int button = input.button();
-
-            DebugLog.info("[CLICK] button=%d action=%d x=%.2f y=%.2f",
-                    button, action, lastX, lastY);
-
-            ClickGuiRenderer.onMouseButton(lastX, lastY, button, pressed);
-
-            ci.cancel();
-        }
     }
 
     // ===== Mouse move for ClickGUI =====
@@ -161,6 +162,7 @@ public class MouseMixin {
         // Always track last mouse position
         lastX = x;
         lastY = y;
+        MinecraftInputAdapter.mouseMoved(x, y);
 
         if (RuntimeGate.canRunClientLogic()
                 && ModuleManager.isEnabled("clickgui")

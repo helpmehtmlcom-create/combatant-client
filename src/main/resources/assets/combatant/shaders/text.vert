@@ -1,4 +1,5 @@
 #version 330 core
+#extension GL_ARB_separate_shader_objects : require
 
 /*
  * This file is part of the Combatant Client distribution.
@@ -22,8 +23,8 @@ layout (std140) uniform MeshData {
     mat4 u_ModelView;
 };
 
-out vec2 v_TexCoord;
-out vec4 v_Color;
+layout(location = 0) out vec2 v_TexCoord;
+layout(location = 2) out vec4 v_Color;
 
 void main() {
     gl_Position = u_Proj * u_ModelView * Position;

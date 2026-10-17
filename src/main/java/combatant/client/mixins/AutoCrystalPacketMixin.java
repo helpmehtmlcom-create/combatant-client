@@ -57,7 +57,7 @@ public class AutoCrystalPacketMixin {
         combatant$removingCrystal = false;
         ClientLevel level = mc.level;
         if (level == null) return;
-        for (int id : packet.getEntityIds()) {
+        for (int id : packet.entityIds()) {
             if (level.getEntity(id) instanceof EndCrystal) {
                 combatant$removingCrystal = true;
                 return;

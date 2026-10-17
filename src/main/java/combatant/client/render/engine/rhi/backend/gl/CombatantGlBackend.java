@@ -5,12 +5,12 @@
  * Licensed under the GNU General Public License v3.0.
  */
 
-package combatant.client.render.engine.rhi.backend;
+package combatant.client.render.engine.rhi.backend.gl;
 
-import com.mojang.blaze3d.buffers.GpuBufferSlice;
-import com.mojang.blaze3d.systems.CommandEncoder;
-import com.mojang.blaze3d.systems.RenderPass;
-import com.mojang.blaze3d.systems.RenderPassDescriptor;
+import com.mojang.renderpearl.api.buffers.GpuBufferSlice;
+import com.mojang.renderpearl.api.commands.CommandEncoder;
+import com.mojang.renderpearl.api.commands.RenderPass;
+import com.mojang.renderpearl.api.commands.RenderPassDescriptor;
 import com.mojang.blaze3d.systems.RenderSystem;
 import combatant.client.render.engine.renderer.MeshRenderer;
 import combatant.client.render.engine.rhi.*;
@@ -28,14 +28,14 @@ import combatant.client.render.engine.profiler.RenderCostProfiler;
 import combatant.client.render.engine.rhi.*;
 import combatant.client.render.engine.rhi.backend.gl.clip.GlStencilShapeClipBackend;
 import combatant.client.render.engine.rhi.backend.gl.GlAdvancedShaderBackend;
-import combatant.client.render.engine.rhi.backend.gl.state.SodiumGlPipelineStateBackend;
+import combatant.client.render.engine.rhi.backend.gl.state.GlPipelineStateBackend;
 import combatant.client.render.engine.rhi.blit.GlTextureBlitter;
 import combatant.client.render.engine.rhi.blit.TextureBlitter;
 import combatant.client.render.engine.rhi.clip.ShapeClipBackend;
 import combatant.client.render.engine.rhi.fullscreen.FullscreenBackend;
 import combatant.client.render.engine.rhi.fullscreen.Blaze3dFullscreenBackend;
 import combatant.client.render.engine.rhi.msaa.MsaaControl;
-import combatant.client.render.engine.rhi.msaa.SodiumGlMsaaControl;
+import combatant.client.render.engine.rhi.msaa.GlMsaaControl;
 import combatant.client.render.engine.rhi.pipeline.RenderPipelineRegistry;
 import combatant.client.render.engine.pipeline.CombatantRenderPipelines;
 import combatant.client.render.iris.IrisRuntime;
@@ -59,10 +59,10 @@ import java.util.IdentityHashMap;
 import java.util.Map;
 
 /**
- * Current production RHI backend for the Sodium/GL era.
- * Sodium is the priority integration target; Mojang GPU objects are used as the compatibility surface where needed.
+ * Combatant-owned OpenGL RHI backend.
+ * Sodium terrain/chunk rendering is integrated separately through SodiumTerrainInterop.
  */
-public final class SodiumGlBackend implements CombatantRhi {
+public final class CombatantGlBackend implements CombatantRhi {
     private static final int MAX_MULTI_DRAW_GROUP = 1024;
     private final RhiStats stats = new RhiStats();
     private RhiCapabilities capabilities;
@@ -71,15 +71,15 @@ public final class SodiumGlBackend implements CombatantRhi {
     private final Blaze3dPersistentMeshBackend persistentMeshes = new Blaze3dPersistentMeshBackend(stats);
     private final Blaze3dFullscreenBackend fullscreen = new Blaze3dFullscreenBackend();
     private final GlTextureBlitter blitter = new GlTextureBlitter(stats);
-    private final SodiumGlMsaaControl msaa = new SodiumGlMsaaControl();
+    private final GlMsaaControl msaa = new GlMsaaControl();
     private final GlStencilShapeClipBackend shapeClip = new GlStencilShapeClipBackend();
-    private final SodiumGlPipelineStateBackend pipelineState = new SodiumGlPipelineStateBackend(msaa, shapeClip);
+    private final GlPipelineStateBackend pipelineState = new GlPipelineStateBackend(msaa, shapeClip);
     private final GlAdvancedShaderBackend advancedShaders = new GlAdvancedShaderBackend(stats);
     private final RenderPipelineRegistry pipelines = RenderPipelineRegistry.global();
     private final RenderResourceManager resources = new RenderResourceManager();
     private final Matrix4f projectionScratch = new Matrix4f();
     private final Matrix4f modelViewScratch = new Matrix4f();
-    private final IdentityHashMap<com.mojang.blaze3d.pipeline.RenderPipeline, Boolean> dynamicTransformsUse = new IdentityHashMap<>();
+    private final IdentityHashMap<com.mojang.renderpearl.api.pipeline.RenderPipeline, Boolean> dynamicTransformsUse = new IdentityHashMap<>();
 
     private static java.util.Optional<Vector4fc> clearColor(OptionalInt clearColor) {
         if (clearColor == null || clearColor.isEmpty()) {
@@ -196,7 +196,7 @@ public final class SodiumGlBackend implements CombatantRhi {
         // Dynamic meshes are written through open mappings; publish them before any draw reads the arenas.
         DynamicMeshWrites.flushPending();
         try {
-            // One Blaze3D encoder owns the whole ordered RHI sequence. Individual render passes still
+            // One RenderPearl encoder owns the whole ordered RHI sequence. Individual render passes still
             // end only on attachment/clear barriers without recreating an encoder wrapper for
             // every continuation segment and keep the backend submission shape compact.
             CommandEncoder encoder = RenderSystem.getDevice().createCommandEncoder();
@@ -235,7 +235,7 @@ public final class SodiumGlBackend implements CombatantRhi {
             RenderSystem.bindDefaultUniforms(pass);
 
             PassBindingCache bindings = new PassBindingCache();
-            com.mojang.blaze3d.pipeline.RenderPipeline activePipeline = null;
+            com.mojang.renderpearl.api.pipeline.RenderPipeline activePipeline = null;
             boolean multiDrawAvailable = !multiDrawRuntimeDisabled && capabilities().multiDrawDirectSeparate();
 
             int cursor = start;
@@ -258,11 +258,11 @@ public final class SodiumGlBackend implements CombatantRhi {
                     } catch (UnsupportedOperationException | IllegalArgumentException ex) {
                         // DeviceFeatures said this path is available, but the active backend rejected
                         // the concrete call. Disable it for the rest of this RHI lifetime and fall
-                        // back to ordinary Blaze3D indexed draws without probing GL ourselves.
+                        // back to ordinary RenderPearl indexed draws without probing GL ourselves.
                         multiDrawRuntimeDisabled = true;
                         bindings.invalidate();
                         DebugLog.warnOnce("rhi.multidraw.runtime.disabled",
-                                "[RHI/GL] Blaze3D multiDrawIndexed rejected at runtime; disabling Combatant coalescing fallback. %s: %s",
+                                "[RHI/GL] RenderPearl multiDrawIndexed rejected at runtime; disabling Combatant coalescing fallback. %s: %s",
                                 ex.getClass().getSimpleName(), ex.getMessage());
                     }
                     if (!multiDrawOk) {
@@ -384,7 +384,7 @@ public final class SodiumGlBackend implements CombatantRhi {
             if (CombatantRenderPipelines.isRigPipeline(command.pipeline)) {
                 IrisRuntime.setNativePipeline(pass, command.pipeline);
             } else {
-                pass.setPipeline(command.pipeline);
+                pass.setPipeline(RenderSystem.getCompiledPipeline(command.pipeline));
             }
         }
 
@@ -424,16 +424,16 @@ public final class SodiumGlBackend implements CombatantRhi {
     private record BindingCounts(int uniforms, int samplers) {
     }
 
-    private record SamplerState(com.mojang.blaze3d.textures.GpuTextureView view,
-                                com.mojang.blaze3d.textures.GpuSampler sampler) {
+    private record SamplerState(com.mojang.renderpearl.api.textures.GpuTextureView view,
+                                com.mojang.renderpearl.api.textures.GpuSampler sampler) {
     }
 
     private static final class PassBindingCache {
         private final Map<String, GpuBufferSlice> uniforms = new HashMap<>();
         private final Map<String, SamplerState> samplers = new HashMap<>();
-        private com.mojang.blaze3d.buffers.GpuBuffer vertexBuffer;
-        private com.mojang.blaze3d.buffers.GpuBuffer indexBuffer;
-        private com.mojang.blaze3d.IndexType indexType;
+        private com.mojang.renderpearl.api.buffers.GpuBuffer vertexBuffer;
+        private com.mojang.renderpearl.api.buffers.GpuBuffer indexBuffer;
+        private com.mojang.renderpearl.api.pipeline.IndexType indexType;
 
         boolean bindUniform(RenderPass pass, String name, GpuBufferSlice slice) {
             if (slice.equals(uniforms.get(name))) return false;
@@ -445,7 +445,7 @@ public final class SodiumGlBackend implements CombatantRhi {
         boolean bindSampler(RenderPass pass, RhiSamplerBinding binding) {
             SamplerState next = new SamplerState(binding.view(), binding.sampler());
             if (next.equals(samplers.get(binding.name()))) return false;
-            pass.bindTexture(binding.name(), binding.view(), binding.sampler());
+            pass.setUniform(binding.name(), binding.view(), binding.sampler());
             samplers.put(binding.name(), next);
             return true;
         }
@@ -488,7 +488,7 @@ public final class SodiumGlBackend implements CombatantRhi {
      * Pipeline bind-group layouts are immutable, so the answer is stable per pipeline. Flattening the
      * layouts allocates a fresh uniform list, which used to happen once per draw command.
      */
-    private boolean pipelineUsesDynamicTransforms(com.mojang.blaze3d.pipeline.RenderPipeline pipeline) {
+    private boolean pipelineUsesDynamicTransforms(com.mojang.renderpearl.api.pipeline.RenderPipeline pipeline) {
         if (pipeline == null) return false;
         Boolean cached = dynamicTransformsUse.get(pipeline);
         if (cached != null) return cached;
@@ -497,10 +497,10 @@ public final class SodiumGlBackend implements CombatantRhi {
         return uses;
     }
 
-    private static boolean pipelineUsesUniform(com.mojang.blaze3d.pipeline.RenderPipeline pipeline, String name) {
+    private static boolean pipelineUsesUniform(com.mojang.renderpearl.api.pipeline.RenderPipeline pipeline, String name) {
         if (pipeline == null || name == null) return false;
-        for (com.mojang.blaze3d.pipeline.BindGroupLayout.UniformDescription uniform :
-                com.mojang.blaze3d.pipeline.BindGroupLayout.flattenUniforms(pipeline.getBindGroupLayouts())) {
+        for (com.mojang.renderpearl.api.pipeline.BindGroupLayout.UniformDescription uniform :
+                com.mojang.renderpearl.api.pipeline.BindGroupLayout.flattenUniforms(pipeline.getBindGroupLayouts())) {
             if (name.equals(uniform.name())) return true;
         }
         return false;
@@ -533,7 +533,7 @@ public final class SodiumGlBackend implements CombatantRhi {
             );
             GpuBufferSlice meshData = MeshUniforms.get();
 
-            RenderPassDescriptor descriptor = RenderPassDescriptor.create(() -> command.label)
+            RenderPassDescriptor.Builder descriptor = RenderPassDescriptor.builder(() -> command.label)
                     .withColorAttachment(command.colorAttachment, clearColor(command.clearColor))
                     .withRenderArea(new RenderPass.RenderArea(
                             0, 0, command.colorAttachment.getWidth(0), command.colorAttachment.getHeight(0)
@@ -542,17 +542,18 @@ public final class SodiumGlBackend implements CombatantRhi {
                 descriptor.withDepthAttachment(command.depthAttachment, command.clearDepth);
             }
             stats.renderPass(command.colorAttachment, command.depthAttachment);
-            try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(descriptor)) {
+            try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(descriptor.build())) {
+                RenderSystem.bindDefaultUniforms(pass);
                 if (command.pipelineSpec == null) pipelines.require(command.pipeline);
                 stats.pipelineUse(command.pipeline, command.pipelineSpec,
                         command.uniforms.size() + 1, command.samplers.size(), true);
-                pass.setPipeline(command.pipeline);
+                pass.setPipeline(RenderSystem.getCompiledPipeline(command.pipeline));
                 pass.setUniform("MeshData", meshData);
                 for (RhiUniformBinding uniform : command.uniforms) {
                     pass.setUniform(uniform.name(), uniform.slice());
                 }
                 for (RhiSamplerBinding sampler : command.samplers) {
-                    pass.bindTexture(sampler.name(), sampler.view(), sampler.sampler());
+                    pass.setUniform(sampler.name(), sampler.view(), sampler.sampler());
                 }
                 GpuMeshHandle quad = fullscreen.quad();
                 pass.setVertexBuffer(0, quad.vertexBuffer().slice());
@@ -567,9 +568,9 @@ public final class SodiumGlBackend implements CombatantRhi {
     private RenderPass createPass(CommandEncoder encoder,
                                   String label,
                                   List<RhiColorAttachment> colors,
-                                  com.mojang.blaze3d.textures.GpuTextureView depth,
+                                  com.mojang.renderpearl.api.textures.GpuTextureView depth,
                                   OptionalDouble clearDepth) {
-        RenderPassDescriptor descriptor = RenderPassDescriptor.create(() -> label);
+        RenderPassDescriptor.Builder descriptor = RenderPassDescriptor.builder(() -> label);
         int width = -1;
         int height = -1;
         for (RhiColorAttachment color : colors) {
@@ -611,7 +612,7 @@ public final class SodiumGlBackend implements CombatantRhi {
             throw new IllegalArgumentException("Render pass requires at least one non-empty attachment: " + label);
         }
         descriptor.withRenderArea(new RenderPass.RenderArea(0, 0, width, height));
-        return encoder.createRenderPass(descriptor);
+        return encoder.createRenderPass(descriptor.build());
     }
 
     @Override

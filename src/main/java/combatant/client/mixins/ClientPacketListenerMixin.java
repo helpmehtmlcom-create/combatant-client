@@ -143,7 +143,7 @@ public abstract class ClientPacketListenerMixin {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.world == null || mc.player == null) return;
 
-        Vec3d pos = new Vec3d(packet.getX(), packet.getY(), packet.getZ());
+        Vec3d pos = new Vec3d(packet.x(), packet.y(), packet.z());
 
         if (!SoundEntityResolver.isUnambiguousOpponent(pos, 1.6)) return;
 
@@ -170,7 +170,7 @@ public abstract class ClientPacketListenerMixin {
         ClientLevel world = mc.level;
         if (world == null) return;
 
-        for (int id : packet.getEntityIds()) {
+        for (int id : packet.entityIds()) {
 
             Entity e = world.getEntity(id);
             if (!(e instanceof Player player)) continue;
@@ -327,13 +327,13 @@ public abstract class ClientPacketListenerMixin {
 
     @Inject(method = "handleParticleEvent", at = @At("HEAD"))
     private void combatant$heuristicParticle(ClientboundLevelParticlesPacket packet, CallbackInfo ci) {
-        var p = packet.getParticle();
+        var p = packet.particle();
         // Log raw particles once per hook for diagnostics
         DebugLog.info("Particle packet type=%s pos=%.2f %.2f %.2f count=%d",
                 p.getType().toString(),
-                packet.getX(), packet.getY(), packet.getZ(),
-                packet.getCount());
-        StatusEffectHeuristics.handle(p, packet.getX(), packet.getY(), packet.getZ());
+                packet.x(), packet.y(), packet.z(),
+                packet.count());
+        StatusEffectHeuristics.handle(p, packet.x(), packet.y(), packet.z());
     }
 
     @Inject(method = "handleSoundEvent", at = @At("HEAD"))
@@ -346,7 +346,7 @@ public abstract class ClientPacketListenerMixin {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.world == null || mc.player == null) return;
 
-        Vec3d pos = new Vec3d(packet.getX(), packet.getY(), packet.getZ());
+        Vec3d pos = new Vec3d(packet.x(), packet.y(), packet.z());
 
         if (!SoundEntityResolver.isUnambiguousOpponent(pos, 1.6)) return;
 
@@ -422,7 +422,7 @@ public abstract class ClientPacketListenerMixin {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.world == null || mc.player == null) return;
 
-        Vec3d pos = new Vec3d(packet.getX(), packet.getY(), packet.getZ());
+        Vec3d pos = new Vec3d(packet.x(), packet.y(), packet.z());
 
         if (!SoundEntityResolver.isUnambiguousOpponent(pos, 1.6)) return;
 
