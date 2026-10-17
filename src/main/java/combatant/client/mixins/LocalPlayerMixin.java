@@ -570,7 +570,7 @@ public abstract class LocalPlayerMixin implements ILocalPlayer {
     }
 
     @ModifyExpressionValue(
-            method = "tick",
+            method = "sendChanges",
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/client/player/LocalPlayer;getYRot()F"
@@ -584,7 +584,7 @@ public abstract class LocalPlayerMixin implements ILocalPlayer {
     }
 
     @ModifyExpressionValue(
-            method = "tick",
+            method = "sendChanges",
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/client/player/LocalPlayer;getXRot()F"
