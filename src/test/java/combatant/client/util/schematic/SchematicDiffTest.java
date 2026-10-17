@@ -14,7 +14,7 @@ import net.minecraft.server.Bootstrap;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.LeverBlock;
-import net.minecraft.world.level.block.RedStoneWireBlock;
+import net.minecraft.world.level.block.RedstoneWireBlock;
 import net.minecraft.world.level.block.RepeaterBlock;
 import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -166,7 +166,7 @@ class SchematicDiffTest {
         assertEquals(SchematicDiff.WRONG, SchematicDiff.classify(lever.setValue(LeverBlock.POWERED, true), lever));
 
         BlockState wire = Blocks.REDSTONE_WIRE.defaultBlockState();
-        BlockState lit = wire.setValue(RedStoneWireBlock.POWER, 15).setValue(RedStoneWireBlock.NORTH, RedstoneSide.SIDE);
+        BlockState lit = wire.setValue(RedstoneWireBlock.POWER, 15).setValue(RedstoneWireBlock.NORTH, RedstoneSide.SIDE);
         assertEquals(SchematicDiff.CORRECT, SchematicDiff.classify(lit, wire));
 
         BlockState stair = Blocks.OAK_STAIRS.defaultBlockState().setValue(StairBlock.FACING, Direction.NORTH);
