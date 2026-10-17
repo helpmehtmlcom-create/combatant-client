@@ -31,12 +31,11 @@ public abstract class GameRendererPreloadShaderSourceMixin {
 
     @Inject(method = "getShader", at = @At("HEAD"), cancellable = true)
     private void combatant$loadCombatantShader(Identifier id, ShaderType type, CallbackInfoReturnable<String> cir) {
-        if (CombatantShaderSources.typeByLocation(id) == null || !id.getPath().startsWith("shaders/")) {
+        if (!CombatantShaderSources.COMBATANT_NAMESPACE.equals(id.getNamespace())
+                || !id.getPath().startsWith(CombatantShaderSources.SHADER_PREFIX)
+                || CombatantShaderSources.typeByLocation(id) == null) {
             return;
         }
-        Resource resource = val$resourceManager.getResource(id).orElse(null);
-        if (resource != null) {
-            cir.setReturnValue(CombatantShaderSources.load(val$resourceManager, id, resource));
-        }
+        cir.setReturnValue(CombatantShaderSources.load(val$resourceManager, id, type));
     }
 }

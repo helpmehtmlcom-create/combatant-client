@@ -272,40 +272,51 @@ public abstract class LevelRendererMixin {
         ci.cancel();
     }
 
-    @Inject(
-            method = "executeClassicTransparency",
+    /**
+     * In 26.3 the classic (non-OIT) translucent path runs inside the same open render pass as the
+     * solid terrain. Depth copies and Combatant's own passes need no pass to be open, so the pass is
+     * closed here (close is idempotent in RenderPearl) and a continuation pass on the same main
+     * target is opened for vanilla's translucent features and terrain.
+     */
+    @WrapOperation(
+            method = "lambda$addMainPass$0",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/renderer/chunk/ChunkSectionsToRender;renderGroup(Lnet/minecraft/client/renderer/chunk/ChunkSectionLayerGroup;Lcom/mojang/renderpearl/api/commands/RenderPass;Lcom/mojang/renderpearl/api/textures/GpuSampler;Lcom/mojang/renderpearl/api/textures/GpuTextureView;Z)V",
-                    shift = At.Shift.BEFORE
+                    target = "Lnet/minecraft/client/renderer/LevelRenderer;executeClassicTransparency(Lnet/minecraft/client/renderer/chunk/ChunkSectionsToRender;Lnet/minecraft/client/renderer/feature/FeatureRenderDispatcher$PreparedFrame;Lcom/mojang/renderpearl/api/commands/RenderPass;)V"
             ),
             remap = false
     )
-    private void combatant$capturePreWaterSceneClassic(CallbackInfo ci) {
+    private void combatant$captureBeforeClassicTransparency(
+            LevelRenderer instance,
+            net.minecraft.client.renderer.chunk.ChunkSectionsToRender sections,
+            net.minecraft.client.renderer.feature.FeatureRenderDispatcher.PreparedFrame preparedFrame,
+            com.mojang.renderpearl.api.commands.RenderPass pass,
+            Operation<Void> original
+    ) {
+        RenderTarget target = combatant$mainTarget();
+        if (target == null) {
+            original.call(instance, sections, preparedFrame, pass);
+            return;
+        }
+        pass.close();
+        combatant$renderImportedWorldEntities();
         combatant$capturePreWaterScene();
+        com.mojang.renderpearl.api.commands.RenderPass continuation = RenderSystem.getDevice()
+                .createCommandEncoder()
+                .createRenderPass(() -> "Main pass (Combatant continuation)", target.getColorTextureView(),
+                        java.util.Optional.empty(), target.getDepthTextureView(), java.util.OptionalDouble.empty());
+        try {
+            RenderSystem.bindDefaultUniforms(continuation);
+            original.call(instance, sections, preparedFrame, continuation);
+        } finally {
+            continuation.close();
+        }
     }
 
     @Inject(method = "executeOit", at = @At("HEAD"), remap = false)
-    private void combatant$capturePreWaterSceneOit(CallbackInfo ci) {
+    private void combatant$captureBeforeOit(CallbackInfo ci) {
+        combatant$renderImportedWorldEntities();
         combatant$capturePreWaterScene();
-    }
-
-    @Inject(
-            method = "executeClassicTransparency",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/client/renderer/feature/FeatureRenderDispatcher$PreparedFrame;executeTranslucent(Lcom/mojang/renderpearl/api/commands/RenderPass;)V",
-                    shift = At.Shift.AFTER
-            ),
-            remap = false
-    )
-    private void combatant$renderImportedWorldEntitiesClassic(CallbackInfo ci) {
-        combatant$renderImportedWorldEntities();
-    }
-
-    @Inject(method = "executeOit", at = @At("HEAD"), remap = false)
-    private void combatant$renderImportedWorldEntitiesOit(CallbackInfo ci) {
-        combatant$renderImportedWorldEntities();
     }
 
     @Unique
