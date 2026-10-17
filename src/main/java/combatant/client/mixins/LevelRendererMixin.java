@@ -66,7 +66,7 @@ public abstract class LevelRendererMixin {
     private LevelTargetBundle targets;
 
     @WrapOperation(
-            method = "addSkyPass(Lcom/mojang/blaze3d/framegraph/FrameGraphBuilder;Lnet/minecraft/client/renderer/state/level/CameraRenderState;Lcom/mojang/blaze3d/buffers/GpuBufferSlice;)V",
+            method = "addSkyPass(Lcom/mojang/blaze3d/framegraph/FrameGraphBuilder;Lnet/minecraft/client/renderer/state/level/CameraRenderState;Lcom/mojang/renderpearl/api/buffers/GpuBufferSlice;)V",
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/client/renderer/GameRenderer;mainRenderTarget()Lcom/mojang/blaze3d/pipeline/RenderTarget;"
@@ -183,19 +183,18 @@ public abstract class LevelRendererMixin {
             method = "render",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/renderer/LevelRenderer;addMainPass(Lcom/mojang/blaze3d/framegraph/FrameGraphBuilder;Lnet/minecraft/client/renderer/feature/FeatureRenderDispatcher$PreparedFrame;Lcom/mojang/blaze3d/buffers/GpuBufferSlice;Lnet/minecraft/client/renderer/state/level/LevelRenderState;Lnet/minecraft/util/profiling/ProfilerFiller;Lnet/minecraft/client/renderer/chunk/ChunkSectionsToRender;)V",
+                    target = "Lnet/minecraft/client/renderer/LevelRenderer;addMainPass(Lcom/mojang/blaze3d/framegraph/FrameGraphBuilder;Lnet/minecraft/client/renderer/feature/FeatureRenderDispatcher$PreparedFrame;Lcom/mojang/renderpearl/api/buffers/GpuBufferSlice;Lnet/minecraft/client/renderer/chunk/ChunkSectionsToRender;Z)V",
                     shift = At.Shift.AFTER
             )
     )
     private void combatant$captureWorldSceneDepth(
             GraphicsResourceAllocator allocator,
-            DeltaTracker tickCounter,
             boolean renderBlockOutline,
             net.minecraft.client.renderer.state.level.CameraRenderState cameraRenderState,
-            org.joml.Matrix4fc positionMatrix,
             GpuBufferSlice fogBuffer,
             org.joml.Vector4f fogColor,
             boolean renderSky,
+            boolean extraFlag,
             CallbackInfo ci,
             @Local FrameGraphBuilder frameGraphBuilder
     ) {
