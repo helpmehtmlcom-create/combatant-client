@@ -48,7 +48,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-public final class CombatantAddonManagerScreen extends Screen {
+public final class CombatantAddonManagerScreen extends Screen implements combatant.client.util.screen.HudHidingScreen {
     private static final float SCALE = 2.28f;
     private static final float TEXT_SCALE = 1.30f;
     private static final float LEFT_W = 112f * SCALE;

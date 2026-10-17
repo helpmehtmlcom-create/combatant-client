@@ -35,7 +35,7 @@ import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 
-public final class CombatantProxyManagerScreen extends Screen {
+public final class CombatantProxyManagerScreen extends Screen implements combatant.client.util.screen.HudHidingScreen {
     private static final float SCALE = 2.28f;
     private static final float TEXT_SCALE = 1.30f;
     private static final float PANEL_W = 184f * SCALE;

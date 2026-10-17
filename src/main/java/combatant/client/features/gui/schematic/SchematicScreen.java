@@ -61,7 +61,7 @@ import java.util.Locale;
  * top-down) in the middle with a layer strip that doubles as the slider, and placement, builder and material
  * controls on the right.
  */
-public final class SchematicScreen extends Screen {
+public final class SchematicScreen extends Screen implements combatant.client.util.screen.HudHidingScreen {
 
     private static final float HEADER_H = 64f;
     private static final float PAD = 18f;
@@ -817,7 +817,11 @@ public final class SchematicScreen extends Screen {
         float y = infoY;
         float step = smallH + 7f;
         if (schematic == null) {
-            infoLine(tr("screen.combatant.schematic.info.folder"), library.directory().getFileName().toString(), y, alpha);
+            infoLine(tr("screen.combatant.schematic.info.folder"), library.directory().toString(), y, alpha);
+            ui.text(ui.ellipsize(tr("screen.combatant.schematic.empty_hint"), SchematicUi.SMALL, rightW),
+                    rightX, y + step * 1.6f, SchematicUi.SMALL, SchematicUi.scaleAlpha(SchematicUi.MUTED, alpha), false);
+            ui.text(ui.ellipsize(tr("screen.combatant.schematic.keys_hint"), SchematicUi.SMALL, rightW),
+                    rightX, y + step * 2.8f, SchematicUi.SMALL, SchematicUi.scaleAlpha(SchematicUi.MUTED, alpha), false);
             return;
         }
         infoLine(tr("screen.combatant.schematic.info.name"), schematic.name(), y, alpha);

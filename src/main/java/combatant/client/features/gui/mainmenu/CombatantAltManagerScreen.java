@@ -56,7 +56,7 @@ import java.util.*;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 
-public final class CombatantAltManagerScreen extends Screen {
+public final class CombatantAltManagerScreen extends Screen implements combatant.client.util.screen.HudHidingScreen {
     private static final float SCALE = 2.12f;
     private static final float TEXT_SCALE = 1.30f;
     private static final float WINDOW_PAD = 7.0f * SCALE;

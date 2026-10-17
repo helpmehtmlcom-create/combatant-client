@@ -41,9 +41,9 @@ final class SchematicUi {
     static int WELL = 0xFF0A0D12;
 
     static final float TITLE = 0.95f;
-    static final float BODY = 0.68f;
-    static final float SMALL = 0.56f;
-    static final float TINY = 0.50f;
+    static final float BODY = 0.74f;
+    static final float SMALL = 0.62f;
+    static final float TINY = 0.57f;
 
     private final Map<String, String> ellipsized = new HashMap<>();
     private TextRenderer bold;
@@ -60,7 +60,7 @@ final class SchematicUi {
         SURFACE = mix(opaque(t.surface()), PANEL_BOTTOM, 0.25f);
         SURFACE_HOVER = mix(opaque(t.surfaceHover()), ACCENT, 0.06f);
         STROKE = mix(opaque(t.strokeSoft()), PANEL_BOTTOM, 0.2f);
-        FAINT = mix(MUTED, SURFACE, 0.4f);
+        FAINT = mix(MUTED, SURFACE, 0.2f);
         WELL = mix(PANEL_BOTTOM, 0xFF000000, 0.35f);
     }
 
@@ -123,7 +123,7 @@ final class SchematicUi {
         float w = width(label, TINY, false) + 12f;
         float h = height(TINY) + 4f;
         Renderer2D.COLOR.roundedRect(x, y, w, h, h * 0.5f, scaleAlpha(withAlpha(mix(SURFACE_HOVER, tint, 0.18f), 230), alpha));
-        text(label, x + 6f, y + 2f, TINY, scaleAlpha(mix(MUTED, tint, 0.45f), alpha), false);
+        text(label, x + 6f, y + 2f, TINY, scaleAlpha(mix(TEXT, tint, 0.35f), alpha), false);
         return w;
     }
 
