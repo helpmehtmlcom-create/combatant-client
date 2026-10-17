@@ -204,7 +204,7 @@ public final class SpeedMine extends Module {
         if (!isEnabled() || player == null || mc.level == null || mc.getConnection() == null) return false;
         if (isMining(pos)) return true;
         BlockState state = mc.level.getBlockState(pos);
-        if (state.isAir() || !inRange(player, pos, reach)) return false;
+        if (state.isAir() || !inRange(player, pos, reach) || bestProgressPerTick(pos, state) <= 0.0f) return false;
 
         if (primary != null && !primary.stopSent) {
             if (canDoubleMine()) {

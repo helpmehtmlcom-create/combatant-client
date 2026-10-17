@@ -59,7 +59,7 @@ public final class BreakSpeedUtil {
         if (hardness < 0.0f) return 0.0f;
         if (hardness == 0.0f) return 1.0f;
         boolean correctTool = !state.requiresCorrectToolForDrops() || stack.isCorrectToolForDrops(state);
-        return destroySpeed(player, level, stack, efficiencySource, state) / hardness / (correctTool ? 30.0f : 100.0f);
+        return progressFromSpeed(destroySpeed(player, level, stack, efficiencySource, state), hardness, correctTool);
     }
 
     public static float destroySpeed(LocalPlayer player, ClientLevel level, ItemStack stack,
@@ -71,26 +71,40 @@ public final class BreakSpeedUtil {
         }
 
         if (MobEffectUtil.hasDigSpeed(player)) {
-            speed *= 1.0f + (MobEffectUtil.getDigSpeedAmplification(player) + 1) * 0.2f;
+            speed *= hasteMultiplier(MobEffectUtil.getDigSpeedAmplification(player));
         }
 
         MobEffectInstance fatigue = player.getEffect(MobEffects.MINING_FATIGUE);
-        if (fatigue != null) {
-            speed *= switch (fatigue.getAmplifier()) {
-                case 0 -> 0.3f;
-                case 1 -> 0.09f;
-                case 2 -> 0.0027f;
-                default -> 8.1E-4f;
-            };
-        }
+        if (fatigue != null) speed *= fatigueMultiplier(fatigue.getAmplifier());
 
         speed *= (float) player.getAttributeValue(Attributes.BLOCK_BREAK_SPEED);
         if (player.isEyeInFluid(FluidTags.WATER)) {
             AttributeInstance submerged = player.getAttribute(Attributes.SUBMERGED_MINING_SPEED);
             if (submerged != null) speed *= (float) submerged.getValue();
         }
-        if (!player.onGround()) speed /= 5.0f;
-        return speed;
+        return airborneSpeed(speed, player.onGround());
+    }
+
+    /** {@code Player.getDestroyProgress}: speed over hardness, 30 with the right tool, 100 without. */
+    static float progressFromSpeed(float speed, float hardness, boolean correctTool) {
+        if (hardness < 0.0f) return 0.0f;
+        if (hardness == 0.0f) return 1.0f;
+        return speed / hardness / (correctTool ? 30.0f : 100.0f);
+    }
+
+    /** Haste / conduit power: +20% per level; {@code amplification} is the amplifier (0 = level I). */
+    static float hasteMultiplier(int amplification) {
+        return 1.0f + (amplification + 1) * 0.2f;
+    }
+
+    /** Mining fatigue as of 26.3: {@code 0.3^(amplifier + 1)}, with no cap (older versions had a table). */
+    static float fatigueMultiplier(int amplifier) {
+        return (float) Math.pow(0.3, amplifier + 1);
+    }
+
+    /** Mining in mid-air is five times slower. */
+    static float airborneSpeed(float speed, boolean onGround) {
+        return onGround ? speed : speed / 5.0f;
     }
 
     /** Hotbar slot (0-8) that breaks {@code state} fastest, or -1 when nothing can break it. */
