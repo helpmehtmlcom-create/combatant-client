@@ -7,8 +7,10 @@
 
 package combatant.client.util.anticheat;
 
+import combatant.client.config.values.BooleanMapValue;
 import combatant.client.config.values.BooleanValue;
 import combatant.client.config.values.EnumValue;
+import combatant.client.config.values.ModeValue;
 import combatant.client.config.values.NumberValue;
 
 import java.util.EnumSet;
@@ -120,6 +122,24 @@ public final class PresetRules {
         value.bindForced(() -> switch (preset.get()) {
             case GRIM -> grim.forced();
             case VANILLA -> vanilla.forced();
+            case CUSTOM -> null;
+        });
+    }
+
+    /** Forces one entry of a toggle group; {@code Flag.FREE} leaves it alone. */
+    public static void bind(BooleanMapValue value, String key, Supplier<AntiCheatPreset> preset, Flag grim, Flag vanilla) {
+        value.bindForced(key, () -> switch (preset.get()) {
+            case GRIM -> grim.forced();
+            case VANILLA -> vanilla.forced();
+            case CUSTOM -> null;
+        });
+    }
+
+    /** Forces a string mode; a null option leaves the player's choice alone. */
+    public static void bind(ModeValue value, Supplier<AntiCheatPreset> preset, String grim, String vanilla) {
+        value.bindForced(() -> switch (preset.get()) {
+            case GRIM -> grim;
+            case VANILLA -> vanilla;
             case CUSTOM -> null;
         });
     }

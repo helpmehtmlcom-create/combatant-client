@@ -776,6 +776,26 @@ public abstract class Module implements ConfigObject, ConfigNameProvider, Settin
         return value;
     }
 
+    /** Binds a string mode to the preset: a non-null option is forced (the only one offered) and shown locked. */
+    protected final ModeValue presetBound(ModeValue value,
+                                          EnumValue<AntiCheatPreset> preset,
+                                          String grimOption,
+                                          String vanillaOption) {
+        PresetRules.bind(value, preset::get, grimOption, vanillaOption);
+        lockWhenForced(value, preset, value::isForced);
+        return value;
+    }
+
+    /** Binds one entry of a toggle group to the preset; the entry reads as the forced value and ignores clicks. */
+    protected final BooleanMapValue presetBound(BooleanMapValue value,
+                                                String key,
+                                                EnumValue<AntiCheatPreset> preset,
+                                                PresetRules.Flag grim,
+                                                PresetRules.Flag vanilla) {
+        PresetRules.bind(value, key, preset::get, grim, vanilla);
+        return value;
+    }
+
     /**
      * Marks every setting of this module except the preset selector itself as not applied while {@code preset} is
      * {@code whenPreset}, for modules that do nothing under that preset. Call once, after all settings are declared.

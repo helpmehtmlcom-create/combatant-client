@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Supplier;
 
 public class ModeValue extends ConfigValue<String> {
 
@@ -27,8 +28,46 @@ public class ModeValue extends ConfigValue<String> {
         }
     }
 
+    /** Returns the option to use while one is forced (for example by an anticheat preset), or null while free. */
+    private Supplier<String> forced;
+
+    /**
+     * Declares a forced option. While it returns non-null, {@link #get()} returns it and it is the only offered
+     * option; the stored option is left alone, still saved, and returns once the force lifts.
+     */
+    public void bindForced(Supplier<String> forced) {
+        this.forced = forced;
+    }
+
+    private String activeForced() {
+        if (forced == null) return null;
+        String f = forced.get();
+        return f != null && options.contains(f) ? f : null;
+    }
+
+    public boolean isForced() {
+        return activeForced() != null;
+    }
+
+    /** The stored option, ignoring any force. This is what gets saved. */
+    public String getRaw() {
+        return value;
+    }
+
+    @Override
+    public String get() {
+        String f = activeForced();
+        return f != null ? f : value;
+    }
+
+    @Override
+    public void set(String v) {
+        if (!isForced()) value = v;
+    }
+
     public List<String> getOptions() {
-        return List.copyOf(options);
+        String f = activeForced();
+        return f != null ? List.of(f) : List.copyOf(options);
     }
 
     public boolean addOption(String option) {

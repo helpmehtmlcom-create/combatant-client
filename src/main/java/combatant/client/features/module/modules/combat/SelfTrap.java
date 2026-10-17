@@ -225,7 +225,11 @@ public final class SelfTrap extends Module {
 
     /** Crystal clearing is an entity interaction, so it has its own limit on the one {@code range} setting. */
     private double effCrystalRange() {
-        return anticheat.get().limit(range.get(), AntiCheatPreset.GRIM_ENTITY_RANGE, AntiCheatPreset.VANILLA_ENTITY_RANGE);
+        return switch (anticheat.get()) {
+            case CUSTOM -> range.get();
+            case GRIM -> Math.min(range.get(), AntiCheatPreset.GRIM_ENTITY_RANGE);
+            case VANILLA -> AntiCheatPreset.VANILLA_ENTITY_RANGE;
+        };
     }
 
     private boolean effConstructFailResult() {

@@ -42,34 +42,4 @@ public enum AntiCheatPreset implements EnumValue.IdProvider {
     public String getId() {
         return id;
     }
-
-    /** The player's value, never above {@code grimMax} under GRIM, and {@code vanillaValue} under VANILLA. */
-    public double limit(double user, double grimMax, double vanillaValue) {
-        return switch (this) {
-            case CUSTOM -> user;
-            case GRIM -> Math.min(user, grimMax);
-            case VANILLA -> vanillaValue;
-        };
-    }
-
-    public float limit(float user, float grimMax, float vanillaValue) {
-        return (float) limit((double) user, (double) grimMax, (double) vanillaValue);
-    }
-
-    public int limit(int user, int grimMax, int vanillaValue) {
-        return switch (this) {
-            case CUSTOM -> user;
-            case GRIM -> Math.min(user, grimMax);
-            case VANILLA -> vanillaValue;
-        };
-    }
-
-    /** One value per preset. */
-    public <T> T pick(T user, T grim, T vanilla) {
-        return switch (this) {
-            case CUSTOM -> user;
-            case GRIM -> grim;
-            case VANILLA -> vanilla;
-        };
-    }
 }

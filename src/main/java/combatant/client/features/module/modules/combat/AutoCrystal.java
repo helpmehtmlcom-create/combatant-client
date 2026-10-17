@@ -1129,7 +1129,7 @@ public class AutoCrystal extends Module {
     // the tick its rotation changes leaves ahead of the flying packet that carries it, so under the grim preset it
     // waits a tick; the rotation target is rebuilt every tick and the next one places against the sent rotation.
     private boolean serverRotationClicks(BlockHitResult hit) {
-        if (!usesRotationSettings() || !anticheat.get().pick(false, true, false)) return true;
+        if (!usesRotationSettings() || anticheat.get() != AntiCheatPreset.GRIM) return true;
         Rotation server = RotationManager.INSTANCE.getServerRotation();
         if (server == null || hit == null || mc.player == null) return false;
         return AutoCrystalInteractionUtil.rayEntersFace(

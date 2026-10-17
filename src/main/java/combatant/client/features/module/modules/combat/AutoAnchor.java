@@ -194,14 +194,14 @@ public class AutoAnchor extends Module {
             CommonSettingSchemas.INVENTORY_RESTORE_ITEM,
             true
     );
-    private final ModeValue attackMode = modeCommon(
+    private final ModeValue attackMode = presetBound(modeCommon(
             "autoanchorAttackMode",
             "attack_mode",
             CommonSettingSchemas.COMBAT_ATTACK_MODE,
             CombatRotationModeUtil.MODE_ROTATIONS,
             CombatRotationModeUtil.MODE_ROTATIONS,
             CombatRotationModeUtil.MODE_NO_ROTATIONS
-    );
+    ), anticheat, CombatRotationModeUtil.MODE_ROTATIONS, null);
     private final EnumValue<MovementCorrection> movementCorrection = visibleWhen(enumCommon(
             "autoanchorMovementCorrection",
             "movement_correction",
@@ -1042,12 +1042,8 @@ public class AutoAnchor extends Module {
     }
 
 
-    private boolean effUsesRotations() {
-        return anticheat.get().pick(CombatRotationModeUtil.usesRotations(attackMode), true, CombatRotationModeUtil.usesRotations(attackMode));
-    }
-
     private boolean usesRotationSettings() {
-        return effUsesRotations();
+        return CombatRotationModeUtil.usesRotations(attackMode);
     }
 
     // GrimAC's RotationPlace raytraces each use of a block from the rotation the server saw before it, and its

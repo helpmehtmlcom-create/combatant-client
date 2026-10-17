@@ -192,14 +192,14 @@ public class AutoBed extends Module {
             CommonSettingSchemas.INVENTORY_RESTORE_ITEM,
             true
     );
-    private final ModeValue attackMode = modeCommon(
+    private final ModeValue attackMode = presetBound(modeCommon(
             "autobedAttackMode",
             "attack_mode",
             CommonSettingSchemas.COMBAT_ATTACK_MODE,
             CombatRotationModeUtil.MODE_ROTATIONS,
             CombatRotationModeUtil.MODE_ROTATIONS,
             CombatRotationModeUtil.MODE_NO_ROTATIONS
-    );
+    ), anticheat, CombatRotationModeUtil.MODE_ROTATIONS, null);
     private final EnumValue<MovementCorrection> movementCorrection = visibleWhen(enumCommon(
             "autobedMovementCorrection",
             "movement_correction",
@@ -1108,13 +1108,8 @@ public class AutoBed extends Module {
         );
     }
 
-    private boolean effUsesRotations() {
-        // attack_mode is a ModeValue, which presetBound cannot declare: GRIM always rotates.
-        return anticheat.get() == AntiCheatPreset.GRIM || CombatRotationModeUtil.usesRotations(attackMode);
-    }
-
     private boolean usesRotationSettings() {
-        return effUsesRotations();
+        return CombatRotationModeUtil.usesRotations(attackMode);
     }
 
     private boolean serverRotationHits(AABB box, double range) {
