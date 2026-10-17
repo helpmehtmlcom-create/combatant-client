@@ -545,7 +545,7 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
     }
 
     @Inject(
-            method = "renderLevel",
+            method = "render3dHud",
             at = @At(
                     value = "INVOKE_STRING",
                     target = "Lnet/minecraft/util/profiling/ProfilerFiller;popPush(Ljava/lang/String;)V",
@@ -553,13 +553,13 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
                     shift = At.Shift.AFTER
             )
     )
-    private void combatant$postProcess(DeltaTracker tickCounter, CallbackInfo ci) {
+    private void combatant$postProcess(CallbackInfo ci) {
         if (ClickGuiRenderer.suppressesBackgroundRendering() || VisualPreviewRuntime.isActive()) return;
         if (IrisRuntime.isShaderpackRendererActive()
                 && IrisCompatibilityGuards.deferIrisFinalizationForSecondHandScene()) {
             return;
         }
-        combatant$renderPreHandPostProcess(tickCounter);
+        combatant$renderPreHandPostProcess(minecraft.getDeltaTracker());
     }
 
     @Unique
@@ -645,7 +645,7 @@ public abstract class GameRendererMixin implements IrisFinalizedSceneRenderer {
     }
 
     @Inject(
-            method = "renderLevel",
+            method = "render3dHud",
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/client/renderer/GameRenderer;renderItemInHand(Lnet/minecraft/client/renderer/state/level/CameraRenderState;Lnet/minecraft/client/renderer/state/level/PlayerRenderState;Lcom/mojang/renderpearl/api/textures/GpuTextureView;)V",

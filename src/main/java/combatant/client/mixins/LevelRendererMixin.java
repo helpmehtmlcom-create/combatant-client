@@ -273,70 +273,65 @@ public abstract class LevelRendererMixin {
     }
 
     @Inject(
-            method = "lambda$addMainPass$0",
+            method = "executeClassicTransparency",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/renderer/chunk/ChunkSectionsToRender;renderGroup(Lnet/minecraft/client/renderer/chunk/ChunkSectionLayerGroup;Lcom/mojang/blaze3d/textures/GpuSampler;)V",
-                    ordinal = 1,
+                    target = "Lnet/minecraft/client/renderer/chunk/ChunkSectionsToRender;renderGroup(Lnet/minecraft/client/renderer/chunk/ChunkSectionLayerGroup;Lcom/mojang/renderpearl/api/commands/RenderPass;Lcom/mojang/renderpearl/api/textures/GpuSampler;Lcom/mojang/renderpearl/api/textures/GpuTextureView;Z)V",
                     shift = At.Shift.BEFORE
             ),
             remap = false
     )
-    private void combatant$capturePreWaterScene(
-            GpuBufferSlice fogBuffer,
-            LevelRenderState worldRenderState,
-            net.minecraft.util.profiling.ProfilerFiller profiler,
-            net.minecraft.client.renderer.chunk.ChunkSectionsToRender chunkSections,
-            com.mojang.blaze3d.resource.ResourceHandle<?> entityOutlineHandle,
-            net.minecraft.client.renderer.feature.FeatureRenderDispatcher.PreparedFrame preparedFrame,
-            com.mojang.blaze3d.resource.ResourceHandle<?> translucentFramebufferHandle,
-            com.mojang.blaze3d.resource.ResourceHandle<?> mainFramebufferHandle,
-            com.mojang.blaze3d.resource.ResourceHandle<?> itemEntityFramebufferHandle,
-            com.mojang.blaze3d.resource.ResourceHandle<?> particlesFramebufferHandle,
-            CallbackInfo ci
-    ) {
-        if (IrisRuntime.isShaderpackRendererActive()) {
-            return;
-        }
-        RenderTarget mainFramebuffer = combatant$getFramebuffer(combatant$asRenderTargetHandle(mainFramebufferHandle));
-        if (mainFramebuffer == null) {
-            Minecraft mc = Minecraft.getInstance();
-            mainFramebuffer = mc != null && mc.gameRenderer != null ? mc.gameRenderer.mainRenderTarget() : null;
-        }
-        PreTranslucentDepth.captureFrom(mainFramebuffer);
+    private void combatant$capturePreWaterSceneClassic(CallbackInfo ci) {
+        combatant$capturePreWaterScene();
+    }
+
+    @Inject(method = "executeOit", at = @At("HEAD"), remap = false)
+    private void combatant$capturePreWaterSceneOit(CallbackInfo ci) {
+        combatant$capturePreWaterScene();
     }
 
     @Inject(
-            method = "lambda$addMainPass$0",
+            method = "executeClassicTransparency",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/renderer/feature/FeatureRenderDispatcher$PreparedFrame;executeTranslucent()V",
+                    target = "Lnet/minecraft/client/renderer/feature/FeatureRenderDispatcher$PreparedFrame;executeTranslucent(Lcom/mojang/renderpearl/api/commands/RenderPass;)V",
                     shift = At.Shift.AFTER
             ),
             remap = false
     )
-    private void combatant$renderImportedWorldEntities(
-            GpuBufferSlice fogBuffer,
-            LevelRenderState worldRenderState,
-            net.minecraft.util.profiling.ProfilerFiller profiler,
-            net.minecraft.client.renderer.chunk.ChunkSectionsToRender chunkSections,
-            com.mojang.blaze3d.resource.ResourceHandle<?> entityOutlineHandle,
-            net.minecraft.client.renderer.feature.FeatureRenderDispatcher.PreparedFrame preparedFrame,
-            com.mojang.blaze3d.resource.ResourceHandle<?> translucentFramebufferHandle,
-            com.mojang.blaze3d.resource.ResourceHandle<?> mainFramebufferHandle,
-            com.mojang.blaze3d.resource.ResourceHandle<?> itemEntityFramebufferHandle,
-            com.mojang.blaze3d.resource.ResourceHandle<?> particlesFramebufferHandle,
-            CallbackInfo ci
-    ) {
+    private void combatant$renderImportedWorldEntitiesClassic(CallbackInfo ci) {
+        combatant$renderImportedWorldEntities();
+    }
+
+    @Inject(method = "executeOit", at = @At("HEAD"), remap = false)
+    private void combatant$renderImportedWorldEntitiesOit(CallbackInfo ci) {
+        combatant$renderImportedWorldEntities();
+    }
+
+    @Unique
+    private RenderTarget combatant$mainTarget() {
+        RenderTarget main = combatant$getFramebuffer(targets != null ? targets.main : null);
+        if (main == null) {
+            Minecraft mc = Minecraft.getInstance();
+            main = mc != null && mc.gameRenderer != null ? mc.gameRenderer.mainRenderTarget() : null;
+        }
+        return main;
+    }
+
+    @Unique
+    private void combatant$capturePreWaterScene() {
+        if (IrisRuntime.isShaderpackRendererActive()) {
+            return;
+        }
+        PreTranslucentDepth.captureFrom(combatant$mainTarget());
+    }
+
+    @Unique
+    private void combatant$renderImportedWorldEntities() {
         if (IrisRuntime.isShaderpackRendererActive() || !CombatantWorldMatrices.isValid()) {
             return;
         }
-        RenderTarget mainFramebuffer = combatant$getFramebuffer(
-                combatant$asRenderTargetHandle(mainFramebufferHandle));
-        RenderTarget entityTranslucentFramebuffer = combatant$getFramebuffer(
-                combatant$asRenderTargetHandle(itemEntityFramebufferHandle));
-        RenderTarget renderTarget = entityTranslucentFramebuffer != null
-                ? entityTranslucentFramebuffer : mainFramebuffer;
+        RenderTarget renderTarget = combatant$mainTarget();
         org.joml.Matrix4f position = CombatantWorldMatrices.positionMatrix();
         org.joml.Matrix4f projection = CombatantWorldMatrices.renderProjectionMatrix();
         if (renderTarget == null || position == null || projection == null) {
